@@ -1,0 +1,26 @@
+{
+  "_comment": "Drop this at .claude/project.json (rename, remove _comment). All keys are optional — skills skip steps gracefully when keys are missing. See README.md for which skill reads which key.",
+
+  "test": {
+    "_comment": "Commands used by /test-check. Any missing key is skipped.",
+    "unit": "pytest tests/ -v --tb=short",
+    "frontend": "cd web && pnpm test --run",
+    "e2e": "npx playwright test"
+  },
+
+  "logs": {
+    "_comment": "Used by /test-check and the log-audit script. {service} and {tail} are substituted.",
+    "command": "docker compose logs {service} --tail={tail}",
+    "services": ["api", "web", "worker"]
+  },
+
+  "eval": {
+    "_comment": "Used by /eval-harness and /sdlc stages 3-4.",
+    "runner": "python3 scripts/eval-runner.py",
+    "features_dir": "evals/"
+  },
+
+  "gotchas_file": "GOTCHAS.md",
+  "main_branch": "main",
+  "modules": ["api", "web", "worker"]
+}

@@ -1,0 +1,40 @@
+# Project Gotchas
+
+Non-obvious pitfalls that have cost time in this codebase. Managed by the `/gotcha` skill.
+
+---
+
+## Database/SQL
+
+### Example: asyncpg rejects string params with CAST
+**Added**: YYYY-MM-DD
+**Why**: asyncpg enforces strict type mapping; `CAST(:x AS timestamptz)` with a string param still fails.
+**Fix**: Pass Python `datetime` objects directly; asyncpg casts automatically.
+
+## API/Routing
+
+(Add entries here)
+
+## Frontend
+
+(Add entries here)
+
+## Testing
+
+(Add entries here)
+
+## Integrations
+
+(Add entries here)
+
+## Infra
+
+(Add entries here)
+
+## Logging/Observability
+
+(Add entries here)
+
+## Code Hygiene
+
+(Add entries here)
