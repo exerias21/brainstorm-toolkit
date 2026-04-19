@@ -1,0 +1,10 @@
+{
+  "name": "brainstorm-toolkit",
+  "version": "0.1.0",
+  "description": "Cross-tool (Claude Code + GitHub Copilot) skills for brainstorming, SDLC, eval-driven development, and repo onboarding. Single AGENTS.md and TASKS.md source of truth for both agents.",
+  "author": {
+    "name": "exerias21"
+  },
+  "skills": "./skills/",
+  "agents": "./agents/"
+}

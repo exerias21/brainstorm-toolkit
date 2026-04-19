@@ -1,11 +1,13 @@
 ---
 name: repo-onboarding
 description: >
-  Inspect a repository and generate the `.claude/project.json` and supporting
-  files needed for this toolkit's skills (/test-check, /eval-harness, /sdlc,
-  /gotcha, /brainstorm) to work. Use when onboarding a new repo to the
-  workflow toolkit, or when /onboard, /discovery, or similar is invoked.
-  Similar to /init but focused on the toolkit's config contract.
+  Inspect a repository and generate the cross-tool contract files this toolkit's
+  skills rely on: `AGENTS.md` (architecture + agent instructions), `TASKS.md`
+  (work queue), `.claude/project.json` (runner config), and `GOTCHAS.md` (pitfalls).
+  Use when onboarding a new repo to the workflow toolkit, or when /onboard,
+  /discovery, /codelearn, or /init-toolkit is invoked. Replaces the separate
+  /codelearn skill — architecture discovery is part of onboarding here.
+applies-to: [claude, copilot]
 ---
 
 # Repo Onboarding / Discovery
@@ -17,14 +19,16 @@ toolkit's skills and scripts in place. After it finishes, `/test-check`,
 
 ## When triggered
 
-- User invokes `/repo-onboarding`, `/discovery`, `/onboard`, or `/init-toolkit`
-- User says "set this repo up for the toolkit", "onboard this repo", "figure out the project.json"
-- After the user copies the toolkit into a new repo
+- User invokes `/repo-onboarding`, `/discovery`, `/onboard`, `/codelearn`, or `/init-toolkit`
+- User says "set this repo up for the toolkit", "onboard this repo", "analyze this codebase", "bootstrap AGENTS.md"
+- After the user runs `setup.sh` from the brainstorm-toolkit plugin
 
 ## Output
 
 Produces (or offers to produce):
-- `.claude/project.json` — the config contract
+- `AGENTS.md` (at repo root) — architecture summary + agent conventions (absorbs /codelearn)
+- `TASKS.md` (at repo root) — empty task queue from template
+- `.claude/project.json` — the runner config contract
 - `GOTCHAS.md` (at repo root) — empty template if missing
 - A short report of what was detected and what was left blank
 
@@ -100,18 +104,29 @@ Detection notes:
 Does this look right? Any keys to add, remove, or correct?
 ```
 
-### Step 4 — Write the files
+### Step 4 — Write AGENTS.md (architecture summary)
+
+If `AGENTS.md` is missing (or the user asks to regenerate it), produce one by filling in the placeholders in `templates/AGENTS.md.template`. Derive each section from the scan:
+
+- **Project summary** — 1–3 sentences. Infer from `README.md`, package name, top-level structure.
+- **Tech stack** — bullet list from detected stack (language, framework, DB, test/build tools).
+- **Architecture at a glance** — 5–10 bullets covering: top-level module layout, how requests flow (entry point → router → service → data), key cross-module dependencies. Do NOT invent what you can't see.
+- **Build / test / run** — concrete commands, preferring what's already in `README.md` or `package.json` scripts. If unsure, say "TODO: confirm with maintainer" inline.
+
+Keep each section terse. AGENTS.md is read by every agent, every session — brevity beats completeness.
+
+### Step 5 — Write the files
 
 After the user confirms (or adjusts):
 
 1. Write `.claude/project.json` (create `.claude/` if missing).
-2. If no `GOTCHAS.md` at repo root, create one from the template at
-   `skills/../examples/GOTCHAS.md.example` (or inline fallback with empty
-   category headings).
-3. Report what was written and suggest next steps:
+2. Write `AGENTS.md` at repo root. If `CLAUDE.md` is also missing, symlink it to `AGENTS.md` on POSIX, else copy.
+3. If no `TASKS.md`, copy `templates/TASKS.md.template` to repo root.
+4. If no `GOTCHAS.md` at repo root, create one from `examples/GOTCHAS.md.example`.
+5. Report what was written and suggest next steps:
    - "Try `/test-check` to see which steps run."
-   - "If you want evals, copy `scripts/eval-runner.py` into your `scripts/` dir."
-   - "Start a new feature with `/brainstorm [topic]`."
+   - "Start a new feature with `/brainstorm [topic]` or `/task <description>`."
+   - "See current work queue with `/status`."
 
 ## What NOT to do
 

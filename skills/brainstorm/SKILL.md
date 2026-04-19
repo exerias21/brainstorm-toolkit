@@ -9,6 +9,7 @@ description: >
   or architectural change before jumping into code. This is the conversational planning companion —
   for heavy autonomous multi-agent product research, use /brainstorm-team instead.
 argument-hint: "[topic] - optional: brief description of what you want to brainstorm"
+applies-to: [claude]
 ---
 
 # Brainstorm
@@ -141,6 +142,13 @@ Numbered list of concrete steps, each with:
 ```
 
 Save this to `plans/brainstorm-[topic-slug].md` so it persists for implementation.
+
+**Also append action items to `TASKS.md`** (at repo root). For each implementation step
+that's concrete and bounded enough to stand alone, add a row to the `Active / Pending`
+section: `- [ ] (P2) <step title> — plans/brainstorm-[topic-slug].md`. If `TASKS.md`
+doesn't exist, create it from `templates/TASKS.md.template` (or with minimal sections).
+This gives both Claude's `/status`/`/task` flow and Copilot's TODO workflow a shared
+entry point into the brainstorm's output.
 
 ### Step 7: Validate the Plan
 

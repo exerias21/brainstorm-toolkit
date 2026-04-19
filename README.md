@@ -1,59 +1,110 @@
-# Claude Workflow Toolkit
+# brainstorm-toolkit
 
-Portable Claude Code skills + agents + supporting scripts.
+Cross-tool plugin for **Claude Code + GitHub Copilot**: focused, low-token skills for brainstorming, SDLC, eval-driven development, and repo onboarding. Single AGENTS.md and TASKS.md contract so both agents work from the same source of truth.
 
-## What's in here
+## Why this exists
 
-```
-skills/
-  brainstorm/            # Conversational feature ideation (Plan mode)
-  brainstorm-team/       # 5-agent team for product strategy docs
-  gotcha/                # Maintains GOTCHAS.md — project-specific pitfalls
-  dead-code-review/      # Parallel dead-code scan + test verification
-  logging-conventions/   # Structured logging discipline
-  data-source-pattern/   # Pattern guide for ingesting external data
-  sdlc/                  # Plan → implement → eval → test → PR pipeline
-  test-check/            # Post-change validation (tests + log audit)
-  eval-harness/          # pytest + fixture pipeline evals with fix loop
-  repo-onboarding/       # Inspect repo, generate .claude/project.json
-agents/
-  sdlc-pipeline.md       # Agent definition for the full SDLC flow
-  ux-plan-validator.md   # Agent definition for plan-requirement validation
-scripts/
-  eval-runner.py         # Auto-discovers features under evals/*/
-  check_docker_logs.py   # Configurable log auditor (docker/kubectl/file)
-examples/
-  project.json.example   # Config contract template
-  GOTCHAS.md.example     # Empty gotchas file template
-```
+Most AI-agent task systems bolt on heavyweight task databases, multi-agent orchestrators, and inline templates that balloon every command to hundreds of lines. brainstorm-toolkit goes the other direction:
 
-## Install in a new repo
+- **One skill = one SKILL.md file**, deliberately short (37–250 lines each).
+- **Markdown-native contracts** — `AGENTS.md`, `TASKS.md`, `GOTCHAS.md`, `.claude/project.json` — so Claude Code, GitHub Copilot, Cursor, and friends all read the same files.
+- **No central registry**, no dual persistence, no ralph-loop autonomous runners by default. `/sdlc` is the heaviest thing in here and it's still one file.
 
-Copy-paste. No plugin system, no package manager.
+## Install
+
+### Option A — Claude Code plugin
+
+If you use the Claude Code plugin system, add this repo as a marketplace source or install directly:
 
 ```bash
-cd /path/to/your-repo
-
-# Skills and agents go under .claude/
-mkdir -p .claude
-cp -r /mnt/c/programming/workflow-toolkit/skills .claude/
-cp -r /mnt/c/programming/workflow-toolkit/agents .claude/
-
-# Scripts can live wherever the repo conventionally keeps scripts
-cp -r /mnt/c/programming/workflow-toolkit/scripts ./scripts/
-
-# Generate the config. Two options:
-# A) Use the onboarding skill:
-#    In Claude Code: /repo-onboarding
-# B) Or copy the template and edit by hand:
-cp /mnt/c/programming/workflow-toolkit/examples/project.json.example .claude/project.json
+# In Claude Code:
+/plugin marketplace add <this-repo-url>
+/plugin install brainstorm-toolkit
 ```
 
-## The config contract
+### Option B — `setup.sh` (Claude, Copilot, or both)
 
-Each consuming project has a `.claude/project.json`. All keys are **optional** —
-skills skip steps gracefully when a key is missing. This means a repo with no
-`project.json` still gets useful behavior from `/brainstorm` and `/gotcha`.
+For Copilot users, or if you prefer file-based installs:
+
+```bash
+# Clone this repo once, anywhere
+git clone <this-repo-url> ~/brainstorm-toolkit
+
+# Inside any target repo:
+bash ~/brainstorm-toolkit/setup.sh --target . --tools both
+```
+
+`setup.sh` copies:
+
+- `skills/*` → `<target>/.claude/skills/` (Claude) and `<target>/.github/prompts/*.prompt.md` (Copilot, for skills marked `applies-to: [..., copilot]`).
+- `agents/*` → `<target>/.claude/agents/` (Claude-only).
+- `scripts/*` → `<target>/scripts/`.
+- `templates/AGENTS.md.template` → `<target>/AGENTS.md` if missing. Symlinks `CLAUDE.md → AGENTS.md` on POSIX, else copies.
+- `templates/TASKS.md.template` → `<target>/TASKS.md` if missing.
+- `templates/project.json.example` → `<target>/.claude/project.json.example` (left for you to rename and edit).
+
+Re-running `setup.sh` is safe — it skips existing files unless you pass `--force`. Install only for one tool with `--tools claude` or `--tools copilot`.
+
+### Windows note
+
+`setup.sh` is bash; run it under **WSL, Linux, or macOS**. Windows-native git handles symlinks inconsistently, so the `CLAUDE.md → AGENTS.md` link falls back to a copy outside POSIX environments.
+
+## The cross-tool contract
+
+Every consumer repo gets four shared files:
+
+| File | Purpose | Read by |
+|---|---|---|
+| `AGENTS.md` | Architecture + agent conventions | Claude Code (via `CLAUDE.md` copy/symlink), Copilot, Cursor, Codex |
+| `TASKS.md` | Markdown checkbox task queue | All agents, humans, GitHub UI |
+| `GOTCHAS.md` | Project-specific pitfalls | `/gotcha`, `/sdlc` sanity check |
+| `.claude/project.json` | Runner config (tests, logs, eval) | `/test-check`, `/eval-harness`, `/sdlc` |
+
+Every `project.json` key is optional — skills skip steps gracefully when config is missing. A repo with no `project.json` still gets useful behavior from `/brainstorm`, `/task`, `/gotcha`, etc.
+
+## Skills
+
+| Skill | Applies to | Use for |
+|---|---|---|
+| `/brainstorm` | Claude | Conversational feature ideation in plan mode |
+| `/brainstorm-team` | Claude | 5-agent team for competitive + product research |
+| `/task` | Both | Create one bounded task and execute it with TDD |
+| `/status` | Both | Quick readout of TASKS.md counts + active task |
+| `/sdlc` | Claude | Autonomous plan → implement → eval → test → PR |
+| `/repo-onboarding` | Both | Generate AGENTS.md + TASKS.md + project.json + GOTCHAS.md |
+| `/test-check` | Both | Run configured tests + log audit after changes |
+| `/gotcha` | Both | View or append project pitfalls |
+| `/eval-harness` | Both | Run pytest + fixture evals with optional fix loop |
+| `/flowsim` | Both | Trace claimed plan flows through source code and flag mismatches |
+| `/dead-code-review` | Claude | Multi-agent dead-code scan with test verification |
+| `/data-source-pattern` | Both | Pattern guide for scrapers, seed scripts, API ingestion |
+| `/logging-conventions` | Both | Enforce structured logging discipline |
+
+Claude-only skills use plan mode, sub-agents, or the Agent tool — features Copilot doesn't have. Cross-tool skills rely only on file I/O and test runners.
+
+## Typical workflow
+
+```
+   /repo-onboarding                (once per repo)
+          │
+          ▼
+   AGENTS.md + TASKS.md + project.json + GOTCHAS.md
+          │
+          ├──► /brainstorm  ──► plan file + TASKS.md rows
+          │                             │
+          │                             ▼
+          ├──► /task  ──────► TDD on a single small item
+          │
+          └──► /sdlc <plan>  ──► autonomous implement + eval + test + flowsim + PR
+
+   /status   — any time: "what's active, what's left?"
+   /flowsim  — verify a plan's claimed flows match the code (auto-run by /sdlc)
+   /gotcha   — when you discover a pitfall
+```
+
+## Config contract
+
+`.claude/project.json` — all keys optional:
 
 ```json
 {
@@ -79,34 +130,22 @@ skills skip steps gracefully when a key is missing. This means a repo with no
 ### Which skill reads which key
 
 | Skill | Reads |
-|-------|-------|
+|---|---|
 | `/test-check` | `test.*`, `logs.*` |
 | `/eval-harness` | `eval.*` |
 | `/sdlc` | `gotchas_file`, `eval.*`, `main_branch`, delegates to `/test-check` |
 | `/gotcha` | `gotchas_file` |
 | `/brainstorm` | `modules` |
-| `/repo-onboarding` | writes it |
-
-## Typical workflow
-
-1. `/repo-onboarding` — one-time setup per repo.
-2. `/brainstorm [topic]` — ideate + produce a plan file.
-3. `/sdlc plans/<your-plan>.md` — implement → eval → test → PR.
-4. `/test-check` — ad-hoc post-change validation.
-5. `/gotcha [Category] description` — record pitfalls as you discover them.
+| `/task`, `/status` | (none — read TASKS.md directly) |
+| `/repo-onboarding` | writes all of the above |
 
 ## Supporting scripts
 
-`scripts/eval-runner.py` — runs pytest + fixture-based pipeline evals.
-Auto-discovers features from `evals/*/` directories. Optional `meta.json`
-in each feature dir maps to a script path + test file. See `skills/eval-harness/SKILL.md`.
+- **`scripts/eval-runner.py`** — runs pytest + fixture-based pipeline evals. Auto-discovers features from `evals/*/`. See `skills/eval-harness/SKILL.md`.
+- **`scripts/check_docker_logs.py`** — audits logs for errors/tracebacks. Accepts `--log-command` and `--services`. Works with Docker, kubectl, journalctl, or any log source.
 
-`scripts/check_docker_logs.py` — audits logs for errors/tracebacks. Accepts
-`--log-command` (default: `docker compose logs {service} --tail={tail}`) and
-`--services api web ...`. Works with kubectl, journalctl, or any log source —
-just pass the appropriate command.
+## Maintaining this repo
 
-## Maintaining the toolkit
+This repo is the canonical source. Consumer repos are populated by `setup.sh` — to propagate updates, re-run `setup.sh --force` in each consumer repo. There is intentionally no auto-sync.
 
-This directory is the canonical source. To propagate updates to consuming repos,
-re-copy the updated files. There's no auto-sync — that's by design for simplicity.
+See `AGENTS.md` for skill authoring rules (frontmatter, ceilings, contracts).

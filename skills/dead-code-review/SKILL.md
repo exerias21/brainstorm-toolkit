@@ -7,6 +7,7 @@ description: >
   test suite before and after to verify zero regressions. Invoke with /dead-code-review or trigger
   proactively after major feature completions, refactors, or before releases.
 argument-hint: "[scope] - optional: 'backend', 'frontend', 'database', 'docs', 'full' (default: full)"
+applies-to: [claude]
 ---
 
 # Dead Code Review

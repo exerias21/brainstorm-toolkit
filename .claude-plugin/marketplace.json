@@ -1,0 +1,33 @@
+{
+  "name": "brainstorm-toolkit",
+  "owner": {
+    "name": "exerias21"
+  },
+  "metadata": {
+    "description": "Cross-tool (Claude Code + GitHub Copilot) skills for brainstorming, SDLC, eval-driven development, and repo onboarding.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "brainstorm-toolkit",
+      "description": "Skills that work across Claude Code and GitHub Copilot, unified by a shared AGENTS.md + TASKS.md contract. Includes ideation (/brainstorm), autonomous delivery (/sdlc), task execution (/task), onboarding (/repo-onboarding), and more.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/brainstorm",
+        "./skills/brainstorm-team",
+        "./skills/data-source-pattern",
+        "./skills/dead-code-review",
+        "./skills/eval-harness",
+        "./skills/flowsim",
+        "./skills/gotcha",
+        "./skills/logging-conventions",
+        "./skills/repo-onboarding",
+        "./skills/sdlc",
+        "./skills/status",
+        "./skills/task",
+        "./skills/test-check"
+      ]
+    }
+  ]
+}

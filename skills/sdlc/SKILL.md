@@ -4,7 +4,8 @@ description: >
   Automated plan-to-PR pipeline. Takes a plan file, implements it via agent,
   generates evals, runs eval+fix loop, validates with /test-check, and creates
   a PR for human review. The full SDLC lifecycle minus human merge.
-argument-hint: "{plan_file} [--dry-run] [--skip-eval] [--max-fix-loops N] [--background]"
+argument-hint: "{plan_file} [--dry-run] [--skip-eval] [--skip-flowsim] [--max-fix-loops N] [--background]"
+applies-to: [claude]
 ---
 
 # SDLC Pipeline
@@ -12,14 +13,15 @@ argument-hint: "{plan_file} [--dry-run] [--skip-eval] [--max-fix-loops N] [--bac
 Autonomous feature delivery: plan file in, PR out.
 
 ```
-/brainstorm → plan → /sdlc → sanity-check → implement → eval → fix → validate → plan-check → PR → human review
+/brainstorm → plan → /sdlc → sanity-check → implement → eval → fix → validate → flowsim → PR → human review
 ```
 
 ## Arguments
 
 - `plan_file` (required): Path to the plan (e.g., `plans/my-feature.md`)
 - `--dry-run`: Parse plan and report what would be done, without implementing
-- `--skip-eval`: Skip eval generation and fix loop (Stage 3-4)
+- `--skip-eval`: Skip eval generation and fix loop (Stages 3-4) and skip flowsim
+- `--skip-flowsim`: Skip Stage 5.6 flow simulation only (evals still run)
 - `--max-fix-loops N`: Max eval-fix iterations (default: 3)
 - `--background`: Run as background agent, notify when PR is ready
 
@@ -37,13 +39,15 @@ Autonomous feature delivery: plan file in, PR out.
 
 Read the plan file and extract structured information:
 
-1. **Read** the plan file fully
+1. **Read** the plan file fully. The plan source can be:
+   - A standard brainstorm plan (e.g., `plans/brainstorm-<slug>.md` with Direction / Implementation Steps / Acceptance Criteria sections), OR
+   - A `TASKS.md`-style checkbox list at repo root — in which case treat every `[ ]` or `[~]` row in the `Active / Pending` section as an implementation step, and follow the `plans/tasks/task-N-<slug>.md` links for detail.
 2. **Extract**:
-   - Feature name/slug (from filename or first heading)
-   - Implementation steps (numbered lists with file paths)
-   - Files to create or modify (look for file paths, table of files)
+   - Feature name/slug (from filename or first heading; for TASKS.md input, derive from the row text or first linked task file)
+   - Implementation steps (numbered lists with file paths, or checkbox rows)
+   - Files to create or modify (look for file paths, table of files, or each linked task file's `files:` frontmatter)
    - Acceptance criteria (look for "expected", "should", "must", "verify" language)
-   - Cross-module touchpoints (Calendar, Finance, Shopping, etc.)
+   - Cross-module touchpoints
 3. **Determine** the feature slug for branch naming and eval registration
 4. **Report** the plan scope:
 
@@ -380,7 +384,7 @@ Agent(
 
 1. Collect results from all agents
 2. Merge into a single validation report
-3. **If all checks pass**: proceed to Stage 6
+3. **If all checks pass**: proceed to Stage 5.6
 4. **If failures found**:
    - Feed the failure list back into the Stage 4 fix loop
    - The fix agent receives the validation report, not eval output
@@ -400,6 +404,50 @@ Agent(
 ### Failures
 {list of specific failures with suggested fixes}
 ```
+
+---
+
+## Stage 5.6: Flow Simulation (plan vs. implementation)
+
+After Stage 5.5's checklist validation passes, run **`/flowsim`** as a narrative
+cross-check: trace each claimed flow through the actual source and flag MISMATCH,
+UNCLEAR, or MISSING steps. This catches the class of gap where every individual
+checklist item passes but the end-to-end flow silently deviates from the plan's
+intent (wrong ordering, skipped step, different module doing the work).
+
+**Skip this stage if `--skip-flowsim` or `--skip-eval` was passed.**
+
+### Invoke
+
+Invoke the `/flowsim` skill with the plan file and feature slug:
+
+```
+/flowsim {plan_file} --max-hops 3
+```
+
+`/flowsim` writes two artifacts:
+- A markdown report (shown to the user).
+- A structured JSON at `plans/flowsim-{feature_slug}.json` that this stage consumes.
+
+### Process results
+
+1. **Read** `plans/flowsim-{feature_slug}.json`.
+2. **Count** flows by status. Any flow with `status: "MISMATCH"` is a finding.
+3. **If no mismatches**: record "flowsim: all flows aligned" in the commit trailer and proceed to Stage 6.
+4. **If mismatches found**:
+   - Feed the `mismatches` array into the Stage 4 fix loop.
+   - The fix agent receives the structured JSON, not the markdown.
+   - Re-run `/flowsim` after fixes (counts toward `--max-fix-loops`).
+5. **If mismatches persist after max iterations**:
+   - Report to user with the specific file:line anchors that keep failing.
+   - Do NOT proceed to PR — the plan and implementation disagree and a human should adjudicate (sometimes the plan was wrong, not the code).
+
+### When to trust vs. question the flowsim output
+
+- **A MISMATCH with a concrete `file:line` anchor** is high-signal: the code at that location actually differs from the plan. Fix or update the plan.
+- **A MISSING marker** means flowsim couldn't find the claimed code at all. Could mean: not implemented, implemented elsewhere with a different name, or the plan was aspirational. Worth a human look.
+- **An UNCLEAR** means the plan's language was too fuzzy to trace. Usually indicates a plan quality issue, not a code issue — re-run after clarifying the plan.
+- **Corroborating eval evidence** (a passing or failing eval aligned with a flow step) is your highest-confidence signal; prioritize fixing those first.
 
 ---
 

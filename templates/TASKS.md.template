@@ -1,0 +1,24 @@
+# TASKS.md
+
+Current work items for AI agents (Claude Code, GitHub Copilot, etc.) and humans working in this repo.
+
+**Conventions:**
+- `[ ]` — pending
+- `[~]` — in progress
+- `[x]` — done
+- Topmost unchecked item is the **active task** unless another is marked `[~]`.
+- Keep entries concise. One line per task. Link to `plans/tasks/task-N-<slug>.md` for detail.
+
+## Active / Pending
+
+<!-- Example rows — replace with real tasks. -->
+- [ ] (P1) Example task title — `plans/tasks/task-1-example.md`
+- [ ] (P2) Another task — `plans/tasks/task-2-another.md`
+
+## Blocked
+
+<!-- Tasks waiting on something. Include why. -->
+
+## Done
+
+<!-- Completed items, most recent first. -->
