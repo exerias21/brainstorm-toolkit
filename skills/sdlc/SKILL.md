@@ -5,7 +5,8 @@ description: >
   generates evals, runs eval+fix loop, validates with /test-check, and creates
   a PR for human review. The full SDLC lifecycle minus human merge.
 argument-hint: "{plan_file} [--dry-run] [--skip-eval] [--skip-flowsim] [--max-fix-loops N] [--background]"
-applies-to: [claude]
+metadata:
+  brainstorm-toolkit-applies-to: claude copilot
 ---
 
 # SDLC Pipeline

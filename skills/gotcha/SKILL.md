@@ -7,7 +7,8 @@ description: >
   user invokes /gotcha to add a new entry or review existing ones. Consult the project's GOTCHAS.md
   before writing code in any area where a known pitfall exists.
 argument-hint: "[category] description of the gotcha"
-applies-to: [claude, copilot]
+metadata:
+  brainstorm-toolkit-applies-to: claude copilot
 ---
 
 # Gotcha Log

@@ -7,7 +7,8 @@ description: >
   Use when onboarding a new repo to the workflow toolkit, or when /onboard,
   /discovery, /codelearn, or /init-toolkit is invoked. Replaces the separate
   /codelearn skill — architecture discovery is part of onboarding here.
-applies-to: [claude, copilot]
+metadata:
+   brainstorm-toolkit-applies-to: claude copilot
 ---
 
 # Repo Onboarding / Discovery

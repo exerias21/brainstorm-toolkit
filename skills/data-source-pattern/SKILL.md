@@ -6,7 +6,8 @@ description: >
   adding a new scraper, import script, or automated data-collection job.
   Defines the standard shape: discovery pipeline, seed scripts, and direct
   API ingestion — three patterns, one per situation.
-applies-to: [claude, copilot]
+metadata:
+   brainstorm-toolkit-applies-to: claude copilot
 ---
 
 # Data Source Pattern

@@ -6,7 +6,8 @@ description: >
   Outputs structured JSON results. Optionally auto-fixes failures via agent loop.
   Use after implementing or modifying scripts, or as part of /test-check.
 argument-hint: "[feature] — name of a feature under evals/, or 'all'"
-applies-to: [claude, copilot]
+metadata:
+  brainstorm-toolkit-applies-to: claude copilot
 ---
 
 # Feature Eval Harness

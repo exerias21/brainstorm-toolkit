@@ -4,7 +4,8 @@ description: >
   Run all relevant tests and log audits after code changes. Reads `.claude/project.json`
   for project-specific commands. Gracefully skips any steps whose commands are not
   configured. Use after implementing features, fixing bugs, or before marking work done.
-applies-to: [claude, copilot]
+metadata:
+  brainstorm-toolkit-applies-to: claude copilot
 ---
 
 # Post-Change Validation

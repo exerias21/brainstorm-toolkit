@@ -7,7 +7,8 @@ description: >
   /brainstorm and too small to justify the full /sdlc pipeline. Invoke via /task or
   when the user asks to "just do X" with a clear, bounded ask.
 argument-hint: "<description> [--defer] [--no-test]"
-applies-to: [claude, copilot]
+metadata:
+  brainstorm-toolkit-applies-to: claude copilot
 ---
 
 # Task — single-task TDD execution

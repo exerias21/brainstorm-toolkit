@@ -44,9 +44,9 @@ Instructions for AI coding agents (Claude Code, GitHub Copilot, Cursor, Codex, e
 
 ## Toolkit skills available
 
-This repo uses the **brainstorm-toolkit** plugin. Available slash commands (see `skills/` or `.github/prompts/` depending on your agent):
+This repo uses the **brainstorm-toolkit** plugin. Available slash commands (see `.claude/skills/` or `.github/skills/` depending on your agent):
 
-- `/brainstorm [topic]` — conversational ideation in plan mode *(Claude only)*
+- `/brainstorm [topic]` — conversational ideation *(Plan mode on Claude, linear on Copilot)*
 - `/task "description"` — create a task and execute it with TDD
 - `/status` — show current task counts from TASKS.md
 - `/sdlc {plan_file}` — autonomous plan-to-PR pipeline *(Claude only)*

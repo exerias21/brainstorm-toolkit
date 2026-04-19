@@ -76,15 +76,27 @@ copy_tree_if_new() {
   done
 }
 
+delete_if_exists() {
+  # delete <path> if present
+  local path="$1"
+  if [[ -e "$path" ]]; then
+    rm -rf "$path"
+    echo "  removed legacy: $path"
+  fi
+}
+
 applies_to_includes() {
   # applies_to_includes <skill_dir> <tool>
   local skill_file="$1/SKILL.md" tool="$2"
   [[ -f "$skill_file" ]] || return 1
-  # Read frontmatter only (between first two '---' lines). Default: claude+copilot if no key.
+  # Read frontmatter only (between first two '---' lines). Default: claude-only if no key.
   local frontmatter
   frontmatter="$(awk '/^---$/{c++; if(c==2) exit; next} c==1' "$skill_file")"
   local line
-  line="$(echo "$frontmatter" | grep -E '^applies-to:' || true)"
+  line="$(echo "$frontmatter" | grep -E '^[[:space:]]*brainstorm-toolkit-applies-to:' | head -n 1 || true)"
+  if [[ -z "$line" ]]; then
+    line="$(echo "$frontmatter" | grep -E '^applies-to:' | head -n 1 || true)"
+  fi
   if [[ -z "$line" ]]; then
     # No applies-to → default to claude-only (conservative)
     [[ "$tool" == "claude" ]]
@@ -103,8 +115,18 @@ for skill_dir in "$PLUGIN_ROOT"/skills/*/; do
     copy_tree_if_new "$skill_dir" "$TARGET/.claude/skills/$name"
   fi
 
+  if [[ "$want_copilot" -eq 1 ]]; then
+    delete_if_exists "$TARGET/.github/prompts/$name.prompt.md"
+  fi
+
   if [[ "$want_copilot" -eq 1 ]] && applies_to_includes "$skill_dir" copilot; then
-    copy_if_new "$skill_dir/SKILL.md" "$TARGET/.github/prompts/$name.prompt.md"
+    # Overlay pattern: prefer copilot/skills/<name>/ if it exists (Copilot-optimized version)
+    copilot_override="$PLUGIN_ROOT/copilot/skills/$name"
+    if [[ -d "$copilot_override" ]]; then
+      copy_tree_if_new "$copilot_override" "$TARGET/.github/skills/$name"
+    else
+      copy_tree_if_new "$skill_dir" "$TARGET/.github/skills/$name"
+    fi
   fi
 done
 
@@ -158,4 +180,4 @@ echo "  1. Review AGENTS.md and fill in the {{PLACEHOLDER}} sections (or run /re
 echo "  2. Customize .claude/project.json (copy from .claude/project.json.example)."
 echo "  3. Add project-specific gotchas to GOTCHAS.md as they come up."
 echo "  4. In Claude Code: skills are available under /<skill-name>."
-echo "  5. In GitHub Copilot: prompts are available under /<skill-name> in .github/prompts/."
+echo "  5. In GitHub Copilot: skills are available under /<skill-name> in .github/skills/."

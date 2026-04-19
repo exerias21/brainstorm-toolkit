@@ -9,7 +9,8 @@ description: >
   or architectural change before jumping into code. This is the conversational planning companion —
   for heavy autonomous multi-agent product research, use /brainstorm-team instead.
 argument-hint: "[topic] - optional: brief description of what you want to brainstorm"
-applies-to: [claude]
+metadata:
+  brainstorm-toolkit-applies-to: claude copilot
 ---
 
 # Brainstorm
@@ -39,9 +40,9 @@ finalized.
 
 ### Step 0: Enter Plan Mode
 
-Immediately call `EnterPlanMode` to signal that this is a planning conversation, not an
-implementation session. Plan mode gives you freedom to explore the codebase, think through
-options, and iterate without the user expecting code changes.
+Switch to **Plan mode** (`EnterPlanMode`). This is a planning and exploration session, not
+an implementation session. You'll think out loud, explore the codebase, generate options,
+and iterate with the user to converge on a concrete action plan before any code is written.
 
 ### Step 1: Understand the Seed
 
@@ -152,34 +153,32 @@ entry point into the brainstorm's output.
 
 ### Step 7: Validate the Plan
 
-Once the plan is saved, spawn a dedicated **tester agent** (using the Agent tool) to
-stress-test it. This is the ONE place where a subagent is used — to get a fresh pair of
-eyes on the plan without the brainstorming context biasing the review.
+Spawn a dedicated **validation agent** (via the Agent tool) to read the saved plan with fresh
+context and stress-test it against this checklist:
 
-Give the tester agent:
-- The path to the saved plan file (`plans/brainstorm-[topic-slug].md`)
-- Instructions to read the plan and the relevant source files it references
-- A checklist to evaluate:
-  - Are the referenced files/patterns still accurate? (grep/read to verify)
-  - Are there missing steps or dependencies?
-  - Does the effort estimate seem realistic given the codebase?
-  - Are there existing utilities or patterns the plan should reuse but missed?
-  - Any gotchas from GOTCHAS.md that apply?
+- Are the referenced files/patterns still accurate? (grep/read to verify)
+- Are there missing steps or dependencies?
+- Does the effort estimate seem realistic given the codebase?
+- Are there existing utilities or patterns the plan should reuse but missed?
+- Any gotchas from GOTCHAS.md that apply?
 
-Share the tester's feedback with the user. If there are issues, revise the plan together.
+Share the validation feedback with the user. If there are issues, revise the plan together.
 
-### Step 8: Exit Plan Mode
+### Step 8: Exit Plan Mode and Next Steps
 
-Call `ExitPlanMode` and offer the user next steps:
+Exit Plan mode (`ExitPlanMode`). Offer the user the next steps:
 
 1. **Implement now** — transition into building directly in this session
-2. **Run `/sdlc {plan_file}`** — hand the plan to the automated pipeline
+2. **Run `/sdlc {plan_file}`** — hand the plan to the automated implementation flow
    (implement → eval → fix loop → test → PR). Best for bounded, well-specified plans.
 3. **Save for later** — the plan persists at `plans/brainstorm-[topic-slug].md`
 
 If the plan has clear implementation steps with file paths and acceptance criteria,
 recommend option 2 (`/sdlc`). If the plan is exploratory or has ambiguous tradeoffs,
 recommend option 1 (manual implementation).
+
+If the current tool supports an explicit planning-mode exit, you may use it here. Otherwise,
+just transition conversationally.
 
 ## Tone and Style
 
@@ -197,3 +196,16 @@ recommend option 1 (manual implementation).
   use `/brainstorm-team`
 - **Not a code generator** — this produces plans, not code. Implementation comes after.
 - **Not a requirements doc** — keep it conversational and lightweight, not formal.
+
+## Availability By Tool
+
+| Capability | Claude Code | GitHub Copilot |
+|---|---|---|
+| Brainstorming loop (Steps 1-6) | Yes | Yes |
+| Plan generation and TASKS.md output | Yes | Yes |
+| Dedicated fresh-context validation agent | Yes | Manual checklist fallback |
+| Dedicated planning-mode UI affordances | Optional enhancement | Not required |
+
+This skill is intentionally distributed to both tools because the main brainstorming value is
+shared. The only difference is whether Step 7 uses a dedicated validation agent or a manual
+checklist.

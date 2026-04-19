@@ -9,7 +9,8 @@ description: >
   misaligned. Invoke via /flowsim or when the user says "trace the flow",
   "verify the plan matches", "walk through what actually happens".
 argument-hint: "<plan-file-or-task-ref> [--max-hops N] [--focus <module>]"
-applies-to: [claude, copilot]
+metadata:
+  brainstorm-toolkit-applies-to: claude copilot
 ---
 
 # Flowsim — plan vs. implementation flow verification

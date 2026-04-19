@@ -36,8 +36,10 @@ bash ~/brainstorm-toolkit/setup.sh --target . --tools both
 
 `setup.sh` copies:
 
-- `skills/*` → `<target>/.claude/skills/` (Claude) and `<target>/.github/prompts/*.prompt.md` (Copilot, for skills marked `applies-to: [..., copilot]`).
-- `agents/*` → `<target>/.claude/agents/` (Claude-only).
+- `skills/*` → `<target>/.claude/skills/<name>/` (Claude) and `<target>/.github/skills/<name>/` (Copilot, for skills marked for both tools). When a Copilot-optimized override exists in `copilot/skills/<name>/`, that version is installed instead of the canonical one. The full skill directory is copied so bundled scripts, assets, and references stay available.
+- Some Copilot-distributed skills are intentionally **manual-only** and set `disable-model-invocation: true`, which keeps them available as slash commands without making them auto-load on semantic matching.
+- Legacy `.github/prompts/*.prompt.md` files from older installs are removed during Copilot installs so the workspace stops advertising prompt-file shims.
+- `agents/*` → `<target>/.claude/agents/` (Claude-only helper agents; VS Code can also discover Claude-format agents from `.claude/agents/` when needed).
 - `scripts/*` → `<target>/scripts/`.
 - `templates/AGENTS.md.template` → `<target>/AGENTS.md` if missing. Symlinks `CLAUDE.md → AGENTS.md` on POSIX, else copies.
 - `templates/TASKS.md.template` → `<target>/TASKS.md` if missing.
@@ -66,21 +68,28 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 
 | Skill | Applies to | Use for |
 |---|---|---|
-| `/brainstorm` | Claude | Conversational feature ideation in plan mode |
-| `/brainstorm-team` | Claude | 5-agent team for competitive + product research |
+| `/brainstorm` | Both † | Conversational feature ideation (Plan mode on Claude, linear on Copilot) |
+| `/brainstorm-team` | Both † | 5-agent team for competitive + product research (sequential on Copilot) |
 | `/task` | Both | Create one bounded task and execute it with TDD |
 | `/status` | Both | Quick readout of TASKS.md counts + active task |
-| `/sdlc` | Claude | Autonomous plan → implement → eval → test → PR |
+| `/sdlc` | Both † | Plan → implement → eval → test → flowsim → PR (sequential on Copilot) |
 | `/repo-onboarding` | Both | Generate AGENTS.md + TASKS.md + project.json + GOTCHAS.md |
 | `/test-check` | Both | Run configured tests + log audit after changes |
 | `/gotcha` | Both | View or append project pitfalls |
 | `/eval-harness` | Both | Run pytest + fixture evals with optional fix loop |
 | `/flowsim` | Both | Trace claimed plan flows through source code and flag mismatches |
-| `/dead-code-review` | Claude | Multi-agent dead-code scan with test verification |
+| `/dead-code-review` | Both † | Dead-code scan with test verification (sequential on Copilot) |
 | `/data-source-pattern` | Both | Pattern guide for scrapers, seed scripts, API ingestion |
 | `/logging-conventions` | Both | Enforce structured logging discipline |
 
-Claude-only skills use plan mode, sub-agents, or the Agent tool — features Copilot doesn't have. Cross-tool skills rely only on file I/O and test runners.
+† Has a Copilot-optimized overlay at `copilot/skills/<name>/`. The overlay runs the same stages sequentially (no parallel sub-agents or Plan mode) because Copilot's VS Code agent mode doesn't yet support those primitives. When it does, overlays will be upgraded. Cross-tool skills without a † rely only on file I/O + test runners and work identically on both tools.
+
+## Flows
+
+Tool-specific walkthroughs are in `docs/`:
+
+- **[docs/FLOW-CLAUDE-CODE.md](docs/FLOW-CLAUDE-CODE.md)** — install, daily loop, sub-agent use, `/sdlc` stages, `project.json` config, TASKS.md vs native Tasks.
+- **[docs/FLOW-COPILOT.md](docs/FLOW-COPILOT.md)** — install via `gh skill install` or `setup.sh`, `chat.agentSkillsLocations`, `/skills` menu, overlay semantics, cloud agent specifics, `disable-model-invocation`.
 
 ## Typical workflow
 
@@ -143,6 +152,7 @@ Claude-only skills use plan mode, sub-agents, or the Agent tool — features Cop
 
 - **`scripts/eval-runner.py`** — runs pytest + fixture-based pipeline evals. Auto-discovers features from `evals/*/`. See `skills/eval-harness/SKILL.md`.
 - **`scripts/check_docker_logs.py`** — audits logs for errors/tracebacks. Accepts `--log-command` and `--services`. Works with Docker, kubectl, journalctl, or any log source.
+- **`scripts/validate_skills.py`** — validates skill metadata, name-to-directory alignment, and Copilot-targeted skills against Claude-only capability leakage.
 
 ## Maintaining this repo
 

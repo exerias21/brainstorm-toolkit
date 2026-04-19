@@ -5,7 +5,8 @@ description: >
   task, and the most recently completed task. Reads TASKS.md directly — no subagents,
   no dashboards. Invoke via /status or when the user asks "what's left?", "current
   task?", "status".
-applies-to: [claude, copilot]
+metadata:
+   brainstorm-toolkit-applies-to: claude copilot
 ---
 
 # Status — one-glance work readout

@@ -7,7 +7,8 @@ description: >
   autonomous product research or says "brainstorm team", "what should we build next",
   "competitive analysis", "product review", or invokes /brainstorm-team. For
   conversational ideation with the user in-session, use /brainstorm instead.
-applies-to: [claude]
+metadata:
+  brainstorm-toolkit-applies-to: claude copilot
 ---
 
 # Brainstorm Team
