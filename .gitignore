@@ -1,0 +1,26 @@
+# Environment files
+.env
+.env.*
+!.env.example
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Consumer-side artifacts (this is a plugin repo, not a consumer)
+plans/
+TASKS.md
+GOTCHAS.md
+.claude/project.json
+
+# Local test output
+/tmp/
+test-output/
