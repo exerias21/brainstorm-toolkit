@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-# setup.sh — install brainstorm-toolkit into a target repo for Claude Code and/or GitHub Copilot.
+﻿#!/usr/bin/env bash
+# setup.sh â€” install brainstorm-toolkit into a target repo for Claude Code and/or GitHub Copilot.
 #
 # Usage:
 #   bash setup.sh [--target <dir>] [--tools claude|copilot|both] [--force]
@@ -9,7 +9,7 @@
 #   --force          Overwrite existing files (default: skip-if-exists)
 #
 # Design: the plugin repo is the source of truth. Re-run this script to refresh
-# a consumer repo. On POSIX we try a symlink CLAUDE.md → AGENTS.md; otherwise copy.
+# a consumer repo. On POSIX we try a symlink CLAUDE.md â†’ AGENTS.md; otherwise copy.
 
 set -euo pipefail
 
@@ -98,7 +98,7 @@ applies_to_includes() {
     line="$(echo "$frontmatter" | grep -E '^applies-to:' | head -n 1 || true)"
   fi
   if [[ -z "$line" ]]; then
-    # No applies-to → default to claude-only (conservative)
+    # No applies-to â†’ default to claude-only (conservative)
     [[ "$tool" == "claude" ]]
     return
   fi
@@ -142,7 +142,7 @@ if [[ -d "$PLUGIN_ROOT/scripts" ]]; then
   copy_tree_if_new "$PLUGIN_ROOT/scripts" "$TARGET/scripts"
 fi
 
-# 4. project.json.example → .claude/project.json.example (only if .claude/project.json missing)
+# 4. project.json.example â†’ .claude/project.json.example (only if .claude/project.json missing)
 echo "[4/6] Project config example"
 if [[ -f "$TARGET/.claude/project.json" ]]; then
   echo "  skip: .claude/project.json already present"
@@ -157,10 +157,10 @@ if [[ ! -f "$TARGET/AGENTS.md" || "$FORCE" -eq 1 ]]; then
 fi
 if [[ ! -e "$TARGET/CLAUDE.md" || "$FORCE" -eq 1 ]]; then
   if ln -s AGENTS.md "$TARGET/CLAUDE.md" 2>/dev/null; then
-    echo "  wrote: $TARGET/CLAUDE.md (symlink → AGENTS.md)"
+    echo "  wrote: $TARGET/CLAUDE.md (symlink â†’ AGENTS.md)"
   else
     cp -f "$TARGET/AGENTS.md" "$TARGET/CLAUDE.md"
-    echo "  wrote: $TARGET/CLAUDE.md (copy — symlink not supported here)"
+    echo "  wrote: $TARGET/CLAUDE.md (copy â€” symlink not supported here)"
   fi
 fi
 
