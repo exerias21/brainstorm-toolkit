@@ -85,7 +85,7 @@ Wait for teammates 1-4 to report findings, then synthesize a ranked top-10 featu
 Teammate 6 — Implementation Planner:
 Wait for the Strategist's top 10, then write detailed implementation blueprints for the top 3 following the project's existing patterns (data model, services, endpoints, UI components, integrations). Also write 2-3 opportunistic "wild card" ideas you spotted while planning — these are separate from the Lateral Thinker's lens Wildcards and live in their own section.
 
-Coordination: Teammates 1-4 work in parallel. Teammate 5 starts after 1-4 report. Teammate 6 starts after 5 finalizes. All teammates message each other when they find cross-domain insights. Final output goes to plans/team-brainstorm-results.md.
+Coordination: Teammates 1-4 work in parallel. Teammate 5 starts after 1-4 report. Teammate 6 starts after 5 finalizes. All teammates message each other when they find cross-domain insights. Final output is written by the orchestrator (you) — see "Output Format" below — to plans/team-brainstorm-results.md at the repo root.
 ```
 
 ### Focused Team (Module-Specific)
@@ -107,10 +107,16 @@ Create an agent team with 3 teammates:
 2. Architect+Strategist (combined): map codebase, then rank features — weighing the Wildcards alongside conventional candidates.
 3. Planner: blueprint top 3.
 
-Output to plans/team-brainstorm-results.md — must include a Wildcards section even when the quick variant is used.
+Output to plans/team-brainstorm-results.md at the repo root (use the Write tool — see "Output Format" below) — must include a Wildcards section even when the quick variant is used.
 ```
 
 ## Output Format
+
+**Use the `Write` tool** to save the assembled document to
+`plans/team-brainstorm-results.md` at the **repo root** (the consumer project's
+working directory) — NOT under `.claude/`. Plan Mode internal storage and
+`.claude/` are not where downstream skills look. Create the `plans/` directory
+if it doesn't exist (Write creates parent dirs automatically).
 
 The team produces `plans/team-brainstorm-results.md` with sections:
 1. Competitive Landscape

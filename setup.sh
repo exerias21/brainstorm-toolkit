@@ -2,28 +2,41 @@
 # setup.sh â€” install brainstorm-toolkit into a target repo for Claude Code and/or GitHub Copilot.
 #
 # Usage:
-#   bash setup.sh [--target <dir>] [--tools claude|copilot|both] [--force]
+#   bash setup.sh [--target <dir>] [--tools claude|copilot|both] [--force] [--no-copy-scripts]
 #
-#   --target <dir>   Target repo root (default: current directory)
-#   --tools <which>  claude | copilot | both (default: both)
-#   --force          Overwrite existing files (default: skip-if-exists)
+#   --target <dir>      Target repo root (default: current directory)
+#   --tools <which>     claude | copilot | both (default: both)
+#   --force             Overwrite plugin assets (skills, agents, scripts).
+#                       Does NOT overwrite user-customized files
+#                       (AGENTS.md, CLAUDE.md, TASKS.md, .claude/project.json) —
+#                       those are skip-on-exist regardless of this flag, since
+#                       --force is meant to refresh plugin content, not blow
+#                       away consumer edits. Default: skip-if-exists for everything.
+#   --no-copy-scripts   Don't copy plugin scripts/ into target. Use this when
+#                       you'd rather invoke project-agnostic helpers
+#                       (eval-runner.py, check_docker_logs.py) from the plugin
+#                       install directly — point .claude/project.json at the
+#                       absolute plugin path instead.
 #
 # Design: the plugin repo is the source of truth. Re-run this script to refresh
-# a consumer repo. On POSIX we try a symlink CLAUDE.md â†’ AGENTS.md; otherwise copy.
+# a consumer repo. Managed files such as CLAUDE.md and AGENTS.md are written as
+# copies into the target repo; this script does not create symlinks.
 
 set -euo pipefail
 
 TARGET="$(pwd)"
 TOOLS="both"
 FORCE=0
+COPY_SCRIPTS=1
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --target) TARGET="$2"; shift 2 ;;
-    --tools)  TOOLS="$2"; shift 2 ;;
-    --force)  FORCE=1; shift ;;
+    --target)            TARGET="$2"; shift 2 ;;
+    --tools)             TOOLS="$2"; shift 2 ;;
+    --force)             FORCE=1; shift ;;
+    --no-copy-scripts)   COPY_SCRIPTS=0; shift ;;
     -h|--help)
-      sed -n '2,10p' "$0" | sed 's/^# *//'
+      sed -n '2,15p' "$0" | sed 's/^# *//'
       exit 0
       ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
@@ -67,10 +80,16 @@ copy_if_new() {
 }
 
 copy_tree_if_new() {
-  # copy <src_dir> <dest_dir> recursively, skipping existing unless --force
+  # copy <src_dir> <dest_dir> recursively, skipping existing unless --force.
+  # Excludes Python compile artifacts (__pycache__, *.pyc) — those are runtime
+  # cruft, not plugin assets, even if they happen to exist in the source tree.
   local src="$1" dest="$2"
   mkdir -p "$dest"
-  (cd "$src" && find . -type f -printf '%P\n') | while read -r rel; do
+  (cd "$src" && find . -type f \
+      ! -path '*/__pycache__/*' \
+      ! -name '*.pyc' \
+      ! -name '*.pyo' \
+      -printf '%P\n') | while read -r rel; do
     local from="$src/$rel" to="$dest/$rel"
     copy_if_new "$from" "$to"
   done
@@ -138,40 +157,52 @@ if [[ "$want_claude" -eq 1 && -d "$PLUGIN_ROOT/agents" ]]; then
   copy_tree_if_new "$PLUGIN_ROOT/agents" "$TARGET/.claude/agents"
 fi
 
-# 3. Scripts (repo-local)
-if [[ -d "$PLUGIN_ROOT/scripts" ]]; then
+# 3. Scripts (repo-local) — opt-out via --no-copy-scripts to use plugin-resident invocation
+if [[ -d "$PLUGIN_ROOT/scripts" && "$COPY_SCRIPTS" -eq 1 ]]; then
   echo "[3/6] Scripts"
   copy_tree_if_new "$PLUGIN_ROOT/scripts" "$TARGET/scripts"
+elif [[ "$COPY_SCRIPTS" -eq 0 ]]; then
+  echo "[3/6] Scripts (skipped: --no-copy-scripts)"
+  echo "  Configure .claude/project.json to invoke from the plugin, e.g.:"
+  echo "    \"eval\": { \"runner\": \"python3 $PLUGIN_ROOT/scripts/eval-runner.py\" }"
 fi
 
-# 4. project.json.example â†’ .claude/project.json.example (only if .claude/project.json missing)
-echo "[4/6] Project config example"
+# Install the reference .example file if missing; refresh it when --force is
+# used. Consumers can review it to discover newly-added optional fields like
+# eval.thresholds and pipeline.poka_yoke. The user's actual
+# .claude/project.json is never touched.
+echo "[4/6] Project config example (skip-on-exist unless --force)"
+copy_if_new "$PLUGIN_ROOT/templates/project.json.example" "$TARGET/.claude/project.json.example"
 if [[ -f "$TARGET/.claude/project.json" ]]; then
-  echo "  skip: .claude/project.json already present"
+  echo "  note: .claude/project.json present — review .claude/project.json.example for new optional fields"
 else
-  copy_if_new "$PLUGIN_ROOT/templates/project.json.example" "$TARGET/.claude/project.json.example"
+  echo "  note: .claude/project.json not present — copy from .claude/project.json.example to start"
 fi
 
 # 5. AGENTS.md + CLAUDE.md
+# These are user-customized assets, not plugin assets. They are skip-on-exist
+# regardless of --force, because --force is meant to refresh plugin content
+# (skills, agents, scripts) — not blow away the consumer's edited docs.
+# We deliberately do NOT create a symlink between them: WSL/NTFS and Windows
+# git both struggle with symlinks (git fails to index, edits in IDEs follow
+# the link and silently drift). Two regular files is the lowest-friction
+# cross-platform choice. Consumers keep them in sync — content is small.
 echo "[5/6] AGENTS.md / CLAUDE.md"
-if [[ ! -f "$TARGET/AGENTS.md" || "$FORCE" -eq 1 ]]; then
+if [[ -e "$TARGET/AGENTS.md" || -e "$TARGET/CLAUDE.md" ]]; then
+  echo "  skip: AGENTS.md and/or CLAUDE.md already present (user content; not overwritten)"
+else
   copy_if_new "$PLUGIN_ROOT/templates/AGENTS.md.template" "$TARGET/AGENTS.md"
-fi
-if [[ ! -e "$TARGET/CLAUDE.md" || "$FORCE" -eq 1 ]]; then
-  if ln -s AGENTS.md "$TARGET/CLAUDE.md" 2>/dev/null; then
-    echo "  wrote: $TARGET/CLAUDE.md (symlink â†’ AGENTS.md)"
-  else
-    cp -f "$TARGET/AGENTS.md" "$TARGET/CLAUDE.md"
-    echo "  wrote: $TARGET/CLAUDE.md (copy â€” symlink not supported here)"
-  fi
+  cp -f "$TARGET/AGENTS.md" "$TARGET/CLAUDE.md"
+  echo "  wrote: $TARGET/CLAUDE.md (copy of AGENTS.md — keep them in sync)"
 fi
 
 # 6. TASKS.md
+# Also user content; skip-on-exist regardless of --force.
 echo "[6/6] TASKS.md"
-if [[ ! -f "$TARGET/TASKS.md" || "$FORCE" -eq 1 ]]; then
-  copy_if_new "$PLUGIN_ROOT/templates/TASKS.md.template" "$TARGET/TASKS.md"
+if [[ -f "$TARGET/TASKS.md" ]]; then
+  echo "  skip: TASKS.md already present (user content; not overwritten)"
 else
-  echo "  skip: TASKS.md already present"
+  copy_if_new "$PLUGIN_ROOT/templates/TASKS.md.template" "$TARGET/TASKS.md"
 fi
 
 echo

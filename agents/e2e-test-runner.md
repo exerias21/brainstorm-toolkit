@@ -80,6 +80,46 @@ E2e tests are flakier than unit tests. For each failure from Step 3:
 
 Skip this step if the Step 3 failure list is empty.
 
+### Step 4.5 — Visual evidence capture (Claude Code only; Playwright MCP)
+
+If the Playwright MCP plugin is available (tools prefixed with
+`mcp__plugin_playwright_playwright__`), gather richer signal before handing
+the failure to the fix agent. Text-only test output regularly misleads fix
+agents into "fixing" the wrong thing — visual evidence at the moment of
+failure is materially better signal.
+
+For each **real** failure from Step 4 where you can derive the URL the test
+was hitting (from the test source, the failure message, or a configured
+`baseURL`):
+
+1. Navigate the MCP browser to that URL:
+   `mcp__plugin_playwright_playwright__browser_navigate` with `url={derived_url}`.
+2. If the test required auth, replay the auth steps from
+   `test.e2e_patterns_file` (if configured) before navigating.
+3. Capture, in this order:
+   - `mcp__plugin_playwright_playwright__browser_snapshot` — accessibility
+     tree of the rendered page (better signal than a raw DOM dump for fix
+     agents).
+   - `mcp__plugin_playwright_playwright__browser_console_messages` — JS
+     errors and warnings *as the page actually rendered for the agent*, not
+     just from the test runner's transcript.
+   - `mcp__plugin_playwright_playwright__browser_network_requests` — failed
+     API calls, 4xx/5xx responses, missing resources.
+   - `mcp__plugin_playwright_playwright__browser_take_screenshot` —
+     attach the path; the fix agent reads it via the Read tool.
+4. Store the bundle as `evidence_<test-id>.json` (path, snapshot text,
+   console array, network array) for the fix agent.
+
+Skip this step gracefully if:
+- The MCP tools aren't available (Copilot, or Claude Code without the
+  Playwright plugin enabled). Note `evidence: "mcp-unavailable"` in the report.
+- You can't derive a URL (purely backend e2e, or the test's URL is dynamic).
+  Note `evidence: "url-not-derivable"`.
+- Auth replay fails. Don't loop on it — note and continue.
+
+The fix agent (Step 5) is expected to consume this bundle when present and
+fall back to text-only behavior when it isn't. Make the dependency soft.
+
 ### Step 5 — Dispatch fix agent (if real failures remain)
 
 Spawn a fix agent with structured failure data. Use Sonnet for targeted fixes, Opus only if the failures span many files or suggest structural issues.
@@ -100,8 +140,18 @@ Agent(
     If the test file references auth setup or navigation patterns, check
     {test.e2e_patterns_file} for repo-specific conventions before editing.
 
+    Where a failure has a `visual_evidence` block (Step 4.5 captured an MCP
+    browser bundle), trust that evidence over the test runner's text output
+    when they conflict — the MCP snapshot reflects what the page actually
+    rendered for the agent, while test output may be filtered through a
+    custom reporter or stale selector. Open the screenshot via the Read tool
+    if attached.
+
     FAILURES:
     {failures_json}
+
+    VISUAL EVIDENCE (if captured):
+    {visual_evidence_json — per-test snapshot/console/network/screenshot bundle}
 
     FILES TO EXAMINE:
     {deduplicated list of file paths from failures + any test files mentioned}

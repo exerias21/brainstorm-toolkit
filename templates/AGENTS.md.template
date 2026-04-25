@@ -42,6 +42,45 @@ Instructions for AI coding agents (Claude Code, GitHub Copilot, Cursor, Codex, e
 - Don't add speculative error handling or future-proofing.
 - When in doubt about a pattern, look at nearby code rather than importing new conventions.
 
+## Hooks (Claude-only)
+
+Claude Code supports `PreToolUse` hooks that run a command before a tool fires
+and block the tool when the command exits non-zero. The toolkit recommends one
+optional hook: a **secret-pattern poka-yoke** on `Write` and `Edit` that scans
+the about-to-be-written content for known secret shapes (AWS keys, GitHub
+tokens, JWTs, private-key blocks). See `GOTCHAS.md` "Secret Patterns
+(recommended for hooks)" for the regex set.
+
+This hook is **opt-in**. `/repo-onboarding` will offer to enable it and write
+the config to `.claude/settings.json`. The corresponding flag in
+`.claude/project.json` is `pipeline.poka_yoke: true`.
+
+Schema (lives in `.claude/settings.json`, standard Claude Code hook format):
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          { "type": "command", "command": "scripts/hooks/secret-scan.sh" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The hook script reads the tool input from stdin (JSON, includes file path and
+content), greps for the secret patterns, and exits non-zero (with a message on
+stderr) when a match is found. A non-zero exit blocks the `Write`/`Edit`.
+
+**Copilot has no equivalent.** GitHub Copilot does not expose a PreToolUse-style
+hook. For Copilot consumers, the only secret defense is the Stage 6 gitleaks
+scan in `/sdlc` (Tier A A3) at commit time. Plan accordingly if you rely on
+Copilot for production-bound work.
+
 ## Toolkit skills available
 
 This repo uses the **brainstorm-toolkit** plugin. Available slash commands (see `.claude/skills/` or `.github/skills/` depending on your agent):

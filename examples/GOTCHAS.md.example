@@ -38,3 +38,22 @@ Non-obvious pitfalls that have cost time in this codebase. Managed by the `/gotc
 ## Code Hygiene
 
 (Add entries here)
+
+## Secret Patterns (recommended for hooks)
+
+The patterns below are a starting set for the optional Claude PreToolUse hook
+that blocks `Write`/`Edit` when a likely secret would be written into a file.
+Tune to your stack — false positives are worse than no hook at all. See the
+`Hooks (Claude-only)` section in `AGENTS.md` for the hook config shape.
+
+| Name | Regex | Why |
+|---|---|---|
+| AWS access key id | `AKIA[0-9A-Z]{16}` | AWS access key prefix is publicly fixed. |
+| AWS secret access key | `(?i)aws(.{0,20})?(secret|access)?(.{0,20})?[\"']?[A-Za-z0-9/+=]{40}[\"']?` | 40-char base64 secret near "aws". |
+| GitHub PAT (classic) | `ghp_[A-Za-z0-9]{36}` | GitHub personal access token prefix. |
+| GitHub fine-grained PAT | `github_pat_[A-Za-z0-9_]{82}` | Fine-grained PAT prefix. |
+| Slack token | `xox[abprs]-[A-Za-z0-9-]{10,}` | Slack bot/user/app tokens. |
+| Google API key | `AIza[0-9A-Za-z_-]{35}` | Google API key prefix. |
+| OpenAI key | `sk-[A-Za-z0-9]{20,}` | OpenAI / Anthropic-style key prefix. |
+| Generic private key block | `-----BEGIN [A-Z ]*PRIVATE KEY-----` | Catches RSA/OpenSSH/PGP private keys. |
+| JWT-shaped token | `eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}` | Three base64 segments separated by dots. |

@@ -20,8 +20,20 @@
 
   "eval": {
     "_comment": "Used by /eval-harness and /sdlc stages 3-4.",
+    "_runner_options": "Two patterns: (1) consumer-resident (setup.sh copied scripts/ into this repo) — use 'python3 scripts/eval-runner.py'; (2) plugin-resident (setup.sh ran with --no-copy-scripts) — use 'python3 /absolute/path/to/brainstorm-toolkit/scripts/eval-runner.py'. Plugin-resident keeps shared infra in one place and benefits from plugin updates without re-running setup.",
     "runner": "python3 scripts/eval-runner.py",
-    "features_dir": "evals/"
+    "features_dir": "evals/",
+    "_thresholds_comment": "Optional. Without this block, eval-runner uses binary pass/fail (any failure = FAIL). Generous defaults below. Stricter recommended-for-prod-bound-repos block kept alongside as a ratchet target — uncomment '_recommended_for_prod_bound_repos' values into 'thresholds' once your suite is stable. min_pass_rate is enforced in run_all_tests; max_flake_retries and min_coverage_delta are surfaced in summary for now.",
+    "thresholds": {
+      "min_pass_rate": 0.85,
+      "max_flake_retries": 3,
+      "min_coverage_delta": 0,
+      "_recommended_for_prod_bound_repos": {
+        "min_pass_rate": 0.98,
+        "max_flake_retries": 1,
+        "min_coverage_delta": 0.02
+      }
+    }
   },
 
   "gotchas_file": "GOTCHAS.md",
@@ -30,6 +42,8 @@
 
   "pipeline": {
     "_comment": "Optional. Knobs read by /sdlc. All keys default to false/unset.",
-    "skip_secret_scan": false
+    "skip_secret_scan": false,
+    "_poka_yoke_comment": "Claude-only. When true, /repo-onboarding writes a PreToolUse hook to .claude/settings.json that blocks Write/Edit when a likely secret is in the payload. Enabling this key alone does NOT install the hook — see AGENTS.md 'Hooks (Claude-only)' for the settings.json schema. Copilot consumers gain nothing from this key (no PreToolUse equivalent); rely on the Stage 6 gitleaks scan instead.",
+    "poka_yoke": false
   }
 }
