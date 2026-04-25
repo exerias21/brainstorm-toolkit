@@ -1,0 +1,14 @@
+# setup.sh parses SKILL.md frontmatter with awk and greps for `^---$` — CRLF
+# endings break the matcher silently and the Copilot install path is skipped.
+# Pin all text files to LF to keep parsing deterministic across WSL / Windows
+# checkouts regardless of each user's core.autocrlf setting.
+
+*.sh        text eol=lf
+*.md        text eol=lf
+*.py        text eol=lf
+*.json      text eol=lf
+*.template  text eol=lf
+*.example   text eol=lf
+
+# Catch-all fallback for anything else
+* text=auto

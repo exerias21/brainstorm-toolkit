@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # setup.sh â€” install brainstorm-toolkit into a target repo for Claude Code and/or GitHub Copilot.
 #
 # Usage:
@@ -90,8 +90,10 @@ applies_to_includes() {
   local skill_file="$1/SKILL.md" tool="$2"
   [[ -f "$skill_file" ]] || return 1
   # Read frontmatter only (between first two '---' lines). Default: claude-only if no key.
+  # The leading sub() strips trailing \r so CRLF-ended SKILL.md files parse correctly —
+  # .gitattributes pins these to LF, but a dirty working copy should still install.
   local frontmatter
-  frontmatter="$(awk '/^---$/{c++; if(c==2) exit; next} c==1' "$skill_file")"
+  frontmatter="$(awk '{sub(/\r$/,"")} /^---$/{c++; if(c==2) exit; next} c==1' "$skill_file")"
   local line
   line="$(echo "$frontmatter" | grep -E '^[[:space:]]*brainstorm-toolkit-applies-to:' | head -n 1 || true)"
   if [[ -z "$line" ]]; then

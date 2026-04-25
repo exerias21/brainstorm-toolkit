@@ -72,9 +72,13 @@ if you wanted email/push alerts."
 
 If `project.json` doesn't exist or has no `modules` key, skip this step.
 
-### Step 4: Generate Approaches
+### Step 4: Generate Approaches (Conventional + Wildcards)
 
-Produce 2-4 distinct approaches. Each approach should have:
+Brainstorming converges on the obvious if all the ideas come from one head. This step
+produces two tracks — conventional options and lens-driven wildcards — so the user sees
+both what a sensible team would build and what lateral thinking proposes.
+
+**Step 4a — Conventional approaches.** Produce 2–3 distinct approaches. Each has:
 
 - **A name** — something memorable, not "Option A"
 - **The core idea** — one sentence
@@ -83,8 +87,33 @@ Produce 2-4 distinct approaches. Each approach should have:
 - **Tradeoffs** — what you gain and what you give up
 - **Effort** — rough size (Small / Medium / Large)
 
-Vary the approaches meaningfully. Don't just offer "do more" vs "do less" — explore genuinely
-different angles. Include at least one approach that's simpler than the user probably expects.
+Vary them meaningfully — UI-first vs data-model-first vs AI-leaning, for example. Include
+at least one approach simpler than the user probably expects.
+
+**Step 4b — Wildcards (four lenses, sequential).** Walk through these four lenses in
+order. Keep each lens's output tight (≤200 words) so the combined block stays scannable.
+For each lens, consider the user's seed and your Step 2/3 summary through that lens alone:
+
+1. **First Principles** — strip the idea to its physics. What's the user *actually* trying
+   to accomplish at the most basic level? Propose the simplest mechanism that delivers
+   that outcome, assuming no prior code exists.
+2. **Inversion** — solve the opposite problem. If the stated goal is X, what would
+   *preventing* X look like — and would that be more valuable? What if the core assumption
+   is wrong?
+3. **Cross-Domain Analogy** — pick one non-software domain (game designer, biologist,
+   musician, logistics planner) and import its patterns. Describe the analogous approach
+   concretely.
+4. **Constraint Removal** — what if compute / storage / user attention / dev time were
+   free and infinite? Now flip it — what if each were zero? Describe both extremes and
+   what survives at the middle.
+
+Each lens returns: name, one-sentence pitch, 3–5 bullets on how it works, tradeoffs,
+effort (S/M/L), and one sentence on why it's genuinely different from the conventional
+options.
+
+**Step 4c — Merge and present.** Assemble output with two clear headings — `## Conventional
+Approaches` and `## Wildcards (Outside-the-Box)` — each wildcard tagged with its lens name.
+Don't silently drop wildcards that seem impractical; the user decides what's practical.
 
 ### Step 5: Evaluate Together
 
@@ -106,7 +135,8 @@ Once the user has converged on a direction, produce a concrete plan:
 ## Brainstorm Result: [Feature Name]
 
 ### Direction
-One paragraph summarizing the chosen approach and why.
+One paragraph summarizing the chosen approach and why. If the direction combines a
+conventional option with a wildcard, say so explicitly.
 
 ### Implementation Steps
 Numbered list of concrete steps, each with:
@@ -119,6 +149,10 @@ Numbered list of concrete steps, each with:
 
 ### Open Questions
 - Anything that still needs deciding (keep this short)
+
+### Appendix: Alternatives Considered
+Preserve every Conventional Approach and Wildcard generated in Step 4 — even the
+rejected ones — with a one-line "why not chosen" note.
 ```
 
 Save this to `plans/brainstorm-[topic-slug].md` so it persists for implementation.

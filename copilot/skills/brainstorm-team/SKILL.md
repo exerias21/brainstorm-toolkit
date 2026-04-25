@@ -14,7 +14,7 @@ disable-model-invocation: true
 
 # Brainstorm Team (Copilot Edition — Sequential)
 
-Five research passes executed in order by you, producing a single strategy document at `plans/team-brainstorm-results.md`. The Claude canonical runs these as five parallel workers; this version runs them sequentially. Output is the same shape, just slower.
+Six research passes executed in order by you, producing a single strategy document at `plans/team-brainstorm-results.md`. The Claude canonical runs these as parallel workers; this version runs them sequentially. Output is the same shape, just slower.
 
 ## Before starting — load project context
 
@@ -55,9 +55,22 @@ Think as a first-time user of the product (frontend, CLI surface, or API surface
 
 Output: 5 biggest UX problems + 5 genuine delights you'd keep.
 
+## Pass 3.5 — Lateral Thinker (four lenses)
+
+Push past the obvious before ranking. Run these four lenses against the Project Context and produce one Wildcard feature per lens. Do not re-analyze the codebase here — that's Pass 2's job.
+
+1. **First Principles** — strip the product to its physics. What is the user actually trying to accomplish at the most basic level? Propose the simplest mechanism that delivers that outcome, assuming no prior code exists.
+2. **Inversion** — solve the opposite problem. If the stated goal is X, what would preventing X look like? Would that be more valuable? What if the core assumption is wrong?
+3. **Cross-Domain Analogy** — pick one non-software domain (game designer, biologist, musician, logistics planner) and import its patterns. Describe the analogous approach concretely.
+4. **Constraint Removal** — what if compute / storage / user attention / dev time were free and infinite? Now flip it — what if each were zero? Describe both extremes and what survives in the middle.
+
+Each Wildcard includes: name, one-line pitch, 3-5 bullets on how it works, tradeoffs, effort (S/M/L), and one sentence on why it's genuinely different from what a conventional ranking would surface.
+
+Output: 4 Wildcards, one per lens, tagged with the lens name.
+
 ## Pass 4 — Feature strategy
 
-Using Pass 1–3 findings, produce a ranked top-10 feature list. Each feature includes:
+Using Pass 1–3.5 findings, produce a ranked top-10 feature list. Weigh Pass 3.5's Wildcards against conventional candidates — you may promote up to 2 into the ranking if they beat a conventional option on impact. All 4 Wildcards are preserved in the final document regardless of promotion. Each feature includes:
 - Name.
 - One-line pitch.
 - Why it matters (tie back to a gap or a UX problem).
@@ -79,6 +92,9 @@ Assemble everything into `plans/team-brainstorm-results.md` with sections:
 3. UX Assessment (5 problems, 5 delights)
 4. Top 10 Features Ranked
 5. Implementation Blueprints (Top 3)
-6. Wild Cards (2-3)
+6. Wild Cards (2-3 Planner-spotted opportunistic ideas)
+7. Wildcards — Lens Divergence (4 lens-driven approaches from Pass 3.5: First Principles, Inversion, Cross-Domain Analogy, Constraint Removal)
+
+Sections 6 and 7 are both preserved — they come from different prompts (opportunistic vs. structured lenses) and the comparison is often illuminating.
 
 If any Pass generated meaningfully more content than fits a single section, split into sub-sections — don't cut depth to fit a template.

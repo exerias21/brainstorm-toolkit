@@ -2,10 +2,14 @@
   "_comment": "Drop this at .claude/project.json (rename, remove _comment). All keys are optional — skills skip steps gracefully when keys are missing. See README.md for which skill reads which key.",
 
   "test": {
-    "_comment": "Commands used by /test-check. Any missing key is skipped.",
+    "_comment": "Commands used by /test-check, /e2e-loop, and /sdlc. Any missing key is skipped.",
     "unit": "pytest tests/ -v --tb=short",
     "frontend": "cd web && pnpm test --run",
-    "e2e": "npx playwright test"
+    "e2e": "npx playwright test --reporter=json",
+    "_e2e_extras": "The next three keys tune /e2e-loop and the e2e-test-runner agent. All optional.",
+    "e2e_max_fix_loops": 3,
+    "e2e_patterns_file": ".claude/e2e-patterns.md",
+    "e2e_rerun_failed_only": true
   },
 
   "logs": {

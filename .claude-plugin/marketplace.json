@@ -18,6 +18,7 @@
         "./skills/brainstorm-team",
         "./skills/data-source-pattern",
         "./skills/dead-code-review",
+        "./skills/e2e-loop",
         "./skills/eval-harness",
         "./skills/flowsim",
         "./skills/gotcha",

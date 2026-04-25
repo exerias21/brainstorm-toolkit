@@ -271,21 +271,28 @@ Please review and fix manually, then re-run:
 
 Run the complete test suite to ensure no regressions.
 
-1. Run `/test-check` via the test-check skill procedure:
+1. Run `/test-check` via the test-check skill procedure, BUT with one substitution:
    - Log audit (if `logs.command` configured)
    - Frontend unit tests (if `test.frontend` configured and frontend files changed)
    - Backend unit tests (if `test.unit` configured and backend files changed)
-   - E2E tests (if `test.e2e` configured and UI flow changed)
+   - **E2E tests — dispatch the `e2e-test-runner` agent** (if `test.e2e` configured and
+     UI flow changed). The agent runs a fix loop for e2e failures with a flaky-test
+     guard; its iterations count toward `--max-fix-loops`. If `test.e2e` is not
+     configured, skip the e2e step entirely.
    - Eval regression (if `eval.runner` configured)
 
-2. **If NEW failures** (not pre-existing):
+2. **If NEW failures** in the non-e2e layers:
    - Go back to Stage 4 fix loop with the test-check failures
    - The fix agent receives the test output, not eval output
 
-3. **If only pre-existing failures**:
+3. **If the e2e agent returns `failed_after_max_iterations`**:
+   - Its report lists the persistent failures. Include them in the PAUSE message
+     (same shape as Stage 4's max-loops pause). Do NOT proceed to Stage 5.5.
+
+4. **If only pre-existing failures**:
    - Note them in the PR body but proceed — don't fix what was already broken
 
-4. **If all green**: Proceed to Stage 5.5
+5. **If all green**: Proceed to Stage 5.5
 
 ---
 

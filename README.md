@@ -68,13 +68,14 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 
 | Skill | Applies to | Use for |
 |---|---|---|
-| `/brainstorm` | Both † | Conversational feature ideation (Plan mode on Claude, linear on Copilot) |
-| `/brainstorm-team` | Both † | 5-agent team for competitive + product research (sequential on Copilot) |
+| `/brainstorm` | Both † | Conversational feature ideation with lens-divergent wildcards (Plan mode on Claude, linear on Copilot) |
+| `/brainstorm-team` | Both † | 6-agent team for competitive + product research incl. a lateral-thinking agent (sequential on Copilot) |
 | `/task` | Both | Create one bounded task and execute it with TDD |
 | `/status` | Both | Quick readout of TASKS.md counts + active task |
 | `/sdlc` | Both † | Plan → implement → eval → test → flowsim → PR (sequential on Copilot) |
 | `/repo-onboarding` | Both | Generate AGENTS.md + TASKS.md + project.json + GOTCHAS.md |
-| `/test-check` | Both | Run configured tests + log audit after changes |
+| `/test-check` | Both | Run configured tests + log audit after changes (one-shot, no fix loop) |
+| `/e2e-loop` | Both † | Run e2e tests in a fix loop with flaky-test guard (dispatches `e2e-test-runner` agent on Claude, inline on Copilot) |
 | `/gotcha` | Both | View or append project pitfalls |
 | `/eval-harness` | Both | Run pytest + fixture evals with optional fix loop |
 | `/flowsim` | Both | Trace claimed plan flows through source code and flag mismatches |

@@ -28,13 +28,19 @@ on ideas together with the user before producing an implementation plan.
   "let's think through...", "let's explore..."
 - User wants to plan a feature but isn't ready to commit to a specific approach yet
 
-## Important: No Subagents During Brainstorming
+## Subagent Usage During Brainstorming
 
-All brainstorming, exploration, and ideation happens in the **main context window**. Do NOT
-delegate to Explore, Plan, or other subagents during Steps 0-6. Read files, grep code, and
-think through options directly — this keeps you and the user on the same page with shared
-context. The only agent usage is a dedicated **tester agent** in Step 7 after the plan is
-finalized.
+The conversational loop stays in the **main context window** — you and the user share
+one thread. Read files, grep code, and think out loud directly during Steps 1–3, 5, and 6.
+
+Subagents are used at exactly two points, and both are scoped:
+
+- **Step 4b — Lens Divergence.** Four lateral-thinking lens agents run in parallel to
+  push past the obvious. Their outputs land in a clearly-labeled `Wildcards` section so
+  you and the user can compare them to the conventional options, not silently absorb them.
+- **Step 7 — Validation.** A fresh-context validator stress-tests the finalized plan.
+
+Do not delegate general exploration or ideation to subagents outside these two points.
 
 ## How It Works
 
@@ -87,21 +93,38 @@ if you wanted email/push alerts."
 If `project.json` doesn't exist or has no `modules` key, skip this step and move
 directly to Step 4.
 
-### Step 4: Generate Approaches
+### Step 4: Generate Approaches (Conventional + Wildcards)
 
-Produce 2-4 distinct approaches. Each approach should have:
+Ideation from a single head converges on the obvious. Run two tracks so the user sees both
+what a sensible team would build *and* what lateral thinking would propose.
 
-- **A name** — something memorable, not "Option A"
-- **The core idea** — one sentence
-- **How it works** — 3-5 bullet points covering the user-facing flow
-- **What it builds on** — existing code/infrastructure it leverages
-- **Tradeoffs** — what you gain and what you give up
-- **Effort** — rough size (Small / Medium / Large)
+**Step 4a — Conventional approaches (main context).** Produce 2–3 distinct approaches.
+Each has: a memorable name; one-sentence core idea; 3–5 bullets on the user-facing flow;
+what existing code it builds on; tradeoffs; effort (S/M/L). Vary meaningfully — UI-first
+vs data-model-first vs AI-leaning — and include at least one simpler than expected.
 
-Vary the approaches meaningfully. Don't just offer "do more" vs "do less" — explore genuinely
-different angles. One approach might be UI-first, another data-model-first, another might
-lean on LLM/AI capabilities. Include at least one approach that's simpler than the user
-probably expects — sometimes the best feature is the smallest one.
+**Step 4b — Wildcards (four lens subagents in parallel).** In a single message, dispatch
+four Agent tool calls with `subagent_type: general-purpose`. Each agent receives the user's
+seed idea, your Step 2/3 summary, and exactly one lens prompt. Cap each response at 200
+words.
+
+1. **First Principles** — strip the idea to its physics. What is the user *actually* trying
+   to accomplish at the most basic level? Propose the simplest mechanism that delivers that
+   outcome, assuming no prior code exists.
+2. **Inversion** — solve the opposite problem. If the goal is X, what would *preventing* X
+   look like, and would that be more valuable? What if the core assumption is wrong?
+3. **Cross-Domain Analogy** — pick one non-software domain (game designer, biologist,
+   musician, logistics planner). Import its patterns; describe the analogous approach.
+4. **Constraint Removal** — what if compute / storage / attention / dev time were free and
+   infinite? Flip it — what if each were zero? Describe both extremes and what survives.
+
+Each lens returns: name, one-sentence pitch, 3–5 bullets on how it works, tradeoffs, effort
+(S/M/L), and one sentence on why this is genuinely different from the conventional options.
+
+**Step 4c — Merge and present.** Use two clear headings: `## Conventional Approaches` (the
+2–3 from 4a) and `## Wildcards (Outside-the-Box)` (one entry per lens, tagged by lens name).
+Do not silently drop wildcards that seem impractical — the user decides what's practical,
+and weak wildcards can still spark a combination with a conventional option.
 
 ### Step 5: Evaluate Together
 
@@ -127,7 +150,8 @@ Once the user has converged on a direction, produce a concrete plan. Structure i
 ## Brainstorm Result: [Feature Name]
 
 ### Direction
-One paragraph summarizing the chosen approach and why.
+One paragraph summarizing the chosen approach and why. If the direction combines a
+conventional option with a wildcard, say so explicitly.
 
 ### Implementation Steps
 Numbered list of concrete steps, each with:
@@ -140,6 +164,11 @@ Numbered list of concrete steps, each with:
 
 ### Open Questions
 - Anything that still needs deciding (keep this short)
+
+### Appendix: Alternatives Considered
+Preserve every Conventional Approach and Wildcard generated in Step 4 — even the
+rejected ones — with a one-line "why not chosen" note. Future sessions (and the user
+revisiting later) often pick these back up.
 ```
 
 Save this to `plans/brainstorm-[topic-slug].md` so it persists for implementation.
@@ -203,9 +232,11 @@ just transition conversationally.
 |---|---|---|
 | Brainstorming loop (Steps 1-6) | Yes | Yes |
 | Plan generation and TASKS.md output | Yes | Yes |
+| Step 4b lens divergence | Yes (4 parallel subagents) | Yes (4 sequential passes) |
 | Dedicated fresh-context validation agent | Yes | Manual checklist fallback |
 | Dedicated planning-mode UI affordances | Optional enhancement | Not required |
 
 This skill is intentionally distributed to both tools because the main brainstorming value is
-shared. The only difference is whether Step 7 uses a dedicated validation agent or a manual
-checklist.
+shared. Differences: Claude runs the four lenses as parallel Agent calls; Copilot walks them
+sequentially in the main context (see the Copilot override). Step 7 uses a dedicated
+validation agent on Claude and a manual checklist on Copilot.

@@ -66,8 +66,13 @@ See `skills/sdlc/SKILL.md` Stage 1.5 for full agent prompts.
 
 ### 5. Full validation
 - Invoke the test-check skill (reads `test.*` and `logs.*` from config)
+- **Swap the e2e step**: instead of running `test.e2e` one-shot, dispatch the
+  `e2e-test-runner` agent (`.claude/agents/e2e-test-runner.md`). Its fix-loop
+  iterations count toward `max_fix_loops`. Skip if `test.e2e` is unconfigured.
 - Skipped steps are expected when config is absent — that's fine
 - Fix NEW failures only (not pre-existing)
+- If the e2e agent returns `failed_after_max_iterations`: stop and report (same
+  shape as Stage 4's max-loops pause); do NOT proceed to Stage 5.5
 - If unfixable: report and stop
 
 ### 5.5. Plan requirements validation
