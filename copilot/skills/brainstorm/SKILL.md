@@ -8,7 +8,7 @@ description: >
   "how should we approach", "let's explore", or otherwise wants to ideate on a feature, improvement,
   or architectural change before jumping into code. This is the conversational planning companion —
   for heavy autonomous multi-agent product research, use /brainstorm-team (Claude Code only).
-argument-hint: "[topic] - optional: brief description of what you want to brainstorm"
+argument-hint: "[topic] [--vet light|deep|ultra|none] - optional: topic + multi-pass vet mode"
 disable-model-invocation: true
 metadata:
   brainstorm-toolkit-applies-to: copilot
@@ -155,12 +155,77 @@ Preserve every Conventional Approach and Wildcard generated in Step 4 — even t
 rejected ones — with a one-line "why not chosen" note.
 ```
 
-Save this to `plans/brainstorm-[topic-slug].md` so it persists for implementation.
+**Write this to `plans/brainstorm-[topic-slug].md` at the repo root** (the
+consumer project's working directory) — NOT under `.claude/`. Use the file-write
+mechanism the agent has available; Plan Mode's internal storage (where applicable)
+does not persist the artifact downstream skills (`/sdlc`, `/flowsim`,
+`/post-deploy-verify`) consume. The on-disk path `<repo-root>/plans/<slug>.md`
+is the source of truth. Create the `plans/` directory first if it doesn't exist.
+
+Do this **before** Step 7 (validation) — the validation checklist references
+this path.
 
 **Also append action items to `TASKS.md`** (at repo root). For each implementation step
 that's concrete and bounded enough to stand alone, add a row to the `Active / Pending`
 section: `- [ ] (P2) <step title> — plans/brainstorm-[topic-slug].md`. If `TASKS.md`
 doesn't exist, create it from `templates/TASKS.md.template` (or with minimal sections).
+
+### Step 6.5: Multi-pass Vet (mode-gated)
+
+Before the single-pass validator in Step 7, optionally run a multi-lens vet
+using the `--vet [light|deep|ultra|none]` flag. Multiple passes catch issues
+one validator misses. Copilot runs them **sequentially in the main context**
+(no parallel sub-agents), so the cost is wall-clock-time-linear with mode.
+
+**Mode resolution** when `--vet` is not passed explicitly:
+- `<5` implementation steps in the saved plan → `none` (skip; go to Step 7).
+- `5–15` steps → `light`.
+- `>15` steps OR plan has a "Cross-Module Touchpoints" section listing more
+  than one module → suggest `deep` to the user; proceed with `light` if
+  they decline.
+- Plan grep finds keywords (`migration`, `auth`, `secret`, `oauth`,
+  `public api`, `deploy`, `rollback`, `prod`) in "Files to change" or
+  "Implementation Steps" → suggest `ultra` to the user.
+- User can override via explicit `--vet <mode>`.
+
+**Mode behavior** (run inline, sequentially):
+
+#### `none`
+Skip Step 6.5.
+
+#### `light` — 3 sequential passes
+For each of `paths`, `completeness`, `gotchas`, run the pass yourself in the
+main context (no sub-agent). Use the prompts at
+`skills/sdlc/templates/stage-1.5-sanity-check.md` as the per-pass checklist.
+
+#### `deep` — `light` + 1 stress-test pass
+After the 3 passes above, run a stress-test pass: try to find a way the plan
+would fail. Apply inversion: assume the plan is wrong, and identify the
+single most likely mode of failure under realistic load, edge cases, or
+operator error. Report under 250 words: failure mode, the step that
+introduces it, and a one-line fix.
+
+#### `ultra` — `deep` + 2 sequential premium passes
+
+5. **architectural-coherence**: read the plan and the project's
+   CLAUDE.md/AGENTS.md. Check whether the plan's structure fits the
+   codebase's existing architecture: layering, abstraction boundaries,
+   naming conventions, module ownership. Flag contradictions with
+   established patterns. Cap report at 300 words.
+
+6. **edge-case-divergence**: for each acceptance criterion, enumerate 3–5
+   edge cases the plan does NOT explicitly handle (nulls, empty inputs,
+   concurrent writes, partial failures, auth expiry, off-by-one
+   boundaries). Surface "happy-path only" plans. Cap at 400 words.
+
+#### Processing results
+
+1. Collect findings from all passes.
+2. **If issues found**: surface them to the user. For HIGH-confidence
+   findings, auto-revise the plan. For lower-confidence, ask the user.
+3. After revisions, write the updated plan back to the same path
+   (overwrite — the saved plan is the source of truth).
+4. Proceed to Step 7 with the post-vet plan.
 
 ### Step 7: Validate the Plan
 

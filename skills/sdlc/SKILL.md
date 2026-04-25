@@ -4,7 +4,7 @@ description: >
   Automated plan-to-PR pipeline. Takes a plan file, implements it via agent,
   generates evals, runs eval+fix loop, validates with /test-check, and creates
   a PR for human review. The full SDLC lifecycle minus human merge.
-argument-hint: "{plan_file} [--dry-run] [--skip-eval] [--skip-flowsim] [--max-fix-loops N] [--background]"
+argument-hint: "{plan_file} [--dry-run] [--skip-eval] [--skip-flowsim] [--max-fix-loops N] [--background] [--skill-repo]"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot
 ---
@@ -25,6 +25,10 @@ Autonomous feature delivery: plan file in, PR out.
 - `--skip-flowsim`: Skip Stage 5.6 flow simulation only (evals still run)
 - `--max-fix-loops N`: Max eval-fix iterations (default: 3)
 - `--background`: Run as background agent, notify when PR is ready
+- `--skill-repo`: The repo being changed is a markdown-skill plugin (no application code,
+  no test suite). Substitutes Stages 3, 4, 5, 5.5 with skill-appropriate structural checks
+  (validator, marketplace registration, template-reference resolution, setup.sh dry install).
+  See "Skill-repo mode" below.
 
 ## Prerequisites
 
@@ -438,3 +442,36 @@ Please test:
 - UI/UX design work — human judgment needed for "feel"
 - LLM prompt tuning — evals can't capture personality/tone reliably
 - Cross-module features with ambiguous tradeoffs — brainstorm more first
+
+---
+
+## Skill-repo mode (`--skill-repo`)
+
+Use when the repo being changed is itself a markdown-skill plugin (like
+brainstorm-toolkit). The standard pipeline is shaped for "code-with-tests"; a
+skill repo has no test surface, so eval-driven stages are inapplicable.
+
+### Stage substitutions
+
+| Standard stage | Skill-repo behavior |
+|---|---|
+| Stage 1 — Parse plan | unchanged |
+| Stage 1.5 — Sanity check | unchanged (3 Haiku agents — they generalize fine) |
+| Stage 2 — Implement | unchanged |
+| Stage 3 — Generate evals | **skip** (no test surface) |
+| Stage 4 — Eval + fix loop | **skip** |
+| Stage 5 — Full validation | **substitute** with the procedure in `templates/stage-5-skill-repo.md` |
+| Stage 5.5 — Plan validators | **skip** (no api/ui/data surfaces) |
+| Stage 5.6 — Flowsim | **skip by default** (skills aren't "flows"); pass `--skill-repo --include-flowsim` only if the change adds cross-skill references worth tracing |
+| Stage 6 — Create PR | unchanged |
+| Stage 6 secret scan | unchanged (still scans staged files) |
+
+### What runs in substituted Stage 5
+
+Read `templates/stage-5-skill-repo.md` and execute its checks (HARD: validator,
+marketplace registration, template-reference resolution, setup.sh dry install;
+SOFT: line-count ceiling, README skills-table drift, copilot overlay parity).
+Embed the result table in the PR body.
+
+This mode keeps `/sdlc`'s discipline (sanity-check → implement → validate → PR)
+while swapping in the right validation surface for the artifact type.

@@ -17,6 +17,9 @@ TARGETS_RE = re.compile(
     r"^[ \t]*(?:brainstorm-toolkit-applies-to|applies-to):\s*(.+?)\s*$",
     re.MULTILINE,
 )
+# B2': capture references like `templates/<name>` (e.g. templates/AGENTS.md.template,
+# templates/stage-2-implement.md). Allows sub-paths and most filename chars.
+TEMPLATE_REF_RE = re.compile(r"`templates/([A-Za-z0-9_./-]+)`")
 
 STRICT_AUTO_COPILOT_PATTERNS = [
     (re.compile(r"\bPlan mode\b", re.IGNORECASE), "mentions Plan mode"),
@@ -55,11 +58,69 @@ def resolve_copilot_overrides_root(repo_root: Path) -> Path | None:
     return candidate if candidate.exists() else None
 
 
+def extract_metadata_block(frontmatter: str) -> dict[str, str]:
+    """B1': extract the YAML `metadata:` mapping as a flat dict of key->value.
+
+    Tolerant scanner — does not import PyYAML. Returns {} if no metadata block.
+    Reads the indented lines immediately following a top-level `metadata:` key.
+    """
+    lines = frontmatter.splitlines()
+    in_block = False
+    out: dict[str, str] = {}
+    for line in lines:
+        if not in_block:
+            if re.match(r"^metadata:\s*$", line):
+                in_block = True
+            continue
+        # End of block when an unindented non-empty line appears.
+        if line and not line.startswith((" ", "\t")):
+            break
+        stripped = line.strip()
+        if not stripped:
+            continue
+        m = re.match(r"^([A-Za-z0-9_-]+):\s*(.*)$", stripped)
+        if m:
+            out[m.group(1)] = m.group(2).strip()
+    return out
+
+
+def find_template_refs(body: str) -> list[str]:
+    """B2': find backtick-quoted `templates/<path>` references in skill body."""
+    return sorted(set(TEMPLATE_REF_RE.findall(body)))
+
+
+def template_ref_resolves(ref: str, skill_dir: Path, repo_root: Path) -> bool:
+    """B2' resolution order:
+
+    1. Skill-local: `<skill_dir>/templates/<ref>`
+    2. Repo-root:  `<repo_root>/templates/<ref>`
+    """
+    if (skill_dir / "templates" / ref).exists():
+        return True
+    if (repo_root / "templates" / ref).exists():
+        return True
+    return False
+
+
+def find_bundled_resource_refs(body: str, skill_name: str) -> list[str]:
+    """B1': find references to resources inside the skill's own directory.
+
+    Looks for backtick-quoted paths of shape `<skill_name>/...` or relative
+    `templates/...` references that resolve skill-locally — these are bundled
+    resources that an override must also ship if it links to them.
+    """
+    refs: set[str] = set()
+    # Skill-local templates references (already extracted by find_template_refs).
+    refs.update(TEMPLATE_REF_RE.findall(body))
+    return sorted(refs)
+
+
 def validate_skill(
     skill_dir: Path,
     *,
     is_copilot_override: bool = False,
     has_copilot_override: bool = False,
+    repo_root: Path | None = None,
 ) -> list[str]:
     problems: list[str] = []
     skill_file = skill_dir / "SKILL.md"
@@ -125,7 +186,93 @@ def validate_skill(
                         f"{skill_file}: auto-invocable Copilot skill {message}"
                     )
 
+    # B2': template-reference linter. Every backtick-quoted `templates/<path>`
+    # mention in the skill body must resolve either skill-locally
+    # (`<skill_dir>/templates/<path>`) or at the repo root
+    # (`<repo_root>/templates/<path>`). Hard error.
+    if repo_root is not None:
+        for ref in find_template_refs(body):
+            if not template_ref_resolves(ref, skill_dir, repo_root):
+                problems.append(
+                    f"{skill_file}: references missing template `templates/{ref}` "
+                    f"(checked {skill_dir}/templates/{ref} and "
+                    f"{repo_root}/templates/{ref})"
+                )
+
     return problems
+
+
+def overlay_parity_warnings(
+    canonical_dir: Path, override_dir: Path, repo_root: Path
+) -> list[str]:
+    """B1': diff a skill's canonical SKILL.md against its Copilot override.
+
+    Emits warnings (not errors) when:
+      - The override's `metadata` block diverges from canonical, beyond the
+        required `brainstorm-toolkit-applies-to` flip.
+      - The canonical references a bundled resource (e.g. `templates/foo.md`)
+        that resolves skill-locally for the canonical but does not exist
+        skill-locally for the override.
+    """
+    warnings: list[str] = []
+    canonical_file = canonical_dir / "SKILL.md"
+    override_file = override_dir / "SKILL.md"
+    if not canonical_file.exists() or not override_file.exists():
+        return warnings
+
+    cm = FRONTMATTER_RE.match(canonical_file.read_text(encoding="utf-8"))
+    om = FRONTMATTER_RE.match(override_file.read_text(encoding="utf-8"))
+    if not cm or not om:
+        return warnings
+
+    canonical_fm, canonical_body = cm.groups()
+    override_fm, override_body = om.groups()
+
+    canonical_meta = extract_metadata_block(canonical_fm)
+    override_meta = extract_metadata_block(override_fm)
+
+    # Routing key is *expected* to differ — that's the whole point of an override.
+    routing_key = "brainstorm-toolkit-applies-to"
+    cmp_canonical = {k: v for k, v in canonical_meta.items() if k != routing_key}
+    cmp_override = {k: v for k, v in override_meta.items() if k != routing_key}
+
+    if cmp_canonical != cmp_override:
+        only_canonical = sorted(set(cmp_canonical) - set(cmp_override))
+        only_override = sorted(set(cmp_override) - set(cmp_canonical))
+        differing = sorted(
+            k
+            for k in set(cmp_canonical) & set(cmp_override)
+            if cmp_canonical[k] != cmp_override[k]
+        )
+        details = []
+        if only_canonical:
+            details.append(f"missing in override: {', '.join(only_canonical)}")
+        if only_override:
+            details.append(f"only in override: {', '.join(only_override)}")
+        if differing:
+            details.append(f"differing values: {', '.join(differing)}")
+        warnings.append(
+            f"{override_file}: metadata block diverges from canonical "
+            f"({'; '.join(details)})"
+        )
+
+    # Bundled-resource parity: only warn when the *override itself* still
+    # references a skill-local templates resource that the override does not
+    # ship. (If the override drops the reference entirely, that's a deliberate
+    # simplification — no warning.)
+    for ref in find_bundled_resource_refs(override_body, override_dir.name):
+        canonical_local = canonical_dir / "templates" / ref
+        override_local = override_dir / "templates" / ref
+        # Only flag references that look skill-local (canonical bundles them).
+        if not canonical_local.exists():
+            continue
+        if not override_local.exists():
+            warnings.append(
+                f"{override_file}: references `templates/{ref}` but does not "
+                f"ship it at {override_local} (canonical bundles it skill-locally)"
+            )
+
+    return warnings
 
 
 def main() -> int:
@@ -153,6 +300,8 @@ def main() -> int:
             if path.is_dir() and (path / "SKILL.md").exists()
         }
 
+    all_warnings: list[str] = []
+
     for skill_dir in skill_dirs:
         skill_file = skill_dir / "SKILL.md"
         if not skill_file.exists():
@@ -162,6 +311,7 @@ def main() -> int:
             validate_skill(
                 skill_dir,
                 has_copilot_override=skill_dir.name in copilot_override_names,
+                repo_root=repo_root,
             )
         )
         count += 1
@@ -183,9 +333,24 @@ def main() -> int:
                     f"{override_dir}: copilot override has no matching canonical skill in {skills_root}"
                 )
             all_problems.extend(
-                validate_skill(override_dir, is_copilot_override=True)
+                validate_skill(
+                    override_dir,
+                    is_copilot_override=True,
+                    repo_root=repo_root,
+                )
             )
             count += 1
+
+            # B1': overlay parity check (warning, not error) when both halves exist.
+            if canonical.exists():
+                all_warnings.extend(
+                    overlay_parity_warnings(canonical, override_dir, repo_root)
+                )
+
+    if all_warnings:
+        print("Skill validation warnings:", file=sys.stderr)
+        for warning in all_warnings:
+            print(f"- {warning}", file=sys.stderr)
 
     if all_problems:
         print("Skill validation failed:", file=sys.stderr)

@@ -157,7 +157,31 @@ The Jenkins-style pipeline (Goal #1) is a multi-week rebuild. **Goal #2 is indep
 | A5 | **Short-circuit `/flowsim` MATCH hops on subsequent runs** — currently traces every flow to max-hops even when first hop is MATCH | ~1 hr | Cuts flowsim cost on stable code paths by ~50% | `skills/flowsim/SKILL.md:46-58` |
 | A6 | **Conditional Stage 5.5 fan-out** — gate each of the 4 validators on plan content (skip UI validator if plan touches no UI files) | ~2 hr | Drives Small-complexity runs (single-file fixes, SonarQube targets) to a fraction of current cost | `skills/sdlc/SKILL.md:316-389` |
 
-### Tier B — meaningful enhancements, ship this month
+### Tier B — REVISED 2026-04-25
+
+> **The original Tier B below has been superseded** by a dogfooded `/brainstorm`
+> session. Original B1/B2/B5/B6 were generic code-repo hygiene applied wholesale
+> to a skills repo; the Inversion lens flagged ~70% as cargo-cult. See the
+> tracked design doc: [`docs/TIER-B-REVISION.md`](docs/TIER-B-REVISION.md)
+> (lifted from the dogfooded `plans/brainstorm-tier-b-revision.md` —
+> `plans/` is intentionally gitignored as consumer-side output, so the
+> design content lives in `docs/` instead).
+>
+> The revised Tier B has two tracks:
+>
+> - **Track 1 — Toolkit-self**: B1' overlay-parity check, B2' template-ref
+>   linter, B3' setup.sh CI smoke, B4' cycle-time/blocked-reason in TASKS.md,
+>   B5' pre-tool poka-yoke for secrets (Claude consumers; Copilot relies on
+>   Stage 6 gitleaks).
+> - **Track 2 — Consumer-pipeline (eval-runner)**: B6' eval thresholds,
+>   B7' numeric tolerance + ignored-fields. Plugin-resident, so changes flow
+>   to every consumer without re-running setup.
+>
+> First-Principles "Pre-Merge Reality Check" (replay the change against prod
+> traffic in a disposable replica) is parked as a long-term north star — too
+> heavy for Tier B.
+
+### Tier B — original draft (SUPERSEDED, kept for reference)
 
 | # | Enhancement | Effort | Impact | Where |
 |---|---|---|---|---|
@@ -253,7 +277,7 @@ The agents converged on this sequence — each phase is independently shippable 
 ### Phase 2 — Upstream: BRD and PBIs (~1 week)
 
 - New `/brd-ingest` skill: parse a BRD doc → `requirements/BRD-<id>.md` with stable `REQ-NNN` IDs.
-- New `/pbi-decompose` skill: BRD → `pbis.json` + per-PBI plan stubs in `plans/tasks/PBI-N-*.md` with `brd_refs: [REQ-001, REQ-014]` frontmatter.
+- New `/pbi-decompose` skill: BRD → `pbis.json` + per-PBI plan stubs in `plans/tasks/PBI-N-*.md` with `brd_refs: [REQ-001, REQ-014]` frontmatter. **Vetting is default-on** for this skill (testability + traceability + coverage agents per PBI batch — see `skills/post-deploy-verify/SKILL.md` "Companion: BRD → PBI vetting (forward-looking contract)" for the required agent set and CRITICAL-flag semantics). Unlike `/brainstorm`'s `--vet` flag (opt-in), BRD → PBI vetting cannot be disabled — bad PBIs multiply harm across the pipeline.
 - Extend task frontmatter with `pbi`, `parent_pbi`, `requirement_id`.
 - Adopt commit convention `feat(PBI-37): ...`; auto-include requirement IDs in PR body.
 

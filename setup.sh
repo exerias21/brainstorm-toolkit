@@ -2,11 +2,16 @@
 # setup.sh â€” install brainstorm-toolkit into a target repo for Claude Code and/or GitHub Copilot.
 #
 # Usage:
-#   bash setup.sh [--target <dir>] [--tools claude|copilot|both] [--force]
+#   bash setup.sh [--target <dir>] [--tools claude|copilot|both] [--force] [--no-copy-scripts]
 #
-#   --target <dir>   Target repo root (default: current directory)
-#   --tools <which>  claude | copilot | both (default: both)
-#   --force          Overwrite existing files (default: skip-if-exists)
+#   --target <dir>      Target repo root (default: current directory)
+#   --tools <which>     claude | copilot | both (default: both)
+#   --force             Overwrite existing files (default: skip-if-exists)
+#   --no-copy-scripts   Don't copy plugin scripts/ into target. Use this when
+#                       you'd rather invoke project-agnostic helpers
+#                       (eval-runner.py, check_docker_logs.py) from the plugin
+#                       install directly — point .claude/project.json at the
+#                       absolute plugin path instead.
 #
 # Design: the plugin repo is the source of truth. Re-run this script to refresh
 # a consumer repo. On POSIX we try a symlink CLAUDE.md â†’ AGENTS.md; otherwise copy.
@@ -16,14 +21,16 @@ set -euo pipefail
 TARGET="$(pwd)"
 TOOLS="both"
 FORCE=0
+COPY_SCRIPTS=1
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --target) TARGET="$2"; shift 2 ;;
-    --tools)  TOOLS="$2"; shift 2 ;;
-    --force)  FORCE=1; shift ;;
+    --target)            TARGET="$2"; shift 2 ;;
+    --tools)             TOOLS="$2"; shift 2 ;;
+    --force)             FORCE=1; shift ;;
+    --no-copy-scripts)   COPY_SCRIPTS=0; shift ;;
     -h|--help)
-      sed -n '2,10p' "$0" | sed 's/^# *//'
+      sed -n '2,15p' "$0" | sed 's/^# *//'
       exit 0
       ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
@@ -138,10 +145,14 @@ if [[ "$want_claude" -eq 1 && -d "$PLUGIN_ROOT/agents" ]]; then
   copy_tree_if_new "$PLUGIN_ROOT/agents" "$TARGET/.claude/agents"
 fi
 
-# 3. Scripts (repo-local)
-if [[ -d "$PLUGIN_ROOT/scripts" ]]; then
+# 3. Scripts (repo-local) — opt-out via --no-copy-scripts to use plugin-resident invocation
+if [[ -d "$PLUGIN_ROOT/scripts" && "$COPY_SCRIPTS" -eq 1 ]]; then
   echo "[3/6] Scripts"
   copy_tree_if_new "$PLUGIN_ROOT/scripts" "$TARGET/scripts"
+elif [[ "$COPY_SCRIPTS" -eq 0 ]]; then
+  echo "[3/6] Scripts (skipped: --no-copy-scripts)"
+  echo "  Configure .claude/project.json to invoke from the plugin, e.g.:"
+  echo "    \"eval\": { \"runner\": \"python3 $PLUGIN_ROOT/scripts/eval-runner.py\" }"
 fi
 
 # 4. project.json.example â†’ .claude/project.json.example (only if .claude/project.json missing)

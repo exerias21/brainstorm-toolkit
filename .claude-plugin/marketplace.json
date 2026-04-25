@@ -23,6 +23,7 @@
         "./skills/flowsim",
         "./skills/gotcha",
         "./skills/logging-conventions",
+        "./skills/post-deploy-verify",
         "./skills/repo-onboarding",
         "./skills/sdlc",
         "./skills/status",

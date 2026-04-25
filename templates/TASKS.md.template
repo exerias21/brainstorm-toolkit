@@ -9,16 +9,29 @@ Current work items for AI agents (Claude Code, GitHub Copilot, etc.) and humans 
 - Topmost unchecked item is the **active task** unless another is marked `[~]`.
 - Keep entries concise. One line per task. Link to `plans/tasks/task-N-<slug>.md` for detail.
 
+**Optional metadata** (additive — rows without these still parse fine):
+- After the task line, append italicised key/value markers `_started_at: YYYY-MM-DD_`,
+  `_completed_at: YYYY-MM-DD_`, `_blocked_reason: <short reason>_`.
+- Multiple markers may chain on the same line, separated by `·` (middle dot).
+- `/status` reads these to surface cycle time (completed_at − started_at) and
+  blocked-reason summaries. Missing fields are reported as "unknown", never as
+  errors.
+
 ## Active / Pending
 
 <!-- Example rows — replace with real tasks. -->
 - [ ] (P1) Example task title — `plans/tasks/task-1-example.md`
-- [ ] (P2) Another task — `plans/tasks/task-2-another.md`
+- [ ] (P2) Another task — `plans/tasks/task-2-another.md` _started_at: 2026-04-24_
 
 ## Blocked
 
-<!-- Tasks waiting on something. Include why. -->
+<!-- Tasks waiting on something. Include why via _blocked_reason: <reason>_. -->
+<!-- Example: -->
+<!-- - [ ] (P1) Waiting task — `plans/tasks/task-3-waiting.md` _blocked_reason: needs API key from infra_ -->
 
 ## Done
 
-<!-- Completed items, most recent first. -->
+<!-- Completed items, most recent first. Cycle time computed from started_at / completed_at. -->
+<!-- Example: -->
+<!-- - [x] (P2) Finished thing — `plans/tasks/task-0-thing.md` _started_at: 2026-04-20_ · _completed_at: 2026-04-23_ -->
+

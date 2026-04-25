@@ -124,7 +124,35 @@ After the user confirms (or adjusts):
 2. Write `AGENTS.md` at repo root. If `CLAUDE.md` is also missing, symlink it to `AGENTS.md` on POSIX, else copy.
 3. If no `TASKS.md`, copy `templates/TASKS.md.template` to repo root.
 4. If no `GOTCHAS.md` at repo root, create one from `examples/GOTCHAS.md.example`.
-5. Report what was written and suggest next steps:
+
+### Step 5.5 — Offer secret-blocking PreToolUse hook (Claude only)
+
+After the project.json bootstrap, ask the user:
+
+> "Enable secret-blocking PreToolUse hook? (recommended for production repos)
+> When enabled, Claude Code blocks Write/Edit if the about-to-be-written
+> content matches a known secret shape (AWS keys, GitHub tokens, JWTs,
+> private-key blocks). Default: off. (Copilot consumers: this hook is
+> Claude-only — no effect for you.)"
+
+- **On no**: leave both `pipeline.poka_yoke` and `.claude/settings.json`
+  unchanged. Note in the report that the user declined.
+- **On yes**:
+  1. Set `pipeline.poka_yoke: true` in `.claude/project.json`.
+  2. Write the PreToolUse hook entry into `.claude/settings.json` (create
+     the file if missing; merge into existing `hooks.PreToolUse` list rather
+     than overwriting). The schema is documented in
+     `templates/AGENTS.md.template` under "Hooks (Claude-only)" — matcher is
+     `"Write|Edit"`, `command` runs the secret-pattern scanner, non-zero
+     exit blocks the tool call.
+  3. If a `scripts/hooks/secret-scan.sh` is not already present in the repo,
+     stub one out (or document where the user should drop it) using the
+     pattern set in `examples/GOTCHAS.md.example` "Secret Patterns
+     (recommended for hooks)".
+
+### Step 6 — Report
+
+Report what was written and suggest next steps:
    - "Try `/test-check` to see which steps run."
    - "Start a new feature with `/brainstorm [topic]` or `/task <description>`."
    - "See current work queue with `/status`."

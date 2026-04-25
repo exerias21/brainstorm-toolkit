@@ -14,7 +14,7 @@ disable-model-invocation: true
 
 # Brainstorm Team (Copilot Edition — Sequential)
 
-Six research passes executed in order by you, producing a single strategy document at `plans/team-brainstorm-results.md`. The Claude canonical runs these as parallel workers; this version runs them sequentially. Output is the same shape, just slower.
+Six research passes executed in order by you, producing a single strategy document at `plans/team-brainstorm-results.md` (at the repo root, written via the Copilot agent's file-write mechanism — NOT under `.claude/`). The Claude canonical runs these as parallel workers; this version runs them sequentially. Output is the same shape, just slower.
 
 ## Before starting — load project context
 
@@ -85,6 +85,11 @@ Using Pass 1–3.5 findings, produce a ranked top-10 feature list. Weigh Pass 3.
 For the top 3 features from Pass 4, write detailed implementation blueprints following the project's existing patterns: data model changes, service functions, endpoints, UI components, integrations. Also note 2–3 "wild card" ideas — unconventional bets worth considering separately.
 
 ## Final output
+
+**Write the assembled document to `plans/team-brainstorm-results.md`** at the
+repo root (the consumer project's working directory) — NOT under `.claude/`.
+Use the file-write mechanism Copilot's agent has available; create the `plans/`
+directory first if it does not exist.
 
 Assemble everything into `plans/team-brainstorm-results.md` with sections:
 1. Competitive Landscape

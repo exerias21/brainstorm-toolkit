@@ -116,6 +116,24 @@ def run_fixture_layer(feature_name: str, feature_config: dict, project_root: Pat
     fixtures_dir = Path(feature_config["fixtures_dir"])
     expected_dir = Path(feature_config["expected_dir"])
 
+    # B7': pull tolerance config from per-feature meta.json. Missing or
+    # malformed → empty config (no tolerance, no ignored fields), warn only.
+    tolerance_cfg: dict = {}
+    meta_file = fixtures_dir.parent / "meta.json"
+    if meta_file.exists():
+        try:
+            meta = json.loads(meta_file.read_text())
+            tolerance_cfg = meta.get("tolerance", {}) or {}
+        except (OSError, json.JSONDecodeError) as exc:
+            print(
+                f"[eval-runner] warning: could not load tolerance config from "
+                f"{meta_file}: {exc}",
+                file=sys.stderr,
+            )
+            tolerance_cfg = {}
+    numeric_tol = tolerance_cfg.get("numeric", None)
+    ignore_fields = tolerance_cfg.get("ignore_fields", []) or []
+
     if not fixtures_dir.exists():
         return {"name": "pipeline-simulation", "type": "subprocess", "total": 0, "passed": 0, "failed": 0,
                 "skipped": True, "reason": f"Fixtures directory not found: {fixtures_dir}"}
@@ -159,7 +177,13 @@ def run_fixture_layer(feature_name: str, feature_config: dict, project_root: Pat
 
         expected = json.loads(expected_file.read_text())
 
-        diffs = diff_json(expected, actual, path="")
+        diffs = diff_json(
+            expected,
+            actual,
+            path="",
+            numeric_tolerance=numeric_tol,
+            ignore_fields=ignore_fields,
+        )
 
         if diffs:
             failed += 1
@@ -177,23 +201,63 @@ def run_fixture_layer(feature_name: str, feature_config: dict, project_root: Pat
     }
 
 
-def diff_json(expected, actual, path: str = "", max_diffs: int = 20) -> list:
-    """Generic recursive diff. Returns a list of human-readable diff strings."""
+def diff_json(
+    expected,
+    actual,
+    path: str = "",
+    max_diffs: int = 20,
+    numeric_tolerance=None,
+    ignore_fields=None,
+) -> list:
+    """Generic recursive diff. Returns a list of human-readable diff strings.
+
+    B7' extensions (both opt-in via per-feature meta.json):
+      - ``numeric_tolerance``: float. When set, two numeric leaves are equal if
+        ``abs(expected - actual) <= numeric_tolerance``. ``None`` → exact compare.
+      - ``ignore_fields``: list of field names to skip during dict diffing.
+        Matched on the leaf key (not the full dotted path).
+
+    Missing config → both args ``None``/empty → behavior identical to today.
+    """
+    if ignore_fields is None:
+        ignore_fields = []
     diffs = []
 
-    if type(expected) != type(actual):
+    # Treat int/float as the same family when a numeric tolerance is in effect —
+    # otherwise an integer-vs-float type mismatch would short-circuit before the
+    # tolerance check could fire.
+    is_numeric_pair = (
+        numeric_tolerance is not None
+        and isinstance(expected, (int, float))
+        and not isinstance(expected, bool)
+        and isinstance(actual, (int, float))
+        and not isinstance(actual, bool)
+    )
+
+    if type(expected) != type(actual) and not is_numeric_pair:
         diffs.append(f"{path or 'root'}: type expected {type(expected).__name__}, got {type(actual).__name__}")
         return diffs
 
     if isinstance(expected, dict):
         for key in sorted(set(list(expected.keys()) + list(actual.keys()))):
+            if key in ignore_fields:
+                continue
             sub_path = f"{path}.{key}" if path else key
             if key not in expected:
                 diffs.append(f"{sub_path}: unexpected (got {actual[key]!r})")
             elif key not in actual:
                 diffs.append(f"{sub_path}: missing (expected {expected[key]!r})")
             else:
-                diffs.extend(diff_json(expected[key], actual[key], sub_path, max_diffs))
+                diffs.extend(
+                    diff_json(
+                        expected[key],
+                        actual[key],
+                        sub_path,
+                        max_diffs,
+                        numeric_tolerance=numeric_tolerance,
+                        ignore_fields=ignore_fields,
+                    )
+                )
             if len(diffs) >= max_diffs:
                 return diffs
     elif isinstance(expected, list):
@@ -201,11 +265,26 @@ def diff_json(expected, actual, path: str = "", max_diffs: int = 20) -> list:
             diffs.append(f"{path or 'root'}: length expected {len(expected)}, got {len(actual)}")
             return diffs
         for i, (e, a) in enumerate(zip(expected, actual)):
-            diffs.extend(diff_json(e, a, f"{path}[{i}]", max_diffs))
+            diffs.extend(
+                diff_json(
+                    e,
+                    a,
+                    f"{path}[{i}]",
+                    max_diffs,
+                    numeric_tolerance=numeric_tolerance,
+                    ignore_fields=ignore_fields,
+                )
+            )
             if len(diffs) >= max_diffs:
                 return diffs
     else:
-        if expected != actual:
+        if is_numeric_pair:
+            if abs(expected - actual) > float(numeric_tolerance):
+                diffs.append(
+                    f"{path or 'root'}: expected {expected!r}, got {actual!r} "
+                    f"(|delta| > tolerance {numeric_tolerance})"
+                )
+        elif expected != actual:
             diffs.append(f"{path or 'root'}: expected {expected!r}, got {actual!r}")
 
     return diffs
@@ -241,8 +320,31 @@ def run_feature_tests(feature_name: str, features: dict, tests_dir: Path, projec
     }
 
 
+def load_project_config(project_root: Path) -> dict:
+    """Best-effort read of `.claude/project.json`. Missing or malformed → {}."""
+    cfg_path = project_root / ".claude" / "project.json"
+    if not cfg_path.exists():
+        return {}
+    try:
+        return json.loads(cfg_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"[eval-runner] warning: could not load {cfg_path}: {exc}", file=sys.stderr)
+        return {}
+
+
 def run_all_tests(features: dict, tests_dir: Path, project_root: Path) -> dict:
-    """Run tests for all discovered features."""
+    """Run tests for all discovered features.
+
+    Honors optional thresholds from `.claude/project.json`:
+
+        eval.thresholds = {
+            "min_pass_rate":        0.85,   # fraction in [0, 1]
+            "max_flake_retries":    3,      # informational; surfaced in summary
+            "min_coverage_delta":   0,      # informational; surfaced in summary
+        }
+
+    Missing key/block → fall back to prior binary pass/fail. Never KeyError.
+    """
     results = []
     for name in features:
         results.append(run_feature_tests(name, features, tests_dir, project_root))
@@ -250,17 +352,49 @@ def run_all_tests(features: dict, tests_dir: Path, project_root: Path) -> dict:
     total = sum(r.get("total", 0) for r in results)
     passed = sum(r.get("passed", 0) for r in results)
     failed = sum(r.get("failed", 0) for r in results)
-    overall = "PASS" if failed == 0 and total > 0 else "FAIL" if failed > 0 else "SKIP"
 
-    return {
+    config = load_project_config(project_root)
+    thresholds = config.get("eval", {}).get("thresholds", {}) or {}
+    min_pass_rate = thresholds.get("min_pass_rate", None)
+
+    pass_rate = (passed / total) if total > 0 else 0.0
+
+    # Default behavior (no thresholds configured): binary PASS/FAIL.
+    overall = "PASS" if failed == 0 and total > 0 else "FAIL" if failed > 0 else "SKIP"
+    threshold_note = None
+    if min_pass_rate is not None and total > 0:
+        if pass_rate >= float(min_pass_rate):
+            overall = "PASS"
+            threshold_note = (
+                f"pass_rate {pass_rate:.2%} >= min_pass_rate {float(min_pass_rate):.2%}"
+            )
+        else:
+            overall = "FAIL"
+            threshold_note = (
+                f"pass_rate {pass_rate:.2%} < min_pass_rate {float(min_pass_rate):.2%}"
+            )
+
+    summary = f"{passed}/{total} tests passed across {len(results)} features."
+    if threshold_note:
+        summary += f" Threshold: {threshold_note}."
+
+    out = {
         "timestamp": datetime.now().isoformat(),
         "features": results,
         "total": total,
         "passed": passed,
         "failed": failed,
+        "pass_rate": pass_rate,
         "overall": overall,
-        "summary": f"{passed}/{total} tests passed across {len(results)} features.",
+        "summary": summary,
     }
+    if thresholds:
+        out["thresholds"] = {
+            "min_pass_rate": thresholds.get("min_pass_rate", None),
+            "max_flake_retries": thresholds.get("max_flake_retries", None),
+            "min_coverage_delta": thresholds.get("min_coverage_delta", None),
+        }
+    return out
 
 
 def main():
