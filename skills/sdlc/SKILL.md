@@ -462,7 +462,7 @@ skill repo has no test surface, so eval-driven stages are inapplicable.
 | Stage 4 — Eval + fix loop | **skip** |
 | Stage 5 — Full validation | **substitute** with the procedure in `templates/stage-5-skill-repo.md` |
 | Stage 5.5 — Plan validators | **skip** (no api/ui/data surfaces) |
-| Stage 5.6 — Flowsim | **skip by default** (skills aren't "flows"); pass `--skill-repo --include-flowsim` only if the change adds cross-skill references worth tracing |
+| Stage 5.6 — Flowsim | **skip** (skills aren't "flows") |
 | Stage 6 — Create PR | unchanged |
 | Stage 6 secret scan | unchanged (still scans staged files) |
 

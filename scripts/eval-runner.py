@@ -132,7 +132,23 @@ def run_fixture_layer(feature_name: str, feature_config: dict, project_root: Pat
             )
             tolerance_cfg = {}
     numeric_tol = tolerance_cfg.get("numeric", None)
-    ignore_fields = tolerance_cfg.get("ignore_fields", []) or []
+    if numeric_tol is not None and not isinstance(numeric_tol, (int, float)):
+        print(
+            f"[eval-runner] warning: tolerance.numeric must be a number, "
+            f"got {type(numeric_tol).__name__} ({numeric_tol!r}); ignoring.",
+            file=sys.stderr,
+        )
+        numeric_tol = None
+    raw_ignore = tolerance_cfg.get("ignore_fields", []) or []
+    if isinstance(raw_ignore, list):
+        ignore_fields = raw_ignore
+    else:
+        print(
+            f"[eval-runner] warning: tolerance.ignore_fields must be a list, "
+            f"got {type(raw_ignore).__name__} ({raw_ignore!r}); ignoring.",
+            file=sys.stderr,
+        )
+        ignore_fields = []
 
     if not fixtures_dir.exists():
         return {"name": "pipeline-simulation", "type": "subprocess", "total": 0, "passed": 0, "failed": 0,
@@ -372,21 +388,44 @@ def run_all_tests(features: dict, tests_dir: Path, project_root: Path) -> dict:
         thresholds = {}
     min_pass_rate = thresholds.get("min_pass_rate", None)
 
+    validated_min_pass_rate = None
+    if min_pass_rate is not None:
+        try:
+            validated_min_pass_rate = float(min_pass_rate)
+        except (TypeError, ValueError):
+            print(
+                f"[eval-runner] warning: eval.thresholds.min_pass_rate must be "
+                f"a number between 0 and 1, got "
+                f"{type(min_pass_rate).__name__} ({min_pass_rate!r}); "
+                f"ignoring and using binary pass/fail.",
+                file=sys.stderr,
+            )
+            validated_min_pass_rate = None
+        else:
+            if not 0.0 <= validated_min_pass_rate <= 1.0:
+                print(
+                    f"[eval-runner] warning: eval.thresholds.min_pass_rate must "
+                    f"be between 0 and 1, got {validated_min_pass_rate!r}; "
+                    f"ignoring and using binary pass/fail.",
+                    file=sys.stderr,
+                )
+                validated_min_pass_rate = None
+
     pass_rate = (passed / total) if total > 0 else 0.0
 
     # Default behavior (no thresholds configured): binary PASS/FAIL.
     overall = "PASS" if failed == 0 and total > 0 else "FAIL" if failed > 0 else "SKIP"
     threshold_note = None
-    if min_pass_rate is not None and total > 0:
-        if pass_rate >= float(min_pass_rate):
+    if validated_min_pass_rate is not None and total > 0:
+        if pass_rate >= validated_min_pass_rate:
             overall = "PASS"
             threshold_note = (
-                f"pass_rate {pass_rate:.2%} >= min_pass_rate {float(min_pass_rate):.2%}"
+                f"pass_rate {pass_rate:.2%} >= min_pass_rate {validated_min_pass_rate:.2%}"
             )
         else:
             overall = "FAIL"
             threshold_note = (
-                f"pass_rate {pass_rate:.2%} < min_pass_rate {float(min_pass_rate):.2%}"
+                f"pass_rate {pass_rate:.2%} < min_pass_rate {validated_min_pass_rate:.2%}"
             )
 
     summary = f"{passed}/{total} tests passed across {len(results)} features."

@@ -19,7 +19,8 @@
 #                       absolute plugin path instead.
 #
 # Design: the plugin repo is the source of truth. Re-run this script to refresh
-# a consumer repo. On POSIX we try a symlink CLAUDE.md â†’ AGENTS.md; otherwise copy.
+# a consumer repo. Managed files such as CLAUDE.md and AGENTS.md are written as
+# copies into the target repo; this script does not create symlinks.
 
 set -euo pipefail
 
@@ -166,11 +167,11 @@ elif [[ "$COPY_SCRIPTS" -eq 0 ]]; then
   echo "    \"eval\": { \"runner\": \"python3 $PLUGIN_ROOT/scripts/eval-runner.py\" }"
 fi
 
-# 4. project.json.example -> .claude/project.json.example
-# Always refresh the .example file (it's the reference template; consumers
-# read it to discover newly-added optional fields like eval.thresholds and
-# pipeline.poka_yoke). The user's actual .claude/project.json is never touched.
-echo "[4/6] Project config example"
+# Install the reference .example file if missing; refresh it when --force is
+# used. Consumers can review it to discover newly-added optional fields like
+# eval.thresholds and pipeline.poka_yoke. The user's actual
+# .claude/project.json is never touched.
+echo "[4/6] Project config example (skip-on-exist unless --force)"
 copy_if_new "$PLUGIN_ROOT/templates/project.json.example" "$TARGET/.claude/project.json.example"
 if [[ -f "$TARGET/.claude/project.json" ]]; then
   echo "  note: .claude/project.json present — review .claude/project.json.example for new optional fields"

@@ -24,7 +24,7 @@
     "runner": "python3 scripts/eval-runner.py",
     "features_dir": "evals/",
     "_thresholds_comment": "Optional. Without this block, eval-runner uses binary pass/fail (any failure = FAIL). Generous defaults below. Stricter recommended-for-prod-bound-repos block kept alongside as a ratchet target — uncomment '_recommended_for_prod_bound_repos' values into 'thresholds' once your suite is stable. min_pass_rate is enforced in run_all_tests; max_flake_retries and min_coverage_delta are surfaced in summary for now.",
-    "_thresholds": {
+    "thresholds": {
       "min_pass_rate": 0.85,
       "max_flake_retries": 3,
       "min_coverage_delta": 0,

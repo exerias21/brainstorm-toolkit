@@ -102,12 +102,12 @@ def template_ref_resolves(ref: str, skill_dir: Path, repo_root: Path) -> bool:
     return False
 
 
-def find_bundled_resource_refs(body: str, skill_name: str) -> list[str]:
-    """B1': find references to resources inside the skill's own directory.
+def find_bundled_resource_refs(body: str) -> list[str]:
+    """B1': find references to bundled resources inside a skill's own directory.
 
-    Looks for backtick-quoted paths of shape `<skill_name>/...` or relative
-    `templates/...` references that resolve skill-locally — these are bundled
-    resources that an override must also ship if it links to them.
+    Returns relative `templates/...` paths extracted from backtick-quoted
+    references in *body*. These are skill-local bundled resources that a
+    Copilot override must also ship if it keeps the same reference.
     """
     refs: set[str] = set()
     # Skill-local templates references (already extracted by find_template_refs).
@@ -210,9 +210,9 @@ def overlay_parity_warnings(
     Emits warnings (not errors) when:
       - The override's `metadata` block diverges from canonical, beyond the
         required `brainstorm-toolkit-applies-to` flip.
-      - The canonical references a bundled resource (e.g. `templates/foo.md`)
-        that resolves skill-locally for the canonical but does not exist
-        skill-locally for the override.
+      - The override references a bundled resource (e.g. `templates/foo.md`)
+        that resolves skill-locally in the canonical skill but does not exist
+        skill-locally in the override.
     """
     warnings: list[str] = []
     canonical_file = canonical_dir / "SKILL.md"
@@ -260,7 +260,7 @@ def overlay_parity_warnings(
     # references a skill-local templates resource that the override does not
     # ship. (If the override drops the reference entirely, that's a deliberate
     # simplification — no warning.)
-    for ref in find_bundled_resource_refs(override_body, override_dir.name):
+    for ref in find_bundled_resource_refs(override_body):
         canonical_local = canonical_dir / "templates" / ref
         override_local = override_dir / "templates" / ref
         # Only flag references that look skill-local (canonical bundles them).
