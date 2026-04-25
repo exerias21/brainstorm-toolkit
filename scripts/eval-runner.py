@@ -354,7 +354,22 @@ def run_all_tests(features: dict, tests_dir: Path, project_root: Path) -> dict:
     failed = sum(r.get("failed", 0) for r in results)
 
     config = load_project_config(project_root)
-    thresholds = config.get("eval", {}).get("thresholds", {}) or {}
+    raw_thresholds = config.get("eval", {}).get("thresholds", {})
+    # Defensive: if a consumer wrote thresholds as a non-dict (e.g., bare int
+    # from misreading the schema), warn and fall through to binary pass/fail
+    # rather than crashing on .get() against the wrong type.
+    if isinstance(raw_thresholds, dict):
+        thresholds = raw_thresholds
+    else:
+        if raw_thresholds:
+            print(
+                f"[eval-runner] warning: eval.thresholds must be an object, "
+                f"got {type(raw_thresholds).__name__} ({raw_thresholds!r}); "
+                f"ignoring and using binary pass/fail. See "
+                f"templates/project.json.example for the expected shape.",
+                file=sys.stderr,
+            )
+        thresholds = {}
     min_pass_rate = thresholds.get("min_pass_rate", None)
 
     pass_rate = (passed / total) if total > 0 else 0.0
