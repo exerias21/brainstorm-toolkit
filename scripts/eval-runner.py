@@ -269,7 +269,6 @@ def main():
     parser.add_argument("--features-dir", default="evals", help="Root directory where feature subdirectories live (default: evals)")
     parser.add_argument("--tests-dir", default="tests/eval", help="Directory where pytest test files live (default: tests/eval)")
     parser.add_argument("--output", default="json", choices=["json", "text"])
-    parser.add_argument("--fix-loop", type=int, default=0, help="Max fix-loop iterations (0 = output only)")
     args = parser.parse_args()
 
     project_root = Path.cwd()
@@ -321,10 +320,6 @@ def main():
 
         print(f"\n{'=' * 55}")
         print(f"  Overall: {result.get('overall', 'UNKNOWN')}")
-
-    if args.fix_loop > 0 and result.get("overall") == "FAIL":
-        print(f"\n--fix-loop={args.fix_loop} requested but auto-fix agent not yet implemented.", file=sys.stderr)
-        print("Feed the JSON output above to a Claude Code agent to fix failures.", file=sys.stderr)
 
     sys.exit(0 if result.get("overall") in ("PASS", "SKIP") else 1)
 

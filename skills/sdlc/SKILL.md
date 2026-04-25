@@ -73,66 +73,9 @@ correct. Launch 3 Haiku agents **in parallel** (single message) to check
 different dimensions. This is cheap insurance — catches wrong file paths,
 missing steps, and known gotchas before they become bugs.
 
-```
-# Launch all 3 in a single message:
-
-Agent(
-  model="haiku",
-  description="Verify plan file paths and patterns for {feature_name}",
-  prompt="""
-    Read the plan at {plan_file}. For every file path mentioned:
-    1. Verify the file exists (use Glob or ls)
-    2. If the plan references a specific function, class, symbol, or
-       import path, grep for it in the actual file to confirm it's valid
-    3. If the plan says "follow the pattern in X", read X and verify
-       the plan's description matches what's actually there
-
-    Report a JSON array:
-    [{path: "file.py", exists: true/false, issues: ["description"]}]
-  """
-)
-
-Agent(
-  model="haiku",
-  description="Check plan completeness for {feature_name}",
-  prompt="""
-    Read the plan at {plan_file}. Check for common missing-step categories:
-    1. Creates a DB migration → does the plan mention running/applying it?
-    2. Creates a new API endpoint → does the plan mention registering it
-       with the router / app (whatever pattern this project uses)?
-    3. Creates a new frontend component → does the plan mention importing
-       it in the parent page/layout?
-    4. Adds a new config key or environment variable → is it documented in
-       the project's config files or example env?
-    5. Adds a new database table → does the plan mention indexes?
-    6. Adds a new background job or scheduled task → does the plan mention
-       registering it with the scheduler?
-
-    Infer the project's patterns from its README, CLAUDE.md, and existing
-    code before flagging. A check only fails if the project would actually
-    need that step.
-
-    Report: [{check: "description", status: "pass/fail", detail: "..."}]
-  """
-)
-
-Agent(
-  model="haiku",
-  description="Scan plan for known gotchas in {feature_name}",
-  prompt="""
-    Read the plan at {plan_file}.
-
-    Then read the project's gotchas file — path is `gotchas_file` in
-    `.claude/project.json` (default `GOTCHAS.md` at repo root). If the
-    file does not exist, report: {status: "no-gotchas-file"} and exit.
-
-    Cross-reference each step in the plan against every gotcha in
-    GOTCHAS.md. For each plan step, flag if any gotcha applies.
-
-    Report: [{step: "N", gotcha: "title from GOTCHAS.md", suggestion: "fix"}]
-  """
-)
-```
+Read the prompts from `templates/stage-1.5-sanity-check.md` (sections: `paths`,
+`completeness`, `gotchas`). Substitute `{plan_file}` and `{feature_name}`, then
+dispatch all three Haiku agents in a single message — one Agent call per section.
 
 ### Processing results
 
@@ -150,27 +93,8 @@ Agent(
 Spawn an implementation agent to execute the plan. Always use Opus 4.6 for
 implementation — it handles complex multi-file changes more reliably.
 
-```
-Agent(
-  model="opus",
-  description="Implement {feature_name}",
-  prompt="""
-    Implement the following plan. Follow the steps exactly.
-    Use existing codebase patterns and conventions.
-
-    PLAN:
-    {plan_content}
-
-    CRITICAL RULES:
-    - Follow the implementation steps in order
-    - Use the exact file paths specified in the plan
-    - Follow patterns from referenced existing files
-    - Do NOT add features beyond what the plan specifies
-    - Do NOT skip steps or take shortcuts
-    - After implementation, run: git diff --stat to summarize changes
-  """
-)
-```
+Read the prompt from `templates/stage-2-implement.md`. Substitute `{feature_name}`
+and `{plan_content}`, then dispatch one Opus agent.
 
 After the agent completes:
 1. Review the git diff summary
@@ -228,28 +152,9 @@ Proceed to Stage 5.
 ### If failures:
 1. Parse the structured JSON results
 2. For each failure, extract: test name, expected vs actual, file path, function
-3. Spawn a fix agent (Opus for complex fixes, Sonnet for targeted fixes):
-
-```
-Agent(
-  model="opus",
-  description="Fix eval failures for {feature_name}",
-  prompt="""
-    Fix the following test failures. Each failure includes the test name,
-    expected vs actual output, and the file/function to fix.
-
-    Fix ONLY the specific issues identified. Do not refactor surrounding code.
-    After fixing, the tests will be re-run to verify.
-
-    EVAL RESULTS:
-    {results_json}
-
-    FILES TO EXAMINE:
-    {file_paths from failures}
-  """
-)
-```
-
+3. Spawn a fix agent (Opus for complex fixes, Sonnet for targeted fixes) using
+   the prompt at `templates/stage-4-fix-eval.md`. Substitute `{feature_name}`,
+   `{results_json}`, and `{file_paths}` before dispatch.
 4. After fix agent completes, re-run evals
 5. Repeat up to `--max-fix-loops` iterations (default: 3)
 6. If still failing after max iterations:
@@ -304,89 +209,34 @@ passing tests and a working product.
 
 **Skip this stage if `--skip-eval` was passed.**
 
+### Decide which validators to launch
+
+Don't fan out to all four agents unconditionally — gate each one on whether the plan
+actually touches that surface area. Use the `files_changed` and `Implementation Steps`
+sections of the plan to decide:
+
+| Validator | Launch when the plan… | Skip when… |
+|-----------|-----------------------|------------|
+| `api` | mentions any HTTP endpoint, route, controller, or `/api/*` path; or touches files in routes/, controllers/, api/, handlers/, endpoints/ | the plan touches no server-side request handlers |
+| `ui` | mentions any frontend component, page, layout, or touches `.tsx`/`.jsx`/`.vue`/`.svelte` files, or paths under components/, pages/, app/, src/ui/ | the plan is backend- or script-only |
+| `data` | mentions a migration, schema change, new table/column/index, or touches files under migrations/, schema/, models/ | the plan does not change DB structure |
+| `cross-module` | **always** — this is the catch-all for integration gaps and is cheap (Haiku) | never |
+
+Record the decision in the validation report header so the user can see which checks
+ran. If all surfaces were touched, all four agents run — the gating is a savings on
+narrow plans (single-file fixes, SonarQube targets, docs-only changes), not a default
+restriction.
+
 ### Launch validation agents in parallel
 
-Spawn up to 4 agents in a **single message** (parallel launch). Each agent gets the
+Spawn the selected agents in a **single message** (parallel launch). Each agent gets the
 plan file path and a specific validation focus. Use the `ux-plan-validator` agent
 definition (`.claude/agents/ux-plan-validator.md`) as reference for agent behavior.
 
-```
-# Launch all in a single message for parallel execution:
-
-Agent(
-  model="sonnet",
-  description="Validate API requirements for {feature_name}",
-  prompt="""
-    You are a UX Plan Validator with focus="api".
-    Read the agent definition at .claude/agents/ux-plan-validator.md for full instructions.
-
-    Plan file: {plan_file}
-    Feature: {feature_slug}
-
-    Validate that every API endpoint specified in the plan exists, returns the
-    correct status code, and has the expected response shape. Use the project's
-    configured auth flow — check README.md / CLAUDE.md / .claude/project.json
-    for test credentials or auth instructions.
-
-    Return a structured pass/fail report per endpoint.
-  """
-)
-
-Agent(
-  model="sonnet",
-  description="Validate UI requirements for {feature_name}",
-  prompt="""
-    You are a UX Plan Validator with focus="ui".
-    Read the agent definition at .claude/agents/ux-plan-validator.md for full instructions.
-
-    Plan file: {plan_file}
-    Feature: {feature_slug}
-
-    Validate that every frontend component and page specified in the plan
-    renders correctly. If the project has a configured UI audit tool, use it.
-    Otherwise, inspect components via direct file reads.
-
-    Return a structured pass/fail report per component/page.
-  """
-)
-
-Agent(
-  model="haiku",
-  description="Validate DB schema for {feature_name}",
-  prompt="""
-    You are a UX Plan Validator with focus="data".
-    Read the agent definition at .claude/agents/ux-plan-validator.md for full instructions.
-
-    Plan file: {plan_file}
-    Feature: {feature_slug}
-
-    Validate that all database tables, columns, and indexes specified in the
-    plan exist. Read the project's DB connection helper (check CLAUDE.md or
-    the project's conventions for how to connect) and query accordingly.
-
-    Return a structured pass/fail report per table/column.
-  """
-)
-
-Agent(
-  model="haiku",
-  description="Validate cross-module integration for {feature_name}",
-  prompt="""
-    Read the plan file: {plan_file}
-    Feature: {feature_slug}
-
-    Check the "Cross-Module Touchpoints" section of the plan.
-    For each touchpoint mentioned, verify:
-    - If it references a registration (e.g., a router, service, or allow-list
-      name), grep for it
-    - If it references an AI/assistant flow or recognized intent, check that
-      it is registered
-    - If it references a frontend page layout change, verify the component import
-
-    Return a structured pass/fail report per touchpoint.
-  """
-)
-```
+Read the prompts from `templates/stage-5.5-validation.md` (sections: `api`, `ui`,
+`data`, `cross-module`). Substitute `{plan_file}`, `{feature_name}`, and
+`{feature_slug}`, then dispatch the **selected** agents in a single message. Models per
+section: `api` and `ui` use Sonnet; `data` and `cross-module` use Haiku.
 
 ### Process results
 
@@ -468,7 +318,32 @@ Create a pull request for human review.
    git checkout -b sdlc/{feature-slug}
    ```
 
-2. **Stage and commit** all changes:
+2. **Secret scan** the files about to be staged. Skip only if `pipeline.skip_secret_scan: true`
+   in `.claude/project.json` (e.g., a security research repo where false positives dominate).
+
+   Prefer `gitleaks` if available:
+   ```bash
+   if command -v gitleaks >/dev/null 2>&1; then
+     gitleaks detect --no-git --source . --report-format json --report-path /tmp/gitleaks-{feature-slug}.json --exit-code 0 -- {specific files}
+   fi
+   ```
+
+   If `gitleaks` is not installed, run a fallback regex sweep on the same file list for these
+   high-signal patterns: `AKIA[0-9A-Z]{16}` (AWS access key), `aws_secret_access_key\s*=`,
+   `-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----`, `xox[baprs]-[0-9a-zA-Z]{10,}` (Slack),
+   `sk-[a-zA-Z0-9]{20,}` (OpenAI/Anthropic-style), `ghp_[a-zA-Z0-9]{36}` (GitHub PAT),
+   `gh[osu]_[a-zA-Z0-9]{36}` (GitHub OAuth/server/user tokens),
+   `(?i)(api[_-]?key|secret|token|password)\s*[:=]\s*['\"][^'\"]{12,}['\"]`.
+
+   **Policy**:
+   - Any HIGH/CRITICAL finding → STOP. Report the file and line; do not stage or commit.
+     The user must remove the secret manually before re-running the pipeline.
+   - MEDIUM/LOW → warn in the PR body but proceed. False positives are common at MEDIUM.
+   - If the regex fallback fires, treat all matches as HIGH (no severity distinction in the fallback).
+
+   Record the scan tool used and finding count in the PR body so reviewers know a scan ran.
+
+3. **Stage and commit** all changes:
    ```bash
    git add {specific files from the implementation}
    git commit -m "feat: {feature description from plan title}
@@ -484,7 +359,7 @@ Create a pull request for human review.
    Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
    ```
 
-3. **Push and create PR**:
+4. **Push and create PR**:
    ```bash
    git push -u origin sdlc/{feature-slug}
 
@@ -515,7 +390,7 @@ Create a pull request for human review.
    )"
    ```
 
-4. **Report** the PR URL to the user
+5. **Report** the PR URL to the user
 
 **IMPORTANT: Do NOT switch back to the main branch after creating the PR.**
 Stay on the feature branch so the user can test the feature before merging.

@@ -14,8 +14,8 @@ metadata:
 # Dead Code Review
 
 Systematically find and remove dead code, stale documentation, unused database objects, and orphaned
-files across the entire codebase. Uses parallel Opus 4.6 agents for exhaustive analysis, then applies
-fixes with test verification.
+files across the entire codebase. Uses parallel agents tiered by reasoning load (Haiku / Sonnet / Opus)
+for exhaustive analysis, then applies fixes with test verification.
 
 ## When to trigger this skill
 
@@ -36,10 +36,12 @@ Run all three test suites and record pass/fail counts:
 
 ### Phase 2: Launch Parallel Analysis Agents
 
-Launch up to 6 agents in parallel (ALL must use Opus 4.6, NO subagents). Each agent does
-**research only** — no edits — and reports back findings with confidence levels.
+Launch up to 6 agents in parallel. Each agent does **research only** — no edits — and reports back
+findings with confidence levels. Models are tiered by reasoning load: Haiku for grep-heavy hygiene
+work, Sonnet for code-pattern reasoning across one language, Opus only for cross-module dependency
+reasoning where wrong calls have high blast radius. NO subagents.
 
-#### Agent 1: Backend Python Reviewer
+#### Agent 1: Backend Python Reviewer (Sonnet)
 Scans ALL files in `backend/` for:
 - Unused imports (check every import against usage in the file)
 - Dead functions (defined but never called — grep for function name across entire project)
@@ -50,7 +52,7 @@ Scans ALL files in `backend/` for:
 - Commented-out code blocks
 - Redundant inline imports (same module imported at top and inline)
 
-#### Agent 2: Frontend TypeScript Reviewer
+#### Agent 2: Frontend TypeScript Reviewer (Sonnet)
 Scans ALL files in `frontend/src/` for:
 - Unused components (grep for component import name across all files)
 - Unused hooks (grep for hook name across all files)
@@ -62,7 +64,8 @@ Scans ALL files in `frontend/src/` for:
 - Unused dependencies in `package.json` (grep for package import across all files)
 - Stale test files testing deleted components
 
-#### Agent 3: Database & Migration Reviewer
+#### Agent 3: Database & Migration Reviewer (Opus)
+Cross-module dependency reasoning: a wrong drop here can break production. Opus warranted.
 Scans ALL files in `backend/migrations/` and queries the live database:
 - Unused tables (exist in DB but never referenced in Python code)
 - Unused columns (defined but never SELECT'd/INSERT'd/UPDATE'd)
@@ -71,14 +74,14 @@ Scans ALL files in `backend/migrations/` and queries the live database:
 - Duplicate migration numbers
 - Empty tables that may indicate abandoned features
 
-#### Agent 4: Documentation & Plans Reviewer
+#### Agent 4: Documentation & Plans Reviewer (Haiku)
 Scans ALL `.md` files in `docs/`, `plans/`, and project root:
 - Completed plans/specs (feature fully implemented — delete the plan)
 - Stale root markdown files (old debugging notes, one-time setup guides)
 - Outdated documentation that conflicts with CLAUDE.md
 - Empty directories left after prior cleanup
 
-#### Agent 5: Scripts & Config Reviewer
+#### Agent 5: Scripts & Config Reviewer (Haiku)
 Scans `scripts/`, config files, test infrastructure:
 - One-time scripts already run (data seeders, migration fixers, diagnostics)
 - Stale test files (tests for removed features, tests using old navigation patterns)
@@ -86,8 +89,9 @@ Scans `scripts/`, config files, test infrastructure:
 - Stale dependencies in `requirements.txt` or `package.json`
 - Generated output directories that should be cleaned
 
-#### Agent 6: Test Runner (Baseline)
-Runs the full test suite to establish what's currently passing before any changes.
+#### Agent 6: Test Runner (Baseline — Haiku)
+Runs the full test suite to establish what's currently passing before any changes. No reasoning load
+— just runs commands and reports pass/fail counts.
 
 ### Phase 3: Consolidate & Execute
 
@@ -120,7 +124,10 @@ Provide a summary table:
 
 ## Rules
 
-- ALL agents MUST use Opus 4.6 (`model: "opus"`) — never Haiku or Sonnet for this task
+- Use the tiered model assignments above (Haiku / Sonnet / Opus) — do NOT promote everything to Opus
+  by default. The tier is chosen for each agent based on reasoning load and blast radius of a wrong
+  call. If a specific run genuinely needs deeper analysis (e.g., the database agent flags ambiguous
+  cross-module references), promote that single agent — not the whole fleet.
 - Agents do NOT use subagents — each does all its own work
 - Never commit during the review — the user decides when to commit
 - Always run tests before AND after to verify zero regressions

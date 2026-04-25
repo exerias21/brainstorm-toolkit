@@ -8,7 +8,7 @@ description: >
   implementing a feature, or ad hoc when a plan and its implementation feel
   misaligned. Invoke via /flowsim or when the user says "trace the flow",
   "verify the plan matches", "walk through what actually happens".
-argument-hint: "<plan-file-or-task-ref> [--max-hops N] [--focus <module>]"
+argument-hint: "<plan-file-or-task-ref> [--max-hops N] [--focus <module>] [--force]"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot
 ---
@@ -30,9 +30,31 @@ This is NOT a program simulator. It's a **structured code review** formatted as 
 - **Plan source**: a `plans/brainstorm-<slug>.md` file, a `plans/tasks/task-N-<slug>.md` file, or a TASKS.md row. The plan must describe at least one flow: entry point → steps → outcome.
 - **Optional**: `--max-hops N` (default 3) — how many function/module jumps to follow per flow.
 - **Optional**: `--focus <module>` — restrict tracing to one module (useful for large features).
+- **Optional**: `--force` — ignore the prior-run cache (see Flow step 0) and re-trace every flow.
 - **Optional signal**: latest eval results at `<eval.features_dir>/<feature>/results.json` if present. Flowsim reads these and factors them into the report (a passing eval for a flow is corroborating evidence; a failing eval is a pre-existing mismatch).
 
 ## Flow
+
+### 0. Check the prior-run cache
+
+Before tracing, look for `plans/flowsim-<feature-slug>.json` from a previous run.
+If it exists and `--force` was NOT passed:
+
+1. Load the prior flows array.
+2. For each prior flow with `status: "MATCH"` and every step anchored to a real
+   `file:line`, check whether any of those anchor files have been modified since
+   the cache was written (compare cache file mtime against each anchor file's mtime).
+3. **If no anchor files have changed**: mark that flow as `cached-MATCH` and skip
+   re-tracing it in step 2. It carries through to the report unchanged.
+4. **If any anchor file has changed, or the flow had any non-MATCH status**:
+   re-trace from scratch in step 2.
+
+This trims re-runs after a fix loop — flows whose code paths were not touched
+by the fix do not need to be re-walked. Typical savings: 40–60% of trace work
+on subsequent runs of `/sdlc` Stage 5.6 against the same feature.
+
+If `plans/flowsim-<feature-slug>.json` does not exist, proceed normally — no
+cache, every flow is traced fresh.
 
 ### 1. Extract claimed flows
 
@@ -45,7 +67,8 @@ List each flow as a numbered item. Stop here and ask the user to confirm if the 
 
 ### 2. Trace each flow through the code
 
-For each flow, walk through up to `--max-hops` steps. At each hop, record:
+Skip any flow marked `cached-MATCH` in step 0 — its prior trace is reused as-is.
+For every other flow, walk through up to `--max-hops` steps. At each hop, record:
 - **Claimed step**: what the plan says happens.
 - **Code anchor**: file path + line number + function/symbol name. Found via grep/read.
 - **Actual behavior**: one sentence on what the code does at that anchor.

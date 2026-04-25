@@ -26,5 +26,10 @@
 
   "gotchas_file": "GOTCHAS.md",
   "main_branch": "main",
-  "modules": ["api", "web", "worker"]
+  "modules": ["api", "web", "worker"],
+
+  "pipeline": {
+    "_comment": "Optional. Knobs read by /sdlc. All keys default to false/unset.",
+    "skip_secret_scan": false
+  }
 }
