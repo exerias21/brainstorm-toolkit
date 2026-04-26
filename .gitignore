@@ -20,6 +20,7 @@ plans/
 TASKS.md
 GOTCHAS.md
 .claude/project.json
+.claude/pipeline/
 
 # Local test output
 /tmp/
