@@ -40,6 +40,46 @@ Autonomous feature delivery: plan file in, PR out.
 
 ---
 
+## State envelope
+
+Each `/sdlc` run writes a transparent state journal under
+`.claude/pipeline/<feature-slug>/`. Schema and per-stage `data` shapes are
+documented in `templates/state-schema.md` (read once before implementing
+sidecar writes).
+
+```
+.claude/pipeline/<feature-slug>/
+  run.json                     # top-level run record (stage, status, args, hashes)
+  stage-outputs/<stage>.json   # one sidecar per completed stage
+```
+
+**Behavior**:
+- At Stage 1, `mkdir -p .claude/pipeline/<slug>/stage-outputs/` and write
+  initial `run.json` with `{schema_version: 1, stage: "parse",
+  status: "in_progress", started_at, plan_hash, args}`.
+- On every stage transition, update `run.json.stage` and `run.json.updated_at`.
+- When a stage finishes, write `stage-outputs/<stage>.json` per the schema
+  (canonical kebab name from `docs/CONVENTIONS.md`, never decimals — so
+  `sanity-check.json`, not `stage-1.5.json`) and append the stage to
+  `run.json.stages_completed`.
+- On `--skill-repo`, skipped stages (`generate-evals`, `eval-fix`,
+  `plan-validate`, `flowsim`) write **no sidecar**; add their names to
+  `run.json.stages_skipped` instead.
+- On terminal state, set `run.json.status` to `complete`, `failed`, or `paused`
+  per the schema doc.
+
+**Best-effort writes**: if any state write fails (disk full, permissions,
+read-only volume), log a single-line warning to stderr
+(`[state-envelope] write failed: <error>; continuing`) and proceed.
+**State writes never fail a pipeline run.** A consumer that never reads these
+files sees no behavior change.
+
+A fresh `/sdlc <plan>` invocation **overwrites** any prior `run.json` and
+`stage-outputs/` for the same slug — resumption is opt-in via a future
+`--resume` flag (Phase 1B), never automatic.
+
+---
+
 ## Stage 1: Parse Plan
 
 Read the plan file and extract structured information:
@@ -68,6 +108,10 @@ Read the plan file and extract structured information:
 
 If `--dry-run`, stop here and report.
 
+**State write**: write `stage-outputs/parse.json` with `data.feature_name`,
+`data.files_to_change`, `data.implementation_step_count`,
+`data.acceptance_criteria_count`. Append `parse` to `run.json.stages_completed`.
+
 ---
 
 ## Stage 1.5: Plan Sanity Check
@@ -90,6 +134,12 @@ dispatch all three Haiku agents in a single message — one Agent call per secti
    is misguided): report to user and **STOP** — the plan needs human revision.
 4. **If all clean**: proceed to Stage 2.
 
+**State write**: write `stage-outputs/sanity-check.json` with
+`data.agents` (focus, status, issue_count for each), `data.auto_patched`
+(bool), and `data.issues`. Status is `pass` if all three agents reported no
+issues, `pass` with `auto_patched: true` if issues were auto-corrected,
+`paused` if critical issues forced a stop.
+
 ---
 
 ## Stage 2: Implement
@@ -104,6 +154,12 @@ After the agent completes:
 1. Review the git diff summary
 2. Verify the expected files were created/modified
 3. If the agent reports errors or blockers, **STOP** and report to user
+
+**State write**: write `stage-outputs/implement.json` with
+`data.agent_model`, `data.files_changed[]` (path + added/removed line counts
+from `git diff --numstat`), `data.total_added`, `data.total_removed`, and
+`data.blockers_reported[]`. Status is `pass` on success, `fail` if blockers
+were reported.
 
 ---
 
@@ -136,6 +192,11 @@ Create test cases that verify the plan's INTENT, not just "does it compile."
 
 Evals must be created BEFORE running them. This is test-driven: define what
 "correct" looks like first, then verify the implementation matches.
+
+**State write**: write `stage-outputs/generate-evals.json` with
+`data.evals_created[]` and `data.skipped_reason` (or `null`). Status is
+`pass` even when evals are skipped (no testable surface) — record the
+reason in `summary` and `data.skipped_reason`.
 
 ---
 
@@ -174,6 +235,11 @@ Please review and fix manually, then re-run:
   /sdlc {plan_file} --skip-eval
 ```
 
+**State write**: write `stage-outputs/eval-fix.json` with `data.fix_loops_run`,
+`data.max_fix_loops`, `data.final_pass_count`, `data.final_fail_count`,
+`data.remaining_failures[]`. Status is `pass` if all green, `paused` on max
+loops with persistent failures (set `run.json.status = "paused"` too).
+
 ---
 
 ## Stage 5: Full Validation
@@ -202,6 +268,13 @@ Run the complete test suite to ensure no regressions.
    - Note them in the PR body but proceed — don't fix what was already broken
 
 5. **If all green**: Proceed to Stage 5.5
+
+**State write**: write `stage-outputs/validate.json` with `data.layers`
+(per-layer status: logs, frontend, backend, e2e, eval), `data.new_failures[]`,
+`data.preexisting_failures[]`. In `--skill-repo` mode this stage is replaced
+by the skill-repo validation procedure (see "Skill-repo mode" below); the
+sidecar then carries `data.mode = "skill-repo"` with the structural-check
+results documented in `templates/state-schema.md`.
 
 ---
 
@@ -267,6 +340,10 @@ section: `api` and `ui` use Sonnet; `data` and `cross-module` use Haiku.
 {list of specific failures with suggested fixes}
 ```
 
+**State write**: write `stage-outputs/plan-validate.json` with
+`data.validators_launched[]`, `data.validators_skipped[]` (which gating
+decisions skipped), `data.totals`, `data.failures[]`.
+
 ---
 
 ## Stage 5.6: Flow Simulation (plan vs. implementation)
@@ -311,6 +388,12 @@ Invoke the `/flowsim` skill with the plan file and feature slug:
 - **An UNCLEAR** means the plan's language was too fuzzy to trace. Usually indicates a plan quality issue, not a code issue — re-run after clarifying the plan.
 - **Corroborating eval evidence** (a passing or failing eval aligned with a flow step) is your highest-confidence signal; prioritize fixing those first.
 
+**State write**: write `stage-outputs/flowsim.json` summary sidecar with
+`data.report_path`, `data.json_path` (pointer to the canonical
+`plans/flowsim-<slug>.json`), `data.flow_count`, `data.mismatches`,
+`data.unclear`, `data.missing`. The sidecar is a *summary*, not a duplicate —
+the canonical structured output remains in `plans/flowsim-<slug>.json`.
+
 ---
 
 ## Stage 6: Create PR
@@ -346,6 +429,11 @@ Create a pull request for human review.
    - If the regex fallback fires, treat all matches as HIGH (no severity distinction in the fallback).
 
    Record the scan tool used and finding count in the PR body so reviewers know a scan ran.
+
+   **State write**: write `stage-outputs/secret-scan.json` with `data.tool`
+   (`gitleaks` or `regex-fallback`), `data.files_scanned[]`,
+   `data.high_findings`, `data.medium_findings`. Status is `pass` on zero
+   high/critical findings, `fail` if HIGH/CRITICAL findings forced a stop.
 
 3. **Stage and commit** all changes:
    ```bash
@@ -395,6 +483,11 @@ Create a pull request for human review.
    ```
 
 5. **Report** the PR URL to the user
+
+**State write**: write `stage-outputs/pr-create.json` with `data.branch`,
+`data.pr_url`, `data.pr_number`, `data.commit_sha`. On success, set
+`run.json.status = "complete"`. (Stage 7 is a pure-reporting stage and writes
+no sidecar — `run.json` is the terminal record.)
 
 **IMPORTANT: Do NOT switch back to the main branch after creating the PR.**
 Stay on the feature branch so the user can test the feature before merging.
@@ -475,3 +568,11 @@ Embed the result table in the PR body.
 
 This mode keeps `/sdlc`'s discipline (sanity-check → implement → validate → PR)
 while swapping in the right validation surface for the artifact type.
+
+### State envelope in `--skill-repo` mode
+
+Skipped stages (`generate-evals`, `eval-fix`, `plan-validate`, `flowsim`)
+write **no sidecar**; their names are appended to `run.json.stages_skipped`
+instead. The substituted Stage 5 writes `stage-outputs/validate.json` with
+`data.mode = "skill-repo"` and the structural-check results — see
+`templates/state-schema.md` for the exact shape.

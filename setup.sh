@@ -205,6 +205,34 @@ else
   copy_if_new "$PLUGIN_ROOT/templates/TASKS.md.template" "$TARGET/TASKS.md"
 fi
 
+# Ensure .claude/pipeline/ is gitignored so /sdlc state journals don't surface
+# as untracked changes. Idempotent (grep-before-append) and CRLF-safe (strips
+# trailing \r when checking existing entries). Creates .gitignore if missing.
+ensure_pipeline_gitignored() {
+  local gi="$TARGET/.gitignore"
+  local entry=".claude/pipeline/"
+  if [[ ! -f "$gi" ]]; then
+    printf '# brainstorm-toolkit\n%s\n' "$entry" > "$gi"
+    echo "  wrote: $gi (created with $entry)"
+    return
+  fi
+  # Already covered if a broader .claude/ pattern (or the exact entry) is present.
+  # awk strips trailing \r so CRLF files match the same way LF files do.
+  if awk '{sub(/\r$/,"")} /^\.claude\/pipeline\/?$/ || /^\.claude\/?$/ {found=1} END {exit !found}' "$gi"; then
+    echo "  skip: .gitignore already covers $entry"
+  else
+    # Append with a leading newline only if the file doesn't already end in one,
+    # so we never mash content together.
+    if [[ -n "$(tail -c1 "$gi" 2>/dev/null)" ]]; then
+      printf '\n' >> "$gi"
+    fi
+    printf '# brainstorm-toolkit\n%s\n' "$entry" >> "$gi"
+    echo "  appended to .gitignore: $entry"
+  fi
+}
+echo "[gitignore] .claude/pipeline/"
+ensure_pipeline_gitignored
+
 echo
 echo "Done."
 echo

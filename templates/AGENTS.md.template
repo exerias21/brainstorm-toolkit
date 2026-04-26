@@ -26,6 +26,10 @@ Instructions for AI coding agents (Claude Code, GitHub Copilot, Cursor, Codex, e
 - **GOTCHAS.md lists hard-won pitfalls.** Before writing code in any area where a gotcha exists, follow its prescribed fix. Run `/gotcha` to add or review entries.
 - **`.claude/project.json` configures toolkit commands** (test runners, log-audit command, eval runner, etc.). Every key is optional; skills skip gracefully when a key is missing.
 
+## Pipeline state journal (`.claude/pipeline/`)
+
+When `/sdlc` runs, it writes a transparent state journal under `.claude/pipeline/<feature-slug>/` — a `run.json` plus per-stage sidecars under `stage-outputs/`. This is **local-only**, **gitignored** (added by `setup.sh`), and **never required reading** for any skill. It exists so future tooling (post-mortem dashboards, CI gates, the planned `/sdlc --resume` and `/sdlc --inspect`) can pick up where a run left off without each tool inventing its own storage. If you delete the directory, nothing breaks — the next `/sdlc` run recreates it. Schema: Claude `.claude/skills/sdlc/templates/state-schema.md`; Copilot `.github/skills/sdlc/templates/state-schema.md`.
+
 ## Build / test / run
 
 <!-- Fill in concrete commands. Example: -->
