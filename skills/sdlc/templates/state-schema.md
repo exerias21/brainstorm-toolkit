@@ -32,7 +32,7 @@
 
 Stage filenames use the **canonical kebab names** from `docs/CONVENTIONS.md` "Stage names" — `parse`, `sanity-check`, `implement`, `generate-evals`, `eval-fix`, `validate`, `plan-validate`, `flowsim`, `secret-scan`, `pr-create`. Never decimal-versioned (no `stage-1.5.json`).
 
-In `--skill-repo` mode, the skipped stages (`generate-evals`, `eval-fix`, `validate`, `plan-validate`, `flowsim`) write **no sidecar**. `validate.json` is replaced by a skill-repo-shaped sidecar that records the structural-check results from `templates/stage-5-skill-repo.md`.
+In `--skill-repo` mode, the skipped stages (`generate-evals`, `eval-fix`, `plan-validate`, `flowsim`) write **no sidecar**. `stage-outputs/validate.json` is still written in skill-repo mode, but as a skill-repo-shaped sidecar that records the structural-check results from `templates/stage-5-skill-repo.md`; in that case `data.mode = "skill-repo"`.
 
 ---
 
@@ -81,7 +81,7 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
 
 ## `stage-outputs/<stage>.json` — per-stage sidecars
 
-Written when a stage finishes (or pauses, or fails). One file per stage; the stage filename matches the stage name.
+Written when a stage finishes (or pauses, or fails). One file is written per stage that emits a sidecar; the stage filename matches the stage name. `report` is an exception and does not write a sidecar.
 
 ```json
 {
