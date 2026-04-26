@@ -28,6 +28,7 @@ TARGET="$(pwd)"
 TOOLS="both"
 FORCE=0
 COPY_SCRIPTS=1
+INSTALL_HOOKS=1
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -35,6 +36,7 @@ while [[ $# -gt 0 ]]; do
     --tools)             TOOLS="$2"; shift 2 ;;
     --force)             FORCE=1; shift ;;
     --no-copy-scripts)   COPY_SCRIPTS=0; shift ;;
+    --no-hooks)          INSTALL_HOOKS=0; shift ;;
     -h|--help)
       sed -n '2,15p' "$0" | sed 's/^# *//'
       exit 0
@@ -205,33 +207,113 @@ else
   copy_if_new "$PLUGIN_ROOT/templates/TASKS.md.template" "$TARGET/TASKS.md"
 fi
 
-# Ensure .claude/pipeline/ is gitignored so /sdlc state journals don't surface
-# as untracked changes. Idempotent (grep-before-append) and CRLF-safe (strips
-# trailing \r when checking existing entries). Creates .gitignore if missing.
-ensure_pipeline_gitignored() {
+# Ensure a path is gitignored. Idempotent (grep-before-append) and CRLF-safe
+# (strips trailing \r when checking existing entries). Creates .gitignore if
+# missing. Treats a broader .claude/ pattern as already-covered for any
+# .claude/* entry — never adds a redundant line.
+ensure_gitignored() {
+  local entry="$1"
   local gi="$TARGET/.gitignore"
-  local entry=".claude/pipeline/"
   if [[ ! -f "$gi" ]]; then
     printf '# brainstorm-toolkit\n%s\n' "$entry" > "$gi"
     echo "  wrote: $gi (created with $entry)"
     return
   fi
-  # Already covered if a broader .claude/ pattern (or the exact entry) is present.
   # awk strips trailing \r so CRLF files match the same way LF files do.
-  if awk '{sub(/\r$/,"")} /^\.claude\/pipeline\/?$/ || /^\.claude\/?$/ {found=1} END {exit !found}' "$gi"; then
+  # The exact-match regex is built from $entry; .claude/-broader pattern is
+  # only an override for .claude/* entries (avoids matching a literal
+  # ".claude/" entry as covering ".vscode/").
+  # Escape regex specials, but use [.] for literal dots (avoids awk
+  # "escape sequence treated as plain" warnings) and leave / unescaped
+  # (awk regexes don't use / as a delimiter inside string-built patterns).
+  local entry_re
+  entry_re="$(printf '%s' "$entry" | sed -e 's/[][\\^$*+?(){}|]/\\&/g' -e 's/\./[.]/g')"
+  local check_broader=0
+  if [[ "$entry" == .claude/* ]]; then
+    check_broader=1
+  fi
+  if awk -v r="^${entry_re}$" -v b="$check_broader" \
+       '{sub(/\r$/,"")} $0 ~ r || (b == "1" && $0 ~ /^[.]claude[/]?$/) {found=1} END {exit !found}' "$gi"; then
     echo "  skip: .gitignore already covers $entry"
   else
-    # Append with a leading newline only if the file doesn't already end in one,
-    # so we never mash content together.
     if [[ -n "$(tail -c1 "$gi" 2>/dev/null)" ]]; then
       printf '\n' >> "$gi"
     fi
-    printf '# brainstorm-toolkit\n%s\n' "$entry" >> "$gi"
+    printf '%s\n' "$entry" >> "$gi"
     echo "  appended to .gitignore: $entry"
   fi
 }
-echo "[gitignore] .claude/pipeline/"
-ensure_pipeline_gitignored
+
+# Install the Stop hook into the consumer's Claude Code settings file so the
+# next-action sentinel is surfaced after Claude finishes a turn. Idempotent:
+# checks for the exact command string before appending.
+install_stop_hook_claude() {
+  local settings="$TARGET/.claude/settings.json"
+  local cmd="bash scripts/hooks/next-action.sh"
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "  skip: jq not installed — cannot safely merge Claude hook config."
+    echo "        Install jq and re-run, or add this manually to $settings:"
+    echo "        {\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\"}]}]}}"
+    return
+  fi
+  mkdir -p "$(dirname "$settings")"
+  if [[ ! -f "$settings" ]]; then
+    echo '{}' > "$settings"
+  fi
+  if jq -e --arg cmd "$cmd" '
+        any(.hooks.Stop[]?.hooks[]?; .command == $cmd)
+      ' "$settings" >/dev/null 2>&1; then
+    echo "  skip: Claude Stop hook already wired ($cmd)"
+    return
+  fi
+  local tmp; tmp="$(mktemp)"
+  jq --arg cmd "$cmd" '
+    .hooks //= {} |
+    .hooks.Stop //= [] |
+    .hooks.Stop += [{ "hooks": [{ "type": "command", "command": $cmd }] }]
+  ' "$settings" > "$tmp" && mv "$tmp" "$settings"
+  echo "  wrote: $settings (added Stop hook for next-action)"
+}
+
+# Install the Copilot Stop hook as a standalone file under .github/hooks/.
+# Copilot reads any *.json under .github/hooks/, so a fresh file is the
+# simplest install — no merging required. Skip-on-exist (refresh with --force).
+install_stop_hook_copilot() {
+  local hook_file="$TARGET/.github/hooks/next-action.json"
+  local cmd="bash scripts/hooks/next-action.sh"
+  if [[ -f "$hook_file" && "$FORCE" -ne 1 ]]; then
+    echo "  skip (exists): $hook_file"
+    return
+  fi
+  mkdir -p "$(dirname "$hook_file")"
+  cat > "$hook_file" <<JSON
+{
+  "hooks": {
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "$cmd" }] }
+    ]
+  }
+}
+JSON
+  echo "  wrote: $hook_file"
+}
+
+echo "[gitignore]"
+ensure_gitignored ".claude/pipeline/"
+ensure_gitignored ".claude/.next-action"
+
+if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
+  if [[ "$want_claude" -eq 1 ]]; then
+    echo "[hooks] Claude Stop hook"
+    install_stop_hook_claude
+  fi
+  if [[ "$want_copilot" -eq 1 ]]; then
+    echo "[hooks] Copilot Stop hook"
+    install_stop_hook_copilot
+  fi
+else
+  echo "[hooks] skipped (--no-hooks)"
+fi
 
 echo
 echo "Done."
@@ -242,3 +324,8 @@ echo "  2. Customize .claude/project.json (copy from .claude/project.json.exampl
 echo "  3. Add project-specific gotchas to GOTCHAS.md as they come up."
 echo "  4. In Claude Code: skills are available under /<skill-name>."
 echo "  5. In GitHub Copilot: skills are available under /<skill-name> in .github/skills/."
+if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
+  echo "  6. Stop hooks were installed but may need one-time activation:"
+  echo "       Claude Code: open /hooks once to register .claude/settings.json"
+  echo "       Copilot:     reload the VS Code window"
+fi

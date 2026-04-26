@@ -26,6 +26,10 @@ Instructions for AI coding agents (Claude Code, GitHub Copilot, Cursor, Codex, e
 - **GOTCHAS.md lists hard-won pitfalls.** Before writing code in any area where a gotcha exists, follow its prescribed fix. Run `/gotcha` to add or review entries.
 - **`.claude/project.json` configures toolkit commands** (test runners, log-audit command, eval runner, etc.). Every key is optional; skills skip gracefully when a key is missing.
 
+## Next-action hints (Stop hook)
+
+After a skill finishes work, it may drop a one-line file at `.claude/.next-action` containing the recommended follow-up command (e.g., `/sdlc plans/brainstorm-add-orders.md`). A Stop hook installed by `setup.sh` reads the file once, prints `Next: <command>` in the terminal, and removes the file. This works on both Claude Code (`.claude/settings.json` Stop hook) and GitHub Copilot (`.github/hooks/next-action.json`). The shared script lives at `scripts/hooks/next-action.sh`. Skills opting into the chain must write the referenced plan file to `plans/` *before* dropping the sentinel — a sentinel pointing at a missing file is a bug. Pass `--no-hooks` to `setup.sh` to opt out.
+
 ## Pipeline state journal (`.claude/pipeline/`)
 
 When `/sdlc` runs, it writes a transparent state journal under `.claude/pipeline/<feature-slug>/` — a `run.json` plus per-stage sidecars under `stage-outputs/`. This is **local-only**, **gitignored** (added by `setup.sh`), and **never required reading** for any skill. It exists so future tooling (post-mortem dashboards, CI gates, the planned `/sdlc --resume` and `/sdlc --inspect`) can pick up where a run left off without each tool inventing its own storage. If you delete the directory, nothing breaks — the next `/sdlc` run recreates it. Schema: Claude `.claude/skills/sdlc/templates/state-schema.md`; Copilot `.github/skills/sdlc/templates/state-schema.md`.
