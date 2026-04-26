@@ -68,12 +68,14 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 
 | Skill | Applies to | Use for |
 |---|---|---|
+| `/cheatsheet` | Both | Print every installed skill + the typical chains. The always-current view; `CHEATSHEET.md` is the printable companion. |
 | `/brainstorm` | Both † | Conversational feature ideation with lens-divergent wildcards (Plan mode on Claude, linear on Copilot) |
 | `/brainstorm-team` | Both † | 6-agent team for competitive + product research incl. a lateral-thinking agent (sequential on Copilot) |
 | `/task` | Both | Create one bounded task and execute it with TDD |
 | `/status` | Both | Quick readout of TASKS.md counts + active task |
 | `/sdlc` | Both † | Plan → implement → eval → test → flowsim → PR (sequential on Copilot) |
 | `/repo-onboarding` | Both | Generate AGENTS.md + TASKS.md + project.json + GOTCHAS.md |
+| `/repo-health` | Both | Read-only hygiene sweep (dead code + tests + deps + secrets + gotchas-currency); produces a scored report and a "next: ..." hint. |
 | `/test-check` | Both | Run configured tests + log audit after changes (one-shot, no fix loop) |
 | `/e2e-loop` | Both † | Run e2e tests in a fix loop with flaky-test guard (dispatches `e2e-test-runner` agent on Claude, inline on Copilot) |
 | `/gotcha` | Both | View or append project pitfalls |
@@ -95,22 +97,59 @@ Tool-specific walkthroughs are in `docs/`:
 
 ## Typical workflow
 
+```mermaid
+flowchart LR
+    A[/repo-onboarding/]:::setup --> B[AGENTS.md + TASKS.md<br/>project.json + GOTCHAS.md]
+    B --> C[/brainstorm/]
+    B --> D[/task/]
+    B --> E[/pbi/<br/>Phase 1D]
+    C --> F[plans/brainstorm-*.md]
+    E --> G[plans/pbi-NNN-*.md]
+    D --> H[inline TDD]
+    F --> I[/sdlc {plan}/]:::core
+    G --> I
+    H --> J[PR]
+    I --> J
+    J --> K[merge]
+    K --> L[/post-deploy-verify/<br/>pipeline profile]:::pipe
+
+    subgraph "Anytime, in parallel"
+      M[/cheatsheet/<br/>discover]
+      N[/repo-health/<br/>scored sweep]
+      O[/flowsim {plan}/<br/>plan-vs-code drift]
+      P[/dead-code-review/<br/>deeper hygiene]
+      Q[/gotcha/<br/>capture pitfall]
+    end
+
+    classDef setup fill:#e8e8ff,stroke:#5555aa
+    classDef core fill:#e0ffe0,stroke:#338833
+    classDef pipe fill:#fff0e0,stroke:#cc7733
+```
+
+Or in plain text:
+
 ```
    /repo-onboarding                (once per repo)
           │
           ▼
-   AGENTS.md + TASKS.md + project.json + GOTCHAS.md
+   AGENTS.md + TASKS.md + project.json + GOTCHAS.md + CHEATSHEET.md
           │
-          ├──► /brainstorm  ──► plan file + TASKS.md rows
-          │                             │
-          │                             ▼
-          ├──► /task  ──────► TDD on a single small item
-          │
-          └──► /sdlc <plan>  ──► autonomous implement + eval + test + flowsim + PR
+          ├──► /brainstorm   ──► plan file
+          │                          │
+          │                          ▼
+          ├──► /pbi          ──► PBI + plan ──┐
+          │                                    │
+          ├──► /task         ──► TDD inline ──┼──► PR
+          │                                    │
+          └──► /sdlc <plan>  ──► autonomous ──┘
+                                  implement → eval → test → flowsim → PR
 
-   /status   — any time: "what's active, what's left?"
-   /flowsim  — verify a plan's claimed flows match the code (auto-run by /sdlc)
-   /gotcha   — when you discover a pitfall
+   Anytime:
+     /cheatsheet     — what skills are installed?
+     /repo-health    — scored hygiene sweep
+     /status         — what's active, what's left?
+     /flowsim        — verify a plan's claimed flows match the code
+     /gotcha         — capture a pitfall
 ```
 
 ## Config contract

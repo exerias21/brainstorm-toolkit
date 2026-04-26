@@ -1,0 +1,129 @@
+# brainstorm-toolkit cheatsheet
+
+Printable one-pager. Lives at the repo root after `setup.sh` runs. Edit
+freely — `setup.sh` skips this file once it exists, so your customizations
+survive plugin upgrades.
+
+For the **always-current** view of installed skills, run `/cheatsheet` —
+it reads the SKILL.md frontmatter directly and never goes stale. This file
+is the *map*; `/cheatsheet` is the *menu*.
+
+---
+
+## Pipeline at a glance
+
+```
+                ┌─────────────────────────┐
+                │       /brainstorm       │  ← idea, no plan yet
+                └────────────┬────────────┘
+                             ▼
+                  plans/brainstorm-*.md
+                             │
+       ┌─────────────────────┼──────────────────────┐
+       ▼                     ▼                      ▼
+   /pbi "..."            /sdlc {plan}            /task "..."
+   (bounded               (autonomous              (single-row
+   single PBI)            plan-to-PR)              TDD task)
+       │                     │                      │
+       └──────┬──────────────┘                      │
+              ▼                                     ▼
+        plans/pbi-NNN-*.md                    inline TDD
+              │                                     │
+              ▼                                     │
+        /sdlc {pbi-plan}                            │
+              │                                     │
+              └──────────────┬─────────────────────┘
+                             ▼
+                            PR
+                             │
+                          merged
+                             │
+                             ▼
+                  /post-deploy-verify
+                  (pipeline profile)
+```
+
+In parallel, runnable any time:
+
+```
+  /repo-health      → scored sweep, drops a "next: ..." hint
+  /dead-code-review → deeper, multi-agent unused-code scan
+  /flowsim {plan}   → trace claimed flows through code, flag drift
+  /gotcha "<entry>" → capture a hard-won pitfall
+```
+
+---
+
+## Top 10 commands
+
+| Command | What it does | When |
+|---|---|---|
+| `/cheatsheet` | Print this map + every installed skill | "remind me what's here" |
+| `/brainstorm [topic]` | Conversational ideation → plan file | start of any feature |
+| `/sdlc {plan}` | Autonomous plan-to-PR pipeline | plan is bounded + clear |
+| `/task "..."` | One-row TDD task | a single bug or small change |
+| `/repo-health` | Hygiene sweep + score | weekly, or pre-release |
+| `/test-check` | Run tests + log audit | before shipping |
+| `/flowsim {plan}` | Plan-vs-code drift check | post-merge sanity |
+| `/gotcha "..."` | Append a project pitfall | after a bug bites |
+| `/repo-onboarding` | Regenerate AGENTS.md / project.json | new repo intake |
+| `/dead-code-review` | Multi-agent unused-code scan | pre-cleanup, monthly |
+
+---
+
+## Profiles
+
+| Profile | Includes | Use when |
+|---|---|---|
+| `core` (default) | brainstorm, sdlc, task, status, repo-health, test-check, flowsim, gotcha, repo-onboarding, dead-code-review, eval-harness, e2e-loop, cheatsheet, knowledge skills | local dev — single-developer or small-team workflow |
+| `pipeline` | post-deploy-verify, future brd-ingest / pbi-decompose / approve / deploy / monitor / rollback / coverage | enterprise pipeline with BRD intake, approval gates, deployment skills |
+| `both` | everything | dogfooding the toolkit; mixed environments |
+
+Re-run `setup.sh --profile <name>` from the plugin root to switch.
+
+---
+
+## Config files (all optional, all gitignored or user-owned)
+
+| File | Owner | Purpose |
+|---|---|---|
+| `AGENTS.md` / `CLAUDE.md` | You | Repo-wide agent instructions. Skip-on-exist; setup.sh writes a template only on first install. |
+| `TASKS.md` | You | Portable task tracker (markdown checkboxes). Toolkit reads but never overwrites. |
+| `GOTCHAS.md` | You | Project-specific pitfalls. `/gotcha` appends; you curate. |
+| `.claude/project.json` | You | Test commands, log audit, eval runner, modules list. Every key optional; skills skip gracefully when absent. |
+| `.claude/pipeline/<slug>/` | Toolkit | `/sdlc` run journals (run.json + per-stage sidecars). Gitignored. |
+| `.claude/.next-action` | Toolkit | Sentinel for the Stop hook. Self-cleaning. Gitignored. |
+| `.claude/settings.json` | Toolkit + you | Stop hook registration. setup.sh merges idempotently. |
+| `.github/hooks/next-action.json` | Toolkit | Copilot Stop hook registration. |
+
+---
+
+## Tool-routing quick reference
+
+| Surface | Claude Code | GitHub Copilot |
+|---|---|---|
+| Skills install path | `.claude/skills/<name>/` | `.github/skills/<name>/` |
+| Stop hook config | `.claude/settings.json` | `.github/hooks/*.json` |
+| Plan mode (interactive) | Yes | No (linear approval) |
+| Multi-agent parallel | Yes (Agent tool) | Sequential subprocesses |
+| PreToolUse hook | Yes | Yes (Preview) |
+
+When in doubt: which tool's prompt did you type the slash into? That's
+where the skill ran. There's no cross-tool dispatch.
+
+---
+
+## Troubleshooting
+
+- **No `Next: /...` hint after a skill** → Stop hook isn't registered.
+  Re-run `setup.sh` from the plugin root, then open `/hooks` once on
+  Claude Code or reload the VS Code window on Copilot.
+- **A skill's behavior doesn't match this map** → run `/cheatsheet
+  <skill-name>` for the live SKILL.md. This template can drift; the
+  SKILL.md files are authoritative.
+- **`/sdlc` complains about missing config** → `.claude/project.json`
+  needs `test.unit` (or whatever stage 5 references). Copy from
+  `.claude/project.json.example` and fill in.
+- **A new skill isn't in this map** → it landed after this template was
+  generated. `/cheatsheet` will show it; edit this file to keep the map
+  current.

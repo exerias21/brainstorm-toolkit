@@ -205,6 +205,16 @@ else
   copy_if_new "$PLUGIN_ROOT/templates/TASKS.md.template" "$TARGET/TASKS.md"
 fi
 
+# CHEATSHEET.md — printable one-pager. Skip-on-exist regardless of --force,
+# because consumers customize it (different from /cheatsheet, which is the
+# always-current view from SKILL.md frontmatter and never written to disk).
+echo "[cheatsheet] CHEATSHEET.md"
+if [[ -f "$TARGET/CHEATSHEET.md" ]]; then
+  echo "  skip: CHEATSHEET.md already present (user content; not overwritten)"
+else
+  copy_if_new "$PLUGIN_ROOT/templates/CHEATSHEET.md.template" "$TARGET/CHEATSHEET.md"
+fi
+
 # Ensure .claude/pipeline/ is gitignored so /sdlc state journals don't surface
 # as untracked changes. Idempotent (grep-before-append) and CRLF-safe (strips
 # trailing \r when checking existing entries). Creates .gitignore if missing.
