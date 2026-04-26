@@ -265,14 +265,82 @@ Six Tier A enhancements organized into three phases. Phase order is hygiene → 
 
 The agents converged on this sequence — each phase is independently shippable and unblocks the next.
 
-### Phase 1 — Pipeline state envelope (foundation; ~1 week)
+### Phase 0.5 — Naming conventions (prerequisite; 1 day)
 
-- Add `.claude/pipeline/<slug>/run.json` schema + `stage-outputs/` convention.
-- Add `--resume` flag to `/sdlc`; each stage checks for its own output and skips if `status: pass`.
-- Refactor `/sdlc` Stages 1.5, 2, 4, 5, 5.5, 5.6 to write JSON sidecars alongside their existing prose.
-- Add a `pipeline.*` namespace to `project.json` with graceful-skip semantics; document in `templates/project.json.example`.
+> **Plan**: [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md) (drafted
+> 2026-04-25, dogfooded `/brainstorm` with 4 lens agents).
 
-**Unlocks:** resumability, targeted runs, traceability, all downstream phases.
+Production-readiness requires a written, enforceable naming standard
+**before** new skills land. The doc covers 8 axes (identity rules,
+metadata rules, filename ecosystem exceptions, migration policy,
+enforcement lints, MVP rules, slug derivation, gitignore contract).
+
+Key insight: **identity vs metadata split** (Kubernetes RFC 1123).
+Identity (path-resolved, machine-keyed) gets strict lowercase-kebab;
+metadata (queryable, namespaced) keeps current YAML/snake_case forms.
+
+**Phase 1 sub-deliverables 1A/1B/1D/1E all read or write artifacts
+covered by these rules.** Conventions land first; Phase 1 implements
+against them. Without this, every new artifact is one bikeshed away
+from drift.
+
+Effort: ~1 day to land the doc as written. The first round of
+`validate_skills.py` lints (RFC 1123 regex on skill names + frontmatter
+schema) folds into Phase 1 1E (~half-day extra, same surface).
+
+### Phase 1 — Pipeline state envelope (foundation; ~1.5 weeks) — DETAILED PLAN
+
+> **Detailed plan**: [`docs/PHASE-1-STATE-ENVELOPE.md`](docs/PHASE-1-STATE-ENVELOPE.md)
+> (drafted 2026-04-25 after teacup dogfood feedback). Five design rules
+> ensure local-dev experience is preserved; state envelope is transparent
+> and gitignored by default.
+
+Five sub-deliverables, all built on one shared state contract:
+
+- **1A** — State envelope: `.claude/pipeline/<slug>/run.json` + `stage-outputs/*.json`. Each `/sdlc` stage writes a JSON sidecar as a transparent side-effect. Gitignored; no behavior change for callers who don't read them.
+- **1B** — `/sdlc <plan> --resume`: skip already-passing stages, resume from the first non-passing one. Opt-in only; never automatic.
+- **1C** — `/sdlc --inspect <slug>`: human-readable status block from `.claude/pipeline/<slug>/`. No agents, pure formatting.
+- **1D** — `/pbi <description>`: direct single-PBI authoring without a BRD. Produces a `pbis/PBI-<NNN>.md` artifact in the same shape Phase 2's `/pbi-decompose` will produce, plus a plan file ready for `/sdlc`. Composes with `/sdlc --pbi` (Phase 3) when that lands. `--vet` flag mirrors `/brainstorm`'s B8' design.
+- **1E** — Profile filtering (`core` / `pipeline`): one plugin, two workflows. Default profile is **`core` (dev-centric)**; pipeline workflows opt in via `--profile pipeline`. Avoids a premature plugin split (see "Plugin scoping decision" below).
+
+**Unlocks:** resumability, targeted runs, traceability, post-mortem visibility, all downstream phases. Critically, **all five pieces deliver standalone user value** — Phase 1 is no longer "infrastructure people will appreciate later," it's "tools you can use today."
+
+#### Plugin scoping decision (one plugin + profiles, not two plugins)
+
+A reasonable instinct is to split the toolkit into two plugins: a
+dev-centric one (`/brainstorm → /sdlc → PR`) and a pipeline one
+(BRD → PBI → approval → deploy). The instinct is directionally right
+— the workflows genuinely diverge at the high end. But splitting now
+would be **predict-driven**, not observation-driven: Phases 2–6 don't
+exist yet, so we'd be designing two plugins around skills that haven't
+been written.
+
+The lower-risk path is **one plugin with a profile flag** (Phase 1
+sub-deliverable 1E). Default `core` ships only dev-centric skills.
+Pipeline users opt into the full set with `--profile pipeline` or
+`--profile both`. Same source of truth, same shared infrastructure
+(`eval-runner.py`, `validate_skills.py`, `setup.sh`, `/brainstorm`'s
+multi-agent vet, `/flowsim`), no duplicated primitives, and consumers
+can validate the full pipeline locally **before ever standing up Jenkins
+or any CI**.
+
+**Trigger conditions for revisiting the split** (any one is sufficient):
+
+1. **Phases 2–6 ship and the pipeline-side skills feel like a coherent
+   separate product.** Right now they're a roadmap; once they're built
+   and used, you'll know whether they hang together as a unit or as
+   scattered additions to the dev plugin.
+2. **Pipeline users complain about local-dev skill noise** (or
+   vice versa). Real friction trumps predicted friction.
+3. **Release cadences fundamentally diverge.** If pipeline users need
+   months-long stability windows while local-dev users want weekly
+   iteration, that's the unambiguous signal.
+
+Until any of those fires, profile filtering is the answer. If the
+split eventually happens, the pipeline-tagged skills are already
+labeled and ready to extract into a downstream plugin
+(`brainstorm-pipeline` extending `brainstorm-toolkit`) — never
+into a third "shared base" plugin (overhead masquerading as cleanliness).
 
 ### Phase 2 — Upstream: BRD and PBIs (~1 week)
 
