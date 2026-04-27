@@ -58,9 +58,8 @@ Typical chains:
                                           consult GOTCHAS.md automatically)
   Post-merge verify:  /post-deploy-verify  (pipeline profile)
 
-Tip: many skills drop a one-line .claude/.next-action file when they finish
-so the Stop hook surfaces the next command for you. If you've never seen
-"Next: /..." after a skill, your hook may not be installed — re-run
-setup.sh from the plugin root, then open /hooks once on Claude Code or
-reload the window on Copilot.
+Tip: many skills drop a one-line .claude/.next-action file when they finish.
+If you separately install optional Stop-hook support, that hook can surface
+the file as a suggested next command. If you've never seen "Next: /...",
+that's normal on repos that haven't wired in that optional hook.
 ```

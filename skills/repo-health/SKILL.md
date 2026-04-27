@@ -75,6 +75,13 @@ If none detected, mark `skip` with reason `no recognized package manifest`.
 If the tool is missing on PATH, mark `skip` with reason `<tool> not
 installed` (don't fail — many envs lack these).
 
+Important: for audit tools that commonly exit non-zero when they find
+vulnerabilities (`npm audit`, `pip-audit`, `safety check`, `cargo audit`),
+do **not** treat that exit code by itself as a fatal failure. Capture the
+stdout/stderr or JSON report, parse the findings, and continue the sweep.
+Only mark the check `error`/`skip` if the tool is missing or it fails to
+produce usable output.
+
 Report counts of HIGH/CRITICAL vulnerabilities only. MEDIUM/LOW are noise
 for a sweep.
 
@@ -131,13 +138,16 @@ Run again with --no-deps if dep audit is too slow on this repo.
 ```
 
 The "Suggested next" is the highest-impact actionable command (priority:
-dep HIGH > test failure > stale gotcha > orphan file > skipped test). Drop
-this command into `.claude/.next-action` so the Stop hook surfaces it.
-If no actionable findings, write nothing — clean repos shouldn't nag.
+dep HIGH > test failure > stale gotcha > orphan file > skipped test). Only
+write this command to `.claude/.next-action` if the repo is already set up
+for that integration (for example, the file already exists or `.gitignore`
+already covers `.claude/.next-action` or `.claude/`). Otherwise, print the
+suggestion in the report only. If no actionable findings, write nothing —
+clean repos shouldn't nag.
 
-Optionally cache the report at `.claude/pipeline/last-health.json` so a
-future run can show the delta. This is best-effort — failing to write the
-cache never fails the run.
+Optionally cache the report at `.claude/pipeline/last-health.json` only if
+that cache location already exists or is already gitignored. This is
+best-effort — failing to write the cache never fails the run.
 
 ## When this skill triggers
 

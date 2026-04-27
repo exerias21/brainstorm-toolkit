@@ -37,7 +37,7 @@ installed skill in this repo and prints a categorized one-page guide.
 2. **Single-skill mode** (`[skill-name]` given):
    - Glob `<root>/<skill-name>/SKILL.md`. If absent, fall back to a
      case-insensitive substring match against directory names — e.g.,
-     `/cheatsheet sdlc` should resolve to `skills/sdlc/`. If still no match,
+     `/cheatsheet sdlc` should resolve to `<root>/sdlc/`. If still no match,
      error with the list of installed skills as a hint.
    - Read the matched SKILL.md and print its full body. Append a footer:
      `Bundled resources: <list of files in <root>/<name>/templates/ if any>`.
@@ -48,9 +48,10 @@ installed skill in this repo and prints a categorized one-page guide.
      `name`, `description`, `argument-hint`,
      `metadata.brainstorm-toolkit-applies-to`. Skip dirs without a SKILL.md.
    - Resolve each skill's category via the static map in
-     `templates/categories.md` (read once at the start of this stage).
-     Skills not in the map land in a final `Uncategorized` bucket so new
-     skills surface immediately without requiring a categories.md edit.
+     `<root>/cheatsheet/templates/categories.md` (the bundled resource
+     installed alongside this skill; read it once at the start of this
+     stage). Skills not in the map land in a final `Uncategorized` bucket so
+     new skills surface immediately without requiring a categories.md edit.
    - Print, in this category order: Discover, Plan, Build & ship, Health,
      Knowledge, Operate, Uncategorized. Empty categories are omitted.
    - Format per skill:

@@ -43,6 +43,7 @@ bash ~/brainstorm-toolkit/setup.sh --target . --tools both
 - `scripts/*` → `<target>/scripts/`.
 - `templates/AGENTS.md.template` → `<target>/AGENTS.md` if missing. Symlinks `CLAUDE.md → AGENTS.md` on POSIX, else copies.
 - `templates/TASKS.md.template` → `<target>/TASKS.md` if missing.
+- `templates/CHEATSHEET.md.template` → `<target>/CHEATSHEET.md` if missing. This is the printable companion to `/cheatsheet`; once present, setup leaves user edits alone.
 - `templates/project.json.example` → `<target>/.claude/project.json.example` (left for you to rename and edit).
 
 Re-running `setup.sh` is safe — it skips existing files unless you pass `--force`. Install only for one tool with `--tools claude` or `--tools copilot`.
@@ -75,7 +76,7 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 | `/status` | Both | Quick readout of TASKS.md counts + active task |
 | `/sdlc` | Both † | Plan → implement → eval → test → flowsim → PR (sequential on Copilot) |
 | `/repo-onboarding` | Both | Generate AGENTS.md + TASKS.md + project.json + GOTCHAS.md |
-| `/repo-health` | Both | Read-only hygiene sweep (dead code + tests + deps + secrets + gotchas-currency); produces a scored report and a "next: ..." hint. |
+| `/repo-health` | Both | Read-only hygiene sweep (dead code + tests + deps + secrets + gotchas-currency); prints a scored report and the highest-impact next command. |
 | `/test-check` | Both | Run configured tests + log audit after changes (one-shot, no fix loop) |
 | `/e2e-loop` | Both † | Run e2e tests in a fix loop with flaky-test guard (dispatches `e2e-test-runner` agent on Claude, inline on Copilot) |
 | `/gotcha` | Both | View or append project pitfalls |
