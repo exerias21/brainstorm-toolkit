@@ -277,7 +277,25 @@ Share the validation feedback with the user. If there are issues, revise the pla
 
 ### Step 8: Exit Plan Mode and Next Steps
 
-Exit Plan mode (`ExitPlanMode`). Offer the user the next steps:
+Before exiting Plan mode, drop a **next-action sentinel** so the Stop hook
+surfaces the recommended follow-up command in the terminal once Claude
+finishes responding. The plan file MUST already exist at
+`plans/brainstorm-<topic-slug>.md` before writing the sentinel — a sentinel
+that points at a missing plan is a bug.
+
+```
+# Write a single line to .claude/.next-action with the recommended command:
+echo "/sdlc plans/brainstorm-<topic-slug>.md" > .claude/.next-action
+```
+
+The Stop hook (installed by `setup.sh` into both
+`.claude/settings.json` for Claude Code and `.github/hooks/next-action.json`
+for Copilot) reads the file once, prints `Next: <command>` to the user, and
+deletes it — so the suggestion fires once, not on every Stop. Skip the
+sentinel write if the user explicitly chose "save for later" with no
+intent to ship.
+
+Then exit Plan mode (`ExitPlanMode`). Offer the user the next steps:
 
 1. **Implement now** — transition into building directly in this session
 2. **Run `/sdlc {plan_file}`** — hand the plan to the automated implementation flow

@@ -21,6 +21,7 @@ TASKS.md
 GOTCHAS.md
 .claude/project.json
 .claude/pipeline/
+.claude/.next-action
 
 # Local test output
 /tmp/
