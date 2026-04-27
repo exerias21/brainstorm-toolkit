@@ -132,7 +132,7 @@ applies_to_includes() {
 }
 
 # 1. Skills
-echo "[1/6] Skills"
+echo "[1/7] Skills"
 for skill_dir in "$PLUGIN_ROOT"/skills/*/; do
   [[ -d "$skill_dir" ]] || continue
   name="$(basename "$skill_dir")"
@@ -158,16 +158,16 @@ done
 
 # 2. Agents (Claude-only)
 if [[ "$want_claude" -eq 1 && -d "$PLUGIN_ROOT/agents" ]]; then
-  echo "[2/6] Agents (Claude-only)"
+  echo "[2/7] Agents (Claude-only)"
   copy_tree_if_new "$PLUGIN_ROOT/agents" "$TARGET/.claude/agents"
 fi
 
 # 3. Scripts (repo-local) — opt-out via --no-copy-scripts to use plugin-resident invocation
 if [[ -d "$PLUGIN_ROOT/scripts" && "$COPY_SCRIPTS" -eq 1 ]]; then
-  echo "[3/6] Scripts"
+  echo "[3/7] Scripts"
   copy_tree_if_new "$PLUGIN_ROOT/scripts" "$TARGET/scripts"
 elif [[ "$COPY_SCRIPTS" -eq 0 ]]; then
-  echo "[3/6] Scripts (skipped: --no-copy-scripts)"
+  echo "[3/7] Scripts (skipped: --no-copy-scripts)"
   echo "  Configure .claude/project.json to invoke from the plugin, e.g.:"
   echo "    \"eval\": { \"runner\": \"python3 $PLUGIN_ROOT/scripts/eval-runner.py\" }"
 fi
@@ -176,7 +176,7 @@ fi
 # used. Consumers can review it to discover newly-added optional fields like
 # eval.thresholds and pipeline.poka_yoke. The user's actual
 # .claude/project.json is never touched.
-echo "[4/6] Project config example (skip-on-exist unless --force)"
+echo "[4/7] Project config example (skip-on-exist unless --force)"
 copy_if_new "$PLUGIN_ROOT/templates/project.json.example" "$TARGET/.claude/project.json.example"
 if [[ -f "$TARGET/.claude/project.json" ]]; then
   echo "  note: .claude/project.json present — review .claude/project.json.example for new optional fields"
@@ -192,7 +192,7 @@ fi
 # git both struggle with symlinks (git fails to index, edits in IDEs follow
 # the link and silently drift). Two regular files is the lowest-friction
 # cross-platform choice. Consumers keep them in sync — content is small.
-echo "[5/6] AGENTS.md / CLAUDE.md"
+echo "[5/7] AGENTS.md / CLAUDE.md"
 if [[ -e "$TARGET/AGENTS.md" || -e "$TARGET/CLAUDE.md" ]]; then
   echo "  skip: AGENTS.md and/or CLAUDE.md already present (user content; not overwritten)"
 else
@@ -203,11 +203,21 @@ fi
 
 # 6. TASKS.md
 # Also user content; skip-on-exist regardless of --force.
-echo "[6/6] TASKS.md"
+echo "[6/7] TASKS.md"
 if [[ -f "$TARGET/TASKS.md" ]]; then
   echo "  skip: TASKS.md already present (user content; not overwritten)"
 else
   copy_if_new "$PLUGIN_ROOT/templates/TASKS.md.template" "$TARGET/TASKS.md"
+fi
+
+# CHEATSHEET.md — printable one-pager. Skip-on-exist regardless of --force,
+# because consumers customize it (different from /cheatsheet, which is the
+# always-current view from SKILL.md frontmatter and never written to disk).
+echo "[7/7] CHEATSHEET.md"
+if [[ -f "$TARGET/CHEATSHEET.md" ]]; then
+  echo "  skip: CHEATSHEET.md already present (user content; not overwritten)"
+else
+  copy_if_new "$PLUGIN_ROOT/templates/CHEATSHEET.md.template" "$TARGET/CHEATSHEET.md"
 fi
 
 # Ensure a path is gitignored. Idempotent (grep-before-append) and CRLF-safe
