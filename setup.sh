@@ -2,7 +2,8 @@
 # setup.sh â€” install brainstorm-toolkit into a target repo for Claude Code and/or GitHub Copilot.
 #
 # Usage:
-#   bash setup.sh [--target <dir>] [--tools claude|copilot|both] [--force] [--no-copy-scripts]
+#   bash setup.sh [--target <dir>] [--tools claude|copilot|both] [--force]
+#                 [--no-copy-scripts] [--no-hooks]
 #
 #   --target <dir>      Target repo root (default: current directory)
 #   --tools <which>     claude | copilot | both (default: both)
@@ -17,6 +18,8 @@
 #                       (eval-runner.py, check_docker_logs.py) from the plugin
 #                       install directly — point .claude/project.json at the
 #                       absolute plugin path instead.
+#   --no-hooks          Skip Stop-hook installation (neither .claude/settings.json
+#                       nor .github/hooks/next-action.json will be written).
 #
 # Design: the plugin repo is the source of truth. Re-run this script to refresh
 # a consumer repo. Managed files such as CLAUDE.md and AGENTS.md are written as
@@ -38,7 +41,7 @@ while [[ $# -gt 0 ]]; do
     --no-copy-scripts)   COPY_SCRIPTS=0; shift ;;
     --no-hooks)          INSTALL_HOOKS=0; shift ;;
     -h|--help)
-      sed -n '2,15p' "$0" | sed 's/^# *//'
+      sed -n '2,23p' "$0" | sed 's/^# *//'
       exit 0
       ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
@@ -227,12 +230,14 @@ ensure_gitignored() {
   # "escape sequence treated as plain" warnings) and leave / unescaped
   # (awk regexes don't use / as a delimiter inside string-built patterns).
   local entry_re
-  entry_re="$(printf '%s' "$entry" | sed -e 's/[][\\^$*+?(){}|]/\\&/g' -e 's/\./[.]/g')"
+  # Strip a trailing slash before building the regex, then append [/]? so
+  # both "foo/bar" and "foo/bar/" in .gitignore are treated as equivalent.
+  entry_re="$(printf '%s' "$entry" | sed -e 's/[][\\^$*+?(){}|]/\\&/g' -e 's/\./[.]/g' -e 's|/$||')"
   local check_broader=0
   if [[ "$entry" == .claude/* ]]; then
     check_broader=1
   fi
-  if awk -v r="^${entry_re}$" -v b="$check_broader" \
+  if awk -v r="^${entry_re}[/]?$" -v b="$check_broader" \
        '{sub(/\r$/,"")} $0 ~ r || (b == "1" && $0 ~ /^[.]claude[/]?$/) {found=1} END {exit !found}' "$gi"; then
     echo "  skip: .gitignore already covers $entry"
   else
@@ -249,7 +254,14 @@ ensure_gitignored() {
 # checks for the exact command string before appending.
 install_stop_hook_claude() {
   local settings="$TARGET/.claude/settings.json"
-  local cmd="bash scripts/hooks/next-action.sh"
+  local cmd
+  if [[ "$COPY_SCRIPTS" -eq 1 ]]; then
+    cmd="bash scripts/hooks/next-action.sh"
+  else
+    local hook_path_escaped
+    printf -v hook_path_escaped '%q' "$PLUGIN_ROOT/scripts/hooks/next-action.sh"
+    cmd="bash $hook_path_escaped"
+  fi
   if ! command -v jq >/dev/null 2>&1; then
     echo "  skip: jq not installed — cannot safely merge Claude hook config."
     echo "        Install jq and re-run, or add this manually to $settings:"
@@ -267,12 +279,17 @@ install_stop_hook_claude() {
     return
   fi
   local tmp; tmp="$(mktemp)"
-  jq --arg cmd "$cmd" '
+  if jq --arg cmd "$cmd" '
     .hooks //= {} |
     .hooks.Stop //= [] |
     .hooks.Stop += [{ "hooks": [{ "type": "command", "command": $cmd }] }]
-  ' "$settings" > "$tmp" && mv "$tmp" "$settings"
-  echo "  wrote: $settings (added Stop hook for next-action)"
+  ' "$settings" > "$tmp" && mv "$tmp" "$settings"; then
+    echo "  wrote: $settings (added Stop hook for next-action)"
+  else
+    rm -f "$tmp"
+    echo "  error: failed to update $settings with Claude Stop hook" >&2
+    return 1
+  fi
 }
 
 # Install the Copilot Stop hook as a standalone file under .github/hooks/.
@@ -280,7 +297,14 @@ install_stop_hook_claude() {
 # simplest install — no merging required. Skip-on-exist (refresh with --force).
 install_stop_hook_copilot() {
   local hook_file="$TARGET/.github/hooks/next-action.json"
-  local cmd="bash scripts/hooks/next-action.sh"
+  local cmd
+  if [[ "$COPY_SCRIPTS" -eq 1 ]]; then
+    cmd="bash scripts/hooks/next-action.sh"
+  else
+    local hook_path_escaped
+    printf -v hook_path_escaped '%q' "$PLUGIN_ROOT/scripts/hooks/next-action.sh"
+    cmd="bash $hook_path_escaped"
+  fi
   if [[ -f "$hook_file" && "$FORCE" -ne 1 ]]; then
     echo "  skip (exists): $hook_file"
     return

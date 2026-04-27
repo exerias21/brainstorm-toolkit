@@ -43,16 +43,13 @@ rm -f "$NEXT_ACTION_FILE"
 [ -n "$cmd" ] || exit 0
 
 # Emit JSON with systemMessage. Use python3 for reliable JSON escaping
-# (handles quotes, backslashes, control chars). Falls back to a sed-based
-# escape if python3 isn't on PATH — keeps the hook usable on minimal images.
+# (handles quotes, backslashes, and control chars). If python3 isn't on
+# PATH, stay silent rather than risk emitting invalid JSON.
 if command -v python3 >/dev/null 2>&1; then
   python3 -c '
 import json, sys
 print(json.dumps({"systemMessage": f"Next: {sys.argv[1]}"}))
 ' "$cmd"
-else
-  esc=$(printf '%s' "$cmd" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
-  printf '{"systemMessage":"Next: %s"}\n' "$esc"
 fi
 
 exit 0
