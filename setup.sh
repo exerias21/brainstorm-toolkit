@@ -127,7 +127,7 @@ applies_to_includes() {
 }
 
 # 1. Skills
-echo "[1/6] Skills"
+echo "[1/7] Skills"
 for skill_dir in "$PLUGIN_ROOT"/skills/*/; do
   [[ -d "$skill_dir" ]] || continue
   name="$(basename "$skill_dir")"
@@ -153,16 +153,16 @@ done
 
 # 2. Agents (Claude-only)
 if [[ "$want_claude" -eq 1 && -d "$PLUGIN_ROOT/agents" ]]; then
-  echo "[2/6] Agents (Claude-only)"
+  echo "[2/7] Agents (Claude-only)"
   copy_tree_if_new "$PLUGIN_ROOT/agents" "$TARGET/.claude/agents"
 fi
 
 # 3. Scripts (repo-local) — opt-out via --no-copy-scripts to use plugin-resident invocation
 if [[ -d "$PLUGIN_ROOT/scripts" && "$COPY_SCRIPTS" -eq 1 ]]; then
-  echo "[3/6] Scripts"
+  echo "[3/7] Scripts"
   copy_tree_if_new "$PLUGIN_ROOT/scripts" "$TARGET/scripts"
 elif [[ "$COPY_SCRIPTS" -eq 0 ]]; then
-  echo "[3/6] Scripts (skipped: --no-copy-scripts)"
+  echo "[3/7] Scripts (skipped: --no-copy-scripts)"
   echo "  Configure .claude/project.json to invoke from the plugin, e.g.:"
   echo "    \"eval\": { \"runner\": \"python3 $PLUGIN_ROOT/scripts/eval-runner.py\" }"
 fi
@@ -171,7 +171,7 @@ fi
 # used. Consumers can review it to discover newly-added optional fields like
 # eval.thresholds and pipeline.poka_yoke. The user's actual
 # .claude/project.json is never touched.
-echo "[4/6] Project config example (skip-on-exist unless --force)"
+echo "[4/7] Project config example (skip-on-exist unless --force)"
 copy_if_new "$PLUGIN_ROOT/templates/project.json.example" "$TARGET/.claude/project.json.example"
 if [[ -f "$TARGET/.claude/project.json" ]]; then
   echo "  note: .claude/project.json present — review .claude/project.json.example for new optional fields"
@@ -187,7 +187,7 @@ fi
 # git both struggle with symlinks (git fails to index, edits in IDEs follow
 # the link and silently drift). Two regular files is the lowest-friction
 # cross-platform choice. Consumers keep them in sync — content is small.
-echo "[5/6] AGENTS.md / CLAUDE.md"
+echo "[5/7] AGENTS.md / CLAUDE.md"
 if [[ -e "$TARGET/AGENTS.md" || -e "$TARGET/CLAUDE.md" ]]; then
   echo "  skip: AGENTS.md and/or CLAUDE.md already present (user content; not overwritten)"
 else
@@ -198,19 +198,29 @@ fi
 
 # 6. TASKS.md
 # Also user content; skip-on-exist regardless of --force.
-echo "[6/6] TASKS.md"
+echo "[6/7] TASKS.md"
 if [[ -f "$TARGET/TASKS.md" ]]; then
   echo "  skip: TASKS.md already present (user content; not overwritten)"
 else
   copy_if_new "$PLUGIN_ROOT/templates/TASKS.md.template" "$TARGET/TASKS.md"
 fi
 
-# Ensure .claude/pipeline/ is gitignored so /sdlc state journals don't surface
-# as untracked changes. Idempotent (grep-before-append) and CRLF-safe (strips
+# CHEATSHEET.md — printable one-pager. Skip-on-exist regardless of --force,
+# because consumers customize it (different from /cheatsheet, which is the
+# always-current view from SKILL.md frontmatter and never written to disk).
+echo "[7/7] CHEATSHEET.md"
+if [[ -f "$TARGET/CHEATSHEET.md" ]]; then
+  echo "  skip: CHEATSHEET.md already present (user content; not overwritten)"
+else
+  copy_if_new "$PLUGIN_ROOT/templates/CHEATSHEET.md.template" "$TARGET/CHEATSHEET.md"
+fi
+
+# Ensure toolkit runtime artifacts are gitignored so they don't surface as
+# untracked changes. Idempotent (grep-before-append) and CRLF-safe (strips
 # trailing \r when checking existing entries). Creates .gitignore if missing.
-ensure_pipeline_gitignored() {
+ensure_gitignored() {
   local gi="$TARGET/.gitignore"
-  local entry=".claude/pipeline/"
+  local entry="$1"
   if [[ ! -f "$gi" ]]; then
     printf '# brainstorm-toolkit\n%s\n' "$entry" > "$gi"
     echo "  wrote: $gi (created with $entry)"
@@ -218,7 +228,7 @@ ensure_pipeline_gitignored() {
   fi
   # Already covered if a broader .claude/ pattern (or the exact entry) is present.
   # awk strips trailing \r so CRLF files match the same way LF files do.
-  if awk '{sub(/\r$/,"")} /^\.claude\/pipeline\/?$/ || /^\.claude\/?$/ {found=1} END {exit !found}' "$gi"; then
+  if awk -v entry="$entry" '{sub(/\r$/,"")} $0 == entry || $0 == ".claude/" {found=1} END {exit !found}' "$gi"; then
     echo "  skip: .gitignore already covers $entry"
   else
     # Append with a leading newline only if the file doesn't already end in one,
@@ -230,8 +240,9 @@ ensure_pipeline_gitignored() {
     echo "  appended to .gitignore: $entry"
   fi
 }
-echo "[gitignore] .claude/pipeline/"
-ensure_pipeline_gitignored
+echo "[gitignore] .claude/pipeline/ + .claude/.next-action"
+ensure_gitignored ".claude/pipeline/"
+ensure_gitignored ".claude/.next-action"
 
 echo
 echo "Done."

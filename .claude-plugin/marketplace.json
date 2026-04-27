@@ -16,6 +16,7 @@
       "skills": [
         "./skills/brainstorm",
         "./skills/brainstorm-team",
+        "./skills/cheatsheet",
         "./skills/data-source-pattern",
         "./skills/dead-code-review",
         "./skills/e2e-loop",
@@ -24,6 +25,7 @@
         "./skills/gotcha",
         "./skills/logging-conventions",
         "./skills/post-deploy-verify",
+        "./skills/repo-health",
         "./skills/repo-onboarding",
         "./skills/sdlc",
         "./skills/status",
