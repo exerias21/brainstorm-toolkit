@@ -484,6 +484,15 @@ Create a pull request for human review.
 
 5. **Report** the PR URL to the user
 
+6. **Trigger code review**: invoke the built-in `/review` slash command on the
+   just-created branch so the human gets a structured pass over the diff before
+   they read it. `/review` writes its findings to the chat session, not to the
+   PR — that's intentional, since the toolkit's default audience is the user
+   driving the pipeline. If team-visible review is wanted, post the summary as
+   a single PR-level comment via `mcp__github__add_issue_comment` (no thread
+   tracking needed). Skip this step entirely if `pipeline.skip_review: true`
+   in `.claude/project.json`.
+
 **State write**: write `stage-outputs/pr-create.json` with `data.branch`,
 `data.pr_url`, `data.pr_number`, `data.commit_sha`. On success, set
 `run.json.status = "complete"`. (Stage 7 is a pure-reporting stage and writes

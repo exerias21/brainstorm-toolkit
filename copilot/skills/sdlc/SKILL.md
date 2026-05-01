@@ -157,6 +157,7 @@ Unless `--skip-flowsim` or `--skip-eval` was passed, invoke `/flowsim {plan_file
    ```
 4. Push: `git push -u origin sdlc/{feature-slug}`.
 5. Create PR via `gh pr create` with a body that includes: plan file link, eval results, test results, flowsim summary, files changed.
+6. Trigger a code review pass over the diff. On Copilot, invoke `/review` if available; otherwise summarize the diff yourself in the chat (severity-tagged: blocker / nit / question). Skip if `pipeline.skip_review: true` in `.claude/project.json`. The review stays in chat — post it as a PR comment via the GitHub MCP only if the user asked for team-visible review.
 
 Do NOT switch back to `main` after the PR — leave the branch checked out so the user can inspect.
 
