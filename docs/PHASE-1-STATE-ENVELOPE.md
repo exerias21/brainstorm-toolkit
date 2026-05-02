@@ -31,6 +31,12 @@ state contract:
 5. **Profile filtering** (`core` / `pipeline`) — keep one plugin, support
    two workflows; default is dev-centric so local users don't carry
    enterprise pipeline skills they'll never use
+6. **`/standardize` skill** (1F) — apply repo-specific patterns the
+   onboarding skill detects; closes the "no cleanup/standardize command"
+   gap raised during dogfood
+7. **Skill naming collision decision** (1G) — resolve the Claude
+   Code vs Copilot duplicate-name visual collision (docs-only fix vs full
+   `-cc`/`-gh` rename)
 
 ---
 
@@ -416,7 +422,118 @@ mistake their absence for a gap.
 | 1C — `--inspect` | 1 day | Pure formatting; trivial |
 | 1D — `/pbi` skill | 2 days | New skill, no existing-skill churn |
 | 1E — profile filtering | 0.5 day | Touches every SKILL.md frontmatter (mechanical) + setup.sh |
-| **Total** | **~1.5 weeks** | Phase 1 unblocks Phases 2, 3, 5; lots of downstream value |
+| 1F — `/standardize` skill (+ onboarding handoff) | 2 days | New skill; modifies `/repo-onboarding` to emit a standards profile |
+| 1G — skill naming collision decision | 0.1 – 2 days | Either docs-only (5 min) or full `-cc`/`-gh` rename (1.5–2 days) |
+| **Total** | **~2 weeks** | Phase 1 unblocks Phases 2, 3, 5; lots of downstream value |
+
+---
+
+## 1F — `/standardize` skill (a.k.a. `/cleanup`)
+
+**Status**: deferred, design open. A reminder routine fires 2026-05-10 to
+revisit. Captured here so it isn't lost.
+
+**Problem**: there is no skill that enforces or applies repo-specific
+patterns once they're known. `/repo-health` *reports* drift, `/dead-code-review`
+*finds* unused code, but nothing **applies** a consistent pattern (logging
+discipline, error-handling shape, import order, naming, file layout) across
+the codebase. Users either do it by hand or accumulate inconsistency.
+
+**Proposed shape**:
+
+- **`/standardize [--dry-run] [scope]`** — read a repo-local *standards
+  profile* and apply or report on conformance. Scope can be a path, a glob,
+  or a module name from `project.json`.
+- **Standards profile lives at `.claude/standards.md`** (or a frontmatter
+  block in `AGENTS.md` if the user prefers one file). Lists the patterns
+  this repo follows: e.g. "all DB calls go through `db/` module", "loggers
+  named `log = logging.getLogger(__name__)`", "no `print()` outside scripts".
+- **`/repo-onboarding` writes the initial standards profile.** Onboarding
+  already inspects the codebase to fill in `project.json` and AGENTS.md;
+  it should also detect dominant patterns and propose a starter
+  `standards.md` for the user to review/edit. This is the "know what to
+  onboard" handoff the user called out — onboarding decides *what the
+  standards are*, `/standardize` *applies them*.
+- **Modes**:
+  - `--dry-run` (default): list violations grouped by rule, with file:line.
+  - apply mode: edit files in place, leave a TASKS.md entry summarizing.
+- **Non-goals**: not a linter replacement (defer to ruff/eslint for syntax
+  rules); not a refactorer (defer to AST tools); operates only on patterns
+  that are too project-specific or too AI-judgement-shaped for those tools.
+
+**Open design questions**:
+1. Is the standards profile a single markdown file or a structured YAML?
+   Markdown is more user-editable; YAML is more enforceable. Recommend
+   markdown with a light structured header (rule id + scope + intent).
+2. Should `/standardize` run as a `/sdlc` stage when changes touch a
+   "standardized" area? Probably no — keep it explicit; auto-running risks
+   surprise edits inside an `/sdlc` PR.
+3. Where does `/dead-code-review` fit? It's already its own skill; leave
+   it. `/standardize` is about *positive* patterns; `/dead-code-review`
+   is about *removing* unused code. Different modes, can coexist.
+
+---
+
+## 1G — skill naming collision (Claude Code vs Copilot)
+
+**Status**: open question, captured during 2026-04-26 dogfood. Decision
+deferred pending evidence of a real misfire.
+
+**Problem**: the toolkit installs identical skill names into
+`.claude/skills/<name>/` and `.github/skills/<name>/`. When both runtimes
+are active in the same VS Code workspace, the slash listing shows e.g.
+`/brainstorm` twice with no indicator of which tool will dispatch it.
+
+**Why it's open**: the dispatch is actually unambiguous — typing into the
+Claude Code prompt routes to `.claude/`; typing into Copilot's chat routes
+to `.github/`. The collision is purely *visual* (autocomplete dedup) and
+only matters when both runtimes are concurrently active.
+
+**Two options**:
+
+- **Option A — documentation-only fix (~5 minutes)**: add a note to
+  `AGENTS.md.template` clarifying that the slash command dispatches based
+  on which prompt you typed it into, and that duplicate names in
+  autocomplete are expected. Recommended unless evidence accumulates.
+- **Option B — full rename to `-cc` / `-gh` suffixes (1.5–2 days)**:
+  ~20 skills × SKILL.md updates, marketplace.json, validate_skills.py,
+  README skills table, AGENTS.md.template skills list, every cross-skill
+  reference (`/sdlc` mentions `/flowsim` etc.), and setup.sh tool-routing.
+  Add ~½ day for an alias layer if back-compat is required (otherwise
+  every consumer install breaks on update).
+
+**Decision criteria for picking Option B over A**:
+1. User reports a real misfire (running the wrong tool's skill), not just
+   visual ambiguity.
+2. Copilot's slash UI starts surfacing both `.claude/` and `.github/`
+   skills in one combined menu.
+3. A future toolkit feature genuinely needs distinct skill identities per
+   tool (e.g., per-tool auto-update streams).
+
+Until any of those, recommend Option A and close this item.
+
+---
+
+## Phase 1 status snapshot (2026-04-26)
+
+| Sub-phase | Status | PR / location |
+|---|---|---|
+| 1A — state envelope | ✅ shipped | PR #2 merged |
+| 1B — `/sdlc --resume` | ⏳ deferred | not started |
+| 1C — `/sdlc --inspect` | ⏳ deferred | not started |
+| 1D — `/pbi` skill | ⏳ deferred | not started |
+| 1E — profile filtering | ⏳ deferred | not started |
+| 1F — `/standardize` skill | ⏳ design open | reminder fires 2026-05-10 |
+| 1G — naming collision | ⏳ decision pending | recommend Option A unless misfire reported |
+
+Adjacent shipped work that informed Phase 1 (not part of the original
+plan but worth noting here):
+
+- Stop hook + `.claude/.next-action` sentinel (PR #3) — enables
+  `/brainstorm → /sdlc` auto-handoff via `Next: /...` system message.
+- `/cheatsheet` + `/repo-health` skills + CHEATSHEET.md (PR #4) —
+  discovery + hygiene-sweep counterparts to the standardize/cleanup gap
+  that 1F will fill.
 
 ---
 
