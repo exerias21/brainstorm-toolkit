@@ -83,6 +83,7 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 | `/eval-harness` | Both | Run pytest + fixture evals with optional fix loop |
 | `/flowsim` | Both | Trace claimed plan flows through source code and flag mismatches |
 | `/dead-code-review` | Both † | Dead-code scan with test verification (sequential on Copilot) |
+| `/review-pr` | Both | On-demand code review for any PR or branch — wraps `/review`, persists to `plans/review-<id>.md`, optional `--post-comment`. Standalone counterpart to the post-PR review `/sdlc` already runs. |
 | `/data-source-pattern` | Both | Pattern guide for scrapers, seed scripts, API ingestion |
 | `/logging-conventions` | Both | Enforce structured logging discipline |
 | `/post-deploy-verify` | Both | Stub — post-deploy BRD/PBI-vs-deployed-system verification matrix (depends on Phase 2 BRD/PBI artifacts; see `BRAINSTORM-PIPELINE.md`) |

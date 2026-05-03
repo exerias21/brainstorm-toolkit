@@ -27,6 +27,7 @@
         "./skills/post-deploy-verify",
         "./skills/repo-health",
         "./skills/repo-onboarding",
+        "./skills/review-pr",
         "./skills/sdlc",
         "./skills/status",
         "./skills/task",
