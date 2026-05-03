@@ -15,6 +15,7 @@
       "strict": false,
       "skills": [
         "./skills/brainstorm",
+        "./skills/brainstorm-deep",
         "./skills/brainstorm-team",
         "./skills/cheatsheet",
         "./skills/data-source-pattern",

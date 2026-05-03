@@ -71,6 +71,7 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 |---|---|---|
 | `/cheatsheet` | Both | Print every installed skill + the typical chains. The always-current view; `CHEATSHEET.md` is the printable companion. |
 | `/brainstorm` | Both † | Conversational feature ideation with lens-divergent wildcards (Plan mode on Claude, linear on Copilot) |
+| `/brainstorm-deep` | Both | Clarification-heavy ideation for ambiguous or high-stakes ideas. Three-pass loop (understand → saturate → plan-with-alternates), perspective-frame sub-agents, expectation-contract output. Slower than `/brainstorm`, more rigorous. |
 | `/brainstorm-team` | Both † | 6-agent team for competitive + product research incl. a lateral-thinking agent (sequential on Copilot) |
 | `/task` | Both | Create one bounded task and execute it with TDD |
 | `/status` | Both | Quick readout of TASKS.md counts + active task |
