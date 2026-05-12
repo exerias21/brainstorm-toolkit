@@ -24,6 +24,7 @@
         "./skills/flowsim",
         "./skills/gotcha",
         "./skills/logging-conventions",
+        "./skills/paloalto-ansible",
         "./skills/post-deploy-verify",
         "./skills/repo-health",
         "./skills/repo-onboarding",

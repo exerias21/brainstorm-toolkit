@@ -86,6 +86,7 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 | `/review-pr` | Both | On-demand code review for any PR or branch — wraps `/review`, persists to `plans/review-<id>.md`, optional `--post-comment`. Standalone counterpart to the post-PR review `/sdlc` already runs. |
 | `/data-source-pattern` | Both | Pattern guide for scrapers, seed scripts, API ingestion |
 | `/logging-conventions` | Both | Enforce structured logging discipline |
+| `/paloalto-ansible` | Both | Generate a custom Ansible module against the **official SCM API** (not paloaltonetworks.panos, not SASE), playbook, eval-corpus entry (apply → verify → loop-back), and optional Postgres audit shaped for future ServiceNow migration. Single-agent sequential by default; opt-in `--team` flag escalates to parallel multi-expert orchestration. Domain reference at `skills/paloalto-ansible/references/scm-ansible.md` is reusable from `/task`. |
 | `/post-deploy-verify` | Both | Stub — post-deploy BRD/PBI-vs-deployed-system verification matrix (depends on Phase 2 BRD/PBI artifacts; see `BRAINSTORM-PIPELINE.md`) |
 
 † Has a Copilot-optimized overlay at `copilot/skills/<name>/`. The overlay runs the same stages sequentially (no parallel sub-agents or Plan mode) because Copilot's VS Code agent mode doesn't yet support those primitives. When it does, overlays will be upgraded. Cross-tool skills without a † rely only on file I/O + test runners and work identically on both tools.
