@@ -31,7 +31,7 @@ HARD_FORBIDDEN_COPILOT_PATTERNS = [
     (re.compile(r"\.claude/agents/"), "references .claude/agents"),
 ]
 
-VALID_TARGETS = {"claude", "copilot"}
+VALID_TARGETS = {"claude", "copilot", "codex"}
 
 
 def parse_targets(raw_value: str) -> list[str]:

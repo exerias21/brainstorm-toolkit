@@ -24,6 +24,7 @@
         "./skills/flowsim",
         "./skills/gotcha",
         "./skills/logging-conventions",
+        "./skills/network-engineer",
         "./skills/post-deploy-verify",
         "./skills/repo-health",
         "./skills/repo-onboarding",
