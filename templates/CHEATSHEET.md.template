@@ -49,7 +49,17 @@ In parallel, runnable any time:
   /repo-health      → scored sweep, prints the highest-impact next command
   /dead-code-review → deeper, multi-agent unused-code scan
   /flowsim {plan}   → trace claimed flows through code, flag drift
+  /review-pr [pr|branch] → on-demand code review for any PR or branch
   /gotcha "<entry>" → capture a hard-won pitfall
+```
+
+Ideation family — pick by ambiguity, not by topic:
+
+```
+  /brainstorm [topic]      → fast conversational, low ambiguity
+  /brainstorm-deep [topic] → clarification-heavy (3-pass + perspective frames
+                             + expectation contract) for ambiguous / high-stakes
+  /brainstorm-team [topic] → 6-agent product/competitive research team
 ```
 
 AppSec Hunter suite (authorized source review only):
@@ -61,6 +71,17 @@ AppSec Hunter suite (authorized source review only):
   /full-audit           → orchestrator: threat-model → all 9 hunters → ranked report
   /repro <finding-id>   → sandboxed PoC under ./repro/, localhost-only
   /codify <finding-id>  → Semgrep + CodeQL rule for fleet-wide sweep
+```
+
+Domain-specific skills (cross-tool; opt-in by need):
+
+```
+  /network-engineer     → Batfish-parsed configs × vendor PSIRT CVEs ×
+                          overpermissive-rule rubric → ranked findings.
+                          Claude + Copilot + Codex; consumer-supplied data sources.
+  /paloalto-ansible     → Custom Ansible module for the SCM API (not panos, not SASE)
+                          + playbook + eval-loop entry. Sequential by default;
+                          --team escalates to parallel multi-expert mode.
 ```
 
 ---
