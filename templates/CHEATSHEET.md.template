@@ -52,6 +52,17 @@ In parallel, runnable any time:
   /gotcha "<entry>" → capture a hard-won pitfall
 ```
 
+AppSec Hunter suite (authorized source review only):
+
+```
+  /threat-model         → STRIDE walkthrough; lists entry points, sinks, risky flows
+  /hunt <class>         → single-class sweep (authz, ssrf, deser, xss-dom,
+                          auth-state, mass-assign, file-upload, secrets, crypto)
+  /full-audit           → orchestrator: threat-model → all 9 hunters → ranked report
+  /repro <finding-id>   → sandboxed PoC under ./repro/, localhost-only
+  /codify <finding-id>  → Semgrep + CodeQL rule for fleet-wide sweep
+```
+
 ---
 
 ## Top 10 commands

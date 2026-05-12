@@ -87,6 +87,11 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 | `/data-source-pattern` | Both | Pattern guide for scrapers, seed scripts, API ingestion |
 | `/logging-conventions` | Both | Enforce structured logging discipline |
 | `/post-deploy-verify` | Both | Stub — post-deploy BRD/PBI-vs-deployed-system verification matrix (depends on Phase 2 BRD/PBI artifacts; see `BRAINSTORM-PIPELINE.md`) |
+| `/threat-model` | Both | STRIDE walkthrough from source — entry points, trust boundaries, sinks, top-N risky flows. Writes `plans/threat-model-<slug>.md`. First step of the AppSec Hunter suite. |
+| `/hunt` | Both | Single-class vulnerability deep dive — `authz`, `ssrf`, `deser`, `xss-dom`, `auth-state`, `mass-assign`, `file-upload`, `secrets`, `crypto`. Per-class playbooks under `skills/hunt/playbooks/`. Output: ranked findings in `plans/findings/`. |
+| `/full-audit` | Both † | AppSec Hunter orchestrator — runs `/threat-model` then fans out all 9 hunters in parallel, dedupes and ranks. Single report at `plans/audit-<sha>.md`. Sequential on Copilot. |
+| `/repro` | Both | Scaffold a sandboxed PoC for a finding under `./repro/<finding-id>/`. Localhost-only, read-only payloads, runtime loopback assertion. |
+| `/codify` | Both | Convert a finding into a Semgrep + CodeQL rule under `./rules/`, plus a fleet-wide sweep of additional sites matching the same pattern. |
 
 † Has a Copilot-optimized overlay at `copilot/skills/<name>/`. The overlay runs the same stages sequentially (no parallel sub-agents or Plan mode) because Copilot's VS Code agent mode doesn't yet support those primitives. When it does, overlays will be upgraded. Cross-tool skills without a † rely only on file I/O + test runners and work identically on both tools.
 
