@@ -1,0 +1,13 @@
+# {{finding_id}} — {{category}} at {{file}}:{{line}}
+# Authorized localhost-only reproduction. Replace 127.0.0.1 only with another
+# loopback alias; never point at staging, prod, or third-party hosts.
+
+### proof request — read-only payload
+{{METHOD}} http://127.0.0.1:{{port}}{{path}}
+Content-Type: {{content_type}}
+{{auth_header_if_needed}}
+
+{{payload_body}}
+
+### expected response signal
+# {{detection_hint}}

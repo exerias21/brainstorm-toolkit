@@ -18,21 +18,26 @@
         "./skills/brainstorm-deep",
         "./skills/brainstorm-team",
         "./skills/cheatsheet",
+        "./skills/codify",
         "./skills/data-source-pattern",
         "./skills/dead-code-review",
         "./skills/e2e-loop",
         "./skills/eval-harness",
         "./skills/flowsim",
+        "./skills/full-audit",
         "./skills/gotcha",
+        "./skills/hunt",
         "./skills/logging-conventions",
         "./skills/post-deploy-verify",
         "./skills/repo-health",
         "./skills/repo-onboarding",
+        "./skills/repro",
         "./skills/review-pr",
         "./skills/sdlc",
         "./skills/status",
         "./skills/task",
-        "./skills/test-check"
+        "./skills/test-check",
+        "./skills/threat-model"
       ]
     }
   ]
