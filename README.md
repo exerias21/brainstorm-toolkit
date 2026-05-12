@@ -87,6 +87,7 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 | `/review-pr` | Both | On-demand code review for any PR or branch — wraps `/review`, persists to `plans/review-<id>.md`, optional `--post-comment`. Standalone counterpart to the post-PR review `/sdlc` already runs. |
 | `/data-source-pattern` | Both | Pattern guide for scrapers, seed scripts, API ingestion |
 | `/logging-conventions` | Both | Enforce structured logging discipline |
+| `/network-engineer` | Claude + Copilot + Codex | Network-security audit methodology: Batfish-parsed configs × vendor PSIRT CVEs × overpermissive-rule rubric → ranked findings report. Pairs with the `network-sec` agent on Claude (parallel stages); Copilot/Codex run the same stages sequentially. Requires consumer-supplied data-source scripts (Batfish, PSIRT, optional Qualys) — see `references/data-source-tools.md`. |
 | `/post-deploy-verify` | Both | Stub — post-deploy BRD/PBI-vs-deployed-system verification matrix (depends on Phase 2 BRD/PBI artifacts; see `BRAINSTORM-PIPELINE.md`) |
 | `/threat-model` | Both | STRIDE walkthrough from source — entry points, trust boundaries, sinks, top-N risky flows. Writes `plans/threat-model-<slug>.md`. First step of the AppSec Hunter suite. |
 | `/hunt` | Both | Single-class vulnerability deep dive — `authz`, `ssrf`, `deser`, `xss-dom`, `auth-state`, `mass-assign`, `file-upload`, `secrets`, `crypto`. Per-class playbooks under `skills/hunt/playbooks/`. Output: ranked findings in `plans/findings/`. |
