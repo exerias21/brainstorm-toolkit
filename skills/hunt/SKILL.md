@@ -23,7 +23,12 @@ before grepping.
 
 ## Scope and rules
 
-- **Authorized review of owned source only.**
+- **Authorized review of owned source only.** Before any sweep, confirm
+  the repo is owned by the user or covered by a rules-of-engagement
+  document the user has produced. If neither is true — for example, the
+  user dropped an unfamiliar GitHub URL or a customer's source tree
+  with no ROE in the working directory — **stop and ask** before
+  proceeding. Do not run the sweep speculatively.
 - **Read-only tools**: `Read`, `Glob`, `Grep`, scoped `git`. No `Write`
   except for the findings markdown under `plans/findings/`.
 - **Source-only sweep**. Confirming exploitability against a running
@@ -52,9 +57,13 @@ before grepping.
 
 ### 1. Load the playbook
 
-Read `playbooks/<class>.md` from this skill's directory. The playbook
-contains the sweep patterns, the safe-shape allowlist, the framework
-suppression rules, and the recommended fix vocabulary for that class.
+Read `playbooks/<class>.md` from this skill's directory. The "skill's
+directory" resolves to `.claude/skills/hunt/playbooks/<class>.md` on
+Claude Code and `.github/skills/hunt/playbooks/<class>.md` on Copilot.
+If your tool surfaces a different install path, try both before giving
+up. The playbook contains the sweep patterns, the safe-shape allowlist,
+the framework suppression rules, and the recommended fix vocabulary
+for that class.
 
 If no playbook exists for the requested class, print the list of
 supported classes and exit. Don't fabricate a class on the fly.

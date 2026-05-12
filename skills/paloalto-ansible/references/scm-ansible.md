@@ -62,10 +62,19 @@ list-with-filter), capture:
 ### Auth (OAuth2 client credentials)
 - Token endpoint: https://auth.apps.paloaltonetworks.com/oauth2/access_token
 - Grant: client_credentials
-- Scope: tsg_id:{tsg}
+- Client ID: env var named by firewall.scm_client_id_env
+             (default SCM_CLIENT_ID)
 - Client secret: env var named by firewall.scm_auth_secret_env
                  (default SCM_CLIENT_SECRET)
-- Token TTL per docs; module must refresh on 401
+- TSG ID: env var named by firewall.scm_tsg_id_env
+         (default SCM_TSG_ID) — passed into the scope as `tsg_id:{tsg}`
+- Scope: `tsg_id:{tsg_id}` (substituted at request time from the TSG env var)
+- Required POST body fields: `grant_type=client_credentials`,
+  `client_id={client_id}`, `client_secret={client_secret}`,
+  `scope=tsg_id:{tsg_id}`
+- Token TTL per docs; module must refresh on 401. If any of the three
+  env vars is missing at runtime, fail with a clear message naming
+  which env var is unset — do not silently attempt the call.
 ```
 
 ### Folder/scope discipline

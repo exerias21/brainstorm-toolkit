@@ -80,7 +80,14 @@ control that lives there *today* (not what the docs claim):
 - App → DB (query layer: parameterized? ORM? raw SQL?)
 - App → outbound HTTP (URL construction — SSRF candidates)
 - App → filesystem (path joining, normalization, allowlist)
-- App → shell / `exec` / `eval` / dynamic require
+- App → shell / `exec` / `eval` / dynamic require / dynamic `import` /
+  language-specific reflection (`getattr` chains in Python,
+  `Method.invoke` in Java)
+- App → JavaScript code-execution sinks: bare `eval`, the `Function`
+  constructor when invoked with a string body, string-form timer APIs,
+  Node's `vm.runIn*` family, and the HTML-write DOM sinks (the latter
+  cross-listed with the xss-dom playbook — refer to that playbook for
+  the concrete sink names)
 - App → unsafe deserialization (binary deserializers, YAML.load, Marshal,
   unserialize, `JSON.parse` on attacker-controlled JSON before schema
   validation)
@@ -89,7 +96,10 @@ control that lives there *today* (not what the docs claim):
 
 For each dangerous-primitive class, list every call site (capped at 30
 per class — note the cap if hit). This is what the hunters will grep
-for later; the threat model gives them the index.
+for later; the threat model gives them the index. For JavaScript/Node
+codebases, the JS code-execution sinks above are a distinct class from
+the shell/exec sinks — enumerate them separately so the xss-dom and
+deser hunters can find them.
 
 ### 5. Walk STRIDE for top flows
 

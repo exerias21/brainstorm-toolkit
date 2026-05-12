@@ -17,7 +17,8 @@ secrets returned by API responses) and history scans.
 - GitHub: `ghp_[0-9A-Za-z]{36}`, `gho_`, `ghs_`, `ghu_`
 - Slack: `xox[baprs]-[0-9A-Za-z-]+`
 - Stripe: `sk_live_[0-9A-Za-z]{24,}`, `pk_live_`, `rk_live_`
-- OpenAI / Anthropic: `sk-[A-Za-z0-9]{20,}`, `sk-ant-[A-Za-z0-9-]+`
+- OpenAI: `sk-proj-[A-Za-z0-9_-]{48,}`, legacy `sk-[A-Za-z0-9]{48}` (exact 48 — the loose `{20,}` form matches Stripe placeholders and product IDs)
+- Anthropic: `sk-ant-(api|admin)\d{2}-[A-Za-z0-9_-]{90,}` (current keys are ~100 chars; the bare `sk-ant-` prefix without the length anchor is too loose)
 - Private keys: `-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----`
 - Generic: `password\s*=\s*["'][^"']{8,}["']`, `api[_-]?key\s*=\s*["'][^"']+["']`,
   `secret\s*=\s*["'][^"']+["']`, `Authorization:\s*Bearer\s+[A-Za-z0-9._-]+`

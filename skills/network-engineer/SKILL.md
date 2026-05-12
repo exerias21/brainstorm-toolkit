@@ -47,10 +47,12 @@ That intersection — **CVSS × exploitability-by-config × blast-radius** — i
 ranking signal Qualys cannot produce on its own. Always compute it; never just
 re-emit the Qualys list.
 
-## Stage contract (skill-as-methodology, agent-as-orchestrator)
+## Stage contract (skill-as-methodology)
 
-The `network-sec` agent (Claude only) fans these out in parallel sub-agents.
-On Copilot/Codex run them sequentially.
+This skill defines four stages; the execution model is tool-specific
+(see "Cross-tool notes" below). The stage contract itself is
+tool-agnostic — same inputs, same intermediate artifacts, same final
+report regardless of whether the stages run in parallel or sequentially.
 
 ```
 Stage 1: inventory      → Batfish parse-status + node properties
@@ -58,6 +60,9 @@ Stage 2: CVE pull       → PSIRT feeds for every (vendor, OS) in inventory
 Stage 3: overpermissive → Batfish reachability/ACL queries against the rubric
 Stage 4: rank + report  → join 1+2+3, sort by computed risk, emit markdown
 ```
+
+Stages 1, 2, and 3 are independent and can run in parallel where the
+tool supports it. Stage 4 depends on all three.
 
 Each stage writes to `plans/network-audit-<timestamp>/<stage>.json`. Stage 4
 reads all three and emits `report.md`.
@@ -106,36 +111,70 @@ exposed, not just *running an affected version*.
 Run the rubric below against parsed ACLs, security policies, and reachability.
 Use Batfish's `searchFilters`, `reachability`, and `testFilters` questions.
 
-### TODO (USER): Severity rubric — fill in the rows
+### Stage 3 output: `03-overpermissive.json`
 
-Replace the placeholder rows. Each row defines (a) what evidence Batfish must
-return for the row to fire, (b) the base severity, (c) the multiplier for
-blast-radius / sensitive-zone reach.
+Stage 3 writes one JSON file consumed by Stage 4 (the rank-and-report stage).
+**Schema is tool-agnostic** — the parallel execution path (Claude `network-sec`
+agent) and the sequential path (Copilot/Codex) MUST produce the same shape so
+Stage 4's join logic works identically:
 
-| Pattern | Batfish evidence | Base severity | Blast-radius multiplier |
-|---|---|---|---|
-| `any → any:any` permit on edge ACL | `searchFilters` returns flow with src=`0.0.0.0/0`, dst=`0.0.0.0/0`, action=PERMIT | high | × hosts reachable from internet |
-| _TODO row 2 — e.g. mgmt-VRF reachable from corp_ | _TODO_ | _TODO_ | _TODO_ |
-| _TODO row 3 — e.g. SCADA segment ingress from non-OT zone_ | _TODO_ | _TODO_ | _TODO_ |
-| _TODO row 4 — e.g. shadow rule (rule above makes this rule unreachable)_ | _TODO_ | _TODO_ | _TODO_ |
-| _TODO row 5 — e.g. unused rule (no hits in N days)_ | _TODO_ | _TODO_ | _TODO_ |
+```jsonc
+[
+  {
+    "device": "edge-rtr-01",                // hostname from Stage 1 inventory
+    "acl_or_policy": "acl-edge-101",        // ACL name / security policy name
+    "rule_identity": "line 47",             // line number, rule name, or hash
+    "rubric_row": "any-any-edge-acl",       // which rubric row (below) fired
+    "base_severity": "high",                // from the rubric row
+    "blast_radius_hosts": 4200,             // Batfish-computed reachable hosts
+    "blast_radius_multiplier": 3.6,         // log10(hosts + 10) or per-row formula
+    "affected_flow": {                      // representative flow that triggered
+      "src_cidr": "0.0.0.0/0",
+      "dst_cidr": "10.0.0.0/8",
+      "service": "any"
+    },
+    "evidence": "searchFilters flow ..."    // free text — the Batfish call output
+  }
+]
+```
 
-Why this is the user-contribution slot: the *zones that matter* (SCADA, PCI,
-mgmt-VRF, DMZ, jump hosts) and the *risk weights* you assign are network-
-specific. A generic rubric ranks every "any-any" the same; yours should rank
-"any-any reaching the SCADA jump host" 10× higher than "any-any reaching a
-read-only DNS resolver."
+Stage 4's `exploit-path-confirmed bonus` cross-references this file against
+Stage 2's CVE list: a `(device, vulnerable_feature)` pair that also appears
+in `03-overpermissive.json` gets a ×1.5 risk multiplier.
 
-### TODO (USER): Overpermissive checklist — fill in the criteria
+### Severity rubric — defaults; override in `project.json` if needed
 
-Each item below is a check Stage 3 runs; the user fills in the threshold that
-counts as "overpermissive" *for this network*.
+The rows below are sane defaults matching common network-security practice.
+Override per-row via `.claude/project.json` under
+`network.rubric_overrides` (per-row map by `rubric_row` key).
 
-- [ ] ACL line with `any` source AND `any` service → severity ≥ ???
-- [ ] ACL line whose destination CIDR contains > ???? hosts
-- [ ] Service permit list with > ?? distinct ports
-- [ ] _TODO — your network's specific anti-patterns_
-- [ ] _TODO_
+| `rubric_row` | Pattern | Batfish evidence | Base severity | Blast-radius multiplier |
+|---|---|---|---|---|
+| `any-any-edge-acl` | `any → any:any` permit on edge ACL | `searchFilters` returns flow with src=`0.0.0.0/0`, dst=`0.0.0.0/0`, action=PERMIT | high | log10(hosts reachable from internet + 10) |
+| `mgmt-reachable-from-corp` | Mgmt-VRF reachable from corp zone | `reachability` from a corp source IP to any device on mgmt-VRF returns ACCEPTED | high | log10(mgmt hosts reachable + 10) |
+| `scada-ingress-from-non-ot` | OT/SCADA segment ingress from a non-OT zone | `reachability` from non-OT source to OT subnet returns ACCEPTED | high | × 2 if any node in OT segment has an unpatched RCE CVE, else × 1 |
+| `shadow-rule` | A rule above makes this rule unreachable | `unusedStructures` or filter-line-reachability returns the rule as covered by an earlier line | low | × 0.5 (these are cleanup items, not exposures) |
+| `unused-rule` | Rule has no matching telemetry hits in the lookback window | Qualys/flow-log xref returns 0 hits over N days | low | × 0.5 |
+
+If a rubric row is overridden via `project.json` but a required field is
+missing (`base_severity` or `blast_radius_multiplier`), log a warning,
+fall back to the default for that row, and surface the fallback in the
+report's Coverage Caveats section.
+
+### Overpermissive checklist — defaults
+
+Each item is a check Stage 3 runs. The thresholds below are defaults;
+override via `.claude/project.json` under `network.overpermissive_thresholds`.
+
+- [ ] ACL line with `any` source AND `any` service → fires as `any-any-edge-acl` (base severity high)
+- [ ] ACL line whose destination CIDR contains > 65,536 hosts (a /16 or larger) → severity medium, bumped to high if dst overlaps `network.trusted_zones`
+- [ ] Service permit list with > 32 distinct ports → severity medium (suggests "permit any service" intent)
+- [ ] Any rule matching `network.untrusted_zones` source → flag as exposure-of-interest in the report, even if severity is otherwise low
+
+If a row above is still flagged with `_TODO_` in the canonical file (e.g.
+after a forked edit), skip the row, log it in Coverage Caveats as
+"rubric row X skipped — no default provided," and continue Stage 3.
+Never invent a threshold.
 
 ## Stage 4 — Rank + report
 

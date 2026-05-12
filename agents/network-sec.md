@@ -72,7 +72,12 @@ Launch in a single message, both at once:
 - For each rubric row, run the corresponding Batfish question
   (`searchFilters`, `reachability`, `testFilters`)
 - Compute blast-radius (reachable_hosts_from_untrusted_zones) per finding
-- Write `plans/network-audit-<ts>/03-overpermissive.json`
+- Write `plans/network-audit-<ts>/03-overpermissive.json` using the schema
+  defined in the skill's "Stage 3 output" section (one record per finding:
+  `device`, `acl_or_policy`, `rule_identity`, `rubric_row`, `base_severity`,
+  `blast_radius_hosts`, `blast_radius_multiplier`, `affected_flow`, `evidence`).
+  Stage 4's exploit-path-confirmed bonus depends on this schema; do not
+  invent a different shape.
 
 Both sub-agents must finish before Stage 4 starts.
 

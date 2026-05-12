@@ -106,11 +106,23 @@ advisory text (regex/heuristic OK; perfect not required).
 
 ### 2c. Palo Alto — Security Advisories
 
-- **Base:** `https://security.paloaltonetworks.com/api/`
-- **Auth:** none (public; wrapper around the public advisories portal).
-- **Useful endpoint:** `GET /products/PAN-OS?version=11.1.0`
-- **Format:** JSON. Each advisory includes `affected_versions`, `fixed_versions`,
-  and a `cwe_id` — useful for grouping.
+- **Listing (RSS):** `https://security.paloaltonetworks.com/rss.xml` — enumerate
+  recently-published advisories. The `/api/` path that earlier drafts of this
+  reference suggested (`GET /products/PAN-OS?version=...`) is **not a
+  documented public API**; it's a UI route of the advisories portal and will
+  return HTML or 404 for the version-filter query. Don't rely on it.
+- **Per-advisory JSON:** `https://security.paloaltonetworks.com/json/<CVE-ID>` —
+  e.g. `https://security.paloaltonetworks.com/json/CVE-2024-3400`. Stable and
+  scriptable. Returns `affected_versions`, `fixed_versions`, `cvss`, and a
+  product list.
+- **Auth:** none (public).
+- **Pattern:** enumerate via the RSS feed, then fetch per-advisory JSON. For
+  product-filtered queries (e.g. "all PAN-OS 11.1.x advisories"), build the
+  PAN-OS-only subset by filtering the enumerated list on the JSON's `products`
+  field — there's no server-side version filter.
+- **Fallback if either endpoint changes shape:** the **NVD CPE feed** filtered
+  on `cpe:2.3:o:paloaltonetworks:pan-os:` is authoritative for CVE-vendor
+  mapping even when PAN's own portal is unreachable.
 
 ### 2d. Fortinet — PSIRT Advisories
 

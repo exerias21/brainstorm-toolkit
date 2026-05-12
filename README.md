@@ -130,12 +130,12 @@ Haiku $1 / $5 per M tokens (input / output).
 | `/brainstorm` (`light`) | host (Opus) | 3 × Haiku lens agents | 20k–50k | $0.10–$0.40 |
 | `/brainstorm` (`deep`) | host (Opus) | 3 × Haiku + 1 × Sonnet stress-test | 30k–70k | $0.20–$0.80 |
 | `/brainstorm` (`ultra`) | host (Opus) | 3 × Haiku + 1 × Sonnet + 2 × Opus | 60k–120k | $1.00–$3.00 |
-| `/brainstorm-deep` | host (Opus) | 3–4 × Sonnet perspective-frame agents (parallel); structured saturation Q&A stays inline | 30k–80k | $0.20–$0.80 |
+| `/brainstorm-deep` | host (Opus) | 4 × Sonnet perspective-frame agents (parallel) by default; `--frames` overrides; structured saturation Q&A stays inline | 30k–80k | $0.20–$0.80 |
 | `/brainstorm-team` | host (Opus) | 6 × Sonnet teammates (4 parallel, 2 sequential) | 60k–150k | $0.60–$2.00 |
-| `/paloalto-ansible --team` | host (Opus) | 4 × Sonnet teammates (1 sequential + 3 parallel) | 40k–100k | $0.30–$1.00 |
+| `/paloalto-ansible --team` | host (Opus) | 3 × Sonnet (default) or 4 × Sonnet (`--with-audit`); Teammate 1 sequential, then remaining teammates parallel | 40k–100k | $0.30–$1.00 |
 | `/dead-code-review` | host (Opus) | 3 × Haiku + 2 × Sonnet + 1 × Opus (parallel) | 80k–200k | $0.80–$2.50 |
 | `/post-deploy-verify` | host model | 2 × Haiku + 1 × Sonnet **per PBI batch** | scales with batch | $0.10–$1.00 / batch |
-| `/full-audit` | host (Opus) | `/threat-model` inline → 9 × Sonnet hunters fan-out (parallel) → inline dedupe + rank | 150k–500k | $1.50–$5.00 |
+| `/full-audit` | host (Opus) | `/threat-model` as sub-skill (own context pass) → 9 × Sonnet hunters fan-out (parallel) → inline dedupe + rank | 150k–500k | $1.50–$5.00 |
 | `/sdlc` | host (Opus) | 3 × Haiku (sanity) + 1 × Opus (impl) + 2–4 × Haiku/Sonnet (validate) + optional Opus/Sonnet (eval-fix) + Sonnet (e2e) | 100k–300k | $3.00–$10.00 |
 
 **Notes / caveats**:

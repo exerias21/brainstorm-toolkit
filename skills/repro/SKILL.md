@@ -61,6 +61,23 @@ If arg is a path → read it directly. Otherwise grep
 - Confidence score (skip if <8 — refuse to repro low-confidence
   findings; they're FP-prone)
 
+### 1b. Authorization gate — BEFORE choosing or showing any payload
+
+After resolving the finding but **before** picking, describing, or
+printing any payload table, confirm with the user:
+
+```
+About to scaffold a PoC for <finding-id> (<category>) at <file>:<line>.
+Confirm before I describe the payload:
+- Is this finding in source you own or are authorized to test? [y/n]
+- Will the PoC run only against your own disposable localhost sandbox? [y/n]
+```
+
+Only proceed on `y` to both. On `n` to either, refuse and explain — do
+not print the payload table, do not name a payload, do not show the
+attack shape. The payload preview is itself sensitive output for
+unauthorized targets; gate it behind the authorization check, not after.
+
 ### 2. Choose a non-destructive proof payload
 
 Per category, the default payload:
@@ -79,19 +96,19 @@ Per category, the default payload:
 | Secrets | No PoC — the proof is the grep hit. Rotate, don't replay. |
 | Crypto | Deterministic decryption of a sample ciphertext using the recovered weakness; not an active attack |
 
-### 3. Confirm sandbox setup with the user
+### 3. Confirm sandbox port and isolation
 
-Print the planned PoC contents and ask:
-```
-About to write ./repro/<finding-id>/repro.py + request.http
-Target host: 127.0.0.1:<port>
-Payload: <one-line description>
+Authorization is already confirmed in step 1b. Now collect the
+runtime specifics needed to scaffold the files:
 
-Confirm:
-- Is your sandbox running on 127.0.0.1:<port>? [y/n]
-- Is this sandbox isolated from any real data? [y/n]
 ```
-Only proceed on `y` to both.
+Sandbox port for 127.0.0.1: ?
+Sandbox confirmed isolated from any real data (no shared DB,
+no production credentials, no real PII)? [y/n]
+```
+
+Only proceed on `y` for isolation. If the user has no port in mind,
+suggest a high-numbered local default (e.g. 8080) and proceed.
 
 ### 4. Generate the files
 

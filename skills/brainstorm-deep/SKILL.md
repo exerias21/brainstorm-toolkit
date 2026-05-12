@@ -110,9 +110,23 @@ that emerged in Pass 2>
 - ...
 ```
 
-`/sdlc` and `/task` can grep this block to ground their own work. Plans without this block fail acceptance and the skill should refuse to write them.
+`/sdlc` and `/task` can grep this block to ground their own work.
 
 ### Step 5 — Write the plan file
+
+**Pre-write gate (mandatory).** Before calling Write, verify the
+expectation contract block:
+
+1. The block exists at the bottom of the plan content.
+2. **All four sub-sections are present and populated**: `What you said`,
+   `What I heard`, `What I'm NOT doing` (≥1 non-goal bullet),
+   `How we'll know it worked` (≥1 success-signal bullet).
+
+If any sub-section is missing, empty, or filled with a placeholder
+like `<TBD>`, **refuse to call Write**. Instead, ask the user to
+supply the missing pieces and only proceed once they're filled in.
+The expectation contract is this skill's misalignment-catching net;
+writing a plan without it defeats the skill's purpose.
 
 Write to `plans/brainstorm-deep-<topic-slug>.md`. Slug is derived from the user's topic the same way `/brainstorm` does it. Same naming convention so downstream `/sdlc <plan>` consumption is uniform.
 
@@ -130,14 +144,15 @@ Write to `plans/brainstorm-deep-<topic-slug>.md`. Slug is derived from the user'
 - **3-batch ceiling, no exceptions.** If you reach it and still feel uncertain, say so out loud and proceed anyway — that's a useful signal to the user.
 - **Sub-agents return ≤300 words each.** Frame agents are punchy stress-tests, not essays.
 - **Frames inform, don't override.** User intent wins ties.
-- **No expectation contract → no plan write.** This block is the misalignment-catching net; without it the skill loses its differentiator.
+- **You MUST refuse to call Write** if the expectation contract block is missing, incomplete, or contains placeholder text. All four sub-sections (`What you said`, `What I heard`, `What I'm NOT doing`, `How we'll know it worked`) must be populated. This is a hard stop, not a soft preference.
 - **`--fast` is the eject hatch, not the default.** If users start passing it every time, the skill's depth is wrong for them and they should be using `/brainstorm`.
 
 ## When to redirect to a sibling skill
 
 - Ask is small, well-scoped, low-stakes → `/brainstorm`
+- User wants faster divergent ideation with model-tier-driven rigor (3 Haiku + Sonnet stress-test + 2 Opus reviewers) **on a plan they're already mostly happy with** → `/brainstorm --vet ultra`. Difference: `ultra` is a *validator stack* applied to an existing draft; `brainstorm-deep` is a *clarification loop* run before the draft exists. If you're not sure what you want, you want this skill, not `ultra`.
 - User wants competitive analysis or a multi-persona team to write separate sections → `/brainstorm-team`
-- User already has a clear PBI in mind and just wants it written up → `/pbi` (Phase 1D)
+- User already has a clear PBI in mind and just wants it written up → `/task` for now (`/pbi` will be the right answer once Phase 1D lands; it doesn't exist yet)
 - Ask is "audit the existing X for issues," not "design something new" → `/repo-health` or `/dead-code-review`
 
 ## Subagent usage summary

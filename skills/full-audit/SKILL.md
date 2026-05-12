@@ -46,6 +46,24 @@ entry point.
 
 ## Procedure
 
+### Stage 0 — Cost confirmation
+
+Before dispatching, tell the user what this run will cost:
+
+```
+/full-audit will run /threat-model then dispatch 9 parallel Sonnet
+hunters (one per vulnerability class). Expected cost for a medium
+codebase: $1.50–$5.00 at 2026-04 list pricing. Wall-clock: 8–15 min.
+Use /hunt <class> for cheaper targeted re-checks between audits.
+
+Proceed? [y/n]
+```
+
+Skip the prompt if the user passed `--yes` or the orchestrator is
+itself a non-interactive automation (CI, scheduled run). Otherwise
+wait for confirmation — a 9-way fan-out is the most expensive routine
+the toolkit ships and users deserve a confirmation step.
+
 ### Stage 1 — Threat model
 
 Invoke `/threat-model [path]`. This produces

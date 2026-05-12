@@ -71,7 +71,9 @@ Read these in order, skipping any that don't exist:
 {
   "firewall": {
     "scm_tenant_url": "https://...",
+    "scm_client_id_env": "SCM_CLIENT_ID",
     "scm_auth_secret_env": "SCM_CLIENT_SECRET",
+    "scm_tsg_id_env": "SCM_TSG_ID",
     "scm_api_docs_dir": "docs/scm-api/",
     "module_dir": "library/",
     "playbook_dir": "playbooks/",
@@ -180,11 +182,18 @@ USER-FILL: constrain what this skill will author for your environment.
   DENY: zones, virtual-routers, HA-config, decryption-profiles
 Both the default-mode flow and the --team-mode Teammate 2 read this list
 and refuse out-of-scope intents.
+
+If you leave these empty, the skill falls back to the global refuse-list
+in references/scm-ansible.md (zones, virtual-router, HA, bulk-destructive
+ops are denied; all other SCM object types are allowed). An empty ALLOWED
+list is treated as "all object types allowed except the global deny
+list" — NOT as "allow everything." If you want a stricter project-level
+allowlist, list the object types here.
 -->
 
-ALLOWED: <!-- TODO: fill in -->
+ALLOWED: <!-- empty → fallback to references/scm-ansible.md global allowlist -->
 
-DENY: <!-- TODO: fill in -->
+DENY: <!-- empty → fallback to references/scm-ansible.md global deny list (zones, virtual-routers, HA, bulk-destructive) -->
 
 ---
 
