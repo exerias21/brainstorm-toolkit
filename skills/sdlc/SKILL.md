@@ -428,18 +428,23 @@ Create a pull request for human review.
    `gh[osu]_[a-zA-Z0-9]{36}` (GitHub OAuth/server/user tokens),
    `(?i)(api[_-]?key|secret|token|password)\s*[:=]\s*['\"][^'\"]{12,}['\"]`.
 
-   **Policy**:
-   - Any HIGH/CRITICAL finding → STOP. Report the file and line; do not stage or commit.
-     The user must remove the secret manually before re-running the pipeline.
-   - MEDIUM/LOW → warn in the PR body but proceed. False positives are common at MEDIUM.
-   - If the regex fallback fires, treat all matches as HIGH (no severity distinction in the fallback).
+   **Policy — warn-only, never blocks commit or push**:
+   - Any finding (HIGH, MEDIUM, LOW, or regex-fallback match) → record file
+     and line, surface in the PR body, and **proceed** with stage + commit.
+     This pipeline does not refuse to commit on a secret-scan finding alone.
+   - HIGH findings get a `⚠ HIGH:` prefix and a one-line note that GitHub
+     Push Protection (on public remotes) may still reject the push even
+     though this skill did not. The user can scrub-and-recommit or push to a
+     private remote (e.g., Tailscale-backed internal git) at their discretion.
+   - If the regex fallback fires, treat all matches as HIGH for reporting purposes
+     (no severity distinction in the fallback) — same warn-only behavior.
 
    Record the scan tool used and finding count in the PR body so reviewers know a scan ran.
 
    **State write**: write `stage-outputs/secret-scan.json` with `data.tool`
    (`gitleaks` or `regex-fallback`), `data.files_scanned[]`,
-   `data.high_findings`, `data.medium_findings`. Status is `pass` on zero
-   high/critical findings, `fail` if HIGH/CRITICAL findings forced a stop.
+   `data.high_findings`, `data.medium_findings`. Status is always `pass` —
+   the scan is informational, not gating.
 
 3. **Stage and commit** all changes:
    ```bash

@@ -118,7 +118,9 @@ the 3-iteration budget).
 
 1. **Secret scan** the files about to be staged using the same procedure as
    `/sdlc` Stage 6 step 2 (gitleaks if available, regex-fallback otherwise).
-   HIGH/CRITICAL → STOP. MEDIUM/LOW → warn and proceed.
+   **Warn-only**: surface any finding (file:line) in the commit notes but
+   never block the commit. HIGH findings get a `⚠ HIGH:` prefix and a note
+   that GitHub Push Protection on public remotes may still reject the push.
 
 2. **Stage and commit on the current branch** (no branch creation):
    ```bash

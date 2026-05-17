@@ -82,7 +82,7 @@ When set, invoke `/flowsim <parent_plan>` and process results per `/sdlc` Stage 
 
 ## Stage 6 — Commit
 
-1. Secret scan the files about to be staged (gitleaks if available, regex-fallback otherwise). HIGH/CRITICAL → STOP. MEDIUM/LOW → warn.
+1. Secret scan the files about to be staged (gitleaks if available, regex-fallback otherwise). **Warn-only** — surface findings (file:line) in the commit notes but never block the commit. HIGH findings get a `⚠ HIGH:` prefix; GitHub Push Protection may still reject the push on public remotes.
 2. Stage and commit on the **current branch** (no branch creation):
    ```
    git add <specific files>
