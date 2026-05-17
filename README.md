@@ -73,9 +73,10 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 | `/brainstorm` | Both † | Conversational feature ideation with lens-divergent wildcards (Plan mode on Claude, linear on Copilot) |
 | `/brainstorm-deep` | Both | Clarification-heavy ideation for ambiguous or high-stakes ideas. Three-pass loop (understand → saturate → plan-with-alternates), perspective-frame sub-agents, expectation-contract output. Slower than `/brainstorm`, more rigorous. |
 | `/brainstorm-team` | Both † | 6-agent team for competitive + product research incl. a lateral-thinking agent (sequential on Copilot) |
-| `/task` | Both | Create one bounded task and execute it with TDD |
+| `/task` | Claude + Copilot + Codex | Create one bounded task and execute it with TDD on the current branch — no flags, always TDD |
+| `/tasker` | Claude + Copilot + Codex | Task-row work with full /sdlc discipline (evals + validate + flowsim) but no PR — implements → tests → commits on the current branch. Use between `/task` and `/sdlc` |
 | `/status` | Both | Quick readout of TASKS.md counts + active task |
-| `/sdlc` | Both † | Plan → implement → eval → test → flowsim → PR (sequential on Copilot) |
+| `/sdlc` | Claude + Copilot + Codex † | Plan → implement → eval → test → flowsim → PR. No flags; skill-repo mode auto-detected from `.claude-plugin/marketplace.json` |
 | `/repo-onboarding` | Both | Generate AGENTS.md + TASKS.md + project.json + GOTCHAS.md |
 | `/repo-health` | Both | Read-only hygiene sweep (dead code + tests + deps + secrets + gotchas-currency); prints a scored report and the highest-impact next command. |
 | `/test-check` | Both | Run configured tests + log audit after changes (one-shot, no fix loop) |

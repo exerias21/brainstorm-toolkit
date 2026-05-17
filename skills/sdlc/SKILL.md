@@ -4,9 +4,9 @@ description: >
   Automated plan-to-PR pipeline. Takes a plan file, implements it via agent,
   generates evals, runs eval+fix loop, validates with /test-check, and creates
   a PR for human review. The full SDLC lifecycle minus human merge.
-argument-hint: "{plan_file} [--dry-run] [--skip-eval] [--skip-flowsim] [--max-fix-loops N] [--background] [--skill-repo]"
+argument-hint: "{plan_file}"
 metadata:
-  brainstorm-toolkit-applies-to: claude copilot
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # SDLC Pipeline
@@ -19,16 +19,12 @@ Autonomous feature delivery: plan file in, PR out.
 
 ## Arguments
 
+Pass the plan file path. No flags.
+
 - `plan_file` (required): Path to the plan (e.g., `plans/my-feature.md`)
-- `--dry-run`: Parse plan and report what would be done, without implementing
-- `--skip-eval`: Skip eval generation and fix loop (Stages 3-4) and skip flowsim
-- `--skip-flowsim`: Skip Stage 5.6 flow simulation only (evals still run)
-- `--max-fix-loops N`: Max eval-fix iterations (default: 3)
-- `--background`: Run as background agent, notify when PR is ready
-- `--skill-repo`: The repo being changed is a markdown-skill plugin (no application code,
-  no test suite). Substitutes Stages 3, 4, 5, 5.5 with skill-appropriate structural checks
-  (validator, marketplace registration, template-reference resolution, setup.sh dry install).
-  See "Skill-repo mode" below.
+
+Skill-repo mode is auto-detected — see "Skill-repo mode" below. To preview a
+plan before running the pipeline, use `/brainstorm`.
 
 ## Prerequisites
 
@@ -62,9 +58,9 @@ sidecar writes).
   (canonical kebab name from `docs/CONVENTIONS.md`, never decimals — so
   `sanity-check.json`, not `stage-1.5.json`) and append the stage to
   `run.json.stages_completed`.
-- On `--skill-repo`, skipped stages (`generate-evals`, `eval-fix`,
-  `plan-validate`, `flowsim`) write **no sidecar**; add their names to
-  `run.json.stages_skipped` instead.
+- When skill-repo mode is auto-detected, skipped stages (`generate-evals`,
+  `eval-fix`, `plan-validate`, `flowsim`) write **no sidecar**; add their
+  names to `run.json.stages_skipped` instead.
 - On terminal state, set `run.json.status` to `complete`, `failed`, or `paused`
   per the schema doc.
 
@@ -77,6 +73,13 @@ files sees no behavior change.
 A fresh `/sdlc <plan>` invocation **overwrites** any prior `run.json` and
 `stage-outputs/` for the same slug — resumption is opt-in via a future
 `--resume` flag (Phase 1B), never automatic.
+
+### Skill-repo mode detection
+
+At Stage 1, before doing anything else, check whether the repo is itself a
+markdown-skill plugin: if `.claude-plugin/marketplace.json` exists at repo
+root, switch to skill-repo stage substitutions for the rest of the run (see
+"Skill-repo mode" below). No flag is needed; detection is automatic.
 
 ---
 
@@ -105,8 +108,6 @@ Read the plan file and extract structured information:
 **Acceptance criteria**: {count} identified
 **Estimated complexity**: Small / Medium / Large
 ```
-
-If `--dry-run`, stop here and report.
 
 **State write**: write `stage-outputs/parse.json` with `data.feature_name`,
 `data.files_to_change`, `data.implementation_step_count`,
@@ -221,8 +222,8 @@ Proceed to Stage 5.
    the prompt at `templates/stage-4-fix-eval.md`. Substitute `{feature_name}`,
    `{results_json}`, and `{file_paths}` before dispatch.
 4. After fix agent completes, re-run evals
-5. Repeat up to `--max-fix-loops` iterations (default: 3)
-6. If still failing after max iterations:
+5. Repeat up to 3 iterations
+6. If still failing after 3 iterations:
 
 ```markdown
 ## SDLC Pipeline — PAUSED
@@ -231,14 +232,14 @@ Eval failures persist after {N} fix attempts.
 Remaining failures:
 {failures_summary}
 
-Please review and fix manually, then re-run:
-  /sdlc {plan_file} --skip-eval
+Fix manually, then re-run `/sdlc {plan_file}`.
 ```
 
 **State write**: write `stage-outputs/eval-fix.json` with `data.fix_loops_run`,
-`data.max_fix_loops`, `data.final_pass_count`, `data.final_fail_count`,
-`data.remaining_failures[]`. Status is `pass` if all green, `paused` on max
-loops with persistent failures (set `run.json.status = "paused"` too).
+`data.max_fix_loops` (always `3`), `data.final_pass_count`,
+`data.final_fail_count`, `data.remaining_failures[]`. Status is `pass` if all
+green, `paused` on max loops with persistent failures (set
+`run.json.status = "paused"` too).
 
 ---
 
@@ -252,8 +253,8 @@ Run the complete test suite to ensure no regressions.
    - Backend unit tests (if `test.unit` configured and backend files changed)
    - **E2E tests — dispatch the `e2e-test-runner` agent** (if `test.e2e` configured and
      UI flow changed). The agent runs a fix loop for e2e failures with a flaky-test
-     guard; its iterations count toward `--max-fix-loops`. If `test.e2e` is not
-     configured, skip the e2e step entirely.
+     guard; its iterations count toward the 3-iteration eval-fix budget. If `test.e2e`
+     is not configured, skip the e2e step entirely.
    - Eval regression (if `eval.runner` configured)
 
 2. **If NEW failures** in the non-e2e layers:
@@ -271,10 +272,10 @@ Run the complete test suite to ensure no regressions.
 
 **State write**: write `stage-outputs/validate.json` with `data.layers`
 (per-layer status: logs, frontend, backend, e2e, eval), `data.new_failures[]`,
-`data.preexisting_failures[]`. In `--skill-repo` mode this stage is replaced
-by the skill-repo validation procedure (see "Skill-repo mode" below); the
-sidecar then carries `data.mode = "skill-repo"` with the structural-check
-results documented in `templates/state-schema.md`.
+`data.preexisting_failures[]`. In skill-repo mode (auto-detected) this stage
+is replaced by the skill-repo validation procedure (see "Skill-repo mode"
+below); the sidecar then carries `data.mode = "skill-repo"` with the
+structural-check results documented in `templates/state-schema.md`.
 
 ---
 
@@ -284,7 +285,9 @@ Re-read the plan file and validate that the implementation actually fulfills eve
 requirement. This catches "code works but feature is incomplete" — the gap between
 passing tests and a working product.
 
-**Skip this stage if `--skip-eval` was passed.**
+**Skip this stage if no `eval.runner` is configured** (no test surface to
+validate against). Skip-on-skill-repo is handled by the skill-repo mode
+substitutions below.
 
 ### Decide which validators to launch
 
@@ -323,8 +326,8 @@ section: `api` and `ui` use Sonnet; `data` and `cross-module` use Haiku.
 4. **If failures found**:
    - Feed the failure list back into the Stage 4 fix loop
    - The fix agent receives the validation report, not eval output
-   - Re-run validation after fixes (counts toward `--max-fix-loops`)
-5. **If failures persist after max iterations**: report to user and stop
+   - Re-run validation after fixes (counts toward the 3-iteration budget)
+5. **If failures persist after 3 iterations**: report to user and stop
 
 ```markdown
 ## Plan Validation Report
@@ -354,7 +357,10 @@ UNCLEAR, or MISSING steps. This catches the class of gap where every individual
 checklist item passes but the end-to-end flow silently deviates from the plan's
 intent (wrong ordering, skipped step, different module doing the work).
 
-**Skip this stage if `--skip-flowsim` or `--skip-eval` was passed.**
+**Skip this stage if no `eval.runner` is configured** (without an eval surface,
+flowsim's corroborating-evidence signal degrades to mostly grep, and the
+narrative is best run interactively via `/flowsim` instead). Skill-repo mode
+also skips this stage via the substitution table below.
 
 ### Invoke
 
@@ -376,8 +382,8 @@ Invoke the `/flowsim` skill with the plan file and feature slug:
 4. **If mismatches found**:
    - Feed the `mismatches` array into the Stage 4 fix loop.
    - The fix agent receives the structured JSON, not the markdown.
-   - Re-run `/flowsim` after fixes (counts toward `--max-fix-loops`).
-5. **If mismatches persist after max iterations**:
+   - Re-run `/flowsim` after fixes (counts toward the 3-iteration budget).
+5. **If mismatches persist after 3 iterations**:
    - Report to user with the specific file:line anchors that keep failing.
    - Do NOT proceed to PR — the plan and implementation disagree and a human should adjudicate (sometimes the plan was wrong, not the code).
 
@@ -547,11 +553,14 @@ Please test:
 
 ---
 
-## Skill-repo mode (`--skill-repo`)
+## Skill-repo mode (auto-detected)
 
 Use when the repo being changed is itself a markdown-skill plugin (like
 brainstorm-toolkit). The standard pipeline is shaped for "code-with-tests"; a
 skill repo has no test surface, so eval-driven stages are inapplicable.
+
+**Detection**: at Stage 1, if `.claude-plugin/marketplace.json` exists at the
+repo root, this mode activates automatically. No flag required.
 
 ### Stage substitutions
 
@@ -578,7 +587,7 @@ Embed the result table in the PR body.
 This mode keeps `/sdlc`'s discipline (sanity-check → implement → validate → PR)
 while swapping in the right validation surface for the artifact type.
 
-### State envelope in `--skill-repo` mode
+### State envelope in skill-repo mode (auto-detected)
 
 Skipped stages (`generate-evals`, `eval-fix`, `plan-validate`, `flowsim`)
 write **no sidecar**; their names are appended to `run.json.stages_skipped`

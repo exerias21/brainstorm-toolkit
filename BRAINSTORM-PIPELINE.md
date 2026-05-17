@@ -230,7 +230,7 @@ The SDLC expert's audit, useful as a sanity-check on any future stage:
 |---|---|---|
 | Plan parse / sanity-check | One pass | Cheap Haiku; iteration adds noise |
 | Implementation | One pass | Iterating without feedback regresses; rely on eval loop downstream |
-| Eval | Iterate (max 3) | Already correct in `--max-fix-loops` |
+| Eval | Iterate (max 3) | Hardcoded 3-iteration budget in `/sdlc` Stage 4 |
 | `/test-check` unit/frontend | One pass + targeted fix | Failures route to Stage 4 fix loop |
 | E2E | Iterate w/ flake guard | Already correct in `e2e-loop` |
 | Plan-vs-delivered (5.5/5.6) | Iterate | Mismatches need re-trace after fix |

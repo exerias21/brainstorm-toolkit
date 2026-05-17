@@ -143,9 +143,9 @@ This is mechanical, predictable, and case-insensitive — the latter critical be
 
 Form: lowercase-kebab. Specific patterns:
 
-- **Boolean negation**: `--no-X` (e.g., `--no-eval`, `--no-flowsim`). Existing `--skip-X` flags continue to work as aliases (back-compat); `--no-X` is the canonical form going forward.
-- **Boolean positive**: bare `--X` (e.g., `--force`, `--background`, `--dry-run`).
-- **Numeric limits**: `--max-X` or `--min-X` (e.g., `--max-fix-loops`, `--max-hops`).
+- **Boolean negation**: `--no-X` (e.g., `--no-cache`, `--no-verify`). Older `--skip-X` aliases in third-party tools continue to work; `--no-X` is the canonical form going forward.
+- **Boolean positive**: bare `--X` (e.g., `--force`).
+- **Numeric limits**: `--max-X` or `--min-X` (e.g., `--max-retries`, `--max-hops`).
 - **Modes / enums**: `--X <value>` (e.g., `--vet light`, `--profile core`, `--tools both`).
 - **Targeted runs**: `--X <id>` (e.g., `--pbi pbi-007`, `--sonar sonar-122`, `--inspect <slug>`).
 
@@ -226,7 +226,7 @@ The rule: **identity paths are RFC 1123; doc filenames follow ecosystem.** When 
 
 **Artifact IDs**: aliases supported indefinitely. `task-N` (legacy, no padding) is recognized as equivalent to `task-NNN` by any code that resolves task IDs. New artifacts use the canonical zero-padded form. No batch migration.
 
-**Flags**: aliases supported indefinitely. `--skip-eval` continues to work; `--no-eval` is the canonical form. Help text shows both with `--no-X` first.
+**Flags**: aliases supported indefinitely in skills that still take flags. `/sdlc`, `/task`, and `/tasker` are zero-flag by design and recognize no aliases. Skills that do accept flags use `--no-X` for boolean negation; older `--skip-X` aliases are tolerated where they appear historically.
 
 **Paths**: forward-only. New artifacts land in canonical directories. Existing artifacts in old layouts stay where they are — moving them would break references in tracked plan files.
 

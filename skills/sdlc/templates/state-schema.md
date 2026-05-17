@@ -32,7 +32,7 @@
 
 Stage filenames use the **canonical kebab names** from `docs/CONVENTIONS.md` "Stage names" — `parse`, `sanity-check`, `implement`, `generate-evals`, `eval-fix`, `validate`, `plan-validate`, `flowsim`, `secret-scan`, `pr-create`. Never decimal-versioned (no `stage-1.5.json`).
 
-In `--skill-repo` mode, the skipped stages (`generate-evals`, `eval-fix`, `plan-validate`, `flowsim`) write **no sidecar**. `stage-outputs/validate.json` is still written in skill-repo mode, but as a skill-repo-shaped sidecar that records the structural-check results from `templates/stage-5-skill-repo.md`; in that case `data.mode = "skill-repo"`.
+In skill-repo mode (auto-detected from `.claude-plugin/marketplace.json` at repo root), the skipped stages (`generate-evals`, `eval-fix`, `plan-validate`, `flowsim`) write **no sidecar**. `stage-outputs/validate.json` is still written in skill-repo mode, but as a skill-repo-shaped sidecar that records the structural-check results from `templates/stage-5-skill-repo.md`; in that case `data.mode = "skill-repo"`.
 
 ---
 
@@ -47,12 +47,7 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
   "plan_file": "plans/brainstorm-add-orders.md",
   "plan_hash": "sha256:<hex>",
   "args": {
-    "dry_run": false,
-    "skip_eval": false,
-    "skip_flowsim": false,
-    "max_fix_loops": 3,
-    "skill_repo": false,
-    "background": false
+    "skill_repo": false
   },
   "started_at": "2026-04-26T10:00:00Z",
   "updated_at": "2026-04-26T10:08:23Z",
@@ -69,13 +64,13 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
 | `feature_slug` | string | yes | Derived from plan filename per CONVENTIONS.md slug-derivation. RFC 1123-compliant. |
 | `plan_file` | string | yes | Path relative to repo root, as passed to `/sdlc`. |
 | `plan_hash` | string | yes | `sha256:<hex>` of the plan file's contents at Stage 1. Lets a future `--resume` detect plan edits. |
-| `args` | object | yes | Snapshot of CLI args. Snake_case keys. Boolean flags appear here even when `false`, so resumers don't have to assume defaults. |
+| `args` | object | yes | Snapshot of run-time decisions. Snake_case keys. `/sdlc` is zero-flag — the only field currently recorded is `skill_repo` (auto-detected from `.claude-plugin/marketplace.json` presence at repo root). New additive fields are allowed. |
 | `started_at` | ISO 8601 string | yes | UTC, second precision. |
 | `updated_at` | ISO 8601 string | yes | Refreshed on every stage transition. |
 | `stage` | string | yes | Canonical kebab name of the *current* stage. On terminal states, holds the last attempted stage. |
 | `status` | enum | yes | One of `in_progress`, `complete`, `failed`, `paused`. `paused` means the pipeline stopped and `--resume` would pick it up. |
 | `stages_completed` | string array | yes | In execution order. Each name appears once. A stage is "completed" when its sidecar's status is `pass`. |
-| `stages_skipped` | string array | yes | Stages explicitly skipped (e.g., `--skip-eval`, `--skill-repo` skips, `--skip-flowsim`). Distinct from "not yet run." |
+| `stages_skipped` | string array | yes | Stages explicitly skipped (e.g., stages skipped because their config was absent, or skill-repo-mode skips). Distinct from "not yet run." |
 
 ---
 
@@ -250,7 +245,7 @@ Below is the shape each stage's `data` field is expected to take. These are the 
 
 1. **Stage 1 (`parse`)**: `/sdlc` `mkdir -p .claude/pipeline/<slug>/stage-outputs/`, then writes initial `run.json` with `stage: "parse"`, `status: "in_progress"`, captures `args` and `plan_hash`. On Stage 1 completion, writes `stage-outputs/parse.json`.
 2. **Subsequent stages**: when a stage starts, `run.json.stage` and `run.json.updated_at` are updated. When the stage finishes, its sidecar is written and `run.json.stages_completed` is appended.
-3. **Skipped stages** (e.g., `--skill-repo` skips `generate-evals`): added to `run.json.stages_skipped`; no sidecar is written.
+3. **Skipped stages** (e.g., stages skipped because their config was absent, or skill-repo-mode skips `generate-evals`): added to `run.json.stages_skipped`; no sidecar is written.
 4. **Terminal states**:
    - All stages pass → `run.json.status = "complete"`.
    - Unrecoverable failure → `run.json.status = "failed"`; the failing stage's sidecar has `status: "fail"`.

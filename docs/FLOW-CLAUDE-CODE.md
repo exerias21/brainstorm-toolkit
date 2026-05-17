@@ -70,14 +70,26 @@ Stages:
 1. Parse plan (accepts `plans/brainstorm-*.md`, `plans/tasks/task-N-*.md`, or TASKS.md rows).
 2. Plan sanity-check (3 Haiku agents in parallel check file paths, missing steps, known gotchas).
 3. Implement via an Opus agent, following the plan steps exactly.
-4. Generate evals under `tests/eval/` and/or fixtures under `<eval.features_dir>/`.
-5. Eval + fix loop (up to `--max-fix-loops`, default 3).
+4. Generate evals under `tests/eval/` and/or fixtures under `<eval.features_dir>/` (skipped silently if no `eval.runner` configured).
+5. Eval + fix loop (up to 3 iterations).
 6. Validate via `/test-check` (log audit + unit + e2e).
 7. Plan requirements validation (4 parallel agents: API, UI, data, cross-module).
-8. `/flowsim` (unless `--skip-flowsim`) — narrative trace through claimed flows.
+8. `/flowsim` — narrative trace through claimed flows (runs when a parent plan is available).
 9. Create PR branch, commit, push, `gh pr create`.
 
-Useful flags: `--dry-run`, `--skip-eval`, `--skip-flowsim`, `--max-fix-loops N`, `--background`.
+`/sdlc` takes no flags. The pipeline switches into skill-repo mode automatically when `.claude-plugin/marketplace.json` exists at repo root.
+
+## When to use `/task` vs `/tasker` vs `/sdlc`
+
+Three skills, three opinionated shapes:
+
+| Skill | Input | Terminal action | Use when |
+|---|---|---|---|
+| `/task <description>` | ad-hoc ask | TDD red-green → green commit on current branch | one-line code fix, a small util, a rename. Always TDD; no PR ceremony. |
+| `/tasker <description-or-task-id>` | task-row work | implement → evals → validate → flowsim → commit on current branch | task is too big for `/task`'s pure TDD inner loop but too small to justify a full plan. Full discipline, no PR. |
+| `/sdlc <plan-file>` | plan file | full pipeline → PR | you have a brainstormed plan file and want autonomous delivery with human review at the PR boundary. |
+
+`/tasker` reuses `/sdlc`'s stage templates and state envelope verbatim — same `.claude/pipeline/<slug>/` shape, distinguished by `run.json.pipeline = "tasker"`. If a task balloons mid-run, kill it and re-invoke as `/sdlc`.
 
 ## `project.json` config
 
@@ -99,8 +111,8 @@ Create `.claude/project.json` from `.claude/project.json.example`. Every key is 
 ## Tips
 
 - Run `/repo-onboarding` in any repo that doesn't already have `AGENTS.md`. It only takes a minute and every other skill gets more useful after.
-- Use `/task --defer` when you want a task file written but don't want to execute immediately (e.g., at end of day to queue tomorrow's work).
-- `/sdlc --dry-run` is cheap and surfaces plan problems before you commit Opus tokens.
+- If you want a task file written but don't want to execute it immediately, edit `TASKS.md` directly (one line per task). `/task` always executes; `/tasker` always executes.
+- To preview a plan before running the pipeline, use `/brainstorm` — `/sdlc` no longer has a dry-run mode.
 - For interactive brainstorming on a meaty topic, use `/brainstorm`. For multi-agent competitive/product research, use `/brainstorm-team`.
 
 ## See also

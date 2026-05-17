@@ -6,9 +6,9 @@ description: >
   → implement → verify loop. Use for small to medium items that are too concrete for
   /brainstorm and too small to justify the full /sdlc pipeline. Invoke via /task or
   when the user asks to "just do X" with a clear, bounded ask.
-argument-hint: "<description> [--defer] [--no-test]"
+argument-hint: "<description>"
 metadata:
-  brainstorm-toolkit-applies-to: claude copilot
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Task — single-task TDD execution
@@ -17,7 +17,7 @@ metadata:
 
 - User has a clear, bounded ask: "add a `formatPhone` util", "fix the bug where X", "rename Y to Z across the codebase".
 - Too small for `/sdlc`, too concrete for `/brainstorm`.
-- Use `--defer` to only create the files without executing; use `--no-test` to skip the failing-test-first step (rare — e.g., pure docs).
+- `/task` always executes TDD on the current branch. If you want task-row work with full pipeline discipline (evals + validate + flowsim + commit, but no PR), use `/tasker`. If you want just the row written and nothing run, edit `TASKS.md` directly.
 
 ## Flow
 
@@ -63,13 +63,7 @@ files: []
 
 If running under Claude Code, call `TaskCreate` with the same title. This gives the user a live progress indicator in the UI. Skip silently on other agents.
 
-### 4. Stop here if `--defer`
-
-Report the files written and the next command to run manually. Do not proceed to execution.
-
-### 5. Execute with TDD
-
-Unless `--no-test` is passed:
+### 4. Execute with TDD
 
 1. **Write a failing test** that encodes the acceptance criterion. Use the project's configured test runner (`.claude/project.json` → `test.unit` or `test.frontend`). If the project has no tests, write one in the conventional location (`tests/`, `__tests__/`, etc.).
 2. **Run the test** and confirm it fails for the expected reason. If it passes, the test is wrong — fix it before continuing.
@@ -78,7 +72,7 @@ Unless `--no-test` is passed:
 5. **Re-run the test** until it passes. Do not weaken the test to make it pass.
 6. **Run the wider test suite** if one is configured (`/test-check` or the project's root test command).
 
-### 6. Close out
+### 5. Close out
 
 1. **Update the task file**: set `status: completed`, mark all step checkboxes `[x]`, fill in `Files` with the actual paths touched.
 2. **Mark the TASKS.md row done** (`[~]` → `[x]`) and move it to the `Done` section.
@@ -91,5 +85,5 @@ Commit only if the user asked for it, or if they have a durable "always commit f
 
 - **Don't inflate small tasks.** If the ask is one line of code, the task file can be terse. Don't pad acceptance criteria to look thorough.
 - **Respect `GOTCHAS.md`.** Before writing code, check for entries that apply to the area you're touching.
-- **Don't skip the failing-test step** without `--no-test`. A passing test that was never red verifies nothing.
+- **Don't skip the failing-test step.** A passing test that was never red verifies nothing. If the ask is pure docs (no testable surface), use `/tasker` instead — it degenerates cleanly into a docs-edit + commit flow without forcing TDD.
 - **One task at a time.** If the ask implies multiple tasks, invoke `/task` once per item or suggest `/brainstorm` or `/sdlc` instead.

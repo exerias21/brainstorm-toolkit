@@ -67,7 +67,8 @@ Run `/skills` in the VS Code chat panel to open the Configure Skills menu and ve
 | Skill | Availability | Notes |
 |---|---|---|
 | `/brainstorm` | Yes (sequential overlay) | No plan-mode break; linear walkthrough |
-| `/task` | Yes | Identical to Claude version |
+| `/task` | Yes | Identical to Claude version. No flags; always TDD on current branch |
+| `/tasker` | Yes (sequential overlay) | Task-row work with full /sdlc discipline minus PR. Sequential on Copilot |
 | `/status` | Yes | Identical |
 | `/repo-onboarding` | Yes | Identical |
 | `/test-check` | Yes | Identical — invokes configured test runners |
@@ -79,6 +80,18 @@ Run `/skills` in the VS Code chat panel to open the Configure Skills menu and ve
 | `/brainstorm-team` | Yes (sequential overlay) | 5 research passes done in sequence |
 | `/data-source-pattern` | Yes | Pattern guide, reads the same way |
 | `/logging-conventions` | Yes | Reference guide; identical content |
+
+## When to use `/task` vs `/tasker` vs `/sdlc`
+
+Three skills, three opinionated shapes:
+
+| Skill | Input | Terminal action | Use when |
+|---|---|---|---|
+| `/task <description>` | ad-hoc ask | TDD red-green → green commit on current branch | one-line code fix, a small util, a rename. Always TDD; no PR ceremony. |
+| `/tasker <description-or-task-id>` | task-row work | implement → evals → validate → flowsim → commit on current branch | task is too big for `/task`'s pure TDD inner loop but too small to justify a full plan. Full discipline, no PR. |
+| `/sdlc <plan-file>` | plan file | full pipeline → PR | you have a brainstormed plan file and want autonomous delivery with human review at the PR boundary. |
+
+`/sdlc` and `/tasker` take no flags. `/sdlc`'s skill-repo mode is auto-detected from the presence of `.claude-plugin/marketplace.json` at the repo root.
 
 ## Overlay semantics
 

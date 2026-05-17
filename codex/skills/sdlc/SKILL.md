@@ -1,23 +1,23 @@
 ---
 name: sdlc
 description: >
-  Sequential plan-to-PR pipeline for Copilot. Takes a plan file, implements it,
-  generates and runs evals, validates with /test-check, and creates a PR for
-  human review. This is a Copilot-adapted version of the full SDLC skill —
-  runs the same stages, but inline and sequentially (no parallel worker spawning).
-  Use when you have a finalized plan in plans/ or TASKS.md and want the pipeline
-  to drive the delivery.
+  Sequential plan-to-PR pipeline for Codex CLI. Takes a plan file, implements
+  it, generates and runs evals, validates with /test-check, and creates a PR
+  for human review. This is a Codex-adapted version of the full SDLC skill —
+  runs the same stages, but inline and sequentially (no parallel worker
+  spawning, no Plan mode). Use when you have a finalized plan in plans/ or
+  TASKS.md and want the pipeline to drive the delivery.
 argument-hint: "{plan_file}"
 metadata:
-  brainstorm-toolkit-applies-to: copilot
+  brainstorm-toolkit-applies-to: codex
 disable-model-invocation: true
 ---
 
-# SDLC Pipeline (Copilot Edition — Sequential)
+# SDLC Pipeline (Codex Edition — Sequential)
 
-Sequential version of the SDLC pipeline. Unlike the Claude Code canonical (which spawns Haiku/Opus/Sonnet workers in parallel), this overlay executes every stage inline: Copilot does the work itself, one stage at a time.
+Sequential version of the SDLC pipeline. Unlike the Claude Code canonical (which spawns Haiku/Opus/Sonnet workers in parallel), this overlay executes every stage inline: Codex does the work itself, one stage at a time.
 
-When Copilot's VS Code agent mode gains parallel worker support (Copilot CLI already has `/fleet`), this overlay can be upgraded. Today it ships as a useful degraded version — slower but complete.
+Codex CLI's 2026 Agent Skills spec, like Copilot's, doesn't yet support parallel sub-agent dispatch or Plan mode. This overlay bootstraps from the Copilot overlay and tracks it closely; if Codex-specific behavior diverges, this file can be tuned independently.
 
 ## Prerequisites
 

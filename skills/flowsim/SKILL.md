@@ -22,7 +22,7 @@ This is NOT a program simulator. It's a **structured code review** formatted as 
 ## When to use
 
 - User invokes `/flowsim <plan-file>` or `/flowsim task-3-add-orders`
-- Called automatically by `/sdlc` Stage 5.6 (unless `--skip-flowsim` is set)
+- Called automatically by `/sdlc` Stage 5.6 when a parent plan is available
 - User asks "does the plan actually match what we built?", "trace this flow", "walk through what happens when a user X"
 
 ## Inputs

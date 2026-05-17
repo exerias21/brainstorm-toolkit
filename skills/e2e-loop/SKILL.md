@@ -75,7 +75,7 @@ Flaky tests section — flakes are signal, not noise.
 ### Step 3 — Suggested next actions (based on exit status)
 
 - `success`: note any flaky tests for future investigation; no further action.
-- `failed_after_max_iterations`: list the persistent failures, suggest running again with a larger `--max-fix-loops`, checking the patterns file, or reviewing the specific tests manually.
+- `failed_after_max_iterations`: list the persistent failures and suggest checking the patterns file or reviewing the specific tests manually after the user fixes them.
 - `blocked`: surface the reason (unparseable output, missing command, config gap) — do not retry without a fix.
 
 ## Availability By Tool
