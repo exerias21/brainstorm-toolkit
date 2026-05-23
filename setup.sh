@@ -61,8 +61,9 @@ PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET="$(cd "$TARGET" && pwd)"
 
 if [[ "$PLUGIN_ROOT" == "$TARGET" ]]; then
-  echo "refusing to install into the plugin repo itself" >&2
-  exit 2
+  echo "note: installing into the plugin repo itself (dogfood mode)." >&2
+  echo "      install output is gitignored; the canonical source lives in" >&2
+  echo "      skills/, copilot/skills/, codex/skills/, agents/." >&2
 fi
 
 echo "brainstorm-toolkit setup"
