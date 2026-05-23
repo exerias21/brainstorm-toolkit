@@ -19,6 +19,7 @@ __pycache__/
 plans/
 TASKS.md
 GOTCHAS.md
+CHEATSHEET.md
 .claude/project.json
 .claude/pipeline/
 .claude/.next-action
