@@ -37,7 +37,7 @@ Codex CLI scans `<repo>/.agents/skills/<name>/SKILL.md` per the 2026 Agent Skill
 | `/task` | Yes | Identical to canonical — no flags; always TDD on current branch |
 | `/tasker` | Yes (sequential overlay) | Task-row work with full /sdlc discipline minus PR. Sequential, no Plan mode |
 | `/sdlc` | Yes (sequential overlay) | No parallel agents; linear plan→implement→test→PR. Skill-repo mode auto-detected |
-| `/brainstorm`, `/brainstorm-team`, `/dead-code-review`, `/full-audit` | Yes (Copilot-shaped overlay falls through) | See [FLOW-COPILOT.md](FLOW-COPILOT.md) for behavior; sequential where Claude is parallel |
+| `/brainstorm`, `/brainstorm-team`, `/dead-code-review` | Yes (Copilot-shaped overlay falls through) | See [FLOW-COPILOT.md](FLOW-COPILOT.md) for behavior; sequential where Claude is parallel |
 | `/flowsim`, `/gotcha`, `/status`, `/test-check`, `/eval-harness`, etc. | Yes | Cross-tool by design; identical content |
 
 If a Codex-specific override doesn't exist at `codex/skills/<name>/`, `setup.sh` falls through to the canonical `skills/<name>/SKILL.md`. Overrides today: `/sdlc`, `/tasker`. The rest install canonically.

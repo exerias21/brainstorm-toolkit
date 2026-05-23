@@ -91,11 +91,6 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 | `/network-engineer` | Claude + Copilot + Codex | Network-security audit methodology: Batfish-parsed configs × vendor PSIRT CVEs × overpermissive-rule rubric → ranked findings report. Pairs with the `network-sec` agent on Claude (parallel stages); Copilot/Codex run the same stages sequentially. Requires consumer-supplied data-source scripts (Batfish, PSIRT, optional Qualys) — see `references/data-source-tools.md`. |
 | `/paloalto-ansible` | Both | Generate a custom Ansible module against the **official SCM API** (not paloaltonetworks.panos, not SASE), playbook, eval-corpus entry (apply → verify → loop-back), and optional Postgres audit shaped for future ServiceNow migration. Single-agent sequential by default; opt-in `--team` flag escalates to parallel multi-expert orchestration. Domain reference at `skills/paloalto-ansible/references/scm-ansible.md` is reusable from `/task`. |
 | `/post-deploy-verify` | Both | Stub — post-deploy BRD/PBI-vs-deployed-system verification matrix (depends on Phase 2 BRD/PBI artifacts; see `BRAINSTORM-PIPELINE.md`) |
-| `/threat-model` | Both | STRIDE walkthrough from source — entry points, trust boundaries, sinks, top-N risky flows. Writes `plans/threat-model-<slug>.md`. First step of the AppSec Hunter suite. |
-| `/hunt` | Both | Single-class vulnerability deep dive — `authz`, `ssrf`, `deser`, `xss-dom`, `auth-state`, `mass-assign`, `file-upload`, `secrets`, `crypto`. Per-class playbooks under `skills/hunt/playbooks/`. Output: ranked findings in `plans/findings/`. |
-| `/full-audit` | Both † | AppSec Hunter orchestrator — runs `/threat-model` then fans out all 9 hunters in parallel, dedupes and ranks. Single report at `plans/audit-<sha>.md`. Sequential on Copilot. |
-| `/repro` | Both | Scaffold a sandboxed PoC for a finding under `./repro/<finding-id>/`. Localhost-only, read-only payloads, runtime loopback assertion. |
-| `/codify` | Both | Convert a finding into a Semgrep + CodeQL rule under `./rules/`, plus a fleet-wide sweep of additional sites matching the same pattern. |
 
 † Has a Copilot-optimized overlay at `copilot/skills/<name>/`. The overlay runs the same stages sequentially (no parallel sub-agents or Plan mode) because Copilot's VS Code agent mode doesn't yet support those primitives. When it does, overlays will be upgraded. Cross-tool skills without a † rely only on file I/O + test runners and work identically on both tools.
 
@@ -116,13 +111,9 @@ Haiku $1 / $5 per M tokens (input / output).
 | `/logging-conventions` | host model | none — reference doc | <1k | ~$0.00 |
 | `/test-check` | host model | none — runs tests + log audit | 1k–3k | ~$0.01 |
 | `/task` | host model | none — inline TDD | 5k–15k | $0.02–$0.10 |
-| `/repro` | host model | none — scaffolds PoC, runtime loopback assertion | 5k–15k | $0.02–$0.10 |
 | `/repo-health` | host model | 2 × Haiku (dead-code + gotchas-currency); 3 procedural checks | 5k–20k | $0.02–$0.10 |
 | `/review-pr` | host model | none — wraps the built-in `/review` primitive on the captured diff | 5k–30k | $0.02–$0.30 |
 | `/eval-harness` | host model | 0–1 × Sonnet (optional fix loop) | 5k–30k | $0.02–$0.30 |
-| `/threat-model` | host model | none — STRIDE walkthrough, source read + plan write | 10k–30k | $0.05–$0.30 |
-| `/codify` | host model | none — Semgrep + CodeQL rule gen + fleet-wide sweep | 10k–30k | $0.05–$0.30 |
-| `/hunt` | host (Sonnet recommended) | none — single-class read-only sweep against a per-class playbook | 15k–50k | $0.05–$0.30 |
 | `/paloalto-ansible` (default) | host (Sonnet) | none — sequential module + playbook + eval entry | 15k–40k | $0.05–$0.30 |
 | `/flowsim` | host model | none — plan-vs-code grep | 10k–40k | $0.05–$0.40 |
 | `/e2e-loop` | host model | 1 × Sonnet per fix iteration | 10k–30k / iter | $0.05–$0.30 / iter |
@@ -136,7 +127,6 @@ Haiku $1 / $5 per M tokens (input / output).
 | `/paloalto-ansible --team` | host (Opus) | 3 × Sonnet (default) or 4 × Sonnet (`--with-audit`); Teammate 1 sequential, then remaining teammates parallel | 40k–100k | $0.30–$1.00 |
 | `/dead-code-review` | host (Opus) | 3 × Haiku + 2 × Sonnet + 1 × Opus (parallel) | 80k–200k | $0.80–$2.50 |
 | `/post-deploy-verify` | host model | 2 × Haiku + 1 × Sonnet **per PBI batch** | scales with batch | $0.10–$1.00 / batch |
-| `/full-audit` | host (Opus) | `/threat-model` as sub-skill (own context pass) → 9 × Sonnet hunters fan-out (parallel) → inline dedupe + rank | 150k–500k | $1.50–$5.00 |
 | `/sdlc` | host (Opus) | 3 × Haiku (sanity) + 1 × Opus (impl) + 2–4 × Haiku/Sonnet (validate) + optional Opus/Sonnet (eval-fix) + Sonnet (e2e) | 100k–300k | $3.00–$10.00 |
 
 **Notes / caveats**:
@@ -145,8 +135,7 @@ Haiku $1 / $5 per M tokens (input / output).
   Claude Code or Copilot session — the toolkit doesn't pin it. Costs
   above assume Opus for Plan-mode-bearing and fan-out-heavy skills
   (`/brainstorm`, `/brainstorm-deep`, `/sdlc`, `/dead-code-review`,
-  `/full-audit`, `/paloalto-ansible --team`) and whatever the user has
-  selected otherwise.
+  `/paloalto-ansible --team`) and whatever the user has selected otherwise.
 - **Orchestrator context dominates real cost.** An Opus orchestrator
   carrying a 100k-token codebase context across 5 sub-agent dispatches
   pays the input cost 5× — agent dispatch fees themselves are usually
@@ -157,14 +146,6 @@ Haiku $1 / $5 per M tokens (input / output).
   cross-module reasoning where one wrong call costs more than the whole
   fan-out. Haiku is right when the task is "find the regex match" not
   "judge what to do about it."
-- **`/full-audit` is the most expensive routine run by design.** A
-  9-hunter fan-out is meant to maximize coverage on authorized source —
-  cost-per-run is high relative to other skills, but cheap relative to
-  the cost of missing a real vulnerability. Treat the cost line as
-  "what an audit pass costs," not as an ongoing operational expense.
-  Run it pre-release, after major auth/IO refactors, or on a quarterly
-  cadence — not on every PR. Use standalone `/hunt <class>` (Sonnet)
-  for cheap, targeted re-checks between audits.
 - **`/network-engineer` cost depends on tier choice.** Haiku for
   parsing-heavy Batfish/PSIRT lookups is right; the question is whether
   rule-judgement runs on Sonnet (cheap, fine for most rule overlaps)
