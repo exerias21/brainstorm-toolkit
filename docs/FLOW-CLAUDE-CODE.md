@@ -42,8 +42,9 @@ After install you have:
    │  → /sdlc plans/brainstorm-<slug>.md  ← autonomous pipeline
    └──────────────────────────────────────┘
 
-   /status    — any time
-   /gotcha    — when you discover a project-specific pitfall
+   /status      — any time
+   /gotcha      — when you discover a project-specific pitfall
+   /plan-html   — render any plan as a shareable HTML page when you need to hand it off
 ```
 
 ## What's Claude-only and why

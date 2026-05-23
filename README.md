@@ -86,6 +86,7 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 | `/flowsim` | Both | Trace claimed plan flows through source code and flag mismatches |
 | `/dead-code-review` | Both † | Dead-code scan with test verification (sequential on Copilot) |
 | `/review-pr` | Both | On-demand code review for any PR or branch — wraps `/review`, persists to `plans/review-<id>.md`, optional `--post-comment`. Standalone counterpart to the post-PR review `/sdlc` already runs. |
+| `/plan-html` | Claude + Copilot + Codex | Render any markdown plan as a self-contained, shareable HTML page (embedded CSS, zero JS, native `<details>` collapsibles, light/dark mode). Opt-in: pass the plan file as the argument — no auto-emit. Use to share plans with stakeholders or scroll-engage long plans in a browser. |
 | `/data-source-pattern` | Both | Pattern guide for scrapers, seed scripts, API ingestion |
 | `/logging-conventions` | Both | Enforce structured logging discipline |
 | `/network-engineer` | Claude + Copilot + Codex | Network-security audit methodology: Batfish-parsed configs × vendor PSIRT CVEs × overpermissive-rule rubric → ranked findings report. Pairs with the `network-sec` agent on Claude (parallel stages); Copilot/Codex run the same stages sequentially. Requires consumer-supplied data-source scripts (Batfish, PSIRT, optional Qualys) — see `references/data-source-tools.md`. |
@@ -110,6 +111,7 @@ Haiku $1 / $5 per M tokens (input / output).
 | `/data-source-pattern` | host model | none — reference doc | <1k | ~$0.00 |
 | `/logging-conventions` | host model | none — reference doc | <1k | ~$0.00 |
 | `/test-check` | host model | none — runs tests + log audit | 1k–3k | ~$0.01 |
+| `/plan-html` | host model | none — markdown read → HTML write | 3k–10k | ~$0.01–$0.05 |
 | `/task` | host model | none — inline TDD | 5k–15k | $0.02–$0.10 |
 | `/repo-health` | host model | 2 × Haiku (dead-code + gotchas-currency); 3 procedural checks | 5k–20k | $0.02–$0.10 |
 | `/review-pr` | host model | none — wraps the built-in `/review` primitive on the captured diff | 5k–30k | $0.02–$0.30 |

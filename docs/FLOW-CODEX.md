@@ -39,6 +39,7 @@ Codex CLI scans `<repo>/.agents/skills/<name>/SKILL.md` per the 2026 Agent Skill
 | `/sdlc` | Yes (sequential overlay) | No parallel agents; linear plan→implement→test→PR. Skill-repo mode auto-detected |
 | `/brainstorm`, `/brainstorm-team`, `/dead-code-review` | Yes (Copilot-shaped overlay falls through) | See [FLOW-COPILOT.md](FLOW-COPILOT.md) for behavior; sequential where Claude is parallel |
 | `/flowsim`, `/gotcha`, `/status`, `/test-check`, `/eval-harness`, etc. | Yes | Cross-tool by design; identical content |
+| `/plan-html <plan>` | Yes | Renders any markdown plan as a self-contained shareable HTML page (zero JS, embedded CSS). Identical on all three tools. |
 
 If a Codex-specific override doesn't exist at `codex/skills/<name>/`, `setup.sh` falls through to the canonical `skills/<name>/SKILL.md`. Overrides today: `/sdlc`, `/tasker`. The rest install canonically.
 
@@ -63,6 +64,8 @@ If a Codex-specific override doesn't exist at `codex/skills/<name>/`, `setup.sh`
    │  → plans/brainstorm-<slug>.md        │
    │  → /sdlc plans/brainstorm-<slug>.md  │
    └──────────────────────────────────────┘
+
+   /plan-html <plan> — render any plan as shareable HTML when handing off
 ```
 
 ## When to use `/task` vs `/tasker` vs `/sdlc`

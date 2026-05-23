@@ -27,6 +27,7 @@
         "./skills/logging-conventions",
         "./skills/network-engineer",
         "./skills/paloalto-ansible",
+        "./skills/plan-html",
         "./skills/post-deploy-verify",
         "./skills/repo-health",
         "./skills/repo-onboarding",

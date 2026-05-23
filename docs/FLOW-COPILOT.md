@@ -58,8 +58,9 @@ Run `/skills` in the VS Code chat panel to open the Configure Skills menu and ve
    │  → /sdlc plans/brainstorm-<slug>.md  ← sequential pipeline (Copilot overlay)
    └──────────────────────────────────────┘
 
-   /status    — any time
-   /gotcha    — when you discover a project-specific pitfall
+   /status      — any time
+   /gotcha      — when you discover a project-specific pitfall
+   /plan-html   — render any plan as a shareable HTML page when you need to hand it off
 ```
 
 ## Skills available
@@ -80,6 +81,7 @@ Run `/skills` in the VS Code chat panel to open the Configure Skills menu and ve
 | `/brainstorm-team` | Yes (sequential overlay) | 5 research passes done in sequence |
 | `/data-source-pattern` | Yes | Pattern guide, reads the same way |
 | `/logging-conventions` | Yes | Reference guide; identical content |
+| `/plan-html` | Yes | Renders any markdown plan as a self-contained HTML page; pure file I/O so identical on every tool |
 
 ## When to use `/task` vs `/tasker` vs `/sdlc`
 
