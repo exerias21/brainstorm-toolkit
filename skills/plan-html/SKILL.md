@@ -2,12 +2,12 @@
 name: plan-html
 description: >
   Render a markdown plan file as a self-contained, shareable HTML page.
-  Zero external assets (no CDN, no JS framework), native <details> for
-  collapsibles, embedded CSS with light/dark mode. Composes with any
-  plan — brainstorm output, SDLC plans, refactor docs, threat models.
-  Use when you want to share a plan with a stakeholder, scroll-engage
-  with a long plan in a browser, or hand off a roadmap. Output is
-  throwaway: the .md remains canonical.
+  Zero external assets (no CDN, no JS framework), embedded CSS with
+  light/dark mode, anchored TOC at top, every section open by default.
+  Composes with any plan — brainstorm output, SDLC plans, refactor
+  docs, threat models. Use when you want to share a plan with a
+  stakeholder, scroll-engage with a long plan in a browser, or hand
+  off a roadmap. Output is throwaway: the .md remains canonical.
 argument-hint: "<plan-file>"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
@@ -20,8 +20,9 @@ metadata:
 - You have a markdown plan (`plans/<slug>.md`, brainstorm output, threat
   model, SDLC plan) and want to share it visually with someone who
   isn't going to scroll through raw markdown.
-- The plan is long enough that collapsibles + a status block earn their
-  weight. For 50-line plans, just send the `.md`.
+- The plan has 3+ top-level sections — the TOC starts paying for itself
+  there. For 1–2 section plans, markdown reads fine and the TOC is noise
+  (the skill omits it automatically).
 - Never auto-fires. You invoke it on demand. The markdown stays the
   source of truth.
 
@@ -67,7 +68,42 @@ Read the plan file. Extract:
   present, gets pinned at the top in the roadmap block. Otherwise,
   auto-derive (see Stage 2).
 
-## Stage 2 — Build the roadmap block
+## Stage 2a — Build the TOC block
+
+If the plan has **3 or more** top-level `## ` sections, render a small
+"On this page" navigation list at the top. For 1–2 sections, omit it
+(the template's `{{TOC_BLOCK}}` becomes empty) — a TOC there is noise.
+
+Per section, derive an item count to put in muted text next to the
+title. Scan the section body for the first matching shape:
+
+| Section body contains | Count label |
+|---|---|
+| A markdown table | `N rows` (header row excluded) |
+| An ordered list (`1.`, `2.`, …) | `N steps` |
+| An unordered list (`-`, `*`) | `N items` |
+| Nested mix → pick the first found from the top | per the above |
+| None of the above (just prose) | omit count |
+
+Slugs: lowercase the section title, replace any non-alphanumeric run
+with `-`, strip leading/trailing `-`. Use these as both the `<h2 id>`
+in the body and the `<a href="#...">` in the TOC — link clicks scroll
+the page to the heading.
+
+Render the TOC block as:
+
+```html
+<nav class="toc">
+  <h2>On this page</h2>
+  <ul>
+    <li><a href="#why-extracted">Why extracted</a></li>
+    <li><a href="#whats-preserved-here">What's preserved here<span class="count">(9 rows)</span></a></li>
+    <li><a href="#bootstrap-recipe">Bootstrap recipe<span class="count">(5 steps)</span></a></li>
+  </ul>
+</nav>
+```
+
+## Stage 2b — Build the roadmap block
 
 If the plan has a `## Roadmap` or `## Phases` section with a checkbox
 list (`- [ ]` / `- [x]`), use that verbatim — each item becomes a
@@ -127,12 +163,13 @@ deterministic:
 | `---` on its own line | `<hr>` |
 | Markdown tables | `<table><thead><tr><th>` etc. |
 
-**Auto-collapse rule**: after the first section, any `## Section` whose
-body contains more than 3 list items OR more than 200 words gets
-wrapped in `<details><summary>Section Title <span class="count">(N
-items)</span></summary>...</details>`. Smaller sections render as
-plain `<section>` blocks with an open `<h2>`. The first section is
-always open regardless of size — it's the orientation paragraph.
+**No auto-collapse.** Render every `## ` section as a plain
+`<section><h2 id="slug">Title</h2>...</section>` with all of its
+content visible. The TOC at the top is the navigation aid; the doc
+itself is scannable top-to-bottom (reader-mode default, not
+explorer-mode). If a future plan genuinely needs a foldable subsection,
+the author can drop raw `<details>` HTML into the markdown — markdown
+allows it and the browser renders it natively.
 
 **Always escape** `<`, `>`, `&` inside code blocks and inline code.
 Pass them through outside code (markdown allows raw HTML).
@@ -147,7 +184,8 @@ placeholders:
 | `{{TITLE}}` | Parsed title (HTML-escaped) |
 | `{{STATUS_BADGE}}` | `<span class="badge badge-<status>">status</span>` if frontmatter `status:` present, else empty |
 | `{{META_LINE}}` | Joined non-status frontmatter fields: `by {owner} · updated {updated}`. Empty if no frontmatter. |
-| `{{ROADMAP_BLOCK}}` | Stage 2 output, or empty string |
+| `{{TOC_BLOCK}}` | Stage 2a output, or empty string (1–2 section docs) |
+| `{{ROADMAP_BLOCK}}` | Stage 2b output, or empty string |
 | `{{CONTENT_HTML}}` | Stage 3 output |
 | `{{SOURCE_PATH}}` | Original plan path (relative to repo root) |
 | `{{RENDER_DATE}}` | ISO date (YYYY-MM-DD) of the render |
@@ -179,9 +217,9 @@ when ready.
 - **Don't fetch external assets.** No `<script src="...">`, no
   `<link rel="stylesheet" href="...">`, no CDNs. The output must work
   offline and as an email/Slack attachment.
-- **Don't add JavaScript.** Native `<details>` is enough. If you find
-  yourself wanting JS, the answer is "the markdown is the truth, the
-  HTML is a sidecar — keep it static."
+- **Don't add JavaScript.** Anchor links + `<details>` cover everything
+  the skill needs. If you find yourself wanting JS, the answer is "the
+  markdown is the truth, the HTML is a sidecar — keep it static."
 - **Don't try to parse complex markdown.** This isn't a full CommonMark
   renderer. Stick to the table in Stage 3. If a plan uses something
   exotic (footnotes, definition lists, image embeds with sizing), pass

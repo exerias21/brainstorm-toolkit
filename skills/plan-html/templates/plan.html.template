@@ -92,19 +92,19 @@
   table { border-collapse: collapse; width: 100%; margin: 0 0 16px; font-size: 14px; }
   th, td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; vertical-align: top; }
   th { background: var(--bg-code); font-weight: 600; }
-  details {
-    border: 1px solid var(--border); border-radius: 6px;
-    padding: 8px 14px; margin: 0 0 10px; background: var(--bg);
+  nav.toc {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 24px;
   }
-  details[open] { padding-bottom: 14px; }
-  summary {
-    cursor: pointer; font-weight: 600; padding: 4px 0; list-style: none;
-    display: flex; align-items: center; gap: 8px;
-  }
-  summary::-webkit-details-marker { display: none; }
-  summary::before { content: "▶"; font-size: 10px; color: var(--fg-muted); transition: transform 0.15s; }
-  details[open] > summary::before { transform: rotate(90deg); }
-  summary .count { color: var(--fg-muted); font-weight: normal; font-size: 13px; }
+  nav.toc h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-muted); }
+  nav.toc ul { list-style: none; padding: 0; margin: 0; }
+  nav.toc li { padding: 3px 0; font-size: 14px; }
+  nav.toc a { text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+  nav.toc .count { color: var(--fg-muted); font-size: 12px; margin-left: 6px; }
   a { color: var(--accent); }
   hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
   footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--fg-muted); font-size: 12px; }
@@ -115,6 +115,8 @@
   <h1>{{TITLE}}{{STATUS_BADGE}}</h1>
   <div class="meta">{{META_LINE}}</div>
 </header>
+
+{{TOC_BLOCK}}
 
 {{ROADMAP_BLOCK}}
 
