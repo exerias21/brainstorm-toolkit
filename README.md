@@ -87,7 +87,7 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 | `/dead-code-review` | Both † | Dead-code scan with test verification (sequential on Copilot) |
 | `/review-pr` | Both | On-demand code review for any PR or branch — wraps `/review`, persists to `plans/review-<id>.md`, optional `--post-comment`. Standalone counterpart to the post-PR review `/sdlc` already runs. |
 | `/plan-html` | Claude + Copilot + Codex | Render any markdown plan as a self-contained, shareable HTML page (embedded CSS, zero JS, native `<details>` collapsibles, light/dark mode). Opt-in: pass the plan file as the argument — no auto-emit. Use to share plans with stakeholders or scroll-engage long plans in a browser. |
-| `/data-source-pattern` | Both | Pattern guide for scrapers, seed scripts, API ingestion |
+| `/data-source-pattern` | Both | Pattern guide for ingesting external data: discovery pipeline / seed script / direct API, plus how to author a web-discovery skill (WebSearch vs headless browser, session cookies, source trust tiers, dedup-upsert) |
 | `/logging-conventions` | Both | Enforce structured logging discipline |
 | `/network-engineer` | Claude + Copilot + Codex | Network-security audit methodology: Batfish-parsed configs × vendor PSIRT CVEs × overpermissive-rule rubric → ranked findings report. Pairs with the `network-sec` agent on Claude (parallel stages); Copilot/Codex run the same stages sequentially. Requires consumer-supplied data-source scripts (Batfish, PSIRT, optional Qualys) — see `references/data-source-tools.md`. |
 | `/paloalto-ansible` | Both | Generate a custom Ansible module against the **official SCM API** (not paloaltonetworks.panos, not SASE), playbook, eval-corpus entry (apply → verify → loop-back), and optional Postgres audit shaped for future ServiceNow migration. Single-agent sequential by default; opt-in `--team` flag escalates to parallel multi-expert orchestration. Domain reference at `skills/paloalto-ansible/references/scm-ansible.md` is reusable from `/task`. |
@@ -163,6 +163,7 @@ Tool-specific walkthroughs are in `docs/`:
 
 - **[docs/FLOW-CLAUDE-CODE.md](docs/FLOW-CLAUDE-CODE.md)** — install, daily loop, sub-agent use, `/sdlc` stages, `project.json` config, TASKS.md vs native Tasks.
 - **[docs/FLOW-COPILOT.md](docs/FLOW-COPILOT.md)** — install via `gh skill install` or `setup.sh`, `chat.agentSkillsLocations`, `/skills` menu, overlay semantics, cloud agent specifics, `disable-model-invocation`.
+- **[docs/AUTONOMOUS-DISCOVERY.md](docs/AUTONOMOUS-DISCOVERY.md)** — optional pattern for running discovery skills unattended on a schedule: a watcher daemon driving the headless `claude` CLI against a job queue. Reference only, not shipped by `setup.sh`.
 
 ## Typical workflow
 
