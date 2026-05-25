@@ -35,7 +35,7 @@ Codex CLI scans `<repo>/.agents/skills/<name>/SKILL.md` per the 2026 Agent Skill
 | Skill | Availability | Notes |
 |---|---|---|
 | `/task` | Yes | Identical to canonical — no flags; always TDD on current branch |
-| `/sdlc-lite` | Yes (sequential overlay) | Full /sdlc pipeline minus the PR — commit on current branch. Plan / task-id / range / ad-hoc input. Sequential, no Plan mode |
+| `/sdlc-lite` | Yes (sequential overlay) | Full /sdlc pipeline minus the git writes — hands you the validated changes to commit. Plan / task-id / range / ad-hoc input. Sequential, no Plan mode |
 | `/sdlc` | Yes (sequential overlay) | No parallel agents; linear plan→implement→test→PR. Skill-repo mode auto-detected |
 | `/brainstorm`, `/brainstorm-team`, `/dead-code-review` | Yes (Copilot-shaped overlay falls through) | See [FLOW-COPILOT.md](FLOW-COPILOT.md) for behavior; sequential where Claude is parallel |
 | `/flowsim`, `/gotcha`, `/status`, `/test-check`, `/eval-harness`, etc. | Yes | Cross-tool by design; identical content |
@@ -56,8 +56,8 @@ If a Codex-specific override doesn't exist at `codex/skills/<name>/`, `setup.sh`
         or
    ┌─ Mid-sized task ─────────────────────┐
    │  /sdlc-lite "wire orders into queue" │
-   │  → impl → evals → tests → commit     │
-   │    (on current branch, no PR)        │
+   │  → impl → evals → tests → validate   │
+   │    (leaves changes for you to commit)│
    └──────────────────────────────────────┘
         or
    ┌─ Feature-sized ask ──────────────────┐
@@ -76,7 +76,7 @@ If a Codex-specific override doesn't exist at `codex/skills/<name>/`, `setup.sh`
 | Skill | Input | Terminal action |
 |---|---|---|
 | `/task <description>` | ad-hoc ask | TDD red-green → green commit on current branch |
-| `/sdlc-lite <plan \| task-id \| range \| desc>` | plan, task(s), or ask | full pipeline → commit on current branch, no PR |
+| `/sdlc-lite <plan \| task-id \| range \| desc>` | plan, task(s), or ask | full pipeline → validated changes left for you to commit |
 | `/sdlc <plan-file>` | plan file | full pipeline → PR |
 
 None of the three skills take flags. `/sdlc`'s skill-repo mode is auto-detected from `.claude-plugin/marketplace.json` at the repo root.

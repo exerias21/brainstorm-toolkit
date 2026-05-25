@@ -74,7 +74,7 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 | `/brainstorm-deep` | Both | Clarification-heavy ideation for ambiguous or high-stakes ideas. Three-pass loop (understand → saturate → plan-with-alternates), perspective-frame sub-agents, expectation-contract output. Slower than `/brainstorm`, more rigorous. |
 | `/brainstorm-team` | Both † | 6-agent team for competitive + product research incl. a lateral-thinking agent (sequential on Copilot) |
 | `/task` | Claude + Copilot + Codex | Create one bounded task and execute it with TDD on the current branch — no flags, always TDD |
-| `/sdlc-lite` | Claude + Copilot + Codex † | The full `/sdlc` pipeline with a different ending — sanity → implement → evals → fix → validate → plan-validate → flowsim, then **commit on the current branch (no PR)**. Takes a plan file, a task id, a task range (`1-5`), or an ad-hoc description. Use to stack vetted work onto an open PR's branch. |
+| `/sdlc-lite` | Claude + Copilot + Codex † | The full `/sdlc` pipeline with a different ending — sanity → implement → evals → fix → validate → plan-validate → flowsim, then **hands you the validated changes to commit yourself** (no commit, branch, push, or PR — only `/sdlc` touches git). Takes a plan file, a task id, a task range (`1-5`), or an ad-hoc description. Use to run full discipline on work you want to review and commit onto an open PR's branch. |
 | `/status` | Both | Quick readout of TASKS.md counts + active task |
 | `/sdlc` | Claude + Copilot + Codex † | Plan → implement → eval → test → flowsim → PR. No flags; skill-repo mode auto-detected from `.claude-plugin/marketplace.json` |
 | `/repo-onboarding` | Both | Generate AGENTS.md + TASKS.md + project.json + GOTCHAS.md |

@@ -88,10 +88,10 @@ in the ending; `/task` is the lightweight TDD fast path:
 | Skill | Input | Terminal action | Use when |
 |---|---|---|---|
 | `/task <description>` | ad-hoc ask | TDD red-green → green commit on current branch | one-line code fix, a small util, a rename. Always TDD; no evals/flowsim. |
-| `/sdlc-lite <plan \| task-id \| range \| desc>` | plan, task(s), or ask | full pipeline → **commit on current branch, no PR** | you want full discipline (sanity → evals → validate → plan-validate → flowsim) but to stack onto the branch you're already on (e.g. an open PR). |
+| `/sdlc-lite <plan \| task-id \| range \| desc>` | plan, task(s), or ask | full pipeline → **validated changes left in your working tree (you commit)** | you want full discipline (sanity → evals → validate → plan-validate → flowsim) on work you'll review and commit yourself, e.g. onto an open PR's branch. |
 | `/sdlc <plan-file>` | plan file | full pipeline → **PR** | you have a plan file and want autonomous delivery with human review at the PR boundary. |
 
-`/sdlc-lite` reuses `/sdlc`'s stage templates and state envelope verbatim — same `.claude/pipeline/<slug>/` shape, distinguished by `run.json.pipeline = "sdlc-lite"`. The only difference from `/sdlc` is Stage 6: commit-in-place vs. open-a-PR. To execute several queued tasks at once, pass a range: `/sdlc-lite 1-5`.
+`/sdlc-lite` reuses `/sdlc`'s stage templates and state envelope verbatim — same `.claude/pipeline/<slug>/` shape, distinguished by `run.json.pipeline = "sdlc-lite"`. The only difference from `/sdlc` is Stage 6: `/sdlc-lite` does **no git writes** (it hands you a validated tree to commit), while `/sdlc` commits + opens a PR. To run several queued tasks at once, pass a range: `/sdlc-lite 1-5` (changes accumulate uncommitted; you slice the commits).
 
 ## `project.json` config
 

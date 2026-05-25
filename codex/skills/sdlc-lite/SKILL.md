@@ -1,12 +1,13 @@
 ---
 name: sdlc-lite
 description: >
-  Sequential full-pipeline-minus-PR skill for Codex CLI. Takes a plan file, a
+  Sequential full-pipeline-minus-git skill for Codex CLI. Takes a plan file, a
   task id, a task range (e.g. "1-5"), or an ad-hoc description; runs
-  implement → evals → validate → plan-validate → flowsim; then commits on the
-  current branch. No branch creation, no push, no PR. Codex-optimized overlay
-  of canonical /sdlc-lite — every stage runs inline (no parallel sub-agents,
-  no Plan mode). Same stages as /sdlc; only the ending differs.
+  implement → evals → validate → plan-validate → flowsim; then hands off the
+  validated changes for you to commit. No commit, no branch, no push, no PR.
+  Codex-optimized overlay of canonical /sdlc-lite — every stage runs inline
+  (no parallel sub-agents, no Plan mode). Same stages as /sdlc; only /sdlc
+  touches git.
 argument-hint: "<plan-file | task-id | task-range | description>"
 metadata:
   brainstorm-toolkit-applies-to: codex
@@ -20,25 +21,25 @@ dispatch for the sanity-check and Stage 5.5 validators on Claude; this overlay
 runs every stage inline. Codex CLI's 2026 Agent Skills spec, like Copilot's,
 doesn't yet support parallel sub-agent dispatch. This overlay tracks the Copilot
 one closely; tune independently if Codex behavior diverges. Same stages as
-`/sdlc`; the only difference is Stage 6 — commit on the current branch, no PR.
+`/sdlc`; the only difference is Stage 6 — `/sdlc-lite` does **no git writes**
+(hands you a validated tree to commit), while `/sdlc` commits + opens a PR.
 
 ## When to use
 
 | Skill | Input | Terminal action |
 |---|---|---|
-| `/task <description>` | ad-hoc ask | TDD red-green → commit on current branch |
-| `/sdlc-lite <plan \| task-id \| range \| desc>` | plan, task(s), or ask | full pipeline → commit on current branch, no PR |
-| `/sdlc <plan-file>` | plan file | full pipeline → PR |
+| `/task <description>` | ad-hoc ask | TDD red-green → commit only if you ask |
+| `/sdlc-lite <plan \| task-id \| range \| desc>` | plan, task(s), or ask | full pipeline → validated changes left for you to commit |
+| `/sdlc <plan-file>` | plan file | full pipeline → commit + PR |
 
 Reuses `/sdlc`'s stage templates and state envelope verbatim — no new
 templates, no new schema beyond `run.json.pipeline = "sdlc-lite"` and a
-`commit.json` sidecar at Stage 6.
+`handoff.json` sidecar at Stage 6.
 
 ## Prerequisites
 
-- You are on the branch the commit(s) should land on. This skill never switches
-  branches.
-- Working tree clean enough that the commit stages cleanly.
+- You are on the branch the changes should land on. This skill never switches
+  branches and never commits.
 - `.claude/project.json` optional. Eval / validate / flowsim skip silently when
   their config or a plan target is absent.
 
@@ -98,38 +99,47 @@ Same condition as 5.5: when a plan target exists, invoke `/flowsim <plan-target>
 and process results per `/sdlc` Stage 5.6; mismatches feed the Stage 4 fix loop.
 Skip with a note when none exists.
 
-## Stage 6 — Commit on the current branch (no PR)
+## Stage 6 — Hand off (no commit, no git writes)
 
-1. Secret scan the files about to be staged (gitleaks if available,
-   regex-fallback otherwise). **Warn-only** — surface findings (file:line) but
-   never block. HIGH findings get a `⚠ HIGH:` prefix; GitHub Push Protection
-   may still reject a later push on public remotes.
-2. Stage and commit on the **current branch** (no `git checkout -b`):
+Run the full pipeline, then **stop at the edge of git**. No commit, branch,
+push, PR, or `/review`. You review and commit.
+
+1. Secret scan the changed files (gitleaks if available, regex-fallback
+   otherwise). **Warn-only** — surface findings (file:line) but never block.
+   HIGH findings get a `⚠ HIGH:` prefix; worth scrubbing before you commit.
+2. **Report, don't commit.** Show `git diff --stat`, the files changed, and a
+   suggested commit message. Do NOT run `git add`, `git commit`,
+   `git checkout -b`, `git push`, `gh pr create`, or `/review`. Leave the tree
+   as the pipeline produced it.
    ```
-   git add <specific files>
-   git commit -m "feat: <title>
-
-   Implemented via /sdlc-lite from <plan-or-task>."
+   Suggested (run yourself):
+     git add <files>
+     git commit -m "feat: <title>"
    ```
-   **Range**: one commit per task, in order.
-3. **Do NOT** push, create a PR, or invoke `/review`. Stay on the current branch.
-4. Mark each resolved `TASKS.md` row `[x]`, move to `Done`, set
-   `status: completed` in the task file(s).
+   **Range**: changes from all tasks accumulate in the tree; you slice the
+   commits when you review.
+3. Mark each resolved `TASKS.md` row `[x]`, move to `Done`, set
+   `status: completed` in the task file(s) — work is done and validated; only
+   the commit is left to you.
 
-Write `stage-outputs/commit.json` = `{branch, commits[], files_committed[]}`.
+Write `stage-outputs/handoff.json` =
+`{branch, files_changed[], committed: false, suggested_commit_msg}`.
 Set `run.json.status = "complete"`.
 
 ## Stage 7 — Report
 
-Summarize: branch committed onto, commit SHA(s), row(s) closed, eval pass/fail,
-test-check summary, flowsim status (or "skipped — no plan target"), anything
-left open.
+Summarize: branch the changes sit on (uncommitted), files changed, suggested
+commit message, eval pass/fail, test-check summary, flowsim status (or
+"skipped — no plan target"), anything left open. Make clear **nothing was
+committed** — the next move is yours.
 
 ## Gotchas
 
-- **Never branches, pushes, or opens a PR.** Want a PR? Use `/sdlc`.
+- **Does no git writes.** No commit, branch, push, PR, or `/review`. Hands you
+  a validated tree; you commit. Only `/sdlc` touches git history.
 - **flowsim/plan-validate run whenever there's a plan to check.** They skip only
   when there is no plan target — not behind a frontmatter knob.
 - **Don't fork `/sdlc`'s templates.** If a stage needs different copy, it's a
   `/sdlc` job — re-invoke as `/sdlc`.
-- **Range = one commit per task** — keeps the stacked PR reviewable.
+- **Range accumulates in the tree** — all tasks' changes land uncommitted
+  together; you slice the commits.

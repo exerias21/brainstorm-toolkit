@@ -2,36 +2,37 @@
 name: sdlc-lite
 description: >
   The full /sdlc pipeline with a different ending: implement → evals → fix →
-  validate → plan-validate → flowsim, then COMMIT ON THE CURRENT BRANCH —
-  no new branch, no push, no PR. Use to stack vetted work onto an open PR's
-  branch. Takes a plan file (like /sdlc), a task id, a task range (e.g.
-  "1-5"), or an ad-hoc description. The only difference from /sdlc is the
-  terminal action: commit-in-place vs. open-a-PR.
+  validate → plan-validate → flowsim, then HAND OFF the validated changes in
+  your working tree for you to commit — it never commits, branches, pushes, or
+  opens a PR. Use to run full SDLC discipline on work you want to review and
+  commit yourself (e.g. onto an open PR's branch). Takes a plan file (like
+  /sdlc), a task id, a task range (e.g. "1-5"), or an ad-hoc description. Only
+  /sdlc touches git history; /sdlc-lite leaves that to you.
 argument-hint: "<plan-file | task-id | task-range | description>"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
-# sdlc-lite — the /sdlc pipeline, committed on the current branch (no PR)
+# sdlc-lite — the /sdlc pipeline, leaving the commit to you (no git writes)
 
 ## When to use
 
 | Skill | Input | Pipeline | Terminal action |
 |---|---|---|---|
-| `/task <description>` | ad-hoc ask | TDD red→green only | green commit on current branch |
-| `/sdlc-lite <plan \| task-id \| range \| desc>` | plan, task(s), or ask | **full** (sanity→implement→evals→fix→validate→plan-validate→flowsim) | **commit on current branch, no PR** |
+| `/task <description>` | ad-hoc ask | TDD red→green only | commit only if you ask |
+| `/sdlc-lite <plan \| task-id \| range \| desc>` | plan, task(s), or ask | **full** (sanity→implement→evals→fix→validate→plan-validate→flowsim) | **validated changes left in your working tree — you commit** |
 | `/sdlc <plan-file>` | plan file | full | new branch → push → **PR** → `/review` |
 
 `/sdlc-lite` and `/sdlc` run the **same stages** and reuse `/sdlc`'s templates
-and state envelope verbatim. They differ in exactly one place: Stage 6. If you
-want a PR, use `/sdlc`; if you want to stack onto the branch you're already on,
-use `/sdlc-lite`.
+and state envelope verbatim. They differ in exactly one place: Stage 6. `/sdlc`
+commits, pushes, and opens a PR; **`/sdlc-lite` does no git writes at all** — it
+hands you a validated, ready-to-commit working tree. Only `/sdlc` touches git
+history.
 
 ## Prerequisites
 
-- You are on the branch you want the commit(s) to land on (typically an open
-  PR's branch). `/sdlc-lite` never switches branches.
-- Working tree clean enough that this run's commits stage cleanly.
+- You are on the branch the changes should land on (typically an open PR's
+  branch). `/sdlc-lite` never switches branches and never commits.
 - `.claude/project.json` optional; every key optional. Eval, validate, and
   flowsim stages skip silently when their config or a plan target is absent.
 
@@ -41,7 +42,8 @@ Writes to `.claude/pipeline/<slug>/` — same path and sidecar shapes as `/sdlc`
 (see `skills/sdlc/templates/state-schema.md`). Two additive fields:
 
 - `run.json.pipeline = "sdlc-lite"` (distinguishes from `/sdlc` runs).
-- Stage 6 sidecar is `commit.json` (`{branch, commits[], files_committed[]}`)
+- Stage 6 sidecar is `handoff.json`
+  (`{branch, files_changed[], committed: false, suggested_commit_msg}`)
   instead of `pr-create.json`. No schema bump — both additive.
 
 For a task **range**, `run.json.data.task_range` records the resolved ids.
@@ -127,46 +129,53 @@ Same gating as 5.5: run `/flowsim <plan-target>` whenever a plan target exists;
 skip with a note when none does. Mismatches feed the Stage 4 fix loop (counts
 toward the budget). Process results per `/sdlc` Stage 5.6.
 
-## Stage 6 — Commit on the current branch (no PR)
+## Stage 6 — Hand off (no commit, no git writes)
 
-1. **Secret scan** the files about to be staged using `/sdlc` Stage 6's
-   procedure. **Warn-only**: surface findings (file:line) but never block.
-   HIGH findings get a `⚠ HIGH:` prefix and a note that GitHub Push Protection
-   on public remotes may still reject a later push.
+`/sdlc-lite` runs the full pipeline and then **stops at the edge of git**. It
+does not commit, stage-and-commit, branch, push, open a PR, or invoke
+`/review`. The user reviews the validated working tree and commits it
+themselves. (Want the commit + PR done for you? That's `/sdlc`.)
 
-2. **Stage and commit on the current branch — no `git checkout -b`:**
-   ```bash
-   git add <specific files touched>
-   git commit -m "feat: <title>
+1. **Secret scan** the changed files using `/sdlc` Stage 6's procedure.
+   **Warn-only**: surface findings (file:line) but never block. HIGH findings
+   get a `⚠ HIGH:` prefix and a note that GitHub Push Protection on public
+   remotes may reject a later push — worth scrubbing before you commit.
 
-   Implemented via /sdlc-lite from <plan-or-task>.
-
-   Co-Authored-By: <model> <noreply@anthropic.com>"
+2. **Report the diff, don't commit it.** Show `git diff --stat`, the list of
+   files changed, and a **suggested** commit message. Do NOT run `git add`,
+   `git commit`, `git checkout -b`, `git push`, `gh pr create`, or `/review`.
+   Leave the working tree exactly as the pipeline produced it.
    ```
-   **Range semantics**: one commit per task, in order — clean stacked history
-   on the PR branch. Sanity-check (1.5) ran once up front; plan-validate and
-   flowsim run once at the end over the shared parent plan.
+   Suggested commit (run yourself when ready):
+     git add <files>
+     git commit -m "feat: <title>"
+   ```
+   **Range semantics**: process tasks in order; the changes from all tasks
+   accumulate in the working tree. You decide how to slice commits (per task,
+   or one bundle). Sanity-check (1.5) ran once up front; plan-validate and
+   flowsim ran once at the end over the shared parent plan.
 
-3. **Do NOT** `git checkout -b`, `git push`, `gh pr create`, or `/review`.
-   Stay on the current branch. (Want a PR? That's `/sdlc`.)
+3. **Close out**: mark each resolved `TASKS.md` row `[x]`, move to `Done`, set
+   `status: completed` in the task file(s) — the work is implemented and
+   validated; only the commit is left to you.
 
-4. **Close out**: mark each resolved `TASKS.md` row `[x]`, move to `Done`, set
-   `status: completed` in the task file(s).
-
-**State write**: `stage-outputs/commit.json` =
-`{branch, commits: [{sha, task_id?}], files_committed[]}`. Set
+**State write**: `stage-outputs/handoff.json` =
+`{branch, files_changed[], committed: false, suggested_commit_msg}`. Set
 `run.json.status = "complete"`.
 
 ## Stage 7 — Report
 
-Summarize: branch committed onto, commit SHA(s), task row(s) closed, eval
-pass/fail (or "skipped — no test surface"), test-check summary, flowsim status
-(or "skipped — no plan target"), anything left open.
+Summarize: branch the changes are sitting on (uncommitted), files changed,
+suggested commit message, eval pass/fail (or "skipped — no test surface"),
+test-check summary, flowsim status (or "skipped — no plan target"), anything
+left open. Make it explicit that **nothing was committed** — the next move is
+yours.
 
 ## Gotchas
 
-- **It never opens a PR or switches branches.** The whole point is to stack
-  onto the branch you're already on. If you want a PR, use `/sdlc`.
+- **It does no git writes — ever.** No commit, no branch, no push, no PR, no
+  `/review`. It hands you a validated working tree; you commit. Only `/sdlc`
+  touches git history.
 - **flowsim/plan-validate run whenever there's a plan to check** — pass a plan
   file (or a task with `parent_plan`) and they run unconditionally. They skip
   only when there is literally no plan target to validate against — never
@@ -174,5 +183,6 @@ pass/fail (or "skipped — no test surface"), test-check summary, flowsim status
 - **Don't fork `/sdlc`'s templates.** If a stage needs different prompt copy,
   the work is probably a `/sdlc` job — re-invoke as `/sdlc`. Zero template
   duplication is the contract.
-- **Range = one commit per task.** Don't squash a range into a single commit;
-  per-task commits keep the stacked PR reviewable.
+- **Range accumulates in the tree.** A range runs the pipeline over each task
+  and leaves all changes uncommitted together; you choose how to slice the
+  commits when you review.

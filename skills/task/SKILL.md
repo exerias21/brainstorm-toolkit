@@ -27,6 +27,14 @@ metadata:
 2. **Determine the next task number** by reading existing rows (`(P?) <title> — plans/tasks/task-<N>-...`) and taking `max(N) + 1`. Start at 1 if empty.
 3. **Slugify the description** (lowercase, hyphen-separated, ≤40 chars).
 4. **Append a row** to the `Active / Pending` section: `- [ ] (P2) <one-line title> — plans/tasks/task-<N>-<slug>.md`.
+5. **Initialize a minimal state record** (best-effort): write
+   `.claude/pipeline/task-<N>-<slug>/run.json` with `{schema_version: 1,
+   feature_slug: "task-<N>-<slug>", pipeline: "task", stage: "implement",
+   status: "in_progress", started_at}` (shape per
+   `skills/sdlc/templates/state-schema.md`). This puts `/task` runs in the
+   same state journal as `/sdlc` and `/sdlc-lite`. If the write fails
+   (permissions, read-only volume), log a one-line stderr warning and
+   continue — **state writes never fail a task.**
 
 ### 2. Write the task file
 
@@ -65,6 +73,11 @@ If running under Claude Code, call `TaskCreate` with the same title. This gives 
 
 ### 4. Execute with TDD
 
+**Pure-docs / no-testable-surface asks**: if the change has nothing to assert
+against (docs, comments, config, copy edits), skip steps 1, 2, and 5 — make
+the edit directly at step 4 and note "no testable surface" in the report.
+Don't manufacture a hollow test, and don't punt the task to another skill.
+
 1. **Write a failing test** that encodes the acceptance criterion. Use the project's configured test runner (`.claude/project.json` → `test.unit` or `test.frontend`). If the project has no tests, write one in the conventional location (`tests/`, `__tests__/`, etc.).
 2. **Run the test** and confirm it fails for the expected reason. If it passes, the test is wrong — fix it before continuing.
 3. **Mark the TASKS.md row as in-progress** (`[ ]` → `[~]`) and, on Claude, `TaskUpdate status: in_progress`.
@@ -77,7 +90,10 @@ If running under Claude Code, call `TaskCreate` with the same title. This gives 
 1. **Update the task file**: set `status: completed`, mark all step checkboxes `[x]`, fill in `Files` with the actual paths touched.
 2. **Mark the TASKS.md row done** (`[~]` → `[x]`) and move it to the `Done` section.
 3. On Claude: `TaskUpdate status: completed`.
-4. Report a concise summary: files touched, tests that now pass, anything left open.
+4. **Update the state record** (best-effort): set `run.json.status = "complete"`,
+   `stage = "done"`, and record the `files` touched (and `commit_sha` if you
+   committed). Same never-fail rule as Section 1.
+5. Report a concise summary: files touched, tests that now pass (or "no testable surface"), anything left open.
 
 Commit only if the user asked for it, or if they have a durable "always commit finished tasks" instruction.
 
@@ -85,5 +101,5 @@ Commit only if the user asked for it, or if they have a durable "always commit f
 
 - **Don't inflate small tasks.** If the ask is one line of code, the task file can be terse. Don't pad acceptance criteria to look thorough.
 - **Respect `GOTCHAS.md`.** Before writing code, check for entries that apply to the area you're touching.
-- **Don't skip the failing-test step.** A passing test that was never red verifies nothing. If the ask is pure docs (no testable surface), use `/sdlc-lite` instead — it degenerates cleanly into a docs-edit + commit flow without forcing TDD.
+- **Don't skip the failing-test step when there IS a testable surface.** A passing test that was never red verifies nothing. Only skip the red-test cycle for genuinely untestable asks (pure docs/config/copy) — handle those directly here per the note in Section 4; don't punt them to another skill.
 - **One task at a time.** If the ask implies multiple tasks, invoke `/task` once per item or suggest `/brainstorm` or `/sdlc` instead.

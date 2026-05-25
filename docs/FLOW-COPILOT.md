@@ -69,7 +69,7 @@ Run `/skills` in the VS Code chat panel to open the Configure Skills menu and ve
 |---|---|---|
 | `/brainstorm` | Yes (sequential overlay) | No plan-mode break; linear walkthrough |
 | `/task` | Yes | Identical to Claude version. No flags; always TDD on current branch |
-| `/sdlc-lite` | Yes (sequential overlay) | Full /sdlc pipeline minus the PR — commit on current branch. Plan / task-id / range / ad-hoc input. Sequential on Copilot |
+| `/sdlc-lite` | Yes (sequential overlay) | Full /sdlc pipeline minus the git writes — hands you the validated changes to commit. Plan / task-id / range / ad-hoc input. Sequential on Copilot |
 | `/status` | Yes | Identical |
 | `/repo-onboarding` | Yes | Identical |
 | `/test-check` | Yes | Identical — invokes configured test runners |
@@ -90,7 +90,7 @@ Run `/skills` in the VS Code chat panel to open the Configure Skills menu and ve
 | Skill | Input | Terminal action | Use when |
 |---|---|---|---|
 | `/task <description>` | ad-hoc ask | TDD red-green → green commit on current branch | one-line code fix, a small util, a rename. Always TDD; no evals/flowsim. |
-| `/sdlc-lite <plan \| task-id \| range \| desc>` | plan, task(s), or ask | full pipeline → **commit on current branch, no PR** | you want full discipline but to stack onto the branch you're already on (e.g. an open PR). Run several queued tasks with a range: `/sdlc-lite 1-5`. |
+| `/sdlc-lite <plan \| task-id \| range \| desc>` | plan, task(s), or ask | full pipeline → **validated changes left for you to commit** | you want full discipline on work you'll review and commit yourself, e.g. onto an open PR's branch. Run several queued tasks with a range: `/sdlc-lite 1-5`. |
 | `/sdlc <plan-file>` | plan file | full pipeline → **PR** | you have a plan file and want autonomous delivery with human review at the PR boundary. |
 
 `/sdlc`, `/sdlc-lite`, and `/task` take no flags. `/sdlc`'s skill-repo mode is auto-detected from the presence of `.claude-plugin/marketplace.json` at the repo root.
