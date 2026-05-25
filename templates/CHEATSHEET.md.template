@@ -43,6 +43,19 @@ is the *map*; `/cheatsheet` is the *menu*.
                   (pipeline profile)
 ```
 
+Execution tiers — same pipeline in the middle, different ending:
+
+```
+  /task "..."       → TDD red→green only. Commits only if you ask.
+                      Fast path for a one-liner, util, or rename.
+  /sdlc-lite <X>    → FULL pipeline (sanity → implement → evals → fix →
+                      validate → plan-validate → flowsim), then HANDS YOU
+                      the validated changes to commit. No git writes.
+                      <X> = plan file | task-id | range "1-5" | description.
+  /sdlc {plan}      → FULL pipeline, then commits → branch → push → PR.
+                      The only tier that touches git history.
+```
+
 In parallel, runnable any time:
 
 ```
@@ -76,13 +89,14 @@ Domain-specific skills (cross-tool; opt-in by need):
 
 ---
 
-## Top 10 commands
+## Most-used commands
 
 | Command | What it does | When |
 |---|---|---|
 | `/cheatsheet` | Print this map + every installed skill | "remind me what's here" |
 | `/brainstorm [topic]` | Conversational ideation → plan file | start of any feature |
-| `/sdlc {plan}` | Autonomous plan-to-PR pipeline | plan is bounded + clear |
+| `/sdlc {plan}` | Autonomous plan-to-PR pipeline (commits + PR) | plan is bounded + clear |
+| `/sdlc-lite <X>` | Full pipeline, hands you the changes to commit (no git writes) | full discipline, you commit (e.g. onto an open PR) |
 | `/task "..."` | One-row TDD task | a single bug or small change |
 | `/repo-health` | Hygiene sweep + score | weekly, or pre-release |
 | `/test-check` | Run tests + log audit | before shipping |
@@ -97,7 +111,7 @@ Domain-specific skills (cross-tool; opt-in by need):
 
 | Profile | Includes | Use when |
 |---|---|---|
-| `core` (default) | brainstorm, sdlc, task, status, repo-health, test-check, flowsim, gotcha, repo-onboarding, dead-code-review, eval-harness, e2e-loop, cheatsheet, knowledge skills | local dev — single-developer or small-team workflow |
+| `core` (default) | brainstorm, sdlc, sdlc-lite, task, status, repo-health, test-check, flowsim, gotcha, repo-onboarding, dead-code-review, eval-harness, e2e-loop, cheatsheet, plan-html, knowledge skills | local dev — single-developer or small-team workflow |
 | `pipeline` | post-deploy-verify, future brd-ingest / pbi-decompose / approve / deploy / monitor / rollback / coverage | enterprise pipeline with BRD intake, approval gates, deployment skills |
 | `both` | everything | dogfooding the toolkit; mixed environments |
 
