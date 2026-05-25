@@ -23,33 +23,55 @@ set -u
 # context payloads on either runtime.
 cat >/dev/null 2>&1 || true
 
-NEXT_ACTION_FILE=".claude/.next-action"
-
 # Resolve relative to the project root. Claude Code sets CLAUDE_PROJECT_DIR;
-# Copilot sets the cwd to the workspace root. Either way, the relative path
-# resolves correctly when launched by the runtime.
+# Copilot sets the cwd to the workspace root.
+PROJ="."
 if [ -n "${CLAUDE_PROJECT_DIR:-}" ] && [ -d "$CLAUDE_PROJECT_DIR" ]; then
-  NEXT_ACTION_FILE="$CLAUDE_PROJECT_DIR/$NEXT_ACTION_FILE"
+  PROJ="$CLAUDE_PROJECT_DIR"
+fi
+NEXT_ACTION_FILE="$PROJ/.claude/.next-action"
+
+# Collect messages. Two kinds, by design:
+#   - TRANSIENT hint: the .next-action sentinel — fires once, then deleted.
+#   - CONDITION-DERIVED warning: recomputed from live state every Stop and
+#     NEVER stored/deleted, so it persists while its cause is still true.
+#     (A warning that deletes itself while the condition holds is useless.)
+msgs=()
+
+# 1. Transient next-action hint (fire-once).
+if [ -s "$NEXT_ACTION_FILE" ]; then
+  cmd="$(awk 'NF{print; exit}' "$NEXT_ACTION_FILE" | sed 's/[[:space:]]*$//')"
+  rm -f "$NEXT_ACTION_FILE"
+  [ -n "$cmd" ] && msgs+=("Next: $cmd")
 fi
 
-[ -s "$NEXT_ACTION_FILE" ] || exit 0
+# 2. Condition-derived: a pipeline run left in_progress/paused with a stale
+#    run.json is a skipped or abandoned pipeline (committed outside it, or
+#    crashed). Pure file read — no model, no cost, never executes repo code.
+#    Staleness = run.json untouched for >1 day. This is the "discipline was
+#    skipped and nobody noticed" signal, surfaced live.
+PIPE_DIR="$PROJ/.claude/pipeline"
+if [ -d "$PIPE_DIR" ]; then
+  stale=0
+  for rj in "$PIPE_DIR"/*/run.json; do
+    [ -e "$rj" ] || continue
+    grep -q '"status"[[:space:]]*:[[:space:]]*"\(in_progress\|paused\)"' "$rj" 2>/dev/null || continue
+    [ -n "$(find "$rj" -mtime +1 2>/dev/null)" ] && stale=$((stale+1))
+  done
+  if [ "$stale" -gt 0 ]; then
+    msgs+=("⚠ ${stale} stale pipeline run(s) (in_progress/paused >1d). Run /status or /repo-health to reconcile.")
+  fi
+fi
 
-# First non-empty line is the command. Trim trailing whitespace; ignore
-# anything after the first line so future versions can append metadata
-# without breaking older hooks.
-cmd="$(awk 'NF{print; exit}' "$NEXT_ACTION_FILE" | sed 's/[[:space:]]*$//')"
-rm -f "$NEXT_ACTION_FILE"
+[ ${#msgs[@]} -gt 0 ] || exit 0
 
-[ -n "$cmd" ] || exit 0
-
-# Emit JSON with systemMessage. Use python3 for reliable JSON escaping
-# (handles quotes, backslashes, and control chars). If python3 isn't on
-# PATH, stay silent rather than risk emitting invalid JSON.
+# Emit JSON with systemMessage (newline-joined). python3 handles escaping;
+# if it's absent, stay silent rather than risk invalid JSON. Never blocks.
 if command -v python3 >/dev/null 2>&1; then
   python3 -c '
 import json, sys
-print(json.dumps({"systemMessage": f"Next: {sys.argv[1]}"}))
-' "$cmd"
+print(json.dumps({"systemMessage": "\n".join(sys.argv[1:])}))
+' "${msgs[@]}"
 fi
 
 exit 0

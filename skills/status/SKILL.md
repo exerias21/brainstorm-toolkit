@@ -2,9 +2,11 @@
 name: status
 description: >
   Show a quick readout of the current work queue: task counts by state, the active
-  task, and the most recently completed task. Reads TASKS.md directly — no subagents,
-  no dashboards. Invoke via /status or when the user asks "what's left?", "current
-  task?", "status".
+  task, and the most recently completed task. Also surfaces any non-terminal
+  pipeline runs (so a stalled /sdlc or /sdlc-lite run can't hide). Reads
+  TASKS.md and .claude/pipeline/ directly — no subagents, no dashboards.
+  Invoke via /status or when the user asks "what's left?", "current task?",
+  "status".
 metadata:
    brainstorm-toolkit-applies-to: claude copilot
 ---
@@ -32,7 +34,17 @@ metadata:
      rows where either field is unknown.
    - Blocked-reason rollup: count distinct `_blocked_reason: …_` values under
      the `Blocked` section.
-7. **Print a 3–6 line summary**:
+7. **Scan pipeline run-state** (the discipline signal). Glob
+   `.claude/pipeline/*/run.json`. If the dir is absent, skip this block
+   silently (it's gitignored/local-only; many repos won't have it). For each
+   run, read `pipeline`, `stage`, `status`, `updated_at`, `base_commit`. List
+   any **non-terminal** run (`status` is `in_progress` or `paused`), and flag
+   it **stale** when `updated_at` is older than ~24h (or
+   `.claude/project.json::discipline.staleness_hours`). If a stale run's
+   `base_commit` is already an ancestor of HEAD
+   (`git merge-base --is-ancestor`), append "(looks committed outside the
+   pipeline — reconcile)". This is read-only: surface it, don't rewrite it.
+8. **Print a 3–7 line summary**:
 
    ```
    TASKS: N pending · M in_progress · K done · B blocked
@@ -40,9 +52,12 @@ metadata:
    Last done: <title> (cycle: <D> days, or "unknown")
    Median cycle (last 10): <D> days  (omit if all unknown)
    Blocked reasons: <reason1> ×N · <reason2> ×M  (omit if no blocked rows)
+   Pipeline: <slug> @ <stage> (<pipeline>, in_progress 3d — reconcile)  (omit if none non-terminal)
    ```
 
    If there's no active task, say "no active task — next up: <first pending>".
+   A non-terminal pipeline run is the one thing worth making loud — it's how a
+   skipped/abandoned pipeline becomes visible instead of lingering in JSON.
 
 ## Rules
 

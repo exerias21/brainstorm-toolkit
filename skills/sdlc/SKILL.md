@@ -51,8 +51,10 @@ sidecar writes).
 
 **Behavior**:
 - At Stage 1, `mkdir -p .claude/pipeline/<slug>/stage-outputs/` and write
-  initial `run.json` with `{schema_version: 1, stage: "parse",
-  status: "in_progress", started_at, plan_hash, args}`.
+  initial `run.json` with `{schema_version: 1, pipeline: "sdlc", stage: "parse",
+  status: "in_progress", started_at, plan_hash, base_commit, args}`. Capture
+  `base_commit` = `git rev-parse HEAD` (the commit you're building on, before
+  any pipeline commit).
 - On every stage transition, update `run.json.stage` and `run.json.updated_at`.
 - When a stage finishes, write `stage-outputs/<stage>.json` per the schema
   (canonical kebab name from `docs/CONVENTIONS.md`, never decimals — so
@@ -73,6 +75,25 @@ files sees no behavior change.
 A fresh `/sdlc <plan>` invocation **overwrites** any prior `run.json` and
 `stage-outputs/` for the same slug — resumption is opt-in via a future
 `--resume` flag (Phase 1B), never automatic.
+
+### Continuity detection (prompt, never auto)
+
+At Stage 1, before initializing this run, glob `.claude/pipeline/*/run.json`
+and check whether the current branch already carries a recent pipeline run:
+for each envelope with a `base_commit`, test
+`git merge-base --is-ancestor <base_commit> HEAD`. If a prior `sdlc` or
+`sdlc-lite` run is an ancestor of HEAD (i.e. this branch was built on it),
+**surface it and ask** — do not auto-resume or auto-downgrade:
+
+```
+This branch ran /<pipeline> for '<slug>' at <short-sha> (<n> commits back).
+Continue that flow, inspect its run.json, or start fresh as /sdlc?
+```
+
+This keeps `/sdlc` zero-flag (it's a prompt, not a flag) while making a
+skipped-or-switched pipeline impossible to do silently — the exact gap where
+a follow-up landed outside the pipeline and only a human noticed. Skip the
+prompt if no prior run is an ancestor of HEAD.
 
 ### Skill-repo mode detection
 
@@ -247,14 +268,24 @@ green, `paused` on max loops with persistent failures (set
 
 Run the complete test suite to ensure no regressions.
 
+**First, compute the changed-files gate** (see `templates/changed-files-gate.md`):
+read `stage-outputs/implement.json` `data.files_changed[]` and mark which
+surfaces (frontend / backend / data / docs) were touched. The substitutions
+below are *driven by that gate*, not by the user's prompt — "frontend changed"
+is a fact about the diff, so the visual/e2e check fires automatically rather
+than waiting to be asked.
+
 1. Run `/test-check` via the test-check skill procedure, BUT with one substitution:
    - Log audit (if `logs.command` configured)
-   - Frontend unit tests (if `test.frontend` configured and frontend files changed)
-   - Backend unit tests (if `test.unit` configured and backend files changed)
-   - **E2E tests — dispatch the `e2e-test-runner` agent** (if `test.e2e` configured and
-     UI flow changed). The agent runs a fix loop for e2e failures with a flaky-test
-     guard; its iterations count toward the 3-iteration eval-fix budget. If `test.e2e`
-     is not configured, skip the e2e step entirely.
+   - Frontend unit tests (if `test.frontend` configured and **frontend surface touched**)
+   - Backend unit tests (if `test.unit` configured and **backend surface touched**)
+   - **E2E / visual check — dispatch the `e2e-test-runner` agent** (if `test.e2e`
+     configured and **frontend surface touched** per the gate). The agent runs a
+     fix loop for e2e failures with a flaky-test guard; its iterations count
+     toward the 3-iteration eval-fix budget. If `test.e2e` is not configured but
+     the frontend surface was touched, surface that as a **soft-stop candidate**
+     ("frontend changed but no visual check ran" — see "Soft-stop tier"), don't
+     pass silently.
    - Eval regression (if `eval.runner` configured)
 
 2. **If NEW failures** in the non-e2e layers:
@@ -504,10 +535,24 @@ Create a pull request for human review.
    tracking needed). Skip this step entirely if `pipeline.skip_review: true`
    in `.claude/project.json`.
 
+7. **Capture gotchas (knowledge sink)**: if this run hit a non-obvious trap —
+   a surprising dependency, an ordering constraint, a footgun the next person
+   would also hit — prompt to append it to `GOTCHAS.md` via `/gotcha`. The
+   **durable project file is the sink, not model memory**: a lesson that only
+   lives in this session's memory didn't really get learned. One nudge, not a
+   gate. Skip if nothing non-obvious came up.
+
 **State write**: write `stage-outputs/pr-create.json` with `data.branch`,
 `data.pr_url`, `data.pr_number`, `data.commit_sha`. On success, set
 `run.json.status = "complete"`. (Stage 7 is a pure-reporting stage and writes
 no sidecar — `run.json` is the terminal record.)
+
+**Always close the run.** Whatever exit path you take — success, a pause at
+Stage 4/5.5/5.6, or bailing because you committed something by hand — set
+`run.json.status` to a terminal value (`complete` / `paused` / `failed`)
+before you stop. An envelope left `in_progress` after the work moved on is the
+"stale pipeline" smell `/repo-health` Check 7 and `/status` will flag; don't
+manufacture one.
 
 **IMPORTANT: Do NOT switch back to the main branch after creating the PR.**
 Stay on the feature branch so the user can test the feature before merging.
@@ -543,6 +588,23 @@ Please test:
 - **Stop on repeated failures** — if fix loop can't resolve after max iterations, report to user
 - **Don't fix pre-existing failures** — only fix what this pipeline introduced
 - **Git hygiene** — clean commits with descriptive messages, specific file staging (no `git add .`)
+
+## Soft-stop tier (earn the interruption)
+
+Most gates here are **warn-only** (the secret scan is the model: surface, never
+block — false positives shouldn't train users to disable a gate). But a tiny
+allowlist of *structural* gaps earns one **soft-stop** — a single
+"proceed anyway?" confirmation, never a hard refusal:
+
+- Sanity-check (Stage 1.5) was skipped on a multi-file plan.
+- A prior pipeline run on this branch is still `in_progress` at commit time
+  (continuity detection fired and was ignored).
+- Frontend files changed but no visual/e2e check ran (see the changed-files
+  gate in Stage 5).
+
+Soft-stop = ask once, proceed on confirmation, and log a one-line TASKS.md
+debt row if overridden. Keep the allowlist short; spending an interruption on
+a regex-level false positive is how gates get disabled.
 
 ## When This Skill Works Best
 

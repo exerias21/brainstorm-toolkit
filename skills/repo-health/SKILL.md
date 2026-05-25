@@ -6,8 +6,10 @@ description: >
   single scored report. Use this when the user says /repo-health, asks
   for a "hygiene check", "weekly sweep", "is this repo healthy",
   "what should I clean up", or before a release. Read-only — produces a
-  report and a `.next-action` suggestion, never modifies code.
-argument-hint: "[--no-dead-code] [--no-tests] [--no-deps] [--no-secrets] [--no-gotchas]"
+  report and a `.next-action` suggestion, never modifies code. Also flags
+  migration drift (migration files newer than the recorded applied version),
+  stale pipeline run-state, and stale memory pointers.
+argument-hint: "[--no-dead-code] [--no-tests] [--no-deps] [--no-secrets] [--no-gotchas] [--no-migrations] [--no-pipeline-state] [--no-memory]"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot
 ---
@@ -25,9 +27,13 @@ For deeper or more action-oriented variants:
 
 ## Arguments
 
-- `--no-dead-code` / `--no-tests` / `--no-deps` / `--no-secrets` / `--no-gotchas`:
-  opt out of any individual check. Default: run all five. Skipped checks
-  appear in the report as `skip` with the reason.
+- `--no-dead-code` / `--no-tests` / `--no-deps` / `--no-secrets` / `--no-gotchas`
+  / `--no-migrations` / `--no-pipeline-state` / `--no-memory`:
+  opt out of any individual check. Default: run all eight. Each check
+  self-skips silently when its surface is absent (no migrations dir, no
+  pipeline envelopes, no memory pointer), so a repo without that surface
+  never sees the check — these are **project-agnostic by construction**.
+  Skipped checks appear in the report as `skip` with the reason.
 
 ## Procedure
 
@@ -114,9 +120,54 @@ miss likely just means the file was renamed and the gotcha still applies
 to the new location. Cap the list at 10.
 ```
 
+### Check 6 — Migration drift (procedural)
+
+Catches the "migration file merged but never applied to the live DB" class
+(a version-pointer check, not a schema diff). Read `.claude/project.json`:
+
+- If no `migrations.dir` key → `skip` with reason `no migrations.dir configured`.
+- Glob `migrations.dir` for `NNN_*` / `VNNN__*` files; take the highest `NNN`
+  as the **repo head**.
+- If `migrations.applied_check` is configured (a shell command or SQL that
+  prints the applied version), run it to get the **applied head** and compare.
+  Repo head > applied head → `warn`: "N migration(s) in repo not applied to
+  the configured DB (repo @ NNN, applied @ MMM)."
+- If `applied_check` is absent, report informationally: "repo has N migrations;
+  applied state unknown — set `migrations.applied_check` or run
+  `/post-deploy-verify`." Never fail; never connect to a DB without an
+  explicit configured command.
+
+### Check 7 — Pipeline-state freshness (procedural)
+
+Catches state envelopes that linger `in_progress` after work was committed
+outside the pipeline. Glob `.claude/pipeline/*/run.json`:
+
+- If the dir is absent → `skip` silently (it's gitignored/local-only; many
+  repos won't have it).
+- For each run, parse `status` and `updated_at`. Flag any `in_progress` /
+  `paused` run whose `updated_at` is older than
+  `.claude/project.json::discipline.staleness_hours` (default 24).
+- **Reconcile hint**: if a flagged run records `base_commit` and that commit is
+  an ancestor of `HEAD` (`git merge-base --is-ancestor <base_commit> HEAD`),
+  note "looks committed outside the pipeline — close with the run's owning
+  skill or delete the envelope." Read-only: report, don't rewrite the file.
+
+### Check 8 — Memory-pointer staleness (procedural, repo-local only)
+
+**Scope guard**: only inspect a *repo-local* memory pointer if the project
+declares one (`.claude/project.json::memory.index`, e.g. a committed
+`MEMORY.md`). **Never read the user-global `~/.claude/...` memory dir** — that
+is personal, out of repo scope, and not this skill's business. If no repo-local
+memory index is configured → `skip` with reason `no repo-local memory index`.
+
+When one exists, dispatch a Haiku agent: count entries, flag pairs of entries
+whose `name:` slugs are near-duplicates (Levenshtein < 5), and flag any entry
+whose `description:` references a file path that no longer exists. Report
+`{count, near_duplicates: [[a,b]], dangling: [{name, missing_path}]}`. Cap at 10.
+
 ## Roll-up
 
-Compute a score: `100 - min(60, 10*high_findings + 5*high_deps + 3*stale_gotchas + 2*test_failures + 1*orphan_files + 1*skipped_tests)`. Floor at 40 — a single bad metric shouldn't drive the score to zero.
+Compute a score: `100 - min(60, 10*high_findings + 5*high_deps + 4*unapplied_migrations + 3*stale_gotchas + 2*test_failures + 2*stale_pipeline_runs + 1*orphan_files + 1*skipped_tests + 1*stale_memory)`. Floor at 40 — a single bad metric shouldn't drive the score to zero.
 
 Print the report:
 
@@ -130,15 +181,20 @@ Score: 87 / 100  (▼ 5 from last sweep if .claude/pipeline/last-health.json exi
   ⚠ Dependencies:  1 HIGH (left-pad@1.3.0 — CVE-2026-XXXX)
   ✓ Secrets:       clean (gitleaks)
   ⚠ Gotchas:       1 stale ("Old auth middleware" — references removed module)
+  ⚠ Migrations:    repo @ 232, applied @ 231 — 1 unapplied (run migrations)
+  ⚠ Pipeline:      1 stale run ("todos-multi-notes" in_progress 3d; committed outside)
+  ✓ Memory:        no repo-local index (skipped)
 
-Suggested next: /sdlc to fix the dep vuln
+Suggested next: apply pending migration 232 (the highest-blast finding)
+                /sdlc to fix the dep vuln
                 /gotcha to revise the stale entry
 
 Run again with --no-deps if dep audit is too slow on this repo.
 ```
 
 The "Suggested next" is the highest-impact actionable command (priority:
-dep HIGH > test failure > stale gotcha > orphan file > skipped test). Only
+unapplied migration > dep HIGH > stale pipeline run > test failure > stale
+gotcha > orphan file > skipped test > stale memory). Only
 write this command to `.claude/.next-action` if the repo is already set up
 for that integration (for example, the file already exists or `.gitignore`
 already covers `.claude/.next-action` or `.claude/`). Otherwise, print the

@@ -3,11 +3,13 @@ name: plan-html
 description: >
   Render a markdown plan file as a self-contained, shareable HTML page.
   Zero external assets (no CDN, no JS framework), embedded CSS with
-  light/dark mode, anchored TOC at top, every section open by default.
-  Composes with any plan — brainstorm output, SDLC plans, refactor
-  docs, threat models. Use when you want to share a plan with a
-  stakeholder, scroll-engage with a long plan in a browser, or hand
-  off a roadmap. Output is throwaway: the .md remains canonical.
+  light/dark mode, anchored TOC at top, every section open by default,
+  and auto-generated inline-SVG visuals (effort×impact map, phase flow)
+  when the plan's structure warrants — no flag, data-driven. Composes
+  with any plan — brainstorm output, SDLC plans, refactor docs, threat
+  models. Use when you want to share a plan with a stakeholder,
+  scroll-engage with a long plan in a browser, or hand off a roadmap.
+  Output is throwaway: the .md remains canonical.
 argument-hint: "<plan-file>"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
@@ -136,6 +138,46 @@ Render the roadmap block as:
     <li><span class="icon icon-pending">○</span> Phase 3 — Validation</li>
   </ul>
 </section>
+```
+
+## Stage 2c — Auto-generate visuals (inline SVG, data-driven)
+
+When the plan's structure makes a picture clearly more legible than the text,
+emit ONE inline-SVG `<figure>` for it, placed just under the heading of the
+section it illustrates. **No flag** — generate a visual only when the content
+warrants it (table below) and omit it otherwise, so a plain plan stays lean.
+Always **inline SVG** — never a `<script>`, never a CDN, never Mermaid — so the
+output stays a single, offline, emailable file (the whole point of plan-html).
+
+Trigger a visual on these shapes (cap ~2 per plan; pick the highest-signal):
+
+| Plan shape | Visual | When |
+|---|---|---|
+| A ranked list whose items each carry an effort (S/M/L) and an impact/priority | **effort × impact scatter** | the highest-value strategy-doc visual |
+| `## Roadmap` / `## Phases` or a numbered stage sequence | **left-to-right flow** of the phases | pipeline / staged plans |
+| A small lifecycle / state machine described in prose | **state diagram** (nodes + arrows) | only if explicitly described |
+
+Authoring rules:
+- Hand-author compact, valid SVG (~`viewBox="0 0 660 400"`, `width:100%`).
+  Use the CSS classes the template defines (`.svg-axis`, `.svg-grid`,
+  `.svg-dot-S/M/L`, `.svg-num`, `.svg-lbl`, `.svg-qlbl`) so it inherits
+  light/dark colors — **don't hardcode hex** in the SVG.
+- Wrap in `<figure>…<figcaption>one-line read</figcaption></figure>`.
+- **Stay honest:** plot only data actually in the plan. If you can't place a
+  point confidently, omit the visual rather than guess. If nothing qualifies,
+  generate nothing — most plans get zero visuals.
+
+Effort × impact skeleton (numbered dots keyed to the ranked list; x by effort
+S→L, y by impact — lower y = higher impact; top-left = quick wins):
+
+```html
+<figure><svg viewBox="0 0 660 400" role="img" aria-label="effort vs impact">
+  <line class="svg-axis" x1="70" y1="40" x2="70" y2="340"/>
+  <line class="svg-axis" x1="70" y1="340" x2="620" y2="340"/>
+  <text class="svg-lbl" x="345" y="372" text-anchor="middle">effort →</text>
+  <circle class="svg-dot-S" cx="140" cy="80" r="11"/><text class="svg-num" x="140" y="84">1</text>
+  <!-- one dot per ranked item -->
+</svg><figcaption>Effort × impact — top-left = quick wins.</figcaption></figure>
 ```
 
 ## Stage 3 — Convert markdown body to HTML

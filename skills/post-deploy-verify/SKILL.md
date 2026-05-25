@@ -14,15 +14,21 @@ metadata:
 
 # Post-Deploy BRD/PBI Verification
 
-## Status: stub
+## Status: usable today via plan fallback
 
-This skill defines a contract that depends on Phase 2 of the broader pipeline
-plan (BRD intake + PBI decomposition — see `BRAINSTORM-PIPELINE.md`). The
-artifacts the skill consumes (`requirements/BRD-<id>.md`, `pbis/PBI-*.md` with
-stable IDs and acceptance criteria) do not exist in most repos yet.
+The full BRD/PBI mode depends on Phase 2 of the broader pipeline plan (BRD
+intake + PBI decomposition — see `BRAINSTORM-PIPELINE.md`); those artifacts
+(`requirements/BRD-<id>.md`, `pbis/PBI-*.md`) don't exist in most repos yet.
 
-When those artifacts ship, this skill executes. Until then, invoking it
-returns a clear "missing prerequisites" report listing what to author first.
+**But the probe machinery doesn't need a BRD** — it works against *any*
+acceptance-criteria source. So when no BRD/PBI is found, fall back to a
+**plan file's Acceptance Criteria**: pass a `/brainstorm` or `/sdlc` plan
+(`plans/<slug>.md`) and the skill verifies the running system against that
+plan's `## Acceptance criteria` section instead. This makes the skill the
+post-merge "is it actually deployed?" check — and the natural home for the
+**migration-drift-against-a-live-DB** question that the read-only
+`/repo-health` Check 6 can only answer statically. Project-agnostic: no DB or
+deployed env configured → it reports "no probes available" rather than failing.
 
 ## Framing
 
@@ -53,6 +59,9 @@ means: code matches plan, but the *plan* drifted from the BRD.
   - `BRD-<id>` — verify every requirement in that BRD.
   - `PBI-<id>` — verify only the requirements linked from that PBI.
   - `REQ-<id>` — verify a single requirement.
+  - **`plans/<slug>.md` (fallback)** — no BRD needed: verify the running system
+    against that plan file's `## Acceptance criteria` section. Each criterion
+    becomes one row in the matrix, probed the same way a requirement would be.
 - `--env` (optional): which deployed environment to probe. Default: read
   `pipeline.default_env` from `.claude/project.json`, else `staging`.
 - `--config <path>` (optional): override the env config path. Default:

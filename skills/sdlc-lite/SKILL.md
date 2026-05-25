@@ -74,8 +74,15 @@ Detect the argument shape:
    proceed. There's no plan, so plan-validate/flowsim self-skip (Stage 5.5/5.6).
 
 Mark resolved rows `[~]` (in-progress). Derive `slug` per the algorithm in
-`docs/CONVENTIONS.md` and initialize the state envelope at
-`.claude/pipeline/<slug>/`.
+`docs/CONVENTIONS.md`. Capture `base_commit` = `git rev-parse HEAD` and
+initialize the state envelope at `.claude/pipeline/<slug>/` with
+`pipeline: "sdlc-lite"`, `base_commit`, `status: "in_progress"`.
+
+**Continuity detection** (prompt, never auto) — same as `/sdlc`: glob
+`.claude/pipeline/*/run.json`; if a prior `sdlc`/`sdlc-lite` run's
+`base_commit` is an ancestor of HEAD (`git merge-base --is-ancestor`), surface
+it ("this branch ran /<pipeline> at <sha>; continue that flow or start fresh?")
+rather than silently starting a parallel run.
 
 ## Stage 1.5 — Sanity check
 
@@ -155,13 +162,19 @@ themselves. (Want the commit + PR done for you? That's `/sdlc`.)
    or one bundle). Sanity-check (1.5) ran once up front; plan-validate and
    flowsim ran once at the end over the shared parent plan.
 
-3. **Close out**: mark each resolved `TASKS.md` row `[x]`, move to `Done`, set
+3. **Capture gotchas (knowledge sink)**: if the run hit a non-obvious trap,
+   prompt to append it to `GOTCHAS.md` via `/gotcha` — the durable project
+   file is the sink, not model memory. One nudge, skip if nothing came up.
+
+4. **Close out**: mark each resolved `TASKS.md` row `[x]`, move to `Done`, set
    `status: completed` in the task file(s) — the work is implemented and
    validated; only the commit is left to you.
 
 **State write**: `stage-outputs/handoff.json` =
-`{branch, files_changed[], committed: false, suggested_commit_msg}`. Set
-`run.json.status = "complete"`.
+`{branch, files_changed[], committed: false, suggested_commit_msg}`. **Always
+set `run.json.status` to a terminal value** (`complete`, or `paused` if you
+stopped mid-pipeline) before exiting — never leave it `in_progress`, or
+`/repo-health` and `/status` will (correctly) flag it as a stale run.
 
 ## Stage 7 — Report
 

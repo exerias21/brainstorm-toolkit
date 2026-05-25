@@ -49,6 +49,8 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
   "args": {
     "skill_repo": false
   },
+  "pipeline": "sdlc",
+  "base_commit": "abc1234",
   "started_at": "2026-04-26T10:00:00Z",
   "updated_at": "2026-04-26T10:08:23Z",
   "stage": "plan-validate",
@@ -65,6 +67,8 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
 | `plan_file` | string | yes | Path relative to repo root, as passed to `/sdlc`. |
 | `plan_hash` | string | yes | `sha256:<hex>` of the plan file's contents at Stage 1. Lets a future `--resume` detect plan edits. |
 | `args` | object | yes | Snapshot of run-time decisions. Snake_case keys. `/sdlc` is zero-flag — the only field currently recorded is `skill_repo` (auto-detected from `.claude-plugin/marketplace.json` presence at repo root). New additive fields are allowed. |
+| `pipeline` | string | optional | Which skill wrote this run: `sdlc`, `sdlc-lite`, or `task`. Absent ⇒ assume `sdlc` (back-compat). Lets `/status`, `/repo-health`, and the Stop hook distinguish run types. |
+| `base_commit` | string | optional | `git rev-parse HEAD` captured at Stage 1, before any implementation commit. Powers **continuity detection** (is this branch's prior run an ancestor of HEAD?) and **reconciliation** (an `in_progress` run whose `base_commit` is already an ancestor of HEAD was almost certainly committed outside the pipeline). Additive; absent on older runs. |
 | `started_at` | ISO 8601 string | yes | UTC, second precision. |
 | `updated_at` | ISO 8601 string | yes | Refreshed on every stage transition. |
 | `stage` | string | yes | Canonical kebab name of the *current* stage. On terminal states, holds the last attempted stage. |
@@ -238,6 +242,18 @@ Below is the shape each stage's `data` field is expected to take. These are the 
   "commit_sha": "abc1234"
 }
 ```
+
+#### `handoff` (sdlc-lite mode — replaces `pr-create`)
+```json
+{
+  "branch": "feature-branch",
+  "files_changed": ["api/routes/orders.py"],
+  "committed": false,
+  "suggested_commit_msg": "feat: add orders endpoint"
+}
+```
+`/sdlc-lite` does no git writes; it records what it would commit and leaves
+the tree for the user. `committed` is always `false`.
 
 ---
 

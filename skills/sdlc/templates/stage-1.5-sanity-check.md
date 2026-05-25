@@ -19,6 +19,12 @@ Read the plan at {plan_file}. For every file path mentioned:
 3. If the plan says "follow the pattern in X", read X and verify
    the plan's description matches what's actually there
 
+**Symbol presence is the signal, not line numbers.** Line numbers in
+plans are illustrative and drift constantly; the implement agent greps
+anyway. Confirm the named symbol exists *somewhere* in the file. Do NOT
+flag a line-number mismatch as an issue unless the symbol is absent
+entirely (a wrong path/symbol is real; a wrong line is noise).
+
 Report a JSON array:
 [{path: "file.py", exists: true/false, issues: ["description"]}]
 ```
@@ -63,11 +69,19 @@ Report: [{check: "description", status: "pass/fail", detail: "..."}]
 Read the plan at {plan_file}.
 
 Then read the project's gotchas file — path is `gotchas_file` in
-`.claude/project.json` (default `GOTCHAS.md` at repo root). If the
-file does not exist, report: {status: "no-gotchas-file"} and exit.
+`.claude/project.json` (default `GOTCHAS.md` at repo root).
 
-Cross-reference each step in the plan against every gotcha in
-GOTCHAS.md. For each plan step, flag if any gotcha applies.
+If the file does NOT exist, **bootstrap an empty stub** rather than
+reporting absence as a dead end: write a minimal `GOTCHAS.md` with
+frontmatter and an empty `## Active` section (use the same skeleton
+`/gotcha` creates). Then report:
+{status: "stub-created", note: "No GOTCHAS.md existed — created an empty
+one. Add entries with /gotcha when work surfaces a non-obvious pitfall."}
+This is a best-effort write; if it fails (read-only volume), fall back to
+{status: "no-gotchas-file"} and continue — never fail the stage on it.
+
+If the file exists, cross-reference each step in the plan against every
+gotcha in it. For each plan step, flag if any gotcha applies.
 
 Report: [{step: "N", gotcha: "title from GOTCHAS.md", suggestion: "fix"}]
 ```

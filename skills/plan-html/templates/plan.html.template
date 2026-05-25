@@ -105,6 +105,16 @@
   nav.toc a { text-decoration: none; }
   nav.toc a:hover { text-decoration: underline; }
   nav.toc .count { color: var(--fg-muted); font-size: 12px; margin-left: 6px; }
+  figure { margin: 0 0 18px; border: 1px solid var(--border); border-radius: 8px; padding: 14px; background: var(--bg-code); }
+  figure svg { display: block; width: 100%; height: auto; }
+  figure figcaption { font-size: 12px; color: var(--fg-muted); margin-top: 6px; text-align: center; }
+  .svg-axis { stroke: var(--border); stroke-width: 1.5; }
+  .svg-grid { stroke: var(--border); stroke-width: .5; stroke-dasharray: 3 3; }
+  .svg-q { fill: var(--accent); opacity: .06; }
+  .svg-dot-S { fill: var(--done); } .svg-dot-M { fill: var(--progress); } .svg-dot-L { fill: var(--blocked); }
+  .svg-num { fill: #fff; font: 700 11px sans-serif; text-anchor: middle; }
+  .svg-lbl { fill: var(--fg-muted); font: 11px sans-serif; }
+  .svg-qlbl { fill: var(--fg-muted); font: italic 11px sans-serif; opacity: .8; }
   a { color: var(--accent); }
   hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
   footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--fg-muted); font-size: 12px; }
