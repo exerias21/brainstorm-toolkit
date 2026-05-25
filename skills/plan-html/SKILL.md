@@ -30,7 +30,7 @@ metadata:
 
 - The plan is under ~3 sections. Markdown reads fine.
 - You need a live edit surface — this skill writes static HTML.
-- You need to feed the artifact back into `/sdlc` or `/tasker` — those
+- You need to feed the artifact back into `/sdlc` or `/sdlc-lite` — those
   consume the `.md`, not the `.html`.
 
 ## Argument

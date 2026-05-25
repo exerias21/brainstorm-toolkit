@@ -17,7 +17,7 @@ metadata:
 
 - User has a clear, bounded ask: "add a `formatPhone` util", "fix the bug where X", "rename Y to Z across the codebase".
 - Too small for `/sdlc`, too concrete for `/brainstorm`.
-- `/task` always executes TDD on the current branch. If you want task-row work with full pipeline discipline (evals + validate + flowsim + commit, but no PR), use `/tasker`. If you want just the row written and nothing run, edit `TASKS.md` directly.
+- `/task` always executes TDD on the current branch. If you want the full pipeline (evals + validate + flowsim + commit, but no PR), use `/sdlc-lite`. If you want just the row written and nothing run, edit `TASKS.md` directly.
 
 ## Flow
 
@@ -85,5 +85,5 @@ Commit only if the user asked for it, or if they have a durable "always commit f
 
 - **Don't inflate small tasks.** If the ask is one line of code, the task file can be terse. Don't pad acceptance criteria to look thorough.
 - **Respect `GOTCHAS.md`.** Before writing code, check for entries that apply to the area you're touching.
-- **Don't skip the failing-test step.** A passing test that was never red verifies nothing. If the ask is pure docs (no testable surface), use `/tasker` instead — it degenerates cleanly into a docs-edit + commit flow without forcing TDD.
+- **Don't skip the failing-test step.** A passing test that was never red verifies nothing. If the ask is pure docs (no testable surface), use `/sdlc-lite` instead — it degenerates cleanly into a docs-edit + commit flow without forcing TDD.
 - **One task at a time.** If the ask implies multiple tasks, invoke `/task` once per item or suggest `/brainstorm` or `/sdlc` instead.

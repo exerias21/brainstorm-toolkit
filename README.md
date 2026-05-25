@@ -74,7 +74,7 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 | `/brainstorm-deep` | Both | Clarification-heavy ideation for ambiguous or high-stakes ideas. Three-pass loop (understand → saturate → plan-with-alternates), perspective-frame sub-agents, expectation-contract output. Slower than `/brainstorm`, more rigorous. |
 | `/brainstorm-team` | Both † | 6-agent team for competitive + product research incl. a lateral-thinking agent (sequential on Copilot) |
 | `/task` | Claude + Copilot + Codex | Create one bounded task and execute it with TDD on the current branch — no flags, always TDD |
-| `/tasker` | Claude + Copilot + Codex | Task-row work with full /sdlc discipline (evals + validate + flowsim) but no PR — implements → tests → commits on the current branch. Use between `/task` and `/sdlc` |
+| `/sdlc-lite` | Claude + Copilot + Codex † | The full `/sdlc` pipeline with a different ending — sanity → implement → evals → fix → validate → plan-validate → flowsim, then **commit on the current branch (no PR)**. Takes a plan file, a task id, a task range (`1-5`), or an ad-hoc description. Use to stack vetted work onto an open PR's branch. |
 | `/status` | Both | Quick readout of TASKS.md counts + active task |
 | `/sdlc` | Claude + Copilot + Codex † | Plan → implement → eval → test → flowsim → PR. No flags; skill-repo mode auto-detected from `.claude-plugin/marketplace.json` |
 | `/repo-onboarding` | Both | Generate AGENTS.md + TASKS.md + project.json + GOTCHAS.md |
@@ -129,6 +129,7 @@ Haiku $1 / $5 per M tokens (input / output).
 | `/paloalto-ansible --team` | host (Opus) | 3 × Sonnet (default) or 4 × Sonnet (`--with-audit`); Teammate 1 sequential, then remaining teammates parallel | 40k–100k | $0.30–$1.00 |
 | `/dead-code-review` | host (Opus) | 3 × Haiku + 2 × Sonnet + 1 × Opus (parallel) | 80k–200k | $0.80–$2.50 |
 | `/post-deploy-verify` | host model | 2 × Haiku + 1 × Sonnet **per PBI batch** | scales with batch | $0.10–$1.00 / batch |
+| `/sdlc-lite` | host (Opus) | same fan-out as `/sdlc` minus the PR/review tail | 90k–280k | $2.50–$9.00 |
 | `/sdlc` | host (Opus) | 3 × Haiku (sanity) + 1 × Opus (impl) + 2–4 × Haiku/Sonnet (validate) + optional Opus/Sonnet (eval-fix) + Sonnet (e2e) | 100k–300k | $3.00–$10.00 |
 
 **Notes / caveats**:

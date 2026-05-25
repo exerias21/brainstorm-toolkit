@@ -80,17 +80,18 @@ Stages:
 
 `/sdlc` takes no flags. The pipeline switches into skill-repo mode automatically when `.claude-plugin/marketplace.json` exists at repo root.
 
-## When to use `/task` vs `/tasker` vs `/sdlc`
+## When to use `/task` vs `/sdlc-lite` vs `/sdlc`
 
-Three skills, three opinionated shapes:
+Three skills. `/sdlc-lite` and `/sdlc` run the **same pipeline** and differ only
+in the ending; `/task` is the lightweight TDD fast path:
 
 | Skill | Input | Terminal action | Use when |
 |---|---|---|---|
-| `/task <description>` | ad-hoc ask | TDD red-green → green commit on current branch | one-line code fix, a small util, a rename. Always TDD; no PR ceremony. |
-| `/tasker <description-or-task-id>` | task-row work | implement → evals → validate → flowsim → commit on current branch | task is too big for `/task`'s pure TDD inner loop but too small to justify a full plan. Full discipline, no PR. |
-| `/sdlc <plan-file>` | plan file | full pipeline → PR | you have a brainstormed plan file and want autonomous delivery with human review at the PR boundary. |
+| `/task <description>` | ad-hoc ask | TDD red-green → green commit on current branch | one-line code fix, a small util, a rename. Always TDD; no evals/flowsim. |
+| `/sdlc-lite <plan \| task-id \| range \| desc>` | plan, task(s), or ask | full pipeline → **commit on current branch, no PR** | you want full discipline (sanity → evals → validate → plan-validate → flowsim) but to stack onto the branch you're already on (e.g. an open PR). |
+| `/sdlc <plan-file>` | plan file | full pipeline → **PR** | you have a plan file and want autonomous delivery with human review at the PR boundary. |
 
-`/tasker` reuses `/sdlc`'s stage templates and state envelope verbatim — same `.claude/pipeline/<slug>/` shape, distinguished by `run.json.pipeline = "tasker"`. If a task balloons mid-run, kill it and re-invoke as `/sdlc`.
+`/sdlc-lite` reuses `/sdlc`'s stage templates and state envelope verbatim — same `.claude/pipeline/<slug>/` shape, distinguished by `run.json.pipeline = "sdlc-lite"`. The only difference from `/sdlc` is Stage 6: commit-in-place vs. open-a-PR. To execute several queued tasks at once, pass a range: `/sdlc-lite 1-5`.
 
 ## `project.json` config
 
@@ -112,7 +113,7 @@ Create `.claude/project.json` from `.claude/project.json.example`. Every key is 
 ## Tips
 
 - Run `/repo-onboarding` in any repo that doesn't already have `AGENTS.md`. It only takes a minute and every other skill gets more useful after.
-- If you want a task file written but don't want to execute it immediately, edit `TASKS.md` directly (one line per task). `/task` always executes; `/tasker` always executes.
+- If you want a task file written but don't want to execute it immediately, edit `TASKS.md` directly (one line per task). `/task` always executes; `/sdlc-lite` always executes.
 - To preview a plan before running the pipeline, use `/brainstorm` — `/sdlc` no longer has a dry-run mode.
 - For interactive brainstorming on a meaty topic, use `/brainstorm`. For multi-agent competitive/product research, use `/brainstorm-team`.
 

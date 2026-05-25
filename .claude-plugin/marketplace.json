@@ -33,9 +33,9 @@
         "./skills/repo-onboarding",
         "./skills/review-pr",
         "./skills/sdlc",
+        "./skills/sdlc-lite",
         "./skills/status",
         "./skills/task",
-        "./skills/tasker",
         "./skills/test-check"
       ]
     }

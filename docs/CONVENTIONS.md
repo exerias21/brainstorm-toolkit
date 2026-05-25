@@ -226,7 +226,7 @@ The rule: **identity paths are RFC 1123; doc filenames follow ecosystem.** When 
 
 **Artifact IDs**: aliases supported indefinitely. `task-N` (legacy, no padding) is recognized as equivalent to `task-NNN` by any code that resolves task IDs. New artifacts use the canonical zero-padded form. No batch migration.
 
-**Flags**: aliases supported indefinitely in skills that still take flags. `/sdlc`, `/task`, and `/tasker` are zero-flag by design and recognize no aliases. Skills that do accept flags use `--no-X` for boolean negation; older `--skip-X` aliases are tolerated where they appear historically.
+**Flags**: aliases supported indefinitely in skills that still take flags. `/sdlc`, `/task`, and `/sdlc-lite` are zero-flag by design and recognize no aliases. Skills that do accept flags use `--no-X` for boolean negation; older `--skip-X` aliases are tolerated where they appear historically.
 
 **Paths**: forward-only. New artifacts land in canonical directories. Existing artifacts in old layouts stay where they are — moving them would break references in tracked plan files.
 
