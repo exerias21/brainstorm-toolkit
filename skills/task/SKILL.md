@@ -102,4 +102,4 @@ Commit only if the user asked for it, or if they have a durable "always commit f
 - **Don't inflate small tasks.** If the ask is one line of code, the task file can be terse. Don't pad acceptance criteria to look thorough.
 - **Respect `GOTCHAS.md`.** Before writing code, check for entries that apply to the area you're touching.
 - **Don't skip the failing-test step when there IS a testable surface.** A passing test that was never red verifies nothing. Only skip the red-test cycle for genuinely untestable asks (pure docs/config/copy) — handle those directly here per the note in Section 4; don't punt them to another skill.
-- **One task at a time.** If the ask implies multiple tasks, invoke `/task` once per item or suggest `/brainstorm` or `/sdlc` instead.
+- **One task at a time.** `/task` handles a single bounded item. If the ask implies a *batch* of tasks, don't fire `/task` repeatedly — run them through `/sdlc-lite <range>` (e.g. `/sdlc-lite 1-5`), which keeps full-pipeline discipline across the set and commits nothing until you review. For an open-ended feature, start with `/brainstorm`.

@@ -212,4 +212,11 @@ A single plan file at `plans/brainstorm-deep-<topic-slug>.md` containing:
 <the four-block contract — mandatory>
 ```
 
-That's the contract. `/sdlc <plan>` reads this file as input the same way it reads `/brainstorm`'s output.
+That's the contract. Don't stop at the file — continue the flow. Hand it to
+the pipeline: `/sdlc-lite <plan>` (full pipeline, hands you the validated
+changes to commit — the safe default, no git writes) or `/sdlc <plan>` (full
+pipeline → PR; confirm first since it opens a PR). Continue whichever flow
+you've used this session; default to `/sdlc-lite` otherwise. `/plan-html <plan>`
+renders the plan for a visual read first if the user wants to see the shape of
+the work. Both pipeline skills grep the expectation-contract block to ground
+their work.

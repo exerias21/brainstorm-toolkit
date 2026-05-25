@@ -243,11 +243,21 @@ to the user for review):
 
 If the plan passes, move to Step 8. Otherwise, revise it with the user.
 
-### Step 8: Next Steps
+### Step 8: Continue the flow
 
-Offer the user the next steps:
+Don't stop at the plan file — keep the momentum into delivery. Continue
+whichever pipeline flow has been used this session; default to `/sdlc-lite`
+(full pipeline, hands you the validated changes to commit — no git writes, so
+it can't surprise you with a PR).
 
-1. **Implement now** — transition into building directly in this session
-2. **Use `/task`** — pick a single bounded task from the plan and execute it with TDD
-3. **Save for later** — the plan persists at `plans/brainstorm-[topic-slug].md`
-   and task items are already in `TASKS.md`
+1. **Show what's being built** (optional) — `/plan-html plans/brainstorm-[topic-slug].md`
+   renders the plan as a single-file HTML view for a shape-of-the-work read.
+2. **Continue into delivery** — `/sdlc-lite <plan>` by default (or `/sdlc <plan>`
+   if that's the established flow; confirm first since `/sdlc` opens a PR). For
+   a single tiny item, `/task` is the fast path.
+3. **Save for later** — leave the plan at `plans/brainstorm-[topic-slug].md`
+   (task items are already in `TASKS.md`).
+
+Write the next-action sentinel naming the chosen command so Copilot's Stop
+hook surfaces it: `echo "/sdlc-lite plans/brainstorm-[topic-slug].md" > .claude/.next-action`
+(substitute `/sdlc` if that's the established flow). Skip only on "save for later".

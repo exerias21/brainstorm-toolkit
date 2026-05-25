@@ -128,3 +128,14 @@ The team produces `plans/team-brainstorm-results.md` with sections:
 7. Wildcards — Lens Divergence (4 lens-driven approaches from the Lateral Thinker: First Principles, Inversion, Cross-Domain Analogy, Constraint Removal)
 
 Sections 6 and 7 are both preserved — they come from different agents with different prompts, and the comparison itself is often illuminating.
+
+## Continue the flow
+
+Don't stop at the results file. Once the user picks features to build, turn the
+chosen blueprint(s) into delivery rather than waiting for them to re-issue a
+command:
+- Render the results for a visual read if useful: `/plan-html plans/team-brainstorm-results.md`.
+- Hand a chosen blueprint to the pipeline — `/sdlc-lite <plan>` (full pipeline,
+  hands you the validated changes; safe default, no git writes) or `/sdlc <plan>`
+  (→ PR; confirm first). Continue whichever flow has been used this session;
+  default to `/sdlc-lite`.

@@ -275,36 +275,52 @@ context and stress-test it against this checklist:
 
 Share the validation feedback with the user. If there are issues, revise the plan together.
 
-### Step 8: Exit Plan Mode and Next Steps
+### Step 8: Exit Plan Mode and continue the flow
 
-Before exiting Plan mode, drop a **next-action sentinel** so the Stop hook
-surfaces the recommended follow-up command in the terminal once Claude
-finishes responding. The plan file MUST already exist at
-`plans/brainstorm-<topic-slug>.md` before writing the sentinel — a sentinel
-that points at a missing plan is a bug.
+A brainstorm that ends at a file the user has to manually pick up is a
+**dropped flow**. Default posture: keep the momentum — continue into the
+delivery pipeline rather than stopping at the plan.
+
+**Pick the next command by flow continuity** — don't make the user re-choose a
+flow they've already established this session:
+- If `/sdlc` has been used this session → continue with `/sdlc`.
+- If `/sdlc-lite` has been used, or no pipeline flow is established yet →
+  use `/sdlc-lite`. It runs the full pipeline and hands back validated changes
+  with **no git writes**, so it's the safe default — it can't surprise the user
+  with a PR.
+
+Drop a **next-action sentinel** naming that command so the Stop hook surfaces
+it. The plan file MUST already exist at `plans/brainstorm-<topic-slug>.md`
+before writing the sentinel — a sentinel pointing at a missing plan is a bug.
 
 ```
-# Write a single line to .claude/.next-action with the recommended command:
-echo "/sdlc plans/brainstorm-<topic-slug>.md" > .claude/.next-action
+# Default to the safe pipeline; substitute /sdlc if that's the established flow:
+echo "/sdlc-lite plans/brainstorm-<topic-slug>.md" > .claude/.next-action
 ```
 
-The Stop hook (installed by `setup.sh` into both
-`.claude/settings.json` for Claude Code and `.github/hooks/next-action.json`
-for Copilot) reads the file once, prints `Next: <command>` to the user, and
-deletes it — so the suggestion fires once, not on every Stop. Skip the
-sentinel write if the user explicitly chose "save for later" with no
-intent to ship.
+The Stop hook (installed by `setup.sh` into both `.claude/settings.json` for
+Claude Code and `.github/hooks/next-action.json` for Copilot) reads the file
+once, prints `Next: <command>`, and deletes it. Skip the sentinel only if the
+user explicitly chose "save for later" with no intent to ship.
 
-Then exit Plan mode (`ExitPlanMode`). Offer the user the next steps:
+Then exit Plan mode (`ExitPlanMode`) and continue:
 
-1. **Implement now** — transition into building directly in this session
-2. **Run `/sdlc {plan_file}`** — hand the plan to the automated implementation flow
-   (implement → eval → fix loop → test → PR). Best for bounded, well-specified plans.
-3. **Save for later** — the plan persists at `plans/brainstorm-[topic-slug].md`
+1. **Show what's being built** (optional, cheap) — offer
+   `/plan-html plans/brainstorm-<topic-slug>.md` to render the plan as a
+   single-file HTML view the user or a stakeholder can scroll, for a
+   shape-of-the-work read before delivery starts.
+2. **Continue into delivery** with the established flow, or `/sdlc-lite` by
+   default — run the full pipeline. `/sdlc-lite` hands back validated changes
+   for the user to commit (no git writes); `/sdlc` goes all the way to a PR.
+   **Because `/sdlc` opens a PR, confirm before taking that path** — but you do
+   not need to ask permission to continue with the safe `/sdlc-lite` path.
+3. **Save for later** — if the user signals they're done for now, leave the
+   plan file and skip the sentinel.
 
-If the plan has clear implementation steps with file paths and acceptance criteria,
-recommend option 2 (`/sdlc`). If the plan is exploratory or has ambiguous tradeoffs,
-recommend option 1 (manual implementation).
+If the plan has clear implementation steps with file paths and acceptance
+criteria, proceed with delivery (option 2). If it's exploratory or has
+ambiguous tradeoffs, pause for the user to review (offer option 1's HTML view
+first).
 
 If the current tool supports an explicit planning-mode exit, you may use it here. Otherwise,
 just transition conversationally.
