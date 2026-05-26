@@ -115,6 +115,14 @@
   .svg-num { fill: #fff; font: 700 11px sans-serif; text-anchor: middle; }
   .svg-lbl { fill: var(--fg-muted); font: 11px sans-serif; }
   .svg-qlbl { fill: var(--fg-muted); font: italic 11px sans-serif; opacity: .8; }
+  /* flow / state-diagram nodes (boxes + arrows). Translucent fills sit fine on
+     light or dark; strokes/text use theme tokens so they switch automatically. */
+  .svg-node { fill: var(--bg-code); stroke: var(--border); }
+  .svg-node-done { fill: rgba(22,163,74,.16); stroke: var(--done); }
+  .svg-node-new { fill: rgba(217,119,6,.16); stroke: var(--progress); }
+  .svg-node-text { fill: var(--fg); font: 12px sans-serif; text-anchor: middle; }
+  .svg-sub { fill: var(--fg-muted); font: 10px sans-serif; text-anchor: middle; }
+  .svg-flow { stroke: var(--fg-muted); stroke-width: 1.5; fill: none; }
   a { color: var(--accent); }
   hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
   footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--fg-muted); font-size: 12px; }

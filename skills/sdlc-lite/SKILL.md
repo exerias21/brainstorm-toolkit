@@ -78,11 +78,13 @@ Mark resolved rows `[~]` (in-progress). Derive `slug` per the algorithm in
 initialize the state envelope at `.claude/pipeline/<slug>/` with
 `pipeline: "sdlc-lite"`, `base_commit`, `status: "in_progress"`.
 
-**Continuity detection** (prompt, never auto) — same as `/sdlc`: glob
-`.claude/pipeline/*/run.json`; if a prior `sdlc`/`sdlc-lite` run's
-`base_commit` is an ancestor of HEAD (`git merge-base --is-ancestor`), surface
-it ("this branch ran /<pipeline> at <sha>; continue that flow or start fresh?")
-rather than silently starting a parallel run.
+**Continuity detection** (prompt, never auto) — same tightened logic as
+`/sdlc`: take only the **single most-recently-updated** run whose `base_commit`
+is an ancestor of HEAD, and prompt **only** if it's non-terminal OR complete
+with HEAD advanced past its recorded `commit_sha` (follow-up landed outside the
+pipeline). Do **not** prompt for every ancestor run — after a run merges its
+`base_commit` is an ancestor forever, which would fire on all history. One
+prompt at most, or none.
 
 ## Stage 1.5 — Sanity check
 

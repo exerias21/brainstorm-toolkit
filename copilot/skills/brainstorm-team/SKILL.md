@@ -14,7 +14,7 @@ disable-model-invocation: true
 
 # Brainstorm Team (Copilot Edition — Sequential)
 
-Six research passes executed in order by you, producing a single strategy document at `plans/team-brainstorm-results.md` (at the repo root, written via the Copilot agent's file-write mechanism — NOT under `.claude/`). The Claude canonical runs these as parallel workers; this version runs them sequentially. Output is the same shape, just slower.
+Six research passes executed in order by you, producing a single strategy document at `plans/team-brainstorm-<topic-slug>.md` (at the repo root, written via the Copilot agent's file-write mechanism — NOT under `.claude/`). The Claude canonical runs these as parallel workers; this version runs them sequentially. Output is the same shape, just slower.
 
 ## Before starting — load project context
 
@@ -86,12 +86,15 @@ For the top 3 features from Pass 4, write detailed implementation blueprints fol
 
 ## Final output
 
-**Write the assembled document to `plans/team-brainstorm-results.md`** at the
+**Write the assembled document to `plans/team-brainstorm-<topic-slug>.md`** at the
 repo root (the consumer project's working directory) — NOT under `.claude/`.
+Derive `<topic-slug>` from the session's topic (lowercase, hyphenated, ≤40
+chars) so repeated runs don't clobber each other; fall back to
+`team-brainstorm-results.md` only for a truly generic "what next?" session.
 Use the file-write mechanism Copilot's agent has available; create the `plans/`
 directory first if it does not exist.
 
-Assemble everything into `plans/team-brainstorm-results.md` with sections:
+Assemble everything into `plans/team-brainstorm-<topic-slug>.md` with sections:
 1. Competitive Landscape
 2. Codebase Map & Technical Assessment
 3. UX Assessment (5 problems, 5 delights)

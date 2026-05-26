@@ -78,22 +78,35 @@ A fresh `/sdlc <plan>` invocation **overwrites** any prior `run.json` and
 
 ### Continuity detection (prompt, never auto)
 
-At Stage 1, before initializing this run, glob `.claude/pipeline/*/run.json`
-and check whether the current branch already carries a recent pipeline run:
-for each envelope with a `base_commit`, test
-`git merge-base --is-ancestor <base_commit> HEAD`. If a prior `sdlc` or
-`sdlc-lite` run is an ancestor of HEAD (i.e. this branch was built on it),
-**surface it and ask** — do not auto-resume or auto-downgrade:
+At Stage 1, before initializing this run, check whether the **current branch**
+has an in-flight or just-completed pipeline run you might be continuing or
+silently skipping. **Do not scan every envelope for "ancestor of HEAD"** — after
+a run merges, its `base_commit` is an ancestor of HEAD essentially forever, so
+that test fires on every historical run (a false-positive storm). Instead:
+
+1. Glob `.claude/pipeline/*/run.json`; keep only runs whose `base_commit` is an
+   ancestor of HEAD (`git merge-base --is-ancestor`).
+2. Of those, take the **single most-recently-updated** run (`updated_at`). One
+   prompt at most — never one per historical run.
+3. Prompt **only** if that latest run is either:
+   - **non-terminal** (`status` in_progress/paused) — an open run you're
+     building past (also the orphan/stale case); or
+   - **complete but HEAD has advanced past its final commit** — i.e. follow-up
+     work landed *after* the last pipeline run (compare HEAD to the run's
+     recorded `commit_sha` from `pr-create.json`/`handoff.json`; if they differ,
+     this follow-up didn't go through the pipeline).
+   If the latest run is complete and HEAD still equals its final commit, stay
+   silent — nothing new happened, nothing to flag.
 
 ```
-This branch ran /<pipeline> for '<slug>' at <short-sha> (<n> commits back).
-Continue that flow, inspect its run.json, or start fresh as /sdlc?
+This branch's last pipeline run was /<pipeline> for '<slug>' (<short-sha>,
+<n> commits back, status <status>). Continue that flow, inspect its run.json,
+or start fresh?
 ```
 
-This keeps `/sdlc` zero-flag (it's a prompt, not a flag) while making a
-skipped-or-switched pipeline impossible to do silently — the exact gap where
-a follow-up landed outside the pipeline and only a human noticed. Skip the
-prompt if no prior run is an ancestor of HEAD.
+This keeps `/sdlc` zero-flag (a prompt, not a flag) and catches the real gap —
+a follow-up that landed outside the pipeline — without nagging about every
+merged run in history.
 
 ### Skill-repo mode detection
 

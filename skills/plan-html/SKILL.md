@@ -159,9 +159,14 @@ Trigger a visual on these shapes (cap ~2 per plan; pick the highest-signal):
 
 Authoring rules:
 - Hand-author compact, valid SVG (~`viewBox="0 0 660 400"`, `width:100%`).
-  Use the CSS classes the template defines (`.svg-axis`, `.svg-grid`,
-  `.svg-dot-S/M/L`, `.svg-num`, `.svg-lbl`, `.svg-qlbl`) so it inherits
-  light/dark colors — **don't hardcode hex** in the SVG.
+  Use the CSS classes the template defines so it inherits light/dark colors —
+  **don't hardcode hex** in the SVG:
+  - **scatter**: `.svg-axis`, `.svg-grid`, `.svg-q`, `.svg-dot-S/M/L`,
+    `.svg-num`, `.svg-lbl`, `.svg-qlbl`.
+  - **flow / state diagram**: `.svg-node` (neutral box), `.svg-node-done`
+    (already-built, green), `.svg-node-new` (net-new, amber),
+    `.svg-node-text` (box label), `.svg-sub` (small sublabel), `.svg-flow`
+    (connector line). All theme-aware via the same tokens.
 - Wrap in `<figure>…<figcaption>one-line read</figcaption></figure>`.
 - **Stay honest:** plot only data actually in the plan. If you can't place a
   point confidently, omit the visual rather than guess. If nothing qualifies,
@@ -178,6 +183,21 @@ S→L, y by impact — lower y = higher impact; top-left = quick wins):
   <circle class="svg-dot-S" cx="140" cy="80" r="11"/><text class="svg-num" x="140" y="84">1</text>
   <!-- one dot per ranked item -->
 </svg><figcaption>Effort × impact — top-left = quick wins.</figcaption></figure>
+```
+
+Flow skeleton (left-to-right phases/steps; `svg-node-done` = already built,
+`svg-node-new` = net-new, so a reviewer sees the build surface at a glance):
+
+```html
+<figure><svg viewBox="0 0 720 120" role="img" aria-label="upload to action flow">
+  <rect class="svg-node-done" x="6" y="40" width="96" height="40" rx="6"/>
+  <text class="svg-node-text" x="54" y="64">Upload</text>
+  <line class="svg-flow" x1="102" y1="60" x2="128" y2="60"/>
+  <rect class="svg-node-new" x="128" y="40" width="110" height="40" rx="6"/>
+  <text class="svg-node-text" x="183" y="60">Review</text>
+  <text class="svg-sub" x="183" y="73">LLM + consent</text>
+  <!-- repeat box → line → box for each step -->
+</svg><figcaption>The flow — green = built, amber = net-new.</figcaption></figure>
 ```
 
 ## Stage 3 — Convert markdown body to HTML
