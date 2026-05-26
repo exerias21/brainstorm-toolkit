@@ -53,6 +53,8 @@
     "_globs_comment": "Override the changed-files-gate surface globs (see skills/sdlc/templates/changed-files-gate.md). Defaults cover the common cases; set these only for non-standard layouts.",
     "frontend_globs": ["**/*.tsx", "**/*.jsx", "**/*.vue", "**/*.svelte", "**/*.css", "**/*.scss"],
     "data_globs": ["**/migrations/**", "**/schema/**", "**/models/**", "**/*.sql"],
+    "_deploy_delta_comment": "Dependency manifests/lockfiles/Dockerfiles. When the diff touches one, /sdlc flags 'rebuild required (not restart)' in the PR body + Stage-7 checklist — code committed != running env reflects it.",
+    "deploy_delta_globs": ["requirements.txt", "pyproject.toml", "poetry.lock", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "go.mod", "Cargo.toml", "Gemfile.lock", "Dockerfile", "**/Dockerfile"],
     "_memory_index_comment": "Optional path to a REPO-LOCAL memory/knowledge index for /repo-health Check 8. Leave unset to skip — the check NEVER reads the user-global ~/.claude memory dir.",
     "memory_index": null
   },

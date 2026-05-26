@@ -39,7 +39,13 @@ Report a JSON array:
 
 ```
 Read the plan at {plan_file}. Check for common missing-step categories:
-1. Creates a DB migration → does the plan mention running/applying it?
+1. Creates a DB migration → does the plan mention running/applying it? AND is
+   the migration number collision-safe? Compute the next number as
+   `max(existing) + 1`, but **warn that it is not collision-safe across
+   unmerged branches** — another in-flight branch may claim the same number
+   (this repo may already have duplicate-numbered migrations). Suggest
+   verifying the number at implementation time, or a timestamp-prefixed scheme
+   if the project's migration tool allows it.
 2. Creates a new API endpoint → does the plan mention registering it
    with the router / app (whatever pattern this project uses)?
 3. Creates a new frontend component → does the plan mention importing

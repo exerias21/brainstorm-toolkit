@@ -186,6 +186,19 @@ from this path. Do NOT rely on Plan Mode's "approve plan" affordance to
 persist the file; that's a separate UX from the on-disk artifact this skill
 must produce.
 
+**Plan-mode sandbox conflict** (common — read this): some hosts run Plan mode
+in a **sandbox that only permits writes to a transient path** (e.g.
+`~/.claude/plans/<random>.md`) and *forbid* writes elsewhere until you exit
+plan mode. You'll know by the plan-file path the host hands you. When that's
+the case:
+- During planning, author into the sandbox file the host gave you (that's all
+  it allows).
+- **Immediately after `ExitPlanMode`** (Step 8), persist the canonical copy to
+  repo-root `plans/brainstorm-<topic-slug>.md` — *before* writing the
+  next-action sentinel, so downstream skills find it.
+Don't fight the sandbox mid-plan; just re-persist to repo-root the moment the
+sandbox lifts. The repo-root copy is the one downstream skills read.
+
 **Also append action items to `TASKS.md`** (at repo root). For each implementation step
 that's concrete and bounded enough to stand alone, add a row to the `Active / Pending`
 section: `- [ ] (P2) <step title> — plans/brainstorm-[topic-slug].md`. If `TASKS.md`
@@ -281,8 +294,20 @@ A brainstorm that ends at a file the user has to manually pick up is a
 **dropped flow**. Default posture: keep the momentum — continue into the
 delivery pipeline rather than stopping at the plan.
 
-**Pick the next command by flow continuity** — don't make the user re-choose a
-flow they've already established this session:
+**First — is this plan about the toolkit's own vendored skills?** If the plan's
+changed-files target `.claude/skills/**` (or `.github/skills/**`,
+`.agents/skills/**`) — i.e. it proposes editing *installed/vendored* skill
+copies — **do NOT route it through this consumer repo's `/sdlc`.** Those edits
+belong in the **canonical brainstorm-toolkit repo**, then get re-installed.
+Suppress the auto-pipeline sentinel and emit instead:
+`Next: file this upstream in the brainstorm-toolkit repo (these are vendored
+skill copies; editing them here diverges from canonical).` This is the
+"toolkit improving itself" case — shipping skill edits through a consumer's
+pipeline is exactly the mis-route to avoid. (Authoring a *new app feature*
+proceeds normally below.)
+
+**Otherwise, pick the next command by flow continuity** — don't make the user
+re-choose a flow they've already established this session:
 - If `/sdlc` has been used this session → continue with `/sdlc`.
 - If `/sdlc-lite` has been used, or no pipeline flow is established yet →
   use `/sdlc-lite`. It runs the full pipeline and hands back validated changes

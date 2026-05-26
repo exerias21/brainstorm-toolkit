@@ -24,6 +24,7 @@ the frontend gate.**
 | backend  | `**/*.{py,go,rb,java,ts}` (server dirs) | `discipline.backend_globs` |
 | data     | `**/migrations/**`, `**/schema/**`, `**/models/**`, `*.sql` | `discipline.data_globs` |
 | docs     | `**/*.md`, `docs/**` | `discipline.docs_globs` |
+| **deploy-delta** | `requirements.txt`, `pyproject.toml`, `poetry.lock`, `package.json`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `go.mod`, `Cargo.toml`, `Gemfile.lock`, `Dockerfile`, `**/Dockerfile` | `discipline.deploy_delta_globs` |
 
 ## Gate semantics
 
@@ -37,7 +38,15 @@ A consuming stage uses `touched` to decide whether its check is **required**:
   to apply it? — Stage 1.5 completeness already asks; `/repo-health` Check 6
   catches drift later).
 - **backend touched** → backend tests are expected in Stage 5.
+- **deploy-delta touched** → a dependency manifest / lockfile / Dockerfile
+  changed, which means **"code committed" ≠ "running environment reflects
+  it."** The deployed app needs a **rebuild, not just a restart**. Emit a
+  `⚙ rebuild required (not restart)` note in the PR body and the Stage-7 test
+  checklist. (Containerized test runners with a baked test dir may also need
+  new test files copied/rebuilt before they're visible — flag that too.) The
+  pipeline validates the diff; this flags the deploy delta the diff implies.
 
 The gate never blocks on its own; it converts "the user has to remember to
-check the frontend" into "the pipeline notices the frontend changed and the
-visual check didn't run." Data-driven off the diff, not the user's prompt.
+check the frontend / rebuild the image" into "the pipeline notices the
+frontend changed (or a dep was added) and says so." Data-driven off the diff,
+not the user's prompt.

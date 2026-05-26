@@ -128,7 +128,7 @@ supply the missing pieces and only proceed once they're filled in.
 The expectation contract is this skill's misalignment-catching net;
 writing a plan without it defeats the skill's purpose.
 
-Write to `plans/brainstorm-deep-<topic-slug>.md`. Slug is derived from the user's topic the same way `/brainstorm` does it. Same naming convention so downstream `/sdlc <plan>` consumption is uniform.
+Write to `plans/brainstorm-deep-<topic-slug>.md`. Slug is derived from the user's topic the same way `/brainstorm` does it. Same naming convention so downstream `/sdlc <plan>` consumption is uniform. **Plan-mode sandbox:** if the host only permits writes to a transient plan path during plan mode, author there while planning, then persist the canonical copy to repo-root `plans/brainstorm-deep-<topic-slug>.md` immediately after exiting plan mode — same handling as `/brainstorm` Step 6.
 
 ## Args
 

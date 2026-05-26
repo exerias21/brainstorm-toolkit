@@ -6,7 +6,9 @@ description: >
   pipeline runs (so a stalled /sdlc or /sdlc-lite run can't hide). Reads
   TASKS.md and .claude/pipeline/ directly — no subagents, no dashboards.
   Invoke via /status or when the user asks "what's left?", "current task?",
-  "status".
+  "status". Read-only by default; `--prune-stale` is an opt-in, confirm-gated
+  cleanup of stale/orphaned pipeline envelopes.
+argument-hint: "[--prune-stale]"
 metadata:
    brainstorm-toolkit-applies-to: claude copilot
 ---
@@ -59,9 +61,29 @@ metadata:
    A non-terminal pipeline run is the one thing worth making loud — it's how a
    skipped/abandoned pipeline becomes visible instead of lingering in JSON.
 
+## `--prune-stale` (opt-in cleanup — the one write exception)
+
+Detection alone leaves stale envelopes flagged forever. `/status --prune-stale`
+lets you actually clear them — confirm-gated, never automatic:
+
+1. Find pipeline runs that are **non-terminal** (`in_progress`/`paused`) **and**
+   either older than `discipline.staleness_hours` (default 24) **or** whose
+   `base_commit` is not a real git object (`git cat-file -e <base_commit>` fails
+   — a synthetic/placeholder base that nothing will ever reconcile).
+2. **List them and ask for one confirmation** before touching anything: show
+   each slug, stage, age, and why it qualifies.
+3. On confirm, for each: if its `base_commit` is an ancestor of HEAD (work
+   landed), set `run.json.status = "abandoned"` and append a one-line note; if
+   it's a synthetic/garbage envelope, remove the `.claude/pipeline/<slug>/`
+   directory. Report what was pruned.
+
+Without `--prune-stale`, `/status` is **pure read** (default). The flag is the
+documented, confirm-gated exception — it's the only path that writes.
+
 ## Rules
 
-- Pure read, no file writes.
+- Pure read by default, no file writes. The sole exception is `--prune-stale`
+  above, which is explicit and confirm-gated.
 - No subagent calls, no multi-step workflows.
 - Keep the output under 6 lines unless the user asks for detail.
 - If the user wants more (e.g., "show all pending"), list them in a compact table but still no subagent.

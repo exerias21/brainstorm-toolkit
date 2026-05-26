@@ -121,6 +121,14 @@ markdown-skill plugin: if `.claude-plugin/marketplace.json` exists at repo
 root, switch to skill-repo stage substitutions for the rest of the run (see
 "Skill-repo mode" below). No flag is needed; detection is automatic.
 
+**Vendored-skill guard:** if `.claude-plugin/marketplace.json` is **absent**
+(this is an ordinary consumer repo) but the plan's changed files target
+`.claude/skills/**`, `.github/skills/**`, or `.agents/skills/**` — i.e. it
+edits *installed/vendored* skill copies — **stop and report.** Those edits
+belong upstream in the canonical brainstorm-toolkit repo, then get
+re-installed; shipping them through a consumer's pipeline diverges the vendored
+copy from canonical. Don't run the pipeline on vendored skill edits.
+
 ---
 
 ## Stage 1: Parse Plan
@@ -222,6 +230,25 @@ Create test cases that verify the plan's INTENT, not just "does it compile."
    - `<eval.features_dir>/{feature_slug}/expected/{scenario}.json` — expected output
 2. The runner auto-discovers new features by scanning `<eval.features_dir>/*/` —
    no registration needed.
+
+### For pure functions that live in the application package (not loadable by the eval harness):
+
+The eval harness is **script-scoped**: `tests/eval/conftest.py::load_script_module()`
+only imports files under `scripts/`, and `eval-runner.py` only discovers features
+under `<eval.features_dir>/`. Pure functions inside an application package
+(`backend/app/...`, `src/...`, a FastAPI/Django/Rails service module) are
+**unreachable** by that harness. **Do not mark these "skipped — no testable
+surface"** — that's the trap where the most common feature type silently gets
+zero coverage.
+
+Instead, when the testable functions live in the app package:
+1. Generate tests into the **project's native unit-test suite** at the
+   project's convention (where `test.unit` points — e.g. `backend/tests/`,
+   `tests/`, `__tests__/`), not into `tests/eval/`.
+2. They run in **Stage 5** via the configured `test.unit` command, not via
+   `eval.runner`.
+3. Record `data.coverage_route: "test.unit"` in the generate-evals sidecar so
+   Stage 5.6 (flowsim) knows unit results are the corroborating evidence.
 
 ### For features without testable pure functions:
 
@@ -407,10 +434,14 @@ UNCLEAR, or MISSING steps. This catches the class of gap where every individual
 checklist item passes but the end-to-end flow silently deviates from the plan's
 intent (wrong ordering, skipped step, different module doing the work).
 
-**Skip this stage if no `eval.runner` is configured** (without an eval surface,
-flowsim's corroborating-evidence signal degrades to mostly grep, and the
-narrative is best run interactively via `/flowsim` instead). Skill-repo mode
-also skips this stage via the substitution table below.
+**Skip this stage only if there is NEITHER eval results NOR `test.unit`
+results to corroborate** — i.e. no test evidence of any kind. flowsim accepts
+**`test.unit` results as corroborating evidence**, not just
+`eval.features_dir/.../results.json`; this is what makes it meaningful for an
+app-package feature that routed coverage to `test.unit` (Stage 3 above). Only
+when both are absent does flowsim degrade to mostly-grep, and then it's best
+run interactively via `/flowsim`. Skill-repo mode skips this stage via the
+substitution table below.
 
 ### Invoke
 
@@ -591,6 +622,12 @@ Report completion to the user:
 **Branch**: sdlc/{feature-slug} (stay on this branch)
 **Test results**: {summary from Stage 5}
 
+{If the deploy-delta surface was touched (see changed-files gate), lead with:}
+⚙ **Rebuild required (not restart)** — this change touched {manifest/lockfile/
+Dockerfile}, so the deployed/test environment must be rebuilt, not just
+restarted, to pick it up. {If new test files were added and the test runner is
+containerized with a baked test dir, note they need copying/rebuild first.}
+
 Please test:
 - [ ] {key interaction 1}
 - [ ] {key interaction 2}
@@ -607,6 +644,7 @@ Please test:
 - **Stop on repeated failures** — if fix loop can't resolve after max iterations, report to user
 - **Don't fix pre-existing failures** — only fix what this pipeline introduced
 - **Git hygiene** — clean commits with descriptive messages, specific file staging (no `git add .`)
+- **Autonomy overrides interactive output styles** — `/sdlc` is an autonomous plan→PR pipeline. If an interactive output style (e.g. a "learning"/contribution-seeking mode) is active, the explicit `/sdlc` invocation wins: run autonomously, don't pause to solicit user-authored code mid-pipeline.
 
 ## Soft-stop tier (earn the interruption)
 
@@ -624,6 +662,15 @@ allowlist of *structural* gaps earns one **soft-stop** — a single
 Soft-stop = ask once, proceed on confirmation, and log a one-line TASKS.md
 debt row if overridden. Keep the allowlist short; spending an interruption on
 a regex-level false positive is how gates get disabled.
+
+**Non-interactive runs (background job / CI / `--print`):** a soft-stop must
+**never block waiting for an answer that can't come** — that's a deadlock, not
+a gate. When there's no interactive channel (you're a background agent, a CI
+step, or a headless `claude --print` invocation), **proceed-and-document**
+instead of asking: take the safe path, write the soft-stop reason into the PR
+body, and add a TASKS.md debt row so the skipped check is visible and owned.
+Detect non-interactivity from the run context (no human in the loop); when in
+doubt in a background/CI context, proceed-and-document rather than stall.
 
 ## When This Skill Works Best
 
