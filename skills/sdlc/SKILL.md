@@ -84,8 +84,14 @@ silently skipping. **Do not scan every envelope for "ancestor of HEAD"** — aft
 a run merges, its `base_commit` is an ancestor of HEAD essentially forever, so
 that test fires on every historical run (a false-positive storm). Instead:
 
-1. Glob `.claude/pipeline/*/run.json`; keep only runs whose `base_commit` is an
-   ancestor of HEAD (`git merge-base --is-ancestor`).
+0. **If the current branch IS the main branch** (`main_branch` from
+   `.claude/project.json`, default `main`) → **skip continuity detection
+   entirely.** Main accumulates merges; every merged run's `base_commit` is an
+   ancestor and its commit is behind HEAD, so the check is pure noise there.
+   Continuation is a *feature-branch* concern. This is the fix for the
+   "every merged feature flags on long-lived main" false positive.
+1. Otherwise (a feature branch): glob `.claude/pipeline/*/run.json`; keep only
+   runs whose `base_commit` is an ancestor of HEAD (`git merge-base --is-ancestor`).
 2. Of those, take the **single most-recently-updated** run (`updated_at`). One
    prompt at most — never one per historical run.
 3. Prompt **only** if that latest run is either:
