@@ -604,6 +604,19 @@ before you stop. An envelope left `in_progress` after the work moved on is the
 "stale pipeline" smell `/repo-health` Check 7 and `/status` will flag; don't
 manufacture one.
 
+This applies equally to **retro / validation-only runs** — where Stage 2
+(implement) is intentionally skipped because the implementation already landed
+in a prior commit (a run started with notes like "retro-running validation
+stages"). Such a run must still **advance `run.json.stage` and append to
+`stages_completed` as each validation sidecar is written**, add `implement` to
+`run.json.stages_skipped`, and finish on a terminal `status`. The failure mode
+to avoid: a retro run initialized at `stage: "parse"` whose validation sidecars
+(`sanity-check`, `generate-evals`, `eval-fix`, `validate`, `plan-validate`,
+`flowsim`) all exist on disk while `run.json` still reads
+`status: "in_progress"` with `stages_completed: []` — sidecars present but the
+run never closed. That orphan is the single most common stale-pipeline false
+alarm; closing the run is the last action of *every* exit path, retro included.
+
 **IMPORTANT: Do NOT switch back to the main branch after creating the PR.**
 Stay on the feature branch so the user can test the feature before merging.
 Only switch branches when the user explicitly says to. (Main branch name is

@@ -176,7 +176,12 @@ themselves. (Want the commit + PR done for you? That's `/sdlc`.)
 `{branch, files_changed[], committed: false, suggested_commit_msg}`. **Always
 set `run.json.status` to a terminal value** (`complete`, or `paused` if you
 stopped mid-pipeline) before exiting — never leave it `in_progress`, or
-`/repo-health` and `/status` will (correctly) flag it as a stale run.
+`/repo-health` and `/status` will (correctly) flag it as a stale run. This holds
+for **retro / validation-only runs** too (Stage 2 skipped because the code
+already landed): advance `run.json.stage`/`stages_completed` as each validation
+sidecar is written, add `implement` to `stages_skipped`, and close on a terminal
+`status` — never leave a `parse`-stage envelope `in_progress` with sidecars
+already on disk.
 
 ## Stage 7 — Report
 
