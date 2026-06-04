@@ -5,7 +5,7 @@ description: >
   for project-specific commands. Gracefully skips any steps whose commands are not
   configured. Use after implementing features, fixing bugs, or before marking work done.
 metadata:
-  brainstorm-toolkit-applies-to: claude copilot
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Post-Change Validation

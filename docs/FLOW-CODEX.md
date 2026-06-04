@@ -41,7 +41,7 @@ Codex CLI scans `<repo>/.agents/skills/<name>/SKILL.md` per the 2026 Agent Skill
 | `/flowsim`, `/gotcha`, `/status`, `/test-check`, `/eval-harness`, etc. | Yes | Cross-tool by design; identical content |
 | `/plan-html <plan>` | Yes | Renders any markdown plan as a self-contained shareable HTML page (zero JS, embedded CSS). Identical on all three tools. |
 
-If a Codex-specific override doesn't exist at `codex/skills/<name>/`, `setup.sh` falls through to the canonical `skills/<name>/SKILL.md`. Overrides today: `/sdlc`, `/sdlc-lite`. The rest install canonically.
+`setup.sh` resolves each Codex skill in three steps, because Codex shares Copilot's runtime constraints (no Plan mode, no parallel sub-agents): (1) a Codex-specific override at `codex/skills/<name>/` if one exists; otherwise (2) the sequential Copilot overlay at `copilot/skills/<name>/`; otherwise (3) the canonical `skills/<name>/SKILL.md`. Codex-specific overrides today: `/sdlc`, `/sdlc-lite`. Skills with only a Copilot overlay (e.g. `/brainstorm`, `/brainstorm-team`, `/dead-code-review`) install that sequential overlay; purely cross-tool skills install canonically. A skill installs to Codex only if its **canonical** `metadata.brainstorm-toolkit-applies-to` includes `codex`.
 
 ## Daily inner loop
 

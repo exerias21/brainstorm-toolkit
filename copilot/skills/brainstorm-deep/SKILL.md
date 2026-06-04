@@ -45,7 +45,7 @@ If the user's pick reveals a much smaller or much larger scope than implied by t
 
 ## Pass 2 — Saturate by questioning (max 3 batches)
 
-Goal: ask enough clarifications that further questions would not change the design. **`--fast` skips this pass entirely** — one batch of clarifying questions, then proceed.
+Goal: ask enough clarifications that further questions would not change the design. **`--fast` limits this pass to a single batch** — one batch of clarifying questions (instead of up to 3), then proceed.
 
 1. Read `templates/question-typology.md` for the 9 buckets:
    Scope, Success, Failure, Audience, Priors, Trade-offs, Constraints, Reversibility, Resemblance.
@@ -104,8 +104,8 @@ Write to `plans/brainstorm-deep-<topic-slug>.md`. Same naming convention as `/br
 ## Args
 
 - **`<topic>`** (optional) — if absent, ask in Pass 1.
-- **`--fast`** — skip Pass 2 entirely (one batch of clarifying questions max).
-- **`--frames <list>`** — comma-separated frame names from the typology file. Default: `inversion,pre-mortem,steelman,adjacent-reuse`.
+- **`--fast`** — limit Pass 2 to a single batch of clarifying questions (instead of up to 3).
+- **`--frames <list>`** — comma-separated frame names from `templates/perspective-frames.md`. Default: `inversion,pre-mortem,steelman,adjacent-reuse`.
 - **`--ambition <level>`** — `conservative` / `default` / `ambitious`. Skips the 3-variant output.
 
 ## Rules
@@ -126,4 +126,4 @@ Write to `plans/brainstorm-deep-<topic-slug>.md`. Same naming convention as `/br
 
 ## Cost note
 
-Sequential frame stress-tests cost similar tokens to the Claude parallel version (4 × ~5k input + 300-word output ≈ 20–25k tokens). Latency is higher because they're serialized — that's the Copilot tradeoff until parallel sub-agent primitives ship.
+Sequential frame stress-tests cost similar tokens to the Claude parallel version: `N` frames × (~5k input + a 300-word output), where `N` is the number of selected frames (default 4, set by `--frames`) — so ≈ 20–25k tokens at the default. Latency is higher because they're serialized — that's the Copilot tradeoff until parallel sub-agent primitives ship.

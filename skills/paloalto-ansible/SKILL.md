@@ -14,7 +14,7 @@ description: >
   even if they don't name every component.
 argument-hint: "{intent} [--team] [--with-audit] [--no-eval] [--module-only]"
 metadata:
-  brainstorm-toolkit-applies-to: claude copilot
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Palo Alto SCM Ansible Automation

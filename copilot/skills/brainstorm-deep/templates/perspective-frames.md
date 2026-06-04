@@ -1,13 +1,13 @@
 # Perspective frames — 8 frames
 
-Frames are *lenses against the same idea*, not personas writing separate sections. Each frame is a Sonnet sub-agent. Default set is the first four; the rest are opt-in via `--frames <list>`.
+Frames are *lenses against the same idea*, not personas writing separate sections. On Copilot each frame runs as its own sequential chat turn (no sub-agent dispatch and no model selection — you run them inline). Default set is the first four; the rest are opt-in via `--frames <list>`.
 
-Each agent receives:
+Each frame turn receives:
 - The agreed framing from Pass 1 (what we're solving)
 - The user's clarification answers from Pass 2
 - The frame prompt below
 
-Each agent returns **≤300 words** in the requested shape. Frames inform the plan; user intent wins ties.
+Each frame returns **≤300 words** in the requested shape. Frames inform the plan; user intent wins ties.
 
 ---
 

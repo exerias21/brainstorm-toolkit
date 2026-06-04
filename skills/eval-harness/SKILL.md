@@ -7,7 +7,7 @@ description: >
   Use after implementing or modifying scripts, or as part of /test-check.
 argument-hint: "[feature] — name of a feature under evals/, or 'all'"
 metadata:
-  brainstorm-toolkit-applies-to: claude copilot
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Feature Eval Harness

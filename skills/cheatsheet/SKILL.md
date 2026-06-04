@@ -9,7 +9,7 @@ description: >
   and `/cheatsheet <name>` for a deep-dive on a specific skill.
 argument-hint: "[skill-name] [--brief] [--tool auto|claude|copilot]"
 metadata:
-  brainstorm-toolkit-applies-to: claude copilot
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Cheatsheet

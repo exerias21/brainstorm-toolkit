@@ -9,7 +9,7 @@ description: >
   when you want one canonical review on demand.
 argument-hint: "[pr-number | branch-name] [--post-comment]"
 metadata:
-   brainstorm-toolkit-applies-to: claude copilot
+   brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # /review-pr — on-demand code review for any PR or branch

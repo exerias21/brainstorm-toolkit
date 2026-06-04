@@ -9,7 +9,7 @@ description: >
   "code matches plan", this answers "deployed system matches BRD".
 argument-hint: "<brd-or-pbi-ref> [--env staging|prod|<name>] [--config <path>]"
 metadata:
-  brainstorm-toolkit-applies-to: claude copilot
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Post-Deploy BRD/PBI Verification

@@ -8,7 +8,7 @@ description: >
   "competitive analysis", "product review", or invokes /brainstorm-team. For
   conversational ideation with the user in-session, use /brainstorm instead.
 metadata:
-  brainstorm-toolkit-applies-to: claude copilot
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Brainstorm Team

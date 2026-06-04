@@ -36,7 +36,7 @@ bash ~/brainstorm-toolkit/setup.sh --target . --tools both
 
 `setup.sh` copies:
 
-- `skills/*` → `<target>/.claude/skills/<name>/` (Claude) and `<target>/.github/skills/<name>/` (Copilot, for skills marked for both tools). When a Copilot-optimized override exists in `copilot/skills/<name>/`, that version is installed instead of the canonical one. The full skill directory is copied so bundled scripts, assets, and references stay available.
+- `skills/*` → `<target>/.claude/skills/<name>/` (Claude), `<target>/.github/skills/<name>/` (Copilot), and `<target>/.agents/skills/<name>/` (Codex), for skills whose `metadata.brainstorm-toolkit-applies-to` includes that tool. When a Copilot-optimized override exists in `copilot/skills/<name>/`, that version is installed for Copilot instead of the canonical one; Codex prefers a `codex/skills/<name>/` override, then the Copilot overlay, then the canonical. The full skill directory is copied so bundled scripts, assets, and references stay available.
 - Some Copilot-distributed skills are intentionally **manual-only** and set `disable-model-invocation: true`, which keeps them available as slash commands without making them auto-load on semantic matching.
 - Legacy `.github/prompts/*.prompt.md` files from older installs are removed during Copilot installs so the workspace stops advertising prompt-file shims.
 - `agents/*` → `<target>/.claude/agents/` (Claude-only helper agents; VS Code can also discover Claude-format agents from `.claude/agents/` when needed).
@@ -69,31 +69,31 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 
 | Skill | Applies to | Use for |
 |---|---|---|
-| `/cheatsheet` | Both | Print every installed skill + the typical chains. The always-current view; `CHEATSHEET.md` is the printable companion. |
-| `/brainstorm` | Both † | Conversational feature ideation with lens-divergent wildcards (Plan mode on Claude, linear on Copilot) |
-| `/brainstorm-deep` | Both | Clarification-heavy ideation for ambiguous or high-stakes ideas. Three-pass loop (understand → saturate → plan-with-alternates), perspective-frame sub-agents, expectation-contract output. Slower than `/brainstorm`, more rigorous. |
-| `/brainstorm-team` | Both † | 6-agent team for competitive + product research incl. a lateral-thinking agent (sequential on Copilot) |
+| `/cheatsheet` | Claude + Copilot + Codex | Print every installed skill + the typical chains. The always-current view; `CHEATSHEET.md` is the printable companion. |
+| `/brainstorm` | Claude + Copilot + Codex † | Conversational feature ideation with lens-divergent wildcards (Plan mode on Claude, linear on Copilot) |
+| `/brainstorm-deep` | Claude + Copilot + Codex † | Clarification-heavy ideation for ambiguous or high-stakes ideas. Three-pass loop (understand → saturate → plan-with-alternates), perspective-frame sub-agents, expectation-contract output. Slower than `/brainstorm`, more rigorous. |
+| `/brainstorm-team` | Claude + Copilot + Codex † | 6-agent team for competitive + product research incl. a lateral-thinking agent (sequential on Copilot) |
 | `/task` | Claude + Copilot + Codex | Create one bounded task and execute it with TDD on the current branch — no flags, always TDD |
 | `/sdlc-lite` | Claude + Copilot + Codex † | The full `/sdlc` pipeline with a different ending — sanity → implement → evals → fix → validate → plan-validate → flowsim, then **hands you the validated changes to commit yourself** (no commit, branch, push, or PR — only `/sdlc` touches git). Stage 2 auto-decomposes large multi-surface plans into focused per-lane subagents + a converge step; small / single-surface plans run a single agent unchanged. Takes a plan file, a task id, a task range (`1-5`), or an ad-hoc description. Use to run full discipline on work you want to review and commit onto an open PR's branch. |
-| `/status` | Both | Quick readout of TASKS.md counts + active task |
+| `/status` | Claude + Copilot + Codex | Quick readout of TASKS.md counts + active task |
 | `/sdlc` | Claude + Copilot + Codex † | Plan → implement → eval → test → flowsim → PR. Stage 2 auto-decomposes large multi-surface plans into focused per-lane subagents + a converge step (single agent for small / single-surface plans). No flags; skill-repo mode auto-detected from `.claude-plugin/marketplace.json` |
-| `/repo-onboarding` | Both | Generate AGENTS.md + TASKS.md + project.json + GOTCHAS.md |
-| `/repo-health` | Both | Read-only hygiene sweep (dead code + tests + deps + secrets + gotchas-currency); prints a scored report and the highest-impact next command. |
-| `/test-check` | Both | Run configured tests + log audit after changes (one-shot, no fix loop) |
-| `/e2e-loop` | Both † | Run e2e tests in a fix loop with flaky-test guard (dispatches `e2e-test-runner` agent on Claude, inline on Copilot) |
-| `/gotcha` | Both | View or append project pitfalls |
-| `/eval-harness` | Both | Run pytest + fixture evals with optional fix loop |
-| `/flowsim` | Both | Trace claimed plan flows through source code and flag mismatches |
-| `/dead-code-review` | Both † | Dead-code scan with test verification (sequential on Copilot) |
-| `/review-pr` | Both | On-demand code review for any PR or branch — wraps `/review`, persists to `plans/review-<id>.md`, optional `--post-comment`. Standalone counterpart to the post-PR review `/sdlc` already runs. |
+| `/repo-onboarding` | Claude + Copilot + Codex | Generate AGENTS.md + TASKS.md + project.json + GOTCHAS.md |
+| `/repo-health` | Claude + Copilot + Codex | Read-only hygiene sweep (dead code + tests + deps + secrets + gotchas-currency); prints a scored report and the highest-impact next command. |
+| `/test-check` | Claude + Copilot + Codex | Run configured tests + log audit after changes (one-shot, no fix loop) |
+| `/e2e-loop` | Claude + Copilot + Codex † | Run e2e tests in a fix loop with flaky-test guard (dispatches `e2e-test-runner` agent on Claude, inline on Copilot) |
+| `/gotcha` | Claude + Copilot + Codex | View or append project pitfalls |
+| `/eval-harness` | Claude + Copilot + Codex | Run pytest + fixture evals with optional fix loop |
+| `/flowsim` | Claude + Copilot + Codex | Trace claimed plan flows through source code and flag mismatches |
+| `/dead-code-review` | Claude + Copilot + Codex † | Dead-code scan with test verification (sequential on Copilot) |
+| `/review-pr` | Claude + Copilot + Codex | On-demand code review for any PR or branch — wraps `/review`, persists to `plans/review-<id>.md`, optional `--post-comment`. Standalone counterpart to the post-PR review `/sdlc` already runs. |
 | `/plan-html` | Claude + Copilot + Codex | Render any markdown plan as a self-contained, shareable HTML page (embedded CSS, zero JS, native `<details>` collapsibles, light/dark mode). Opt-in: pass the plan file as the argument — no auto-emit. Use to share plans with stakeholders or scroll-engage long plans in a browser. |
-| `/data-source-pattern` | Both | Pattern guide for ingesting external data: discovery pipeline / seed script / direct API, plus how to author a web-discovery skill (WebSearch vs headless browser, session cookies, source trust tiers, dedup-upsert) |
-| `/logging-conventions` | Both | Enforce structured logging discipline |
+| `/data-source-pattern` | Claude + Copilot + Codex | Pattern guide for ingesting external data: discovery pipeline / seed script / direct API, plus how to author a web-discovery skill (WebSearch vs headless browser, session cookies, source trust tiers, dedup-upsert) |
+| `/logging-conventions` | Claude + Copilot + Codex | Enforce structured logging discipline |
 | `/network-engineer` | Claude + Copilot + Codex | Network-security audit methodology: Batfish-parsed configs × vendor PSIRT CVEs × overpermissive-rule rubric → ranked findings report. Pairs with the `network-sec` agent on Claude (parallel stages); Copilot/Codex run the same stages sequentially. Requires consumer-supplied data-source scripts (Batfish, PSIRT, optional Qualys) — see `references/data-source-tools.md`. |
-| `/paloalto-ansible` | Both | Generate a custom Ansible module against the **official SCM API** (not paloaltonetworks.panos, not SASE), playbook, eval-corpus entry (apply → verify → loop-back), and optional Postgres audit shaped for future ServiceNow migration. Single-agent sequential by default; opt-in `--team` flag escalates to parallel multi-expert orchestration. Domain reference at `skills/paloalto-ansible/references/scm-ansible.md` is reusable from `/task`. |
-| `/post-deploy-verify` | Both | Stub — post-deploy BRD/PBI-vs-deployed-system verification matrix (depends on Phase 2 BRD/PBI artifacts; see `BRAINSTORM-PIPELINE.md`) |
+| `/paloalto-ansible` | Claude + Copilot + Codex | Generate a custom Ansible module against the **official SCM API** (not paloaltonetworks.panos, not SASE), playbook, eval-corpus entry (apply → verify → loop-back), and optional Postgres audit shaped for future ServiceNow migration. Single-agent sequential by default; opt-in `--team` flag escalates to parallel multi-expert orchestration. Domain reference at `skills/paloalto-ansible/references/scm-ansible.md` is reusable from `/task`. |
+| `/post-deploy-verify` | Claude + Copilot + Codex | Stub — post-deploy BRD/PBI-vs-deployed-system verification matrix (depends on Phase 2 BRD/PBI artifacts; see `BRAINSTORM-PIPELINE.md`) |
 
-† Has a Copilot-optimized overlay at `copilot/skills/<name>/`. The overlay runs the same stages sequentially (no parallel sub-agents or Plan mode) because Copilot's VS Code agent mode doesn't yet support those primitives. When it does, overlays will be upgraded. Cross-tool skills without a † rely only on file I/O + test runners and work identically on both tools.
+All skills run on all three tools. † marks skills with a Copilot-optimized overlay at `copilot/skills/<name>/` that runs the same stages sequentially (no parallel sub-agents or Plan mode) because Copilot's VS Code agent mode doesn't yet support those primitives; when it does, overlays will be upgraded. Codex shares those constraints, so `setup.sh` installs the Copilot overlay for Codex too (a Codex-specific override at `codex/skills/<name>/` wins when one exists — today `/sdlc` and `/sdlc-lite`). Skills without a † rely only on file I/O + test runners and run identically on all three tools.
 
 ## Model & cost reference
 

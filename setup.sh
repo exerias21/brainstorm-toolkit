@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup.sh â€” install brainstorm-toolkit into a target repo for Claude Code, GitHub Copilot, and/or OpenAI Codex.
+# setup.sh — install brainstorm-toolkit into a target repo for Claude Code, GitHub Copilot, and/or OpenAI Codex.
 #
 # Usage:
 #   bash setup.sh [--target <dir>] [--tools claude|copilot|codex|both|all] [--force]
@@ -163,11 +163,17 @@ for skill_dir in "$PLUGIN_ROOT"/skills/*/; do
 
   if [[ "$want_codex" -eq 1 ]] && applies_to_includes "$skill_dir" codex; then
     # Codex CLI scans $CWD/.agents/skills/<name>/SKILL.md per its Agent Skills spec.
-    # Mirrors the copilot overlay shape: prefer codex/skills/<name>/ if a Codex-tuned
-    # version exists; otherwise install the canonical skill as-is.
+    # Codex shares Copilot's runtime constraints (no Plan mode, no parallel
+    # sub-agents), so fall through in this order:
+    #   1. codex/skills/<name>/   — a Codex-tuned override, if one exists
+    #   2. copilot/skills/<name>/ — the sequential Copilot overlay (correct for Codex)
+    #   3. skills/<name>/         — the canonical (Claude-shaped) skill as a last resort
     codex_override="$PLUGIN_ROOT/codex/skills/$name"
+    copilot_override="$PLUGIN_ROOT/copilot/skills/$name"
     if [[ -d "$codex_override" ]]; then
       copy_tree_if_new "$codex_override" "$TARGET/.agents/skills/$name"
+    elif [[ -d "$copilot_override" ]]; then
+      copy_tree_if_new "$copilot_override" "$TARGET/.agents/skills/$name"
     else
       copy_tree_if_new "$skill_dir" "$TARGET/.agents/skills/$name"
     fi

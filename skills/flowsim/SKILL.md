@@ -10,7 +10,7 @@ description: >
   "verify the plan matches", "walk through what actually happens".
 argument-hint: "<plan-file-or-task-ref> [--max-hops N] [--focus <module>] [--force]"
 metadata:
-  brainstorm-toolkit-applies-to: claude copilot
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Flowsim — plan vs. implementation flow verification

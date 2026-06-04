@@ -10,7 +10,7 @@ description: >
   cleanup of stale/orphaned pipeline envelopes.
 argument-hint: "[--prune-stale]"
 metadata:
-   brainstorm-toolkit-applies-to: claude copilot
+   brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Status — one-glance work readout

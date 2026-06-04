@@ -9,7 +9,7 @@ description: >
   tiers, and dedup-upsert. Use when adding a new scraper, import script, or
   automated data-collection job — or "how do I scrape X into the DB?".
 metadata:
-   brainstorm-toolkit-applies-to: claude copilot
+   brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Data Source Pattern

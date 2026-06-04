@@ -10,7 +10,7 @@ description: >
   for heavy autonomous multi-agent product research, use /brainstorm-team instead.
 argument-hint: "[topic] [--vet light|deep|ultra|none] - optional: topic + multi-agent vet mode"
 metadata:
-  brainstorm-toolkit-applies-to: claude copilot
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Brainstorm

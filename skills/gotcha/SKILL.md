@@ -8,7 +8,7 @@ description: >
   before writing code in any area where a known pitfall exists.
 argument-hint: "[category] description of the gotcha"
 metadata:
-  brainstorm-toolkit-applies-to: claude copilot
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Gotcha Log

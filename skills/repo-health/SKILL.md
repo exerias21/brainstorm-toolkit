@@ -11,7 +11,7 @@ description: >
   stale pipeline run-state, and stale memory pointers.
 argument-hint: "[--no-dead-code] [--no-tests] [--no-deps] [--no-secrets] [--no-gotchas] [--no-migrations] [--no-pipeline-state] [--no-memory]"
 metadata:
-  brainstorm-toolkit-applies-to: claude copilot
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Repo Health

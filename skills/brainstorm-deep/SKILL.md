@@ -12,7 +12,7 @@ description: >
   and /brainstorm-team for autonomous multi-persona product strategy.
 argument-hint: "[topic] [--fast] [--frames <list>] [--ambition conservative|default|ambitious]"
 metadata:
-   brainstorm-toolkit-applies-to: claude copilot
+   brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # /brainstorm-deep — clarification-heavy ideation
@@ -56,7 +56,7 @@ If the user's pick reveals a much smaller or much larger scope than implied by t
 
 ### Pass 2 — Saturate by questioning (max 3 batches)
 
-Goal: ask enough clarifications that further questions would not change the design. Stop the moment that's true. **`--fast` skips this pass entirely** — one batch only, then proceed to Pass 3.
+Goal: ask enough clarifications that further questions would not change the design. Stop the moment that's true. **`--fast` limits this pass to a single batch** — one batch of clarifying questions (instead of up to 3), then proceed to Pass 3.
 
 1. **Read `templates/question-typology.md`** for the 9 buckets:
    Scope, Success, Failure, Audience, Priors, Trade-offs, Constraints, Reversibility, Resemblance.
@@ -133,8 +133,8 @@ Write to `plans/brainstorm-deep-<topic-slug>.md`. Slug is derived from the user'
 ## Args
 
 - **`<topic>`** (optional) — if absent, ask in Pass 1.
-- **`--fast`** — skip Pass 2 entirely (one batch of clarifying questions max). Useful when the user knows the skill and wants only the perspective-frame pass.
-- **`--frames <list>`** — comma-separated frame names from the typology file. Default: `inversion,pre-mortem,steelman,adjacent-reuse`.
+- **`--fast`** — limit Pass 2 to a single batch of clarifying questions (instead of up to 3). Useful when the user knows the skill and wants only the perspective-frame pass.
+- **`--frames <list>`** — comma-separated frame names from `templates/perspective-frames.md`. Default: `inversion,pre-mortem,steelman,adjacent-reuse`.
 - **`--ambition <level>`** — `conservative` / `default` / `ambitious`. Skips the 3-variant output and produces only that level.
 
 ## Rules
@@ -160,14 +160,14 @@ Write to `plans/brainstorm-deep-<topic-slug>.md`. Slug is derived from the user'
 | Step | Subagents | Model | Count |
 |---|---|---|---|
 | Pass 1, Pass 2 | none — main context window | — | 0 |
-| Pass 3 frame stress-test | yes — parallel single-message dispatch | Sonnet | 3–4 (defaults: 4) |
+| Pass 3 frame stress-test | yes — parallel single-message dispatch | Sonnet | 1–8 (default: 4) |
 
 Per the model/cost reference table, this skill costs roughly $0.20–0.40 per run at 2026 list pricing — comparable to `/brainstorm --vet light`. The cost is dominated by the frame agents in Pass 3; Passes 1 and 2 are pure conversation.
 
 ## Cross-tool notes
 
 - **Claude Code**: full skill works as designed. Plan mode + parallel agent dispatch.
-- **GitHub Copilot**: Plan mode is unavailable; treat each pass as a step requiring the user's "continue" approval. Frame stress-tests run sequentially rather than in parallel — slightly slower, same output. Mark `metadata.brainstorm-toolkit-applies-to: claude copilot` and a `copilot/skills/brainstorm-deep/` overlay can be added later if the sequential version diverges enough to warrant it.
+- **GitHub Copilot**: Plan mode is unavailable; treat each pass as a step requiring the user's "continue" approval. Frame stress-tests run sequentially rather than in parallel — slightly slower, same output. A Copilot-optimized overlay already exists at `copilot/skills/brainstorm-deep/` (sequential frame execution); `setup.sh` installs it in preference to this canonical version for Copilot targets.
 
 ## Output
 

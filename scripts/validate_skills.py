@@ -46,6 +46,7 @@ def resolve_skills_root(repo_root: Path) -> Path | None:
         repo_root / "skills",
         repo_root / ".github" / "skills",
         repo_root / ".claude" / "skills",
+        repo_root / ".agents" / "skills",
     ]
     for candidate in candidates:
         if candidate.exists():
@@ -282,7 +283,7 @@ def main() -> int:
 
     if skills_root is None:
         print(
-            "Skills directory not found. Expected one of: skills, .github/skills, .claude/skills",
+            "Skills directory not found. Expected one of: skills, .github/skills, .claude/skills, .agents/skills",
             file=sys.stderr,
         )
         return 1

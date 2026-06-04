@@ -9,7 +9,7 @@ description: >
   the loop, use /test-check instead.
 argument-hint: "[focus] — optional: test file, directory, or grep pattern to narrow the run"
 metadata:
-  brainstorm-toolkit-applies-to: claude copilot
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # E2E Loop
