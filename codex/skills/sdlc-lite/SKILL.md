@@ -49,11 +49,22 @@ templates, no new schema beyond `run.json.pipeline = "sdlc-lite"` and a
 - **Task id** (`task-NNN` or a row number) → read that row + linked task file;
   its `parent_plan:` becomes the flowsim/plan-validate target.
 - **Task range** (`N-M`, `task-N..task-M`, `tasks N-M`) → resolve every
-  `Active / Pending` row in range; execute as a batch (one commit per task).
+  `Active / Pending` row in range; execute as a batch (changes accumulate in the
+  working tree — see Stage 6 range semantics; this skill never commits). Record
+  the resolved ids in `run.json.data.task_range`.
 - **Ad-hoc description** → create a new row + task file via `/task`'s procedure.
+  No plan, so plan-validate/flowsim self-skip (Stage 5.5/5.6).
 
-Mark resolved rows `[~]`. Derive `slug` per `docs/CONVENTIONS.md`; initialize
-`.claude/pipeline/<slug>/`.
+Mark resolved rows `[~]`. Derive `slug` per `docs/CONVENTIONS.md`. Capture
+`base_commit = git rev-parse HEAD` and initialize `.claude/pipeline/<slug>/`
+with `pipeline: "sdlc-lite"`, `base_commit`, `status: "in_progress"`.
+
+**Continuity detection** (prompt, never auto) — same logic as `/sdlc`: **skip
+entirely on the `main_branch`** (merges make every run an ancestor there — pure
+noise). On a feature branch, take only the **single most-recently-updated** run
+whose `base_commit` is an ancestor of HEAD, and prompt **only** if it's
+non-terminal OR complete with HEAD advanced past its recorded `commit_sha`
+(a follow-up landed outside the pipeline). One prompt at most, or none.
 
 ## Stage 1.5 — Sanity check
 
@@ -135,13 +146,23 @@ push, PR, or `/review`. You review and commit.
    ```
    **Range**: changes from all tasks accumulate in the tree; you slice the
    commits when you review.
-3. Mark each resolved `TASKS.md` row `[x]`, move to `Done`, set
+3. **Capture gotchas (knowledge sink)**: if the run hit a non-obvious trap,
+   prompt to append it to `GOTCHAS.md` via `/gotcha` — the durable project file
+   is the sink, not model memory. One nudge, skip if nothing came up.
+4. Mark each resolved `TASKS.md` row `[x]`, move to `Done`, set
    `status: completed` in the task file(s) — work is done and validated; only
    the commit is left to you.
 
 Write `stage-outputs/handoff.json` =
-`{branch, files_changed[], committed: false, suggested_commit_msg}`.
-Set `run.json.status = "complete"`.
+`{branch, files_changed[], committed: false, suggested_commit_msg}`. **Always
+set `run.json.status` to a terminal value** (`complete`, or `paused` if you
+stopped mid-pipeline) before exiting — never leave it `in_progress`, or
+`/repo-health` and `/status` will (correctly) flag it as a stale run. This holds
+for **retro / validation-only runs** too (Stage 2 skipped because the code
+already landed): advance `run.json.stage`/`stages_completed` as each validation
+sidecar is written, add `implement` to `stages_skipped`, and close on a terminal
+`status` — never leave a `parse`-stage envelope `in_progress` with sidecars
+already on disk.
 
 ## Stage 7 — Report
 
