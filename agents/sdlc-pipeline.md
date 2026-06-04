@@ -42,13 +42,33 @@ If issues found: auto-patch the plan file, log what was fixed, proceed.
 If critical issues (nonexistent files, fundamentally wrong approach): stop, report to user.
 See `skills/sdlc/SKILL.md` Stage 1.5 for full agent prompts.
 
-### 2. Implement (Opus 4.6)
-- Follow the plan's implementation steps exactly
-- Create/modify the files specified in the plan
-- Use existing codebase patterns (check README.md, CLAUDE.md, existing similar files)
-- After implementation: `git diff --stat` to summarize changes
-- If blocked: report the blocker and stop
-- **Always use model="opus" for the implementation agent**
+### 2. Implement (auto-gated)
+Stage 2 auto-gates between a single agent and an orchestrator-driven
+decompose → dispatch → converge model. No flag — the gate is computed.
+
+**Gate**: from `parse.json`, compute `surfaces_touched` (planned files matched
+against the changed-files-gate surface globs) and `task_count` (step count).
+**Decompose iff** `surfaces_touched >= 2` AND `task_count >=
+DECOMPOSE_MIN_TASKS` (default 6, overridable via `.claude/project.json`
+`pipeline.decompose_min_tasks`) AND the per-surface file sets are disjoint.
+Record the decision + its inputs (never silent).
+
+- **Single-agent (default — unchanged):** dispatch one Opus agent on the whole
+  plan (`templates/stage-2-implement.md`); follow steps exactly, use existing
+  patterns, `git diff --stat`, stop on blockers. Writes `implement.json`.
+- **Decompose (large multi-surface plans):**
+  - **2a Decompose** (Sonnet): classify files by surface glob, emit lanes
+    (files / steps / depends_on / model / interface contract) → `decompose.json`.
+  - **2b Dispatch**: one subagent per lane, **sequentially in dependency order**
+    (no parallel, no worktrees) — each gets only its files + contract and edits
+    only its lane → one `implement-<lane>.json` per lane.
+  - **2c Converge** (orchestrator): resolve cross-lane imports/call-sites/types,
+    run an import/symbol-collision sweep, reconcile contract violations →
+    `converge.json`. Contract injection + a single converge owner keep the
+    isolated workers globally consistent.
+  Set `run.json.data.stage2_decomposed` and `run.json.data.lanes`.
+
+See `skills/sdlc/SKILL.md` Stage 2 for the full gate logic and prompts.
 
 ### 3. Generate evals
 - For new pure functions: create `tests/eval/test_{feature_slug}_eval.py`

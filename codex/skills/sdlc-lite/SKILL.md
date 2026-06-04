@@ -62,9 +62,26 @@ For a range, run once over the combined set. Stop and report on a real blocker.
 
 ## Stage 2 — Implement
 
-Execute the plan/task steps inline, in order. No worker handoff. Follow the
-`Files` section (fill it in as you go). After implementing, run
-`git diff --stat` and confirm expected files were touched. Stop on any blocker.
+Run `/sdlc` Stage 2 inline, including its **auto-gate** (see
+`.agents/skills/sdlc/SKILL.md`). Compute `surfaces_touched` (planned files vs.
+the surface globs) and `task_count` (step count). **Decompose iff**
+`surfaces_touched >= 2` AND `task_count >= DECOMPOSE_MIN_TASKS` (default `6`,
+override via `pipeline.decompose_min_tasks`) AND the per-surface file sets are
+disjoint.
+
+- **Single-pass (default):** execute the plan/task steps inline, in order. No
+  worker handoff. Follow the `Files` section (fill it in as you go).
+- **Decompose (large multi-surface plan):** split the files into disjoint lanes
+  (data / backend / frontend / docs) with a per-lane interface contract,
+  implement each lane in dependency order (one fully before the next, editing
+  only that lane's files and coding against the contract), then converge —
+  reconcile imports / call sites / shared types and sweep for unresolved imports
+  or symbol collisions. Record `stage2_decomposed` + `lanes` and write
+  `decompose.json` / `implement-<lane>.json` / `converge.json`.
+
+For a task range the gate sees the combined file/step set. After implementing,
+run `git diff --stat` and confirm expected files were touched. Stop on any
+blocker.
 
 ## Stage 3 — Generate evals
 

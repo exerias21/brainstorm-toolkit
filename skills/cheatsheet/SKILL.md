@@ -69,6 +69,11 @@ installed skill in this repo and prints a categorized one-page guide.
    file. Do not drop a `.next-action` sentinel — `/cheatsheet` is
    informational, never a chain start.
 
+**Note for `/sdlc` and `/sdlc-lite` deep-dives**: their Stage 2 (implement)
+auto-decomposes a large multi-surface plan (≥2 disjoint surfaces, ≥6 steps)
+into focused per-lane subagents plus a converge step; small / single-surface
+plans run a single agent unchanged. No flag — the gate is automatic.
+
 ## When this skill triggers
 
 - User types `/cheatsheet` or `/cheatsheet <name>`

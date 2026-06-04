@@ -54,6 +54,11 @@ Execution tiers — same pipeline in the middle, different ending:
                       <X> = plan file | task-id | range "1-5" | description.
   /sdlc {plan}      → FULL pipeline, then commits → branch → push → PR.
                       The only tier that touches git history.
+
+  Stage 2 (implement) auto-decomposes a large multi-surface plan (>=2
+  disjoint surfaces, >=6 steps) into focused per-lane subagents + a
+  converge step; small / single-surface plans run one agent, unchanged.
+  No flag — the gate is automatic.
 ```
 
 In parallel, runnable any time:

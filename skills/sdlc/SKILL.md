@@ -193,22 +193,79 @@ issues, `pass` with `auto_patched: true` if issues were auto-corrected,
 
 ## Stage 2: Implement
 
-Spawn an implementation agent to execute the plan. Always use Opus 4.6 for
-implementation — it handles complex multi-file changes more reliably.
+Stage 2 is **auto-gated** (zero flags). Small / single-surface plans run the
+single implementation agent exactly as before. Large, multi-surface plans
+decompose into focused per-lane subagents (2a → 2b → 2c) under this same
+orchestrator — the win is **context isolation**, not parallelism. There is one
+owner of global consistency throughout: the orchestrator.
 
-Read the prompt from `templates/stage-2-implement.md`. Substitute `{feature_name}`
-and `{plan_content}`, then dispatch one Opus agent.
+### The gate (compute, then route)
 
-After the agent completes:
-1. Review the git diff summary
-2. Verify the expected files were created/modified
-3. If the agent reports errors or blockers, **STOP** and report to user
+Read `stage-outputs/parse.json`. Compute:
+1. `surfaces_touched` = the distinct surfaces from `templates/changed-files-gate.md`
+   (frontend / backend / data / docs / deploy-delta) that the **planned** files
+   in `parse.json.data.files_to_change` match. The gate runs *before* any code
+   exists, so apply the surface globs to intended files, not to a diff.
+2. `task_count` = `parse.json.data.implementation_step_count`.
+3. `DECOMPOSE_MIN_TASKS` — a named constant, **default `6`**, overridable via
+   `.claude/project.json` `pipeline.decompose_min_tasks`.
+4. **Disjointness:** classify each planned file by surface; if any file matches
+   more than one surface, or every file lands in a single surface, the surfaces
+   are not cleanly separable.
 
-**State write**: write `stage-outputs/implement.json` with
-`data.agent_model`, `data.files_changed[]` (path + added/removed line counts
-from `git diff --numstat`), `data.total_added`, `data.total_removed`, and
-`data.blockers_reported[]`. Status is `pass` on success, `fail` if blockers
-were reported.
+**Decompose iff** `surfaces_touched.count >= 2` **AND** `task_count >=
+DECOMPOSE_MIN_TASKS` **AND** the per-surface file sets are disjoint. Otherwise →
+single-agent fallback. Record the decision **and its inputs** so a reader sees
+exactly why it did or didn't fan out (decompose path: `decompose.json`;
+single-agent path: the gate summary in `implement.json`). Never a silent choice.
+
+On Stage 2a entry set `run.json.data.stage2_decomposed` (bool) and
+`run.json.data.lanes` (lane-name list, or `[]` when not decomposing).
+
+### Single-agent fallback (the default — unchanged behavior)
+
+When the gate says **don't decompose**, run Stage 2 exactly as before: read the
+prompt from `templates/stage-2-implement.md`, substitute `{feature_name}` and
+`{plan_content}`, dispatch one Opus agent. After it completes: review the git
+diff summary, verify expected files, and **STOP** + report if it reports
+blockers. Write `stage-outputs/implement.json` with `data.agent_model`,
+`data.files_changed[]` (path + added/removed from `git diff --numstat`),
+`data.total_added`, `data.total_removed`, `data.blockers_reported[]`, and a
+`summary` noting the gate inputs that kept it single-agent. Status `pass` on
+success, `fail` if blockers. **No decompose/converge sidecars are written.**
+Then proceed to Stage 3.
+
+### 2a — Decompose (when the gate fans out)
+
+Read `templates/stage-2a-decompose.md`. Substitute `{feature_name}`,
+`{plan_content}`, `{files_to_change}`, `{decompose_min_tasks}`; dispatch one
+**Sonnet** decomposer. It classifies files by the gate's surface globs, emits
+lanes (each with `files` / `steps` / `depends_on` / `model` / `contract`), writes
+a per-lane task file, and returns the JSON. Write `stage-outputs/decompose.json`
+with `data.lanes[]` + `data.gate_inputs` + `data.gate_decision`. If it returns a
+single lane (`gate_decision: "single-agent"`), fall through to the single-agent
+fallback instead.
+
+### 2b — Dispatch (one subagent per lane, sequential)
+
+Read `templates/stage-2b-dispatch.md`. Dispatch lanes **sequentially in
+dependency order** (per `depends_on`, default `data → backend → frontend`) — one
+subagent at a time, never parallel. Each subagent gets only its task file, its
+`{lane_files}`, its `{lane_steps}`, and the `{contract}` (its own seam plus the
+contracts of lanes it depends on); model per `decompose.json`. Each writes
+`stage-outputs/implement-<lane>.json` (the `implement.json` shape +
+`data.lane`). If a lane reports an unresolvable blocker, **STOP** and report.
+
+### 2c — Converge (orchestrator)
+
+Read `templates/stage-2c-converge.md`. After all lanes complete, the
+orchestrator resolves cross-lane integration (imports, call sites, shared
+types), runs an import / symbol-collision sweep over the union of changed files,
+and reconciles any contract violations (small seam fixes here; real logic gaps
+go to the Stage 4 fix loop). Write `stage-outputs/converge.json` with
+`data.merged_files`, `data.integration_fixes`, `data.import_check`,
+`data.symbol_collisions`. Append `implement` to `run.json.stages_completed`
+**once** (after converge), not per lane. Then proceed to Stage 3.
 
 ---
 
@@ -714,7 +771,7 @@ repo root, this mode activates automatically. No flag required.
 |---|---|
 | Stage 1 — Parse plan | unchanged |
 | Stage 1.5 — Sanity check | unchanged (3 Haiku agents — they generalize fine) |
-| Stage 2 — Implement | unchanged |
+| Stage 2 — Implement | unchanged (gated as standard; a skill repo's single docs surface normally keeps it single-agent) |
 | Stage 3 — Generate evals | **skip** (no test surface) |
 | Stage 4 — Eval + fix loop | **skip** |
 | Stage 5 — Full validation | **substitute** with the procedure in `templates/stage-5-skill-repo.md` |

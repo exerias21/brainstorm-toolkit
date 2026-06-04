@@ -79,16 +79,33 @@ Infer the project's patterns from its README, CLAUDE.md, AGENTS.md, and existing
 
 ## Stage 2 — Implement
 
-Execute the plan steps yourself, in order. No worker handoff — you are the implementation layer.
+Stage 2 is **auto-gated** (no flag). Small / single-surface plans you implement in one pass; large multi-surface plans you implement **lane by lane in order**, then reconcile. You are always the implementation layer — there is no worker handoff — but the gate decides whether to split the work into focused lanes.
 
-Rules:
-- Follow the implementation steps in order.
-- Use the exact file paths specified.
+### Gate
+
+From the parsed plan, compute:
+- `surfaces_touched` = distinct surfaces the planned files match (frontend: `*.tsx/jsx/vue/svelte/css/scss`; backend: `*.py/go/rb/java/ts` in server dirs; data: `migrations/`, `schema/`, `models/`, `*.sql`; docs: `*.md`, `docs/`).
+- `task_count` = number of implementation steps.
+- `DECOMPOSE_MIN_TASKS` = `6` by default (override via `pipeline.decompose_min_tasks` in `.claude/project.json`).
+
+**Decompose iff** `surfaces_touched >= 2` AND `task_count >= DECOMPOSE_MIN_TASKS` AND the per-surface file sets are disjoint (no file in two surfaces, not all in one). Otherwise implement single-pass. Note the decision and its inputs in your scope report — never decide silently.
+
+### Single-pass (default)
+
+Implement the plan steps yourself, in order:
+- Follow the steps in order; use the exact file paths.
 - Follow patterns from referenced existing files.
-- Do NOT add features beyond what the plan specifies.
-- Do NOT skip steps or take shortcuts.
+- Do NOT add features beyond the plan; do NOT skip steps.
 
-After implementation:
+### Decompose (large multi-surface plans) — sequential lanes
+
+1. **Decompose.** Classify the planned files by surface into disjoint **lanes** (data / backend / frontend / docs). For each lane note its files, its steps, which lanes it depends on, and the **interface contract** — the shared types, endpoint shapes, and seams other lanes must honor. If you cannot make the lanes file-disjoint, fall back to single-pass.
+2. **Implement each lane in dependency order** (default `data → backend → frontend`), one lane fully before the next. While in a lane, edit only that lane's files and code against the recorded contract — do not reach into another lane's files. Implementing downstream lanes against the fixed contract (instead of guessing) is what keeps the pieces consistent.
+3. **Converge.** After all lanes are done, reconcile across them: wire up imports, call sites, and shared types; sweep the changed files for unresolved imports or colliding symbols; fix any seam mismatch where a lane diverged from its contract.
+
+When decomposed, record the lane list and the gate decision in the run state (`stage2_decomposed`, `lanes`) and write `decompose.json` / one `implement-<lane>.json` per lane / `converge.json` instead of a single `implement.json`.
+
+After implementation (either path):
 - Run `git diff --stat` and confirm the expected files were created or modified.
 - If you hit an error or blocker, STOP and report — don't paper over it.
 

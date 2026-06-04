@@ -66,7 +66,10 @@ Use these names in `run.json.stage` and `stage-outputs/<name>.json`:
 ```
 parse              # Stage 1
 sanity-check       # Stage 1.5
-implement          # Stage 2
+decompose          # Stage 2a (only when the gate fans out)
+implement          # Stage 2 (single-agent path)
+implement-<lane>   # Stage 2b sidecar, one per lane (decomposed path)
+converge           # Stage 2c (only when decomposed)
 generate-evals     # Stage 3
 eval-fix           # Stage 4
 validate           # Stage 5 (test suite)

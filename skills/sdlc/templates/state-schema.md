@@ -20,7 +20,10 @@
   stage-outputs/
     parse.json
     sanity-check.json
-    implement.json
+    decompose.json          # Stage 2a — only when the gate fans out
+    implement.json          # single-agent path
+    implement-<lane>.json   # one per lane — only when decomposed
+    converge.json           # Stage 2c — only when decomposed
     generate-evals.json
     eval-fix.json
     validate.json
@@ -30,7 +33,9 @@
     pr-create.json
 ```
 
-Stage filenames use the **canonical kebab names** from `docs/CONVENTIONS.md` "Stage names" — `parse`, `sanity-check`, `implement`, `generate-evals`, `eval-fix`, `validate`, `plan-validate`, `flowsim`, `secret-scan`, `pr-create`. Never decimal-versioned (no `stage-1.5.json`).
+Stage filenames use the **canonical kebab names** from `docs/CONVENTIONS.md` "Stage names" — `parse`, `sanity-check`, `decompose`, `implement`, `implement-<lane>`, `converge`, `generate-evals`, `eval-fix`, `validate`, `plan-validate`, `flowsim`, `secret-scan`, `pr-create`. Never decimal-versioned (no `stage-1.5.json`).
+
+The Stage 2 sidecars are **mutually exclusive by path**: the single-agent path writes only `implement.json`; the decomposed path (Stage 2 gate fans out) writes `decompose.json`, one `implement-<lane>.json` per lane, and `converge.json`, and never writes `implement.json`. A run that never decomposes is byte-for-byte unchanged from the pre-decomposition envelope.
 
 In skill-repo mode (auto-detected from `.claude-plugin/marketplace.json` at repo root), the skipped stages (`generate-evals`, `eval-fix`, `plan-validate`, `flowsim`) write **no sidecar**. `stage-outputs/validate.json` is still written in skill-repo mode, but as a skill-repo-shaped sidecar that records the structural-check results from `templates/stage-5-skill-repo.md`; in that case `data.mode = "skill-repo"`.
 
@@ -75,6 +80,8 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
 | `status` | enum | yes | One of `in_progress`, `complete`, `failed`, `paused`. `paused` means the pipeline stopped and `--resume` would pick it up. |
 | `stages_completed` | string array | yes | In execution order. Each name appears once. A stage is "completed" when its sidecar's status is `pass`. |
 | `stages_skipped` | string array | yes | Stages explicitly skipped (e.g., stages skipped because their config was absent, or skill-repo-mode skips). Distinct from "not yet run." |
+| `data.stage2_decomposed` | bool | optional | Set at Stage 2a. `true` when the gate fanned Stage 2 into per-lane subagents; `false` (or absent) for the single-agent path. Absent on runs written before this field existed. |
+| `data.lanes` | string array | optional | Lane names from Stage 2a (e.g. `["data", "backend", "frontend"]`), in dependency dispatch order. `[]` when not decomposed. |
 
 ---
 
@@ -145,6 +152,78 @@ Below is the shape each stage's `data` field is expected to take. These are the 
   "blockers_reported": []
 }
 ```
+
+#### `decompose` (Stage 2a — only when the gate fans out)
+```json
+{
+  "gate_inputs": {
+    "surfaces_touched": ["data", "backend", "frontend"],
+    "surface_count": 3,
+    "task_count": 15,
+    "decompose_min_tasks": 6,
+    "files_disjoint": true
+  },
+  "gate_decision": "decompose",
+  "lanes": [
+    {
+      "lane": "data",
+      "files": ["migrations/0007_orders.sql", "models/order.py"],
+      "steps": ["add orders table", "add Order model"],
+      "depends_on": [],
+      "model": "sonnet",
+      "contract": "Order(id, user_id, total_cents, status); table `orders` with index on (user_id, status)."
+    },
+    {
+      "lane": "backend",
+      "files": ["api/routes/orders.py", "api/schemas/order.py"],
+      "steps": ["POST /orders", "GET /orders/{id}"],
+      "depends_on": ["data"],
+      "model": "sonnet",
+      "contract": "POST /orders -> 201 {id}; GET /orders/{id} -> 200 OrderOut. Uses Order model from the data lane."
+    }
+  ]
+}
+```
+`gate_decision` is `decompose` or `single-agent`. When `single-agent`, no
+`decompose.json` is written at all — the gate inputs that produced a
+no-decompose decision are still summarized in the `implement.json` `summary`.
+Each lane's `model` is `sonnet` (default) or `opus` (lane flagged
+high-complexity in 2a). `depends_on` lists lane names that must complete first;
+2b dispatches in a dependency-respecting order.
+
+#### `implement-<lane>` (one per lane — only when decomposed)
+Same shape as `implement` (above), plus a `lane` discriminator:
+```json
+{
+  "lane": "backend",
+  "agent_model": "claude-sonnet-4-5",
+  "files_changed": [
+    { "path": "api/routes/orders.py", "added": 42, "removed": 0 }
+  ],
+  "total_added": 42,
+  "total_removed": 0,
+  "blockers_reported": []
+}
+```
+The filename embeds the lane (`implement-backend.json`); the canonical stage
+name in `run.json.stages_completed` is still `implement` (recorded once after
+2c, not per lane).
+
+#### `converge` (Stage 2c — only when decomposed)
+```json
+{
+  "merged_files": ["api/routes/orders.py", "models/order.py", "..."],
+  "integration_fixes": [
+    { "file": "api/routes/orders.py", "fix": "import Order from models.order" }
+  ],
+  "import_check": { "status": "pass", "unresolved": [] },
+  "symbol_collisions": []
+}
+```
+`import_check.status` is `pass` or `fail`; `unresolved` lists imports/symbols
+that could not be resolved across the union of lane edits. `symbol_collisions`
+lists any name defined by more than one lane. A non-empty `unresolved` or
+`symbol_collisions` that 2c cannot fix is fed into the Stage 4 fix loop.
 
 #### `generate-evals`
 ```json

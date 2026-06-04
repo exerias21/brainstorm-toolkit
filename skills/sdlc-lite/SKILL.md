@@ -97,11 +97,26 @@ contradictory steps), stop and report rather than implementing on a bad premise.
 
 ## Stage 2 — Implement
 
-Reuse `skills/sdlc/templates/stage-2-implement.md`. Substitute `{feature_name}`
-and `{plan_content}` from the resolved plan or task body. Opus implementation
-agent on Claude; inline on Copilot/Codex.
+Run `/sdlc` Stage 2 verbatim, including its **auto-gate**. Compute
+`surfaces_touched` (from `skills/sdlc/templates/changed-files-gate.md` globs over
+the planned files) and `task_count` (parse step count); **decompose iff**
+`surfaces_touched >= 2` AND `task_count >= DECOMPOSE_MIN_TASKS` (default `6`,
+overridable via `.claude/project.json` `pipeline.decompose_min_tasks`) AND the
+per-surface file sets are disjoint.
 
-After implementation, review `git diff --stat` and confirm expected files were
+- **Single-agent (default):** reuse `skills/sdlc/templates/stage-2-implement.md`,
+  substitute `{feature_name}` and `{plan_content}`; Opus agent on Claude, inline
+  on Copilot/Codex. Writes `implement.json`, no decompose/converge sidecars.
+- **Decompose (large multi-surface plan):** run 2a/2b/2c per `/sdlc` Stage 2 —
+  `skills/sdlc/templates/stage-2a-decompose.md` (Sonnet decomposer →
+  `decompose.json`), `skills/sdlc/templates/stage-2b-dispatch.md` (one subagent
+  per lane, sequential by `depends_on` → `implement-<lane>.json`), then
+  `skills/sdlc/templates/stage-2c-converge.md` (orchestrator reconcile →
+  `converge.json`). Set `run.json.data.stage2_decomposed` and
+  `run.json.data.lanes`.
+
+For a task **range**, the gate sees the combined file/step set. After
+implementation, review `git diff --stat` and confirm expected files were
 touched. Stop and report on any blocker.
 
 ## Stage 3 — Generate evals
