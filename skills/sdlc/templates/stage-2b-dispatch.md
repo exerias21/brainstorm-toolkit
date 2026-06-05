@@ -41,6 +41,10 @@ CRITICAL RULES:
   shape is the classic failure mode. If the contract is wrong or insufficient,
   STOP and report a blocker — do NOT reach across the seam to "fix" another
   lane.
+- Ground in the live code: the existing code is the source of truth (not
+  AGENTS.md / CLAUDE.md). Before writing, find the closest existing
+  implementation in your lane's area and follow its patterns (layout, naming,
+  error handling, shared utilities) — reuse, don't reinvent.
 - Follow existing codebase patterns and the steps in order.
 - Do NOT add features beyond your lane's steps.
 - After implementing, run: git diff --stat -- {lane_files}  to summarize only

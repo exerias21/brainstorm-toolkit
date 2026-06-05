@@ -34,7 +34,7 @@ Output for this pass: a bulleted list of competitors + 5-7 gaps the market isn't
 
 ## Pass 2 — Codebase map
 
-Deep-read the repo. Map:
+Deep-read the repo. **The live code is the source of truth — `README.md`/`CLAUDE.md`/`AGENTS.md` are hints that may be stale; verify against the code and flag any drift.** Map:
 - Data model (migrations, schemas).
 - Every API endpoint.
 - Every service module.
@@ -43,7 +43,9 @@ Deep-read the repo. Map:
 - Visible technical debt.
 - Infrastructure that could support new features cheaply.
 
-Output: a compact architectural overview (10-20 bullets) — bring Pass 1's gaps forward and note which ones the existing infrastructure could support inexpensively.
+Per `skills/sdlc/templates/convention-grounding.md`, also produce a **reuse inventory**: the dominant patterns (layout, naming, error handling, the data-access seam, shared utilities, test style) with `path:line` citations, so the Pass 5 blueprints extend what exists instead of reinventing it.
+
+Output: a compact architectural overview (10-20 bullets) + the reuse inventory — bring Pass 1's gaps forward and note which ones the existing infrastructure could support inexpensively.
 
 ## Pass 3 — UX critique
 
@@ -82,7 +84,7 @@ Using Pass 1–3.5 findings, produce a ranked top-10 feature list. Weigh Pass 3.
 
 ## Pass 5 — Implementation blueprints
 
-For the top 3 features from Pass 4, write detailed implementation blueprints following the project's existing patterns: data model changes, service functions, endpoints, UI components, integrations. Also note 2–3 "wild card" ideas — unconventional bets worth considering separately.
+For the top 3 features from Pass 4, write detailed implementation blueprints following the project's existing patterns: data model changes, service functions, endpoints, UI components, integrations. **Bind each blueprint to Pass 2's reuse inventory** — cite the existing pattern/module each step extends (`path:line`), and call out explicitly any place you must introduce a *new* pattern and why no existing one fits. Don't reinvent what the codebase already has. Also note 2–3 "wild card" ideas — unconventional bets worth considering separately.
 
 ## Final output
 
@@ -97,12 +99,13 @@ directory first if it does not exist.
 Assemble everything into `plans/team-brainstorm-<topic-slug>.md` with sections:
 1. Competitive Landscape
 2. Codebase Map & Technical Assessment
-3. UX Assessment (5 problems, 5 delights)
-4. Top 10 Features Ranked
-5. Implementation Blueprints (Top 3)
-6. Wild Cards (2-3 Planner-spotted opportunistic ideas)
-7. Wildcards — Lens Divergence (4 lens-driven approaches from Pass 3.5: First Principles, Inversion, Cross-Domain Analogy, Constraint Removal)
+3. Conventions & reuse (Pass 2's live-code reuse inventory: dominant patterns with `path:line`, shared utilities to reuse, and any doc drift found — blueprints in §6 bind to this)
+4. UX Assessment (5 problems, 5 delights)
+5. Top 10 Features Ranked
+6. Implementation Blueprints (Top 3)
+7. Wild Cards (2-3 Planner-spotted opportunistic ideas)
+8. Wildcards — Lens Divergence (4 lens-driven approaches from Pass 3.5: First Principles, Inversion, Cross-Domain Analogy, Constraint Removal)
 
-Sections 6 and 7 are both preserved — they come from different prompts (opportunistic vs. structured lenses) and the comparison is often illuminating.
+Sections 7 and 8 (Wild Cards and Lens Divergence) are both preserved — they come from different prompts (opportunistic vs. structured lenses) and the comparison is often illuminating.
 
 If any Pass generated meaningfully more content than fits a single section, split into sub-sections — don't cut depth to fit a template.

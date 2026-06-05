@@ -54,6 +54,15 @@ Goal: agree on what we're solving **before** asking clarifying questions. Many "
 
 If the user's pick reveals a much smaller or much larger scope than implied by the prompt, **flag it explicitly**: "this is narrower than I expected — should we use `/brainstorm` instead?" or "this is broader than I expected — `/brainstorm-team` may serve you better." Don't redirect silently.
 
+5. **Ground in the live code.** Before clarifying further, do the convention
+   recon in [`skills/sdlc/templates/convention-grounding.md`](../sdlc/templates/convention-grounding.md):
+   find the 2–3 closest existing implementations to the idea and note the
+   patterns they follow (`path:line`). **Live code is the source of truth, not
+   `AGENTS.md` / `CLAUDE.md`** — treat docs as hints, verify against code, and
+   flag any drift. This both sharpens the Pass 2 questions (you ask about real
+   seams, not imagined ones) and seeds the `## Conventions & reuse` block in the
+   output. Don't propose building what the repo already has.
+
 ### Pass 2 — Saturate by questioning (max 3 batches)
 
 Goal: ask enough clarifications that further questions would not change the design. Stop the moment that's true. **`--fast` limits this pass to a single batch** — one batch of clarifying questions (instead of up to 3), then proceed to Pass 3.
@@ -207,6 +216,11 @@ A single plan file at `plans/brainstorm-deep-<topic-slug>.md` containing:
 
 ## Selected variant
 <which variant the user picked>
+
+## Conventions & reuse
+<from the Pass 1 grounding recon — what the plan reuses from the live code so
+implementation follows the repo instead of reinventing it; cite `path:line`.
+Include a "Doc drift" line if AGENTS.md/CLAUDE.md disagreed with the code.>
 
 ## Expectation contract
 <the four-block contract — mandatory>

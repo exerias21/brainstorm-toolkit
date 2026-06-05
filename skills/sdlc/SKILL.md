@@ -193,6 +193,15 @@ issues, `pass` with `auto_patched: true` if issues were auto-corrected,
 
 ## Stage 2: Implement
 
+**Ground in the live code first.** Whichever path runs below, the implementation
+must follow `templates/convention-grounding.md`: the existing code is the source
+of truth (not `AGENTS.md` / `CLAUDE.md` — those are hints that may be stale),
+reuse the 2–3 closest existing implementations' patterns rather than inventing
+parallel ones, and if the plan carries a `## Conventions & reuse` block, honor it
+and re-verify it against current code. This directive is baked into the agent
+prompts (`stage-2-implement.md`, the decompose/dispatch templates) so it holds on
+every path.
+
 Stage 2 is **auto-gated** (zero flags). Small / single-surface plans run the
 single implementation agent exactly as before. Large, multi-surface plans
 decompose into focused per-lane subagents (2a → 2b → 2c) under this same

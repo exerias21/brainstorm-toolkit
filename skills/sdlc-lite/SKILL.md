@@ -97,7 +97,10 @@ contradictory steps), stop and report rather than implementing on a bad premise.
 
 ## Stage 2 — Implement
 
-Run `/sdlc` Stage 2 verbatim, including its **auto-gate**. Compute
+Run `/sdlc` Stage 2 verbatim, including its **live-code grounding** (follow
+`skills/sdlc/templates/convention-grounding.md` — reuse existing patterns, treat
+AGENTS.md/CLAUDE.md as stale-able hints, honor any `## Conventions & reuse` block
+in the plan) and its **auto-gate**. Compute
 `surfaces_touched` (from `skills/sdlc/templates/changed-files-gate.md` globs over
 the planned files) and `task_count` (parse step count); **decompose iff**
 `surfaces_touched >= 2` AND `task_count >= DECOMPOSE_MIN_TASKS` (default `6`,

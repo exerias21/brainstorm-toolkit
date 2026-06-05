@@ -79,6 +79,8 @@ Infer the project's patterns from its README, CLAUDE.md, AGENTS.md, and existing
 
 ## Stage 2 — Implement
 
+**Ground in the live code first.** Before writing anything, follow `.agents/skills/sdlc/templates/convention-grounding.md` (canonical: `skills/sdlc/templates/convention-grounding.md`): the existing code is the source of truth (not `AGENTS.md` / `CLAUDE.md` — read those as hints, verify against code, follow the code when they disagree). Find the 2–3 closest existing implementations and reuse their patterns (layout, naming, error handling, the data-access seam, shared utilities) instead of inventing parallel ones. If the plan has a `## Conventions & reuse` block, honor it and re-verify it against current code.
+
 Stage 2 is **auto-gated** (no flag). Small / single-surface plans you implement in one pass; large multi-surface plans you implement **lane by lane in order**, then reconcile. You are always the implementation layer — there is no worker handoff — but the gate decides whether to split the work into focused lanes.
 
 ### Gate

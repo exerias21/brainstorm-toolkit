@@ -43,6 +43,13 @@ Goal: agree on what we're solving before asking clarifying questions.
 
 If the user's pick reveals a much smaller or much larger scope than implied by the prompt, **flag it explicitly** — don't redirect silently.
 
+5. **Ground in the live code.** Do the convention recon in
+   `skills/sdlc/templates/convention-grounding.md`: find the 2–3 closest existing
+   implementations and note the patterns they follow (`path:line`). **Live code
+   is the source of truth, not `AGENTS.md` / `CLAUDE.md`** — verify against code
+   and flag drift. Seeds the `## Conventions & reuse` block in the plan; don't
+   propose building what the repo already has.
+
 ## Pass 2 — Saturate by questioning (max 3 batches)
 
 Goal: ask enough clarifications that further questions would not change the design. **`--fast` limits this pass to a single batch** — one batch of clarifying questions (instead of up to 3), then proceed.
@@ -75,9 +82,17 @@ Goal: stress-test from multiple angles, then produce an actionable plan.
 
 ## Step 4 — Expectation contract (mandatory output block)
 
-Every plan file produced by this skill **must end** with:
+Every plan file produced by this skill **must end** with a `## Conventions &
+reuse` block (from the Pass 1 grounding recon) followed by the expectation
+contract:
 
 ```
+## Conventions & reuse
+- Follow: <pattern> — see `path:line`
+- Reuse: <existing module/helper/type> for <purpose> — `path`
+- New (justified): <thing>, because <no existing pattern fits>
+- Doc drift: <AGENTS.md/CLAUDE.md says X but the code does Y>   (omit if none)
+
 ## Expectation contract
 
 **What you said**

@@ -60,7 +60,10 @@ For a range, run once over the combined set. Stop and report on a real blocker.
 
 ## Stage 2 — Implement
 
-Run `/sdlc` Stage 2 inline, including its **auto-gate** (see
+Run `/sdlc` Stage 2 inline, including its **live-code grounding** (follow
+`skills/sdlc/templates/convention-grounding.md` — reuse existing patterns, treat
+AGENTS.md/CLAUDE.md as stale-able hints, honor any `## Conventions & reuse` block
+in the plan) and its **auto-gate** (see
 `.github/skills/sdlc/SKILL.md`). Compute `surfaces_touched` (planned files vs.
 the surface globs) and `task_count` (step count). **Decompose iff**
 `surfaces_touched >= 2` AND `task_count >= DECOMPOSE_MIN_TASKS` (default `6`,

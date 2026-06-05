@@ -42,9 +42,13 @@ Creates a 6-agent team with specialized roles that work in parallel to produce a
 
 Before spawning the team, read (in this order, skipping any that don't exist):
 - The project's `README.md`
-- The project's `CLAUDE.md`
+- The project's `CLAUDE.md` / `AGENTS.md`
 - `.claude/project.json` (for `modules` list)
 - Any `plans/` directory index or recent plans
+
+Treat these docs as **hints, not ground truth** — they may be stale. The
+authoritative source is the live code; the Codebase Architect teammate verifies
+against it (see below).
 
 Summarize findings into a 3-5 sentence "Project Context" block and inject it into each teammate's prompt below where marked `{PROJECT_CONTEXT}`.
 
@@ -64,7 +68,7 @@ Teammate 1 — Product Researcher:
 Search the internet for competitive intelligence relevant to this project's domain. Find 20+ products/concepts. Focus on gaps nobody fills. Search Reddit, ProductHunt, HackerNews, relevant industry forums. Write findings as you go.
 
 Teammate 2 — Codebase Architect:
-Deep-read the entire codebase. Map the data model (migrations, schemas), every API endpoint, every service module, every component folder. Identify cross-module connections, technical debt, and where existing infrastructure could support new features cheaply. Message the Researcher when you find relevant architectural context.
+Deep-read the entire codebase. Map the data model (migrations, schemas), every API endpoint, every service module, every component folder. Identify cross-module connections, technical debt, and where existing infrastructure could support new features cheaply. **The live code is the source of truth — `README.md`/`CLAUDE.md`/`AGENTS.md` are hints that may be stale; verify against the code and flag any drift you find.** Per `skills/sdlc/templates/convention-grounding.md`, produce a **reuse inventory**: the dominant patterns (layout, naming, error handling, the data-access seam, shared utilities, test style) with `path:line` citations, so downstream blueprints extend what exists instead of reinventing it. Message the Researcher when you find relevant architectural context.
 
 Teammate 3 — UX Critic:
 Think like a first-time user of this product. Read the frontend (or CLI surface, or API surface — whichever applies). Evaluate: first-time experience, daily friction, navigation/clarity, adoption resistance. Find 5 biggest UX problems and 5 genuine delights.
@@ -83,7 +87,7 @@ Teammate 5 — Feature Strategist:
 Wait for teammates 1-4 to report findings, then synthesize a ranked top-10 feature list. Each feature needs: name, one-line pitch, why it matters, what exists in the codebase today, what to build (specific files), effort (S/M/L), dependencies, integration touchpoints. Weigh the Lateral Thinker's Wildcards against the conventional candidates — you may promote up to 2 Wildcards into the top-10 if they beat a conventional option on impact. Whether promoted or not, all 4 Wildcards are preserved in the final document.
 
 Teammate 6 — Implementation Planner:
-Wait for the Strategist's top 10, then write detailed implementation blueprints for the top 3 following the project's existing patterns (data model, services, endpoints, UI components, integrations). Also write 2-3 opportunistic "wild card" ideas you spotted while planning — these are separate from the Lateral Thinker's lens Wildcards and live in their own section.
+Wait for the Strategist's top 10, then write detailed implementation blueprints for the top 3 following the project's existing patterns (data model, services, endpoints, UI components, integrations). **Bind each blueprint to the Architect's reuse inventory** — cite the existing pattern/module each step extends (`path:line`), and call out explicitly any place you must introduce a *new* pattern and why no existing one fits. Don't reinvent what the codebase already has. Also write 2-3 opportunistic "wild card" ideas you spotted while planning — these are separate from the Lateral Thinker's lens Wildcards and live in their own section.
 
 Coordination: Teammates 1-4 work in parallel. Teammate 5 starts after 1-4 report. Teammate 6 starts after 5 finalizes. All teammates message each other when they find cross-domain insights. Final output is written by the orchestrator (you) — see "Output Format" below — to `plans/team-brainstorm-<topic-slug>.md` at the repo root.
 ```
@@ -125,13 +129,14 @@ exist (Write creates parent dirs automatically).
 The team produces `plans/team-brainstorm-<topic-slug>.md` with sections:
 1. Competitive Landscape
 2. Codebase Map & Technical Assessment
-3. UX Assessment (5 problems, 5 delights)
-4. Top 10 Features Ranked (8-field format per feature)
-5. Implementation Blueprints (Top 3)
-6. Wild Cards (2-3 Planner-spotted opportunistic ideas)
-7. Wildcards — Lens Divergence (4 lens-driven approaches from the Lateral Thinker: First Principles, Inversion, Cross-Domain Analogy, Constraint Removal)
+3. Conventions & reuse (the Architect's live-code reuse inventory: dominant patterns with `path:line`, shared utilities to reuse, and any doc drift found — blueprints in §6 bind to this)
+4. UX Assessment (5 problems, 5 delights)
+5. Top 10 Features Ranked (8-field format per feature)
+6. Implementation Blueprints (Top 3)
+7. Wild Cards (2-3 Planner-spotted opportunistic ideas)
+8. Wildcards — Lens Divergence (4 lens-driven approaches from the Lateral Thinker: First Principles, Inversion, Cross-Domain Analogy, Constraint Removal)
 
-Sections 6 and 7 are both preserved — they come from different agents with different prompts, and the comparison itself is often illuminating.
+Sections 7 and 8 (Wild Cards and Lens Divergence) are both preserved — they come from different agents with different prompts, and the comparison itself is often illuminating.
 
 ## Continue the flow
 
