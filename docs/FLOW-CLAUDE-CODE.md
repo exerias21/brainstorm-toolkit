@@ -42,8 +42,9 @@ After install you have:
    │  → /sdlc plans/brainstorm-<slug>.md  ← autonomous pipeline
    └──────────────────────────────────────┘
 
-   /status    — any time
-   /gotcha    — when you discover a project-specific pitfall
+   /status      — any time
+   /gotcha      — when you discover a project-specific pitfall
+   /plan-html   — render any plan as a shareable HTML page when you need to hand it off
 ```
 
 ## What's Claude-only and why
@@ -70,14 +71,27 @@ Stages:
 1. Parse plan (accepts `plans/brainstorm-*.md`, `plans/tasks/task-N-*.md`, or TASKS.md rows).
 2. Plan sanity-check (3 Haiku agents in parallel check file paths, missing steps, known gotchas).
 3. Implement via an Opus agent, following the plan steps exactly.
-4. Generate evals under `tests/eval/` and/or fixtures under `<eval.features_dir>/`.
-5. Eval + fix loop (up to `--max-fix-loops`, default 3).
+4. Generate evals under `tests/eval/` and/or fixtures under `<eval.features_dir>/` (skipped silently if no `eval.runner` configured).
+5. Eval + fix loop (up to 3 iterations).
 6. Validate via `/test-check` (log audit + unit + e2e).
 7. Plan requirements validation (4 parallel agents: API, UI, data, cross-module).
-8. `/flowsim` (unless `--skip-flowsim`) — narrative trace through claimed flows.
+8. `/flowsim` — narrative trace through claimed flows (runs when a parent plan is available).
 9. Create PR branch, commit, push, `gh pr create`.
 
-Useful flags: `--dry-run`, `--skip-eval`, `--skip-flowsim`, `--max-fix-loops N`, `--background`.
+`/sdlc` takes no flags. The pipeline switches into skill-repo mode automatically when `.claude-plugin/marketplace.json` exists at repo root.
+
+## When to use `/task` vs `/sdlc-lite` vs `/sdlc`
+
+Three skills. `/sdlc-lite` and `/sdlc` run the **same pipeline** and differ only
+in the ending; `/task` is the lightweight TDD fast path:
+
+| Skill | Input | Terminal action | Use when |
+|---|---|---|---|
+| `/task <description>` | ad-hoc ask | TDD red-green → green commit on current branch | one-line code fix, a small util, a rename. Always TDD; no evals/flowsim. |
+| `/sdlc-lite <plan \| task-id \| range \| desc>` | plan, task(s), or ask | full pipeline → **validated changes left in your working tree (you commit)** | you want full discipline (sanity → evals → validate → plan-validate → flowsim) on work you'll review and commit yourself, e.g. onto an open PR's branch. |
+| `/sdlc <plan-file>` | plan file | full pipeline → **PR** | you have a plan file and want autonomous delivery with human review at the PR boundary. |
+
+`/sdlc-lite` reuses `/sdlc`'s stage templates and state envelope verbatim — same `.claude/pipeline/<slug>/` shape, distinguished by `run.json.pipeline = "sdlc-lite"`. The only difference from `/sdlc` is Stage 6: `/sdlc-lite` does **no git writes** (it hands you a validated tree to commit), while `/sdlc` commits + opens a PR. To run several queued tasks at once, pass a range: `/sdlc-lite 1-5` (changes accumulate uncommitted; you slice the commits).
 
 ## `project.json` config
 
@@ -99,8 +113,8 @@ Create `.claude/project.json` from `.claude/project.json.example`. Every key is 
 ## Tips
 
 - Run `/repo-onboarding` in any repo that doesn't already have `AGENTS.md`. It only takes a minute and every other skill gets more useful after.
-- Use `/task --defer` when you want a task file written but don't want to execute immediately (e.g., at end of day to queue tomorrow's work).
-- `/sdlc --dry-run` is cheap and surfaces plan problems before you commit Opus tokens.
+- If you want a task file written but don't want to execute it immediately, edit `TASKS.md` directly (one line per task). `/task` always executes; `/sdlc-lite` always executes.
+- To preview a plan before running the pipeline, use `/brainstorm` — `/sdlc` no longer has a dry-run mode.
 - For interactive brainstorming on a meaty topic, use `/brainstorm`. For multi-agent competitive/product research, use `/brainstorm-team`.
 
 ## See also

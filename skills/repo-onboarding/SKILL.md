@@ -8,7 +8,7 @@ description: >
   /discovery, /codelearn, or /init-toolkit is invoked. Replaces the separate
   /codelearn skill — architecture discovery is part of onboarding here.
 metadata:
-   brainstorm-toolkit-applies-to: claude copilot
+   brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Repo Onboarding / Discovery

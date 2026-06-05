@@ -43,24 +43,65 @@ is the *map*; `/cheatsheet` is the *menu*.
                   (pipeline profile)
 ```
 
+Execution tiers — same pipeline in the middle, different ending:
+
+```
+  /task "..."       → TDD red→green only. Commits only if you ask.
+                      Fast path for a one-liner, util, or rename.
+  /sdlc-lite <X>    → FULL pipeline (sanity → implement → evals → fix →
+                      validate → plan-validate → flowsim), then HANDS YOU
+                      the validated changes to commit. No git writes.
+                      <X> = plan file | task-id | range "1-5" | description.
+  /sdlc {plan}      → FULL pipeline, then commits → branch → push → PR.
+                      The only tier that touches git history.
+
+  Stage 2 (implement) auto-decomposes a large multi-surface plan (>=2
+  disjoint surfaces, >=6 steps) into focused per-lane subagents + a
+  converge step; small / single-surface plans run one agent, unchanged.
+  No flag — the gate is automatic.
+```
+
 In parallel, runnable any time:
 
 ```
   /repo-health      → scored sweep, prints the highest-impact next command
   /dead-code-review → deeper, multi-agent unused-code scan
   /flowsim {plan}   → trace claimed flows through code, flag drift
+  /review-pr [pr|branch] → on-demand code review for any PR or branch
+  /plan-html {plan} → render any markdown plan as a single-file shareable HTML
   /gotcha "<entry>" → capture a hard-won pitfall
+```
+
+Ideation family — pick by ambiguity, not by topic:
+
+```
+  /brainstorm [topic]      → fast conversational, low ambiguity
+  /brainstorm-deep [topic] → clarification-heavy (3-pass + perspective frames
+                             + expectation contract) for ambiguous / high-stakes
+  /brainstorm-team [topic] → 6-agent product/competitive research team
+```
+
+Domain-specific skills (cross-tool; opt-in by need):
+
+```
+  /network-engineer     → Batfish-parsed configs × vendor PSIRT CVEs ×
+                          overpermissive-rule rubric → ranked findings.
+                          Claude + Copilot + Codex; consumer-supplied data sources.
+  /paloalto-ansible     → Custom Ansible module for the SCM API (not panos, not SASE)
+                          + playbook + eval-loop entry. Sequential by default;
+                          --team escalates to parallel multi-expert mode.
 ```
 
 ---
 
-## Top 10 commands
+## Most-used commands
 
 | Command | What it does | When |
 |---|---|---|
 | `/cheatsheet` | Print this map + every installed skill | "remind me what's here" |
 | `/brainstorm [topic]` | Conversational ideation → plan file | start of any feature |
-| `/sdlc {plan}` | Autonomous plan-to-PR pipeline | plan is bounded + clear |
+| `/sdlc {plan}` | Autonomous plan-to-PR pipeline (commits + PR) | plan is bounded + clear |
+| `/sdlc-lite <X>` | Full pipeline, hands you the changes to commit (no git writes) | full discipline, you commit (e.g. onto an open PR) |
 | `/task "..."` | One-row TDD task | a single bug or small change |
 | `/repo-health` | Hygiene sweep + score | weekly, or pre-release |
 | `/test-check` | Run tests + log audit | before shipping |
@@ -75,7 +116,7 @@ In parallel, runnable any time:
 
 | Profile | Includes | Use when |
 |---|---|---|
-| `core` (default) | brainstorm, sdlc, task, status, repo-health, test-check, flowsim, gotcha, repo-onboarding, dead-code-review, eval-harness, e2e-loop, cheatsheet, knowledge skills | local dev — single-developer or small-team workflow |
+| `core` (default) | brainstorm, sdlc, sdlc-lite, task, status, repo-health, test-check, flowsim, gotcha, repo-onboarding, dead-code-review, eval-harness, e2e-loop, cheatsheet, plan-html, knowledge skills | local dev — single-developer or small-team workflow |
 | `pipeline` | post-deploy-verify, future brd-ingest / pbi-decompose / approve / deploy / monitor / rollback / coverage | enterprise pipeline with BRD intake, approval gates, deployment skills |
 | `both` | everything | dogfooding the toolkit; mixed environments |
 

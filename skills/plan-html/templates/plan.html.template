@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{TITLE}}</title>
+<style>
+  :root {
+    --fg: #1a1a1a;
+    --fg-muted: #5a5a5a;
+    --bg: #ffffff;
+    --bg-code: #f4f4f5;
+    --border: #e4e4e7;
+    --accent: #2563eb;
+    --done: #16a34a;
+    --progress: #d97706;
+    --blocked: #dc2626;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e4e4e7;
+      --fg-muted: #a1a1aa;
+      --bg: #18181b;
+      --bg-code: #27272a;
+      --border: #3f3f46;
+      --accent: #60a5fa;
+      --done: #4ade80;
+      --progress: #fbbf24;
+      --blocked: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
+  body {
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 32px 24px 80px;
+  }
+  header { border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 24px; }
+  header h1 { margin: 0 0 6px; font-size: 22px; }
+  header .meta { color: var(--fg-muted); font-size: 13px; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px;
+    font-weight: 500; vertical-align: middle; margin-left: 8px;
+  }
+  .badge-active, .badge-in-progress { background: rgba(217,119,6,.15); color: var(--progress); }
+  .badge-done, .badge-completed { background: rgba(22,163,74,.15); color: var(--done); }
+  .badge-blocked { background: rgba(220,38,38,.15); color: var(--blocked); }
+  .badge-draft, .badge-pending { background: rgba(100,100,100,.15); color: var(--fg-muted); }
+  .roadmap {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 24px;
+  }
+  .roadmap h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-muted); }
+  .roadmap ul { list-style: none; padding: 0; margin: 0; }
+  .roadmap li { padding: 4px 0; display: flex; align-items: center; gap: 10px; font-size: 14px; }
+  .roadmap .icon { width: 18px; display: inline-block; text-align: center; font-weight: 600; }
+  .roadmap .icon-done { color: var(--done); }
+  .roadmap .icon-progress { color: var(--progress); }
+  .roadmap .icon-pending { color: var(--fg-muted); }
+  .roadmap .progress-text { color: var(--fg-muted); font-size: 12px; margin-left: auto; }
+  .progress-bar {
+    display: inline-block; width: 80px; height: 6px; background: var(--border);
+    border-radius: 3px; overflow: hidden; margin-left: 8px; vertical-align: middle;
+  }
+  .progress-bar .fill { display: block; height: 100%; background: var(--progress); }
+  h2 { margin: 28px 0 12px; font-size: 18px; }
+  h3 { margin: 20px 0 10px; font-size: 15px; }
+  h4 { margin: 16px 0 8px; font-size: 14px; color: var(--fg-muted); }
+  p { margin: 0 0 12px; }
+  ul, ol { margin: 0 0 12px; padding-left: 24px; }
+  li { margin: 4px 0; }
+  li input[type=checkbox] { margin-right: 6px; }
+  blockquote {
+    border-left: 3px solid var(--border); margin: 12px 0; padding: 4px 14px;
+    color: var(--fg-muted); font-style: italic;
+  }
+  pre {
+    background: var(--bg-code); border: 1px solid var(--border); border-radius: 6px;
+    padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5;
+    margin: 0 0 12px;
+  }
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    background: var(--bg-code); padding: 1px 5px; border-radius: 3px; font-size: 0.92em;
+  }
+  pre code { background: none; padding: 0; font-size: 13px; }
+  table { border-collapse: collapse; width: 100%; margin: 0 0 16px; font-size: 14px; }
+  th, td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--bg-code); font-weight: 600; }
+  nav.toc {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 24px;
+  }
+  nav.toc h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-muted); }
+  nav.toc ul { list-style: none; padding: 0; margin: 0; }
+  nav.toc li { padding: 3px 0; font-size: 14px; }
+  nav.toc a { text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+  nav.toc .count { color: var(--fg-muted); font-size: 12px; margin-left: 6px; }
+  figure { margin: 0 0 18px; border: 1px solid var(--border); border-radius: 8px; padding: 14px; background: var(--bg-code); }
+  figure svg { display: block; width: 100%; height: auto; }
+  figure figcaption { font-size: 12px; color: var(--fg-muted); margin-top: 6px; text-align: center; }
+  .svg-axis { stroke: var(--border); stroke-width: 1.5; }
+  .svg-grid { stroke: var(--border); stroke-width: .5; stroke-dasharray: 3 3; }
+  .svg-q { fill: var(--accent); opacity: .06; }
+  .svg-dot-S { fill: var(--done); } .svg-dot-M { fill: var(--progress); } .svg-dot-L { fill: var(--blocked); }
+  .svg-num { fill: #fff; font: 700 11px sans-serif; text-anchor: middle; }
+  .svg-lbl { fill: var(--fg-muted); font: 11px sans-serif; }
+  .svg-qlbl { fill: var(--fg-muted); font: italic 11px sans-serif; opacity: .8; }
+  /* flow / state-diagram nodes (boxes + arrows). Translucent fills sit fine on
+     light or dark; strokes/text use theme tokens so they switch automatically. */
+  .svg-node { fill: var(--bg-code); stroke: var(--border); }
+  .svg-node-done { fill: rgba(22,163,74,.16); stroke: var(--done); }
+  .svg-node-new { fill: rgba(217,119,6,.16); stroke: var(--progress); }
+  .svg-node-text { fill: var(--fg); font: 12px sans-serif; text-anchor: middle; }
+  .svg-sub { fill: var(--fg-muted); font: 10px sans-serif; text-anchor: middle; }
+  .svg-flow { stroke: var(--fg-muted); stroke-width: 1.5; fill: none; }
+  a { color: var(--accent); }
+  hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
+  footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--fg-muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>{{TITLE}}{{STATUS_BADGE}}</h1>
+  <div class="meta">{{META_LINE}}</div>
+</header>
+
+{{TOC_BLOCK}}
+
+{{ROADMAP_BLOCK}}
+
+<main>
+{{CONTENT_HTML}}
+</main>
+
+<footer>Rendered from <code>{{SOURCE_PATH}}</code> by <code>/plan-html</code> on {{RENDER_DATE}}.</footer>
+</body>
+</html>

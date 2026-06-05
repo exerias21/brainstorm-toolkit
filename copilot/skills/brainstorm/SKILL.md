@@ -43,18 +43,26 @@ Ask 2-3 focused clarifying questions. Good questions surface:
 Don't over-interview. Two good questions beat five mediocre ones. If the user's initial
 description is already detailed, skip straight to exploration.
 
-### Step 2: Explore for Context
+### Step 2: Explore for Context — ground in the live code
 
-Before generating ideas, ground yourself in what already exists. Search the codebase to
-understand:
+Before generating ideas, ground yourself in what already exists. **The source of
+truth is the live code, not `AGENTS.md` / `CLAUDE.md`** — read those as hints,
+but verify against the code and trust the code when they disagree (a mismatch
+usually means the doc is stale). Search the codebase per the procedure in
+`skills/sdlc/templates/convention-grounding.md`:
 
-- **What infrastructure exists** that this idea could build on
-- **What patterns the codebase uses** for similar features
-- **What data models are relevant** (check migrations, models)
-- **What services or endpoints** are nearby
+- **Find the 2–3 closest existing implementations** to the idea (same layer,
+  same kind of thing) and note the patterns they follow with `path:line`
+  citations — layout, naming, error handling, the data-access seam, shared
+  utilities already available, test style.
+- **What infrastructure exists** that this idea could build on (prefer extending
+  it over inventing a parallel one).
+- **What data models are relevant** (check migrations, models).
 
-Summarize what you found in 3-5 bullets. The user shouldn't have to read code — translate
-what you found into plain language that connects to their idea.
+Summarize what you found in 3-5 bullets and carry the reuse decisions into the
+plan's `### Conventions & reuse` block (Step 6). The user shouldn't have to read
+code — translate what you found into plain language. Don't reinvent what the repo
+already does.
 
 ### Step 3: Cross-Module Integration Check
 
@@ -138,11 +146,19 @@ Once the user has converged on a direction, produce a concrete plan:
 One paragraph summarizing the chosen approach and why. If the direction combines a
 conventional option with a wildcard, say so explicitly.
 
+### Conventions & reuse
+What this plan reuses from the existing codebase (from Step 2's recon), so
+implementation follows the repo instead of reinventing it:
+- Follow: <pattern> — see `path:line`
+- Reuse: <existing module/helper/type> for <purpose> — `path`
+- New (justified): <thing>, because <no existing pattern fits>
+- Doc drift: <AGENTS.md/CLAUDE.md says X but the code does Y>   (omit if none)
+
 ### Implementation Steps
 Numbered list of concrete steps, each with:
 - What to do
 - Which files to create/modify
-- Key patterns to follow (reference existing code)
+- Key patterns to follow (reference existing code from the block above)
 
 ### Cross-Module Touchpoints
 - Which other modules this connects to and how
@@ -243,11 +259,21 @@ to the user for review):
 
 If the plan passes, move to Step 8. Otherwise, revise it with the user.
 
-### Step 8: Next Steps
+### Step 8: Continue the flow
 
-Offer the user the next steps:
+Don't stop at the plan file — keep the momentum into delivery. Continue
+whichever pipeline flow has been used this session; default to `/sdlc-lite`
+(full pipeline, hands you the validated changes to commit — no git writes, so
+it can't surprise you with a PR).
 
-1. **Implement now** — transition into building directly in this session
-2. **Use `/task`** — pick a single bounded task from the plan and execute it with TDD
-3. **Save for later** — the plan persists at `plans/brainstorm-[topic-slug].md`
-   and task items are already in `TASKS.md`
+1. **Show what's being built** (optional) — `/plan-html plans/brainstorm-[topic-slug].md`
+   renders the plan as a single-file HTML view for a shape-of-the-work read.
+2. **Continue into delivery** — `/sdlc-lite <plan>` by default (or `/sdlc <plan>`
+   if that's the established flow; confirm first since `/sdlc` opens a PR). For
+   a single tiny item, `/task` is the fast path.
+3. **Save for later** — leave the plan at `plans/brainstorm-[topic-slug].md`
+   (task items are already in `TASKS.md`).
+
+Write the next-action sentinel naming the chosen command so Copilot's Stop
+hook surfaces it: `echo "/sdlc-lite plans/brainstorm-[topic-slug].md" > .claude/.next-action`
+(substitute `/sdlc` if that's the established flow). Skip only on "save for later".

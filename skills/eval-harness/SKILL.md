@@ -7,7 +7,7 @@ description: >
   Use after implementing or modifying scripts, or as part of /test-check.
 argument-hint: "[feature] — name of a feature under evals/, or 'all'"
 metadata:
-  brainstorm-toolkit-applies-to: claude copilot
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Feature Eval Harness
@@ -33,12 +33,26 @@ Reads `.claude/project.json` for:
 If `eval.runner` is missing, the skill cannot proceed — report:
 "No `eval.runner` in `.claude/project.json` — install an eval runner first."
 
+## Scope limitation — script-only, by design
+
+This harness is **script-scoped**: `tests/eval/conftest.py::load_script_module()`
+imports only files under `scripts/`, and the runner discovers features only
+under `<eval.features_dir>/`. Pure functions that live inside an **application
+package** (`backend/app/...`, `src/...`, a framework service module) are
+**not reachable** here — that is intentional, not a bug.
+
+For app-package logic, generate tests into the **project's native unit suite**
+(where `test.unit` points) and run them via `/test-check` / `/sdlc` Stage 5,
+**not** through this harness. `/sdlc` Stage 3 does this routing automatically;
+don't force app code into `scripts/` just to use the eval harness.
+
 ## When to Use
 
-- After implementing or modifying any script that has evals
+- After implementing or modifying any script (under `scripts/`) that has evals
 - After modifying classification logic, parsing rules, or categorization keywords
 - As part of `/test-check`
 - To validate a feature before creating a PR
+- **Not** for application-package code — route that to `test.unit` (see above)
 
 ## Procedure
 

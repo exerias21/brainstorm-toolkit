@@ -8,7 +8,7 @@ description: >
   proactively after major feature completions, refactors, or before releases.
 argument-hint: "[scope] - optional: 'backend', 'frontend', 'database', 'docs', 'full' (default: full)"
 metadata:
-  brainstorm-toolkit-applies-to: claude copilot
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Dead Code Review

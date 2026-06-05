@@ -19,9 +19,21 @@ __pycache__/
 plans/
 TASKS.md
 GOTCHAS.md
+CHEATSHEET.md
 .claude/project.json
 .claude/pipeline/
 .claude/.next-action
+
+# Installed plugin artifacts — produced by setup.sh when this repo is its own
+# install target for dogfooding. The canonical source lives in skills/,
+# copilot/skills/, codex/skills/, agents/. These trees are install output.
+.claude/skills/
+.claude/agents/
+.claude/settings.json
+.claude/project.json.example
+.github/skills/
+.github/hooks/
+.agents/skills/
 
 # Local test output
 /tmp/

@@ -10,7 +10,7 @@ description: >
   "verify the plan matches", "walk through what actually happens".
 argument-hint: "<plan-file-or-task-ref> [--max-hops N] [--focus <module>] [--force]"
 metadata:
-  brainstorm-toolkit-applies-to: claude copilot
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Flowsim — plan vs. implementation flow verification
@@ -22,7 +22,7 @@ This is NOT a program simulator. It's a **structured code review** formatted as 
 ## When to use
 
 - User invokes `/flowsim <plan-file>` or `/flowsim task-3-add-orders`
-- Called automatically by `/sdlc` Stage 5.6 (unless `--skip-flowsim` is set)
+- Called automatically by `/sdlc` Stage 5.6 when a parent plan is available
 - User asks "does the plan actually match what we built?", "trace this flow", "walk through what happens when a user X"
 
 ## Inputs
@@ -31,7 +31,10 @@ This is NOT a program simulator. It's a **structured code review** formatted as 
 - **Optional**: `--max-hops N` (default 3) — how many function/module jumps to follow per flow.
 - **Optional**: `--focus <module>` — restrict tracing to one module (useful for large features).
 - **Optional**: `--force` — ignore the prior-run cache (see Flow step 0) and re-trace every flow.
-- **Optional signal**: latest eval results at `<eval.features_dir>/<feature>/results.json` if present. Flowsim reads these and factors them into the report (a passing eval for a flow is corroborating evidence; a failing eval is a pre-existing mismatch).
+- **Optional signal**: latest test results as corroborating evidence. Two sources, either counts:
+  - eval results at `<eval.features_dir>/<feature>/results.json` (script/eval-harness features), and/or
+  - **`test.unit` results** (app-package features whose coverage was routed to the project's native unit suite — see `/sdlc` Stage 3). A passing unit test exercising a traced flow corroborates it; a failing one is a pre-existing mismatch.
+  Flowsim degrades to mostly-grep **only when neither source exists** — having unit results (not just eval results) keeps the trace meaningful for the common app-code feature.
 
 ## Flow
 

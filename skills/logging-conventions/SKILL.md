@@ -9,7 +9,7 @@ description: >
   the backend API. This ensures every code change follows the project's structured logging contract
   so the container-log-audit skill can reliably detect and classify errors.
 metadata:
-    brainstorm-toolkit-applies-to: claude copilot
+    brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Logging Conventions

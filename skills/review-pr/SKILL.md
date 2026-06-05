@@ -9,7 +9,7 @@ description: >
   when you want one canonical review on demand.
 argument-hint: "[pr-number | branch-name] [--post-comment]"
 metadata:
-   brainstorm-toolkit-applies-to: claude copilot
+   brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # /review-pr — on-demand code review for any PR or branch
@@ -85,9 +85,16 @@ waiting on the Copilot bot.
    at.
 
 5. **Optional comment post (`--post-comment`).**
-   - Resolve PR number (from arg, or `gh pr list --head <branch> --json number --limit 1`).
-   - If no open PR exists, skip with a one-line note ("no open PR for
-     `<branch>` — review saved to `plans/review-<slug>.md` only").
+   - Resolve PR number:
+     - If arg was a PR number → use it directly.
+     - If arg was a branch name → `gh pr list --head <branch> --json number,baseRefName --limit 2`.
+       - 0 results → skip with a one-line note ("no open PR for
+         `<branch>` — review saved to `plans/review-<slug>.md` only").
+       - 1 result → use that PR number.
+       - **2+ results** → refuse to auto-select. Print the candidate PR
+         numbers + base branches and ask the user to re-run with an
+         explicit PR number. Silent auto-selection on ambiguity has
+         posted reviews to the wrong PR in the past.
    - Post via `gh pr comment <n> --body-file plans/review-<id>.md`.
    - Single comment, not a multi-thread review — keeps the PR signal:noise
      ratio high.

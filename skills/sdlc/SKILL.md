@@ -4,9 +4,9 @@ description: >
   Automated plan-to-PR pipeline. Takes a plan file, implements it via agent,
   generates evals, runs eval+fix loop, validates with /test-check, and creates
   a PR for human review. The full SDLC lifecycle minus human merge.
-argument-hint: "{plan_file} [--dry-run] [--skip-eval] [--skip-flowsim] [--max-fix-loops N] [--background] [--skill-repo]"
+argument-hint: "{plan_file}"
 metadata:
-  brainstorm-toolkit-applies-to: claude copilot
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # SDLC Pipeline
@@ -19,16 +19,12 @@ Autonomous feature delivery: plan file in, PR out.
 
 ## Arguments
 
+Pass the plan file path. No flags.
+
 - `plan_file` (required): Path to the plan (e.g., `plans/my-feature.md`)
-- `--dry-run`: Parse plan and report what would be done, without implementing
-- `--skip-eval`: Skip eval generation and fix loop (Stages 3-4) and skip flowsim
-- `--skip-flowsim`: Skip Stage 5.6 flow simulation only (evals still run)
-- `--max-fix-loops N`: Max eval-fix iterations (default: 3)
-- `--background`: Run as background agent, notify when PR is ready
-- `--skill-repo`: The repo being changed is a markdown-skill plugin (no application code,
-  no test suite). Substitutes Stages 3, 4, 5, 5.5 with skill-appropriate structural checks
-  (validator, marketplace registration, template-reference resolution, setup.sh dry install).
-  See "Skill-repo mode" below.
+
+Skill-repo mode is auto-detected — see "Skill-repo mode" below. To preview a
+plan before running the pipeline, use `/brainstorm`.
 
 ## Prerequisites
 
@@ -55,16 +51,18 @@ sidecar writes).
 
 **Behavior**:
 - At Stage 1, `mkdir -p .claude/pipeline/<slug>/stage-outputs/` and write
-  initial `run.json` with `{schema_version: 1, stage: "parse",
-  status: "in_progress", started_at, plan_hash, args}`.
+  initial `run.json` with `{schema_version: 1, pipeline: "sdlc", stage: "parse",
+  status: "in_progress", started_at, plan_hash, base_commit, args}`. Capture
+  `base_commit` = `git rev-parse HEAD` (the commit you're building on, before
+  any pipeline commit).
 - On every stage transition, update `run.json.stage` and `run.json.updated_at`.
 - When a stage finishes, write `stage-outputs/<stage>.json` per the schema
   (canonical kebab name from `docs/CONVENTIONS.md`, never decimals — so
   `sanity-check.json`, not `stage-1.5.json`) and append the stage to
   `run.json.stages_completed`.
-- On `--skill-repo`, skipped stages (`generate-evals`, `eval-fix`,
-  `plan-validate`, `flowsim`) write **no sidecar**; add their names to
-  `run.json.stages_skipped` instead.
+- When skill-repo mode is auto-detected, skipped stages (`generate-evals`,
+  `eval-fix`, `plan-validate`, `flowsim`) write **no sidecar**; add their
+  names to `run.json.stages_skipped` instead.
 - On terminal state, set `run.json.status` to `complete`, `failed`, or `paused`
   per the schema doc.
 
@@ -77,6 +75,59 @@ files sees no behavior change.
 A fresh `/sdlc <plan>` invocation **overwrites** any prior `run.json` and
 `stage-outputs/` for the same slug — resumption is opt-in via a future
 `--resume` flag (Phase 1B), never automatic.
+
+### Continuity detection (prompt, never auto)
+
+At Stage 1, before initializing this run, check whether the **current branch**
+has an in-flight or just-completed pipeline run you might be continuing or
+silently skipping. **Do not scan every envelope for "ancestor of HEAD"** — after
+a run merges, its `base_commit` is an ancestor of HEAD essentially forever, so
+that test fires on every historical run (a false-positive storm). Instead:
+
+0. **If the current branch IS the main branch** (`main_branch` from
+   `.claude/project.json`, default `main`) → **skip continuity detection
+   entirely.** Main accumulates merges; every merged run's `base_commit` is an
+   ancestor and its commit is behind HEAD, so the check is pure noise there.
+   Continuation is a *feature-branch* concern. This is the fix for the
+   "every merged feature flags on long-lived main" false positive.
+1. Otherwise (a feature branch): glob `.claude/pipeline/*/run.json`; keep only
+   runs whose `base_commit` is an ancestor of HEAD (`git merge-base --is-ancestor`).
+2. Of those, take the **single most-recently-updated** run (`updated_at`). One
+   prompt at most — never one per historical run.
+3. Prompt **only** if that latest run is either:
+   - **non-terminal** (`status` in_progress/paused) — an open run you're
+     building past (also the orphan/stale case); or
+   - **complete but HEAD has advanced past its final commit** — i.e. follow-up
+     work landed *after* the last pipeline run (compare HEAD to the run's
+     recorded `commit_sha` from `pr-create.json`/`handoff.json`; if they differ,
+     this follow-up didn't go through the pipeline).
+   If the latest run is complete and HEAD still equals its final commit, stay
+   silent — nothing new happened, nothing to flag.
+
+```
+This branch's last pipeline run was /<pipeline> for '<slug>' (<short-sha>,
+<n> commits back, status <status>). Continue that flow, inspect its run.json,
+or start fresh?
+```
+
+This keeps `/sdlc` zero-flag (a prompt, not a flag) and catches the real gap —
+a follow-up that landed outside the pipeline — without nagging about every
+merged run in history.
+
+### Skill-repo mode detection
+
+At Stage 1, before doing anything else, check whether the repo is itself a
+markdown-skill plugin: if `.claude-plugin/marketplace.json` exists at repo
+root, switch to skill-repo stage substitutions for the rest of the run (see
+"Skill-repo mode" below). No flag is needed; detection is automatic.
+
+**Vendored-skill guard:** if `.claude-plugin/marketplace.json` is **absent**
+(this is an ordinary consumer repo) but the plan's changed files target
+`.claude/skills/**`, `.github/skills/**`, or `.agents/skills/**` — i.e. it
+edits *installed/vendored* skill copies — **stop and report.** Those edits
+belong upstream in the canonical brainstorm-toolkit repo, then get
+re-installed; shipping them through a consumer's pipeline diverges the vendored
+copy from canonical. Don't run the pipeline on vendored skill edits.
 
 ---
 
@@ -105,8 +156,6 @@ Read the plan file and extract structured information:
 **Acceptance criteria**: {count} identified
 **Estimated complexity**: Small / Medium / Large
 ```
-
-If `--dry-run`, stop here and report.
 
 **State write**: write `stage-outputs/parse.json` with `data.feature_name`,
 `data.files_to_change`, `data.implementation_step_count`,
@@ -144,22 +193,88 @@ issues, `pass` with `auto_patched: true` if issues were auto-corrected,
 
 ## Stage 2: Implement
 
-Spawn an implementation agent to execute the plan. Always use Opus 4.6 for
-implementation — it handles complex multi-file changes more reliably.
+**Ground in the live code first.** Whichever path runs below, the implementation
+must follow `templates/convention-grounding.md`: the existing code is the source
+of truth (not `AGENTS.md` / `CLAUDE.md` — those are hints that may be stale),
+reuse the 2–3 closest existing implementations' patterns rather than inventing
+parallel ones, and if the plan carries a `## Conventions & reuse` block, honor it
+and re-verify it against current code. This directive is baked into the agent
+prompts (`stage-2-implement.md`, the decompose/dispatch templates) so it holds on
+every path.
 
-Read the prompt from `templates/stage-2-implement.md`. Substitute `{feature_name}`
-and `{plan_content}`, then dispatch one Opus agent.
+Stage 2 is **auto-gated** (zero flags). Small / single-surface plans run the
+single implementation agent exactly as before. Large, multi-surface plans
+decompose into focused per-lane subagents (2a → 2b → 2c) under this same
+orchestrator — the win is **context isolation**, not parallelism. There is one
+owner of global consistency throughout: the orchestrator.
 
-After the agent completes:
-1. Review the git diff summary
-2. Verify the expected files were created/modified
-3. If the agent reports errors or blockers, **STOP** and report to user
+### The gate (compute, then route)
 
-**State write**: write `stage-outputs/implement.json` with
-`data.agent_model`, `data.files_changed[]` (path + added/removed line counts
-from `git diff --numstat`), `data.total_added`, `data.total_removed`, and
-`data.blockers_reported[]`. Status is `pass` on success, `fail` if blockers
-were reported.
+Read `stage-outputs/parse.json`. Compute:
+1. `surfaces_touched` = the distinct surfaces from `templates/changed-files-gate.md`
+   (frontend / backend / data / docs / deploy-delta) that the **planned** files
+   in `parse.json.data.files_to_change` match. The gate runs *before* any code
+   exists, so apply the surface globs to intended files, not to a diff.
+2. `task_count` = `parse.json.data.implementation_step_count`.
+3. `DECOMPOSE_MIN_TASKS` — a named constant, **default `6`**, overridable via
+   `.claude/project.json` `pipeline.decompose_min_tasks`.
+4. **Disjointness:** classify each planned file by surface; if any file matches
+   more than one surface, or every file lands in a single surface, the surfaces
+   are not cleanly separable.
+
+**Decompose iff** `surfaces_touched.count >= 2` **AND** `task_count >=
+DECOMPOSE_MIN_TASKS` **AND** the per-surface file sets are disjoint. Otherwise →
+single-agent fallback. Record the decision **and its inputs** so a reader sees
+exactly why it did or didn't fan out (decompose path: `decompose.json`;
+single-agent path: the gate summary in `implement.json`). Never a silent choice.
+
+On Stage 2a entry set `run.json.data.stage2_decomposed` (bool) and
+`run.json.data.lanes` (lane-name list, or `[]` when not decomposing).
+
+### Single-agent fallback (the default — unchanged behavior)
+
+When the gate says **don't decompose**, run Stage 2 exactly as before: read the
+prompt from `templates/stage-2-implement.md`, substitute `{feature_name}` and
+`{plan_content}`, dispatch one Opus agent. After it completes: review the git
+diff summary, verify expected files, and **STOP** + report if it reports
+blockers. Write `stage-outputs/implement.json` with `data.agent_model`,
+`data.files_changed[]` (path + added/removed from `git diff --numstat`),
+`data.total_added`, `data.total_removed`, `data.blockers_reported[]`, and a
+`summary` noting the gate inputs that kept it single-agent. Status `pass` on
+success, `fail` if blockers. **No decompose/converge sidecars are written.**
+Then proceed to Stage 3.
+
+### 2a — Decompose (when the gate fans out)
+
+Read `templates/stage-2a-decompose.md`. Substitute `{feature_name}`,
+`{plan_content}`, `{files_to_change}`, `{decompose_min_tasks}`; dispatch one
+**Sonnet** decomposer. It classifies files by the gate's surface globs, emits
+lanes (each with `files` / `steps` / `depends_on` / `model` / `contract`), writes
+a per-lane task file, and returns the JSON. Write `stage-outputs/decompose.json`
+with `data.lanes[]` + `data.gate_inputs` + `data.gate_decision`. If it returns a
+single lane (`gate_decision: "single-agent"`), fall through to the single-agent
+fallback instead.
+
+### 2b — Dispatch (one subagent per lane, sequential)
+
+Read `templates/stage-2b-dispatch.md`. Dispatch lanes **sequentially in
+dependency order** (per `depends_on`, default `data → backend → frontend`) — one
+subagent at a time, never parallel. Each subagent gets only its task file, its
+`{lane_files}`, its `{lane_steps}`, and the `{contract}` (its own seam plus the
+contracts of lanes it depends on); model per `decompose.json`. Each writes
+`stage-outputs/implement-<lane>.json` (the `implement.json` shape +
+`data.lane`). If a lane reports an unresolvable blocker, **STOP** and report.
+
+### 2c — Converge (orchestrator)
+
+Read `templates/stage-2c-converge.md`. After all lanes complete, the
+orchestrator resolves cross-lane integration (imports, call sites, shared
+types), runs an import / symbol-collision sweep over the union of changed files,
+and reconciles any contract violations (small seam fixes here; real logic gaps
+go to the Stage 4 fix loop). Write `stage-outputs/converge.json` with
+`data.merged_files`, `data.integration_fixes`, `data.import_check`,
+`data.symbol_collisions`. Append `implement` to `run.json.stages_completed`
+**once** (after converge), not per lane. Then proceed to Stage 3.
 
 ---
 
@@ -181,6 +296,25 @@ Create test cases that verify the plan's INTENT, not just "does it compile."
    - `<eval.features_dir>/{feature_slug}/expected/{scenario}.json` — expected output
 2. The runner auto-discovers new features by scanning `<eval.features_dir>/*/` —
    no registration needed.
+
+### For pure functions that live in the application package (not loadable by the eval harness):
+
+The eval harness is **script-scoped**: `tests/eval/conftest.py::load_script_module()`
+only imports files under `scripts/`, and `eval-runner.py` only discovers features
+under `<eval.features_dir>/`. Pure functions inside an application package
+(`backend/app/...`, `src/...`, a FastAPI/Django/Rails service module) are
+**unreachable** by that harness. **Do not mark these "skipped — no testable
+surface"** — that's the trap where the most common feature type silently gets
+zero coverage.
+
+Instead, when the testable functions live in the app package:
+1. Generate tests into the **project's native unit-test suite** at the
+   project's convention (where `test.unit` points — e.g. `backend/tests/`,
+   `tests/`, `__tests__/`), not into `tests/eval/`.
+2. They run in **Stage 5** via the configured `test.unit` command, not via
+   `eval.runner`.
+3. Record `data.coverage_route: "test.unit"` in the generate-evals sidecar so
+   Stage 5.6 (flowsim) knows unit results are the corroborating evidence.
 
 ### For features without testable pure functions:
 
@@ -221,8 +355,8 @@ Proceed to Stage 5.
    the prompt at `templates/stage-4-fix-eval.md`. Substitute `{feature_name}`,
    `{results_json}`, and `{file_paths}` before dispatch.
 4. After fix agent completes, re-run evals
-5. Repeat up to `--max-fix-loops` iterations (default: 3)
-6. If still failing after max iterations:
+5. Repeat up to 3 iterations
+6. If still failing after 3 iterations:
 
 ```markdown
 ## SDLC Pipeline — PAUSED
@@ -231,14 +365,14 @@ Eval failures persist after {N} fix attempts.
 Remaining failures:
 {failures_summary}
 
-Please review and fix manually, then re-run:
-  /sdlc {plan_file} --skip-eval
+Fix manually, then re-run `/sdlc {plan_file}`.
 ```
 
 **State write**: write `stage-outputs/eval-fix.json` with `data.fix_loops_run`,
-`data.max_fix_loops`, `data.final_pass_count`, `data.final_fail_count`,
-`data.remaining_failures[]`. Status is `pass` if all green, `paused` on max
-loops with persistent failures (set `run.json.status = "paused"` too).
+`data.max_fix_loops` (always `3`), `data.final_pass_count`,
+`data.final_fail_count`, `data.remaining_failures[]`. Status is `pass` if all
+green, `paused` on max loops with persistent failures (set
+`run.json.status = "paused"` too).
 
 ---
 
@@ -246,14 +380,24 @@ loops with persistent failures (set `run.json.status = "paused"` too).
 
 Run the complete test suite to ensure no regressions.
 
+**First, compute the changed-files gate** (see `templates/changed-files-gate.md`):
+read `stage-outputs/implement.json` `data.files_changed[]` and mark which
+surfaces (frontend / backend / data / docs) were touched. The substitutions
+below are *driven by that gate*, not by the user's prompt — "frontend changed"
+is a fact about the diff, so the visual/e2e check fires automatically rather
+than waiting to be asked.
+
 1. Run `/test-check` via the test-check skill procedure, BUT with one substitution:
    - Log audit (if `logs.command` configured)
-   - Frontend unit tests (if `test.frontend` configured and frontend files changed)
-   - Backend unit tests (if `test.unit` configured and backend files changed)
-   - **E2E tests — dispatch the `e2e-test-runner` agent** (if `test.e2e` configured and
-     UI flow changed). The agent runs a fix loop for e2e failures with a flaky-test
-     guard; its iterations count toward `--max-fix-loops`. If `test.e2e` is not
-     configured, skip the e2e step entirely.
+   - Frontend unit tests (if `test.frontend` configured and **frontend surface touched**)
+   - Backend unit tests (if `test.unit` configured and **backend surface touched**)
+   - **E2E / visual check — dispatch the `e2e-test-runner` agent** (if `test.e2e`
+     configured and **frontend surface touched** per the gate). The agent runs a
+     fix loop for e2e failures with a flaky-test guard; its iterations count
+     toward the 3-iteration eval-fix budget. If `test.e2e` is not configured but
+     the frontend surface was touched, surface that as a **soft-stop candidate**
+     ("frontend changed but no visual check ran" — see "Soft-stop tier"), don't
+     pass silently.
    - Eval regression (if `eval.runner` configured)
 
 2. **If NEW failures** in the non-e2e layers:
@@ -271,10 +415,10 @@ Run the complete test suite to ensure no regressions.
 
 **State write**: write `stage-outputs/validate.json` with `data.layers`
 (per-layer status: logs, frontend, backend, e2e, eval), `data.new_failures[]`,
-`data.preexisting_failures[]`. In `--skill-repo` mode this stage is replaced
-by the skill-repo validation procedure (see "Skill-repo mode" below); the
-sidecar then carries `data.mode = "skill-repo"` with the structural-check
-results documented in `templates/state-schema.md`.
+`data.preexisting_failures[]`. In skill-repo mode (auto-detected) this stage
+is replaced by the skill-repo validation procedure (see "Skill-repo mode"
+below); the sidecar then carries `data.mode = "skill-repo"` with the
+structural-check results documented in `templates/state-schema.md`.
 
 ---
 
@@ -284,7 +428,9 @@ Re-read the plan file and validate that the implementation actually fulfills eve
 requirement. This catches "code works but feature is incomplete" — the gap between
 passing tests and a working product.
 
-**Skip this stage if `--skip-eval` was passed.**
+**Skip this stage if no `eval.runner` is configured** (no test surface to
+validate against). Skip-on-skill-repo is handled by the skill-repo mode
+substitutions below.
 
 ### Decide which validators to launch
 
@@ -323,8 +469,8 @@ section: `api` and `ui` use Sonnet; `data` and `cross-module` use Haiku.
 4. **If failures found**:
    - Feed the failure list back into the Stage 4 fix loop
    - The fix agent receives the validation report, not eval output
-   - Re-run validation after fixes (counts toward `--max-fix-loops`)
-5. **If failures persist after max iterations**: report to user and stop
+   - Re-run validation after fixes (counts toward the 3-iteration budget)
+5. **If failures persist after 3 iterations**: report to user and stop
 
 ```markdown
 ## Plan Validation Report
@@ -354,7 +500,14 @@ UNCLEAR, or MISSING steps. This catches the class of gap where every individual
 checklist item passes but the end-to-end flow silently deviates from the plan's
 intent (wrong ordering, skipped step, different module doing the work).
 
-**Skip this stage if `--skip-flowsim` or `--skip-eval` was passed.**
+**Skip this stage only if there is NEITHER eval results NOR `test.unit`
+results to corroborate** — i.e. no test evidence of any kind. flowsim accepts
+**`test.unit` results as corroborating evidence**, not just
+`eval.features_dir/.../results.json`; this is what makes it meaningful for an
+app-package feature that routed coverage to `test.unit` (Stage 3 above). Only
+when both are absent does flowsim degrade to mostly-grep, and then it's best
+run interactively via `/flowsim`. Skill-repo mode skips this stage via the
+substitution table below.
 
 ### Invoke
 
@@ -376,8 +529,8 @@ Invoke the `/flowsim` skill with the plan file and feature slug:
 4. **If mismatches found**:
    - Feed the `mismatches` array into the Stage 4 fix loop.
    - The fix agent receives the structured JSON, not the markdown.
-   - Re-run `/flowsim` after fixes (counts toward `--max-fix-loops`).
-5. **If mismatches persist after max iterations**:
+   - Re-run `/flowsim` after fixes (counts toward the 3-iteration budget).
+5. **If mismatches persist after 3 iterations**:
    - Report to user with the specific file:line anchors that keep failing.
    - Do NOT proceed to PR — the plan and implementation disagree and a human should adjudicate (sometimes the plan was wrong, not the code).
 
@@ -422,18 +575,23 @@ Create a pull request for human review.
    `gh[osu]_[a-zA-Z0-9]{36}` (GitHub OAuth/server/user tokens),
    `(?i)(api[_-]?key|secret|token|password)\s*[:=]\s*['\"][^'\"]{12,}['\"]`.
 
-   **Policy**:
-   - Any HIGH/CRITICAL finding → STOP. Report the file and line; do not stage or commit.
-     The user must remove the secret manually before re-running the pipeline.
-   - MEDIUM/LOW → warn in the PR body but proceed. False positives are common at MEDIUM.
-   - If the regex fallback fires, treat all matches as HIGH (no severity distinction in the fallback).
+   **Policy — warn-only, never blocks commit or push**:
+   - Any finding (HIGH, MEDIUM, LOW, or regex-fallback match) → record file
+     and line, surface in the PR body, and **proceed** with stage + commit.
+     This pipeline does not refuse to commit on a secret-scan finding alone.
+   - HIGH findings get a `⚠ HIGH:` prefix and a one-line note that GitHub
+     Push Protection (on public remotes) may still reject the push even
+     though this skill did not. The user can scrub-and-recommit or push to a
+     private remote (e.g., Tailscale-backed internal git) at their discretion.
+   - If the regex fallback fires, treat all matches as HIGH for reporting purposes
+     (no severity distinction in the fallback) — same warn-only behavior.
 
    Record the scan tool used and finding count in the PR body so reviewers know a scan ran.
 
    **State write**: write `stage-outputs/secret-scan.json` with `data.tool`
    (`gitleaks` or `regex-fallback`), `data.files_scanned[]`,
-   `data.high_findings`, `data.medium_findings`. Status is `pass` on zero
-   high/critical findings, `fail` if HIGH/CRITICAL findings forced a stop.
+   `data.high_findings`, `data.medium_findings`. Status is always `pass` —
+   the scan is informational, not gating.
 
 3. **Stage and commit** all changes:
    ```bash
@@ -493,10 +651,37 @@ Create a pull request for human review.
    tracking needed). Skip this step entirely if `pipeline.skip_review: true`
    in `.claude/project.json`.
 
+7. **Capture gotchas (knowledge sink)**: if this run hit a non-obvious trap —
+   a surprising dependency, an ordering constraint, a footgun the next person
+   would also hit — prompt to append it to `GOTCHAS.md` via `/gotcha`. The
+   **durable project file is the sink, not model memory**: a lesson that only
+   lives in this session's memory didn't really get learned. One nudge, not a
+   gate. Skip if nothing non-obvious came up.
+
 **State write**: write `stage-outputs/pr-create.json` with `data.branch`,
 `data.pr_url`, `data.pr_number`, `data.commit_sha`. On success, set
 `run.json.status = "complete"`. (Stage 7 is a pure-reporting stage and writes
 no sidecar — `run.json` is the terminal record.)
+
+**Always close the run.** Whatever exit path you take — success, a pause at
+Stage 4/5.5/5.6, or bailing because you committed something by hand — set
+`run.json.status` to a terminal value (`complete` / `paused` / `failed`)
+before you stop. An envelope left `in_progress` after the work moved on is the
+"stale pipeline" smell `/repo-health` Check 7 and `/status` will flag; don't
+manufacture one.
+
+This applies equally to **retro / validation-only runs** — where Stage 2
+(implement) is intentionally skipped because the implementation already landed
+in a prior commit (a run started with notes like "retro-running validation
+stages"). Such a run must still **advance `run.json.stage` and append to
+`stages_completed` as each validation sidecar is written**, add `implement` to
+`run.json.stages_skipped`, and finish on a terminal `status`. The failure mode
+to avoid: a retro run initialized at `stage: "parse"` whose validation sidecars
+(`sanity-check`, `generate-evals`, `eval-fix`, `validate`, `plan-validate`,
+`flowsim`) all exist on disk while `run.json` still reads
+`status: "in_progress"` with `stages_completed: []` — sidecars present but the
+run never closed. That orphan is the single most common stale-pipeline false
+alarm; closing the run is the last action of *every* exit path, retro included.
 
 **IMPORTANT: Do NOT switch back to the main branch after creating the PR.**
 Stay on the feature branch so the user can test the feature before merging.
@@ -516,6 +701,12 @@ Report completion to the user:
 **Branch**: sdlc/{feature-slug} (stay on this branch)
 **Test results**: {summary from Stage 5}
 
+{If the deploy-delta surface was touched (see changed-files gate), lead with:}
+⚙ **Rebuild required (not restart)** — this change touched {manifest/lockfile/
+Dockerfile}, so the deployed/test environment must be rebuilt, not just
+restarted, to pick it up. {If new test files were added and the test runner is
+containerized with a baked test dir, note they need copying/rebuild first.}
+
 Please test:
 - [ ] {key interaction 1}
 - [ ] {key interaction 2}
@@ -532,6 +723,33 @@ Please test:
 - **Stop on repeated failures** — if fix loop can't resolve after max iterations, report to user
 - **Don't fix pre-existing failures** — only fix what this pipeline introduced
 - **Git hygiene** — clean commits with descriptive messages, specific file staging (no `git add .`)
+- **Autonomy overrides interactive output styles** — `/sdlc` is an autonomous plan→PR pipeline. If an interactive output style (e.g. a "learning"/contribution-seeking mode) is active, the explicit `/sdlc` invocation wins: run autonomously, don't pause to solicit user-authored code mid-pipeline.
+
+## Soft-stop tier (earn the interruption)
+
+Most gates here are **warn-only** (the secret scan is the model: surface, never
+block — false positives shouldn't train users to disable a gate). But a tiny
+allowlist of *structural* gaps earns one **soft-stop** — a single
+"proceed anyway?" confirmation, never a hard refusal:
+
+- Sanity-check (Stage 1.5) was skipped on a multi-file plan.
+- A prior pipeline run on this branch is still `in_progress` at commit time
+  (continuity detection fired and was ignored).
+- Frontend files changed but no visual/e2e check ran (see the changed-files
+  gate in Stage 5).
+
+Soft-stop = ask once, proceed on confirmation, and log a one-line TASKS.md
+debt row if overridden. Keep the allowlist short; spending an interruption on
+a regex-level false positive is how gates get disabled.
+
+**Non-interactive runs (background job / CI / `--print`):** a soft-stop must
+**never block waiting for an answer that can't come** — that's a deadlock, not
+a gate. When there's no interactive channel (you're a background agent, a CI
+step, or a headless `claude --print` invocation), **proceed-and-document**
+instead of asking: take the safe path, write the soft-stop reason into the PR
+body, and add a TASKS.md debt row so the skipped check is visible and owned.
+Detect non-interactivity from the run context (no human in the loop); when in
+doubt in a background/CI context, proceed-and-document rather than stall.
 
 ## When This Skill Works Best
 
@@ -547,11 +765,14 @@ Please test:
 
 ---
 
-## Skill-repo mode (`--skill-repo`)
+## Skill-repo mode (auto-detected)
 
 Use when the repo being changed is itself a markdown-skill plugin (like
 brainstorm-toolkit). The standard pipeline is shaped for "code-with-tests"; a
 skill repo has no test surface, so eval-driven stages are inapplicable.
+
+**Detection**: at Stage 1, if `.claude-plugin/marketplace.json` exists at the
+repo root, this mode activates automatically. No flag required.
 
 ### Stage substitutions
 
@@ -559,7 +780,7 @@ skill repo has no test surface, so eval-driven stages are inapplicable.
 |---|---|
 | Stage 1 — Parse plan | unchanged |
 | Stage 1.5 — Sanity check | unchanged (3 Haiku agents — they generalize fine) |
-| Stage 2 — Implement | unchanged |
+| Stage 2 — Implement | unchanged (gated as standard; a skill repo's single docs surface normally keeps it single-agent) |
 | Stage 3 — Generate evals | **skip** (no test surface) |
 | Stage 4 — Eval + fix loop | **skip** |
 | Stage 5 — Full validation | **substitute** with the procedure in `templates/stage-5-skill-repo.md` |
@@ -578,7 +799,7 @@ Embed the result table in the PR body.
 This mode keeps `/sdlc`'s discipline (sanity-check → implement → validate → PR)
 while swapping in the right validation surface for the artifact type.
 
-### State envelope in `--skill-repo` mode
+### State envelope in skill-repo mode (auto-detected)
 
 Skipped stages (`generate-evals`, `eval-fix`, `plan-validate`, `flowsim`)
 write **no sidecar**; their names are appended to `run.json.stages_skipped`

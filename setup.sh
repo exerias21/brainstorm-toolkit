@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# setup.sh â€” install brainstorm-toolkit into a target repo for Claude Code and/or GitHub Copilot.
+# setup.sh — install brainstorm-toolkit into a target repo for Claude Code, GitHub Copilot, and/or OpenAI Codex.
 #
 # Usage:
-#   bash setup.sh [--target <dir>] [--tools claude|copilot|both] [--force]
+#   bash setup.sh [--target <dir>] [--tools claude|copilot|codex|both|all] [--force]
 #                 [--no-copy-scripts] [--no-hooks]
 #
 #   --target <dir>      Target repo root (default: current directory)
-#   --tools <which>     claude | copilot | both (default: both)
+#   --tools <which>     claude | copilot | codex | both | all (default: both)
+#                       both = claude + copilot (kept for backward compat)
+#                       all  = claude + copilot + codex
+#                       Codex skills install to <target>/.agents/skills/<name>/
+#                       (the path Codex CLI scans per its 2026 Agent Skills spec).
 #   --force             Overwrite plugin assets (skills, agents, scripts).
 #                       Does NOT overwrite user-customized files
 #                       (AGENTS.md, CLAUDE.md, TASKS.md, .claude/project.json) —
@@ -49,16 +53,17 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$TOOLS" in
-  claude|copilot|both) ;;
-  *) echo "--tools must be claude, copilot, or both" >&2; exit 2 ;;
+  claude|copilot|codex|both|all) ;;
+  *) echo "--tools must be claude, copilot, codex, both, or all" >&2; exit 2 ;;
 esac
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET="$(cd "$TARGET" && pwd)"
 
 if [[ "$PLUGIN_ROOT" == "$TARGET" ]]; then
-  echo "refusing to install into the plugin repo itself" >&2
-  exit 2
+  echo "note: installing into the plugin repo itself (dogfood mode)." >&2
+  echo "      install output is gitignored; the canonical source lives in" >&2
+  echo "      skills/, copilot/skills/, codex/skills/, agents/." >&2
 fi
 
 echo "brainstorm-toolkit setup"
@@ -68,9 +73,10 @@ echo "  tools:       $TOOLS"
 echo "  force:       $FORCE"
 echo
 
-want_claude=0; want_copilot=0
-[[ "$TOOLS" == "claude"  || "$TOOLS" == "both" ]] && want_claude=1
-[[ "$TOOLS" == "copilot" || "$TOOLS" == "both" ]] && want_copilot=1
+want_claude=0; want_copilot=0; want_codex=0
+[[ "$TOOLS" == "claude"  || "$TOOLS" == "both" || "$TOOLS" == "all" ]] && want_claude=1
+[[ "$TOOLS" == "copilot" || "$TOOLS" == "both" || "$TOOLS" == "all" ]] && want_copilot=1
+[[ "$TOOLS" == "codex"   || "$TOOLS" == "all" ]] && want_codex=1
 
 copy_if_new() {
   # copy <src> <dest>
@@ -152,6 +158,24 @@ for skill_dir in "$PLUGIN_ROOT"/skills/*/; do
       copy_tree_if_new "$copilot_override" "$TARGET/.github/skills/$name"
     else
       copy_tree_if_new "$skill_dir" "$TARGET/.github/skills/$name"
+    fi
+  fi
+
+  if [[ "$want_codex" -eq 1 ]] && applies_to_includes "$skill_dir" codex; then
+    # Codex CLI scans $CWD/.agents/skills/<name>/SKILL.md per its Agent Skills spec.
+    # Codex shares Copilot's runtime constraints (no Plan mode, no parallel
+    # sub-agents), so fall through in this order:
+    #   1. codex/skills/<name>/   — a Codex-tuned override, if one exists
+    #   2. copilot/skills/<name>/ — the sequential Copilot overlay (correct for Codex)
+    #   3. skills/<name>/         — the canonical (Claude-shaped) skill as a last resort
+    codex_override="$PLUGIN_ROOT/codex/skills/$name"
+    copilot_override="$PLUGIN_ROOT/copilot/skills/$name"
+    if [[ -d "$codex_override" ]]; then
+      copy_tree_if_new "$codex_override" "$TARGET/.agents/skills/$name"
+    elif [[ -d "$copilot_override" ]]; then
+      copy_tree_if_new "$copilot_override" "$TARGET/.agents/skills/$name"
+    else
+      copy_tree_if_new "$skill_dir" "$TARGET/.agents/skills/$name"
     fi
   fi
 done

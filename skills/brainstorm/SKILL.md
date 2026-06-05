@@ -10,7 +10,7 @@ description: >
   for heavy autonomous multi-agent product research, use /brainstorm-team instead.
 argument-hint: "[topic] [--vet light|deep|ultra|none] - optional: topic + multi-agent vet mode"
 metadata:
-  brainstorm-toolkit-applies-to: claude copilot
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Brainstorm
@@ -63,18 +63,27 @@ Ask 2-3 focused clarifying questions. Good questions surface:
 Don't over-interview. Two good questions beat five mediocre ones. If the user's initial
 description is already detailed, skip straight to exploration.
 
-### Step 2: Explore for Context
+### Step 2: Explore for Context — ground in the live code
 
-Before generating ideas, ground yourself in what already exists. Use Glob, Grep, and Read
-directly in the main context window to understand:
+Before generating ideas, ground yourself in what already exists. **The source of
+truth is the live code, not `AGENTS.md` / `CLAUDE.md`** — read those as hints,
+but verify against the code and trust the code when they disagree (a mismatch
+usually means the doc is stale). Use Glob, Grep, and Read directly in the main
+context window. Follow the procedure in
+[`skills/sdlc/templates/convention-grounding.md`](../sdlc/templates/convention-grounding.md):
 
-- **What infrastructure exists** that this idea could build on
-- **What patterns the codebase uses** for similar features
-- **What data models are relevant** (check migrations, models)
-- **What services or endpoints** are nearby
+- **Find the 2–3 closest existing implementations** to the idea (same layer,
+  same kind of thing) and note the patterns they follow with `path:line`
+  citations — layout, naming, error handling, the data-access seam, shared
+  utilities already available, test style.
+- **What infrastructure exists** that this idea could build on (prefer extending
+  it over inventing a parallel one).
+- **What data models are relevant** (check migrations, models).
 
-Summarize what you found in 3-5 bullets. The user shouldn't have to read code — translate
-what you found into plain language that connects to their idea.
+Summarize what you found in 3-5 bullets, and carry the reuse decisions forward
+into the plan's `### Conventions & reuse` block (Step 6). The user shouldn't have
+to read code — translate what you found into plain language that connects to
+their idea. Don't reinvent what the repo already does.
 
 ### Step 3: Cross-Module Integration Check
 
@@ -153,11 +162,19 @@ Once the user has converged on a direction, produce a concrete plan. Structure i
 One paragraph summarizing the chosen approach and why. If the direction combines a
 conventional option with a wildcard, say so explicitly.
 
+### Conventions & reuse
+What this plan reuses from the existing codebase (from Step 2's recon), so
+implementation follows the repo instead of reinventing it:
+- Follow: <pattern> — see `path:line`
+- Reuse: <existing module/helper/type> for <purpose> — `path`
+- New (justified): <thing>, because <no existing pattern fits>
+- Doc drift: <AGENTS.md/CLAUDE.md says X but the code does Y>   (omit if none)
+
 ### Implementation Steps
 Numbered list of concrete steps, each with:
 - What to do
 - Which files to create/modify
-- Key patterns to follow (reference existing code)
+- Key patterns to follow (reference existing code from the block above)
 
 ### Cross-Module Touchpoints
 - Which other modules this connects to and how
@@ -185,6 +202,19 @@ Do this **before** Step 7 (validation) — the validation agent reads the plan
 from this path. Do NOT rely on Plan Mode's "approve plan" affordance to
 persist the file; that's a separate UX from the on-disk artifact this skill
 must produce.
+
+**Plan-mode sandbox conflict** (common — read this): some hosts run Plan mode
+in a **sandbox that only permits writes to a transient path** (e.g.
+`~/.claude/plans/<random>.md`) and *forbid* writes elsewhere until you exit
+plan mode. You'll know by the plan-file path the host hands you. When that's
+the case:
+- During planning, author into the sandbox file the host gave you (that's all
+  it allows).
+- **Immediately after `ExitPlanMode`** (Step 8), persist the canonical copy to
+  repo-root `plans/brainstorm-<topic-slug>.md` — *before* writing the
+  next-action sentinel, so downstream skills find it.
+Don't fight the sandbox mid-plan; just re-persist to repo-root the moment the
+sandbox lifts. The repo-root copy is the one downstream skills read.
 
 **Also append action items to `TASKS.md`** (at repo root). For each implementation step
 that's concrete and bounded enough to stand alone, add a row to the `Active / Pending`
@@ -275,36 +305,64 @@ context and stress-test it against this checklist:
 
 Share the validation feedback with the user. If there are issues, revise the plan together.
 
-### Step 8: Exit Plan Mode and Next Steps
+### Step 8: Exit Plan Mode and continue the flow
 
-Before exiting Plan mode, drop a **next-action sentinel** so the Stop hook
-surfaces the recommended follow-up command in the terminal once Claude
-finishes responding. The plan file MUST already exist at
-`plans/brainstorm-<topic-slug>.md` before writing the sentinel — a sentinel
-that points at a missing plan is a bug.
+A brainstorm that ends at a file the user has to manually pick up is a
+**dropped flow**. Default posture: keep the momentum — continue into the
+delivery pipeline rather than stopping at the plan.
+
+**First — is this plan about the toolkit's own vendored skills?** If the plan's
+changed-files target `.claude/skills/**` (or `.github/skills/**`,
+`.agents/skills/**`) — i.e. it proposes editing *installed/vendored* skill
+copies — **do NOT route it through this consumer repo's `/sdlc`.** Those edits
+belong in the **canonical brainstorm-toolkit repo**, then get re-installed.
+Suppress the auto-pipeline sentinel and emit instead:
+`Next: file this upstream in the brainstorm-toolkit repo (these are vendored
+skill copies; editing them here diverges from canonical).` This is the
+"toolkit improving itself" case — shipping skill edits through a consumer's
+pipeline is exactly the mis-route to avoid. (Authoring a *new app feature*
+proceeds normally below.)
+
+**Otherwise, pick the next command by flow continuity** — don't make the user
+re-choose a flow they've already established this session:
+- If `/sdlc` has been used this session → continue with `/sdlc`.
+- If `/sdlc-lite` has been used, or no pipeline flow is established yet →
+  use `/sdlc-lite`. It runs the full pipeline and hands back validated changes
+  with **no git writes**, so it's the safe default — it can't surprise the user
+  with a PR.
+
+Drop a **next-action sentinel** naming that command so the Stop hook surfaces
+it. The plan file MUST already exist at `plans/brainstorm-<topic-slug>.md`
+before writing the sentinel — a sentinel pointing at a missing plan is a bug.
 
 ```
-# Write a single line to .claude/.next-action with the recommended command:
-echo "/sdlc plans/brainstorm-<topic-slug>.md" > .claude/.next-action
+# Default to the safe pipeline; substitute /sdlc if that's the established flow:
+echo "/sdlc-lite plans/brainstorm-<topic-slug>.md" > .claude/.next-action
 ```
 
-The Stop hook (installed by `setup.sh` into both
-`.claude/settings.json` for Claude Code and `.github/hooks/next-action.json`
-for Copilot) reads the file once, prints `Next: <command>` to the user, and
-deletes it — so the suggestion fires once, not on every Stop. Skip the
-sentinel write if the user explicitly chose "save for later" with no
-intent to ship.
+The Stop hook (installed by `setup.sh` into both `.claude/settings.json` for
+Claude Code and `.github/hooks/next-action.json` for Copilot) reads the file
+once, prints `Next: <command>`, and deletes it. Skip the sentinel only if the
+user explicitly chose "save for later" with no intent to ship.
 
-Then exit Plan mode (`ExitPlanMode`). Offer the user the next steps:
+Then exit Plan mode (`ExitPlanMode`) and continue:
 
-1. **Implement now** — transition into building directly in this session
-2. **Run `/sdlc {plan_file}`** — hand the plan to the automated implementation flow
-   (implement → eval → fix loop → test → PR). Best for bounded, well-specified plans.
-3. **Save for later** — the plan persists at `plans/brainstorm-[topic-slug].md`
+1. **Show what's being built** (optional, cheap) — offer
+   `/plan-html plans/brainstorm-<topic-slug>.md` to render the plan as a
+   single-file HTML view the user or a stakeholder can scroll, for a
+   shape-of-the-work read before delivery starts.
+2. **Continue into delivery** with the established flow, or `/sdlc-lite` by
+   default — run the full pipeline. `/sdlc-lite` hands back validated changes
+   for the user to commit (no git writes); `/sdlc` goes all the way to a PR.
+   **Because `/sdlc` opens a PR, confirm before taking that path** — but you do
+   not need to ask permission to continue with the safe `/sdlc-lite` path.
+3. **Save for later** — if the user signals they're done for now, leave the
+   plan file and skip the sentinel.
 
-If the plan has clear implementation steps with file paths and acceptance criteria,
-recommend option 2 (`/sdlc`). If the plan is exploratory or has ambiguous tradeoffs,
-recommend option 1 (manual implementation).
+If the plan has clear implementation steps with file paths and acceptance
+criteria, proceed with delivery (option 2). If it's exploratory or has
+ambiguous tradeoffs, pause for the user to review (offer option 1's HTML view
+first).
 
 If the current tool supports an explicit planning-mode exit, you may use it here. Otherwise,
 just transition conversationally.

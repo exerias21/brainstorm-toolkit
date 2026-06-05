@@ -2,12 +2,14 @@
 name: data-source-pattern
 description: >
   Pattern guide for ingesting external data (web scrapes, third-party APIs,
-  file imports, user-generated content) into a project's database. Use when
-  adding a new scraper, import script, or automated data-collection job.
-  Defines the standard shape: discovery pipeline, seed scripts, and direct
-  API ingestion — three patterns, one per situation.
+  file imports, user-generated content) into a project's database. Covers the
+  three ingestion patterns (discovery pipeline, seed script, direct API), plus
+  how to author a per-source web-discovery skill: WebSearch vs headless
+  browser, the session-cookie pattern for authenticated sites, source trust
+  tiers, and dedup-upsert. Use when adding a new scraper, import script, or
+  automated data-collection job — or "how do I scrape X into the DB?".
 metadata:
-   brainstorm-toolkit-applies-to: claude copilot
+   brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Data Source Pattern
@@ -55,6 +57,78 @@ upsert into DB → emit metric/notification
 - Store the raw payload (`JSONB`) in addition to extracted columns, so you can
   re-parse later without re-scraping.
 - Handle the external source being unavailable — never crash the worker.
+
+### Fetch method — WebSearch/WebFetch or a headless browser?
+
+Default to **WebSearch + WebFetch**: public pages, search engines, RSS, JSON
+APIs. No browser, runs fully unattended, cheapest. This covers most sources.
+
+Reach for a **headless browser** (Playwright MCP, or a Playwright/Puppeteer
+script) only when the source *requires* it:
+- content behind a login,
+- data rendered client-side by JS that `WebFetch` can't see,
+- pages needing interaction (click, scroll-to-load) before the data appears.
+
+Prefer extracting via `page.evaluate(() => …)` returning structured data over
+brittle deep CSS selectors — selectors rot on every site redesign.
+
+### Authenticated sources — the session-cookie pattern
+
+For sites behind a login, **don't script the login flow** — it's fragile, trips
+bot detection, and leaks credentials into logs. Instead:
+
+1. **One-time, interactive:** a human logs in once in a visible browser; save
+   the storage state (cookies + localStorage) to a gitignored file such as
+   `scripts/.<source>-session.json`.
+2. **Unattended runs:** load that saved state into the browser context and go
+   straight to the data URL.
+3. **Expiry:** when the saved session is missing or rejected, **stop and ask the
+   user to re-run the one-time login** — never auto-login with stored secrets.
+
+Session files are live credentials — gitignore them. (The toolkit's secret scan
+is warn-only and won't block a commit that includes one.)
+
+### Source trust tiers
+
+Scraping pulls in junk unless you rank sources. Bake a tier list into the skill
+so every run applies it the same way:
+
+- **Prefer** authoritative sources: official `.gov`/`.edu`, the data owner's own
+  site, first-party APIs, well-known org domains.
+- **Include with verification:** established orgs and businesses with a
+  verifiable real-world identity.
+- **Block** low-signal sources: review aggregators, social feeds, content farms,
+  SEO-spam blogs, anything requiring login to view. They inflate noise and
+  dedup cost.
+
+### Authoring a per-source discovery skill
+
+A discovery skill is a thin, repeatable shape — **one skill per source type**:
+
+1. **Load context** — read what parameterizes the search (location, user prefs,
+   categories) from the DB/config. Stop early with a clear message if a required
+   input is missing.
+2. **Search phases** — grouped WebSearch queries (or browser navigations) per
+   source category, templated with the loaded context.
+3. **Apply trust tiers** — drop blocked sources, keep the ranked ones.
+4. **Compile + dedup** — normalize each hit into a record; dedup by a stable key
+   (`title`+`location`, or `source`+`external_id`). Keep the richer duplicate.
+5. **Upsert** — `INSERT … ON CONFLICT DO UPDATE/NOTHING` into the target table;
+   store the raw payload alongside the extracted columns.
+6. **Report** — counts (found / inserted / updated / skipped), a grouped
+   summary, and gaps where nothing was found.
+
+Keep DB specifics (driver, connection, table names) out of the skill prose and
+in the project's existing helpers/conventions. The skill describes the *shape*;
+the project supplies the *wiring*.
+
+### Going autonomous (optional)
+
+To run discovery on a schedule with no human present, a watcher daemon can drive
+the headless `claude` CLI against a job queue — "Claude as a cron worker." This
+is opt-in infrastructure (needs an always-on host); for occasional refresh, just
+run the skill by hand. See `docs/AUTONOMOUS-DISCOVERY.md` in the brainstorm-toolkit
+repo for the full watcher pattern, headless-CLI invocation, and security notes.
 
 ---
 

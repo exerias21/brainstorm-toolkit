@@ -40,9 +40,29 @@
   "main_branch": "main",
   "modules": ["api", "web", "worker"],
 
+  "migrations": {
+    "_comment": "Optional. Read by /repo-health Check 6 (static migration drift) and /post-deploy-verify. Omit entirely if the project has no migrations — the check self-skips.",
+    "dir": "backend/migrations",
+    "_applied_check_comment": "A shell command (or SQL via your DB CLI) that prints the highest applied migration version. /repo-health compares it to the highest file in 'dir' and warns if the repo is ahead (merged-but-unapplied). Without it, the check reports 'applied state unknown' rather than connecting to a DB.",
+    "applied_check": "psql \"$DATABASE_URL\" -tAc \"select max(version) from schema_migrations\""
+  },
+
+  "discipline": {
+    "_comment": "Optional. Tunes the self-enforcing gates. All keys have defaults; omit the block to accept them. Project-agnostic — gates self-skip when their surface is absent.",
+    "staleness_hours": 24,
+    "_globs_comment": "Override the changed-files-gate surface globs (see skills/sdlc/templates/changed-files-gate.md). Defaults cover the common cases; set these only for non-standard layouts.",
+    "frontend_globs": ["**/*.tsx", "**/*.jsx", "**/*.vue", "**/*.svelte", "**/*.css", "**/*.scss"],
+    "data_globs": ["**/migrations/**", "**/schema/**", "**/models/**", "**/*.sql"],
+    "_deploy_delta_comment": "Dependency manifests/lockfiles/Dockerfiles. When the diff touches one, /sdlc flags 'rebuild required (not restart)' in the PR body + Stage-7 checklist — code committed != running env reflects it.",
+    "deploy_delta_globs": ["requirements.txt", "pyproject.toml", "poetry.lock", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "go.mod", "Cargo.toml", "Gemfile.lock", "Dockerfile", "**/Dockerfile"],
+    "_memory_index_comment": "Optional path to a REPO-LOCAL memory/knowledge index for /repo-health Check 8. Leave unset to skip — the check NEVER reads the user-global ~/.claude memory dir.",
+    "memory_index": null
+  },
+
   "pipeline": {
     "_comment": "Optional. Knobs read by /sdlc. All keys default to false/unset.",
     "skip_secret_scan": false,
+    "skip_review": false,
     "_poka_yoke_comment": "Claude-only. When true, /repo-onboarding writes a PreToolUse hook to .claude/settings.json that blocks Write/Edit when a likely secret is in the payload. Enabling this key alone does NOT install the hook — see AGENTS.md 'Hooks (Claude-only)' for the settings.json schema. Copilot consumers gain nothing from this key (no PreToolUse equivalent); rely on the Stage 6 gitleaks scan instead.",
     "poka_yoke": false
   }

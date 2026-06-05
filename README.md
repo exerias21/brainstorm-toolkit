@@ -36,7 +36,7 @@ bash ~/brainstorm-toolkit/setup.sh --target . --tools both
 
 `setup.sh` copies:
 
-- `skills/*` → `<target>/.claude/skills/<name>/` (Claude) and `<target>/.github/skills/<name>/` (Copilot, for skills marked for both tools). When a Copilot-optimized override exists in `copilot/skills/<name>/`, that version is installed instead of the canonical one. The full skill directory is copied so bundled scripts, assets, and references stay available.
+- `skills/*` → `<target>/.claude/skills/<name>/` (Claude), `<target>/.github/skills/<name>/` (Copilot), and `<target>/.agents/skills/<name>/` (Codex), for skills whose `metadata.brainstorm-toolkit-applies-to` includes that tool. When a Copilot-optimized override exists in `copilot/skills/<name>/`, that version is installed for Copilot instead of the canonical one; Codex prefers a `codex/skills/<name>/` override, then the Copilot overlay, then the canonical. The full skill directory is copied so bundled scripts, assets, and references stay available.
 - Some Copilot-distributed skills are intentionally **manual-only** and set `disable-model-invocation: true`, which keeps them available as slash commands without making them auto-load on semantic matching.
 - Legacy `.github/prompts/*.prompt.md` files from older installs are removed during Copilot installs so the workspace stops advertising prompt-file shims.
 - `agents/*` → `<target>/.claude/agents/` (Claude-only helper agents; VS Code can also discover Claude-format agents from `.claude/agents/` when needed).
@@ -69,26 +69,94 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 
 | Skill | Applies to | Use for |
 |---|---|---|
-| `/cheatsheet` | Both | Print every installed skill + the typical chains. The always-current view; `CHEATSHEET.md` is the printable companion. |
-| `/brainstorm` | Both † | Conversational feature ideation with lens-divergent wildcards (Plan mode on Claude, linear on Copilot) |
-| `/brainstorm-team` | Both † | 6-agent team for competitive + product research incl. a lateral-thinking agent (sequential on Copilot) |
-| `/task` | Both | Create one bounded task and execute it with TDD |
-| `/status` | Both | Quick readout of TASKS.md counts + active task |
-| `/sdlc` | Both † | Plan → implement → eval → test → flowsim → PR (sequential on Copilot) |
-| `/repo-onboarding` | Both | Generate AGENTS.md + TASKS.md + project.json + GOTCHAS.md |
-| `/repo-health` | Both | Read-only hygiene sweep (dead code + tests + deps + secrets + gotchas-currency); prints a scored report and the highest-impact next command. |
-| `/test-check` | Both | Run configured tests + log audit after changes (one-shot, no fix loop) |
-| `/e2e-loop` | Both † | Run e2e tests in a fix loop with flaky-test guard (dispatches `e2e-test-runner` agent on Claude, inline on Copilot) |
-| `/gotcha` | Both | View or append project pitfalls |
-| `/eval-harness` | Both | Run pytest + fixture evals with optional fix loop |
-| `/flowsim` | Both | Trace claimed plan flows through source code and flag mismatches |
-| `/dead-code-review` | Both † | Dead-code scan with test verification (sequential on Copilot) |
-| `/review-pr` | Both | On-demand code review for any PR or branch — wraps `/review`, persists to `plans/review-<id>.md`, optional `--post-comment`. Standalone counterpart to the post-PR review `/sdlc` already runs. |
-| `/data-source-pattern` | Both | Pattern guide for scrapers, seed scripts, API ingestion |
-| `/logging-conventions` | Both | Enforce structured logging discipline |
-| `/post-deploy-verify` | Both | Stub — post-deploy BRD/PBI-vs-deployed-system verification matrix (depends on Phase 2 BRD/PBI artifacts; see `BRAINSTORM-PIPELINE.md`) |
+| `/cheatsheet` | Claude + Copilot + Codex | Print every installed skill + the typical chains. The always-current view; `CHEATSHEET.md` is the printable companion. |
+| `/brainstorm` | Claude + Copilot + Codex † | Conversational feature ideation with lens-divergent wildcards (Plan mode on Claude, linear on Copilot) |
+| `/brainstorm-deep` | Claude + Copilot + Codex † | Clarification-heavy ideation for ambiguous or high-stakes ideas. Three-pass loop (understand → saturate → plan-with-alternates), perspective-frame sub-agents, expectation-contract output. Slower than `/brainstorm`, more rigorous. |
+| `/brainstorm-team` | Claude + Copilot + Codex † | 6-agent team for competitive + product research incl. a lateral-thinking agent (sequential on Copilot) |
+| `/task` | Claude + Copilot + Codex | Create one bounded task and execute it with TDD on the current branch — no flags, always TDD |
+| `/sdlc-lite` | Claude + Copilot + Codex † | The full `/sdlc` pipeline with a different ending — sanity → implement → evals → fix → validate → plan-validate → flowsim, then **hands you the validated changes to commit yourself** (no commit, branch, push, or PR — only `/sdlc` touches git). Stage 2 auto-decomposes large multi-surface plans into focused per-lane subagents + a converge step; small / single-surface plans run a single agent unchanged. Takes a plan file, a task id, a task range (`1-5`), or an ad-hoc description. Use to run full discipline on work you want to review and commit onto an open PR's branch. |
+| `/status` | Claude + Copilot + Codex | Quick readout of TASKS.md counts + active task |
+| `/sdlc` | Claude + Copilot + Codex † | Plan → implement → eval → test → flowsim → PR. Stage 2 auto-decomposes large multi-surface plans into focused per-lane subagents + a converge step (single agent for small / single-surface plans). No flags; skill-repo mode auto-detected from `.claude-plugin/marketplace.json` |
+| `/repo-onboarding` | Claude + Copilot + Codex | Generate AGENTS.md + TASKS.md + project.json + GOTCHAS.md |
+| `/repo-health` | Claude + Copilot + Codex | Read-only hygiene sweep (dead code + tests + deps + secrets + gotchas-currency); prints a scored report and the highest-impact next command. |
+| `/test-check` | Claude + Copilot + Codex | Run configured tests + log audit after changes (one-shot, no fix loop) |
+| `/e2e-loop` | Claude + Copilot + Codex † | Run e2e tests in a fix loop with flaky-test guard (dispatches `e2e-test-runner` agent on Claude, inline on Copilot) |
+| `/gotcha` | Claude + Copilot + Codex | View or append project pitfalls |
+| `/eval-harness` | Claude + Copilot + Codex | Run pytest + fixture evals with optional fix loop |
+| `/flowsim` | Claude + Copilot + Codex | Trace claimed plan flows through source code and flag mismatches |
+| `/dead-code-review` | Claude + Copilot + Codex † | Dead-code scan with test verification (sequential on Copilot) |
+| `/review-pr` | Claude + Copilot + Codex | On-demand code review for any PR or branch — wraps `/review`, persists to `plans/review-<id>.md`, optional `--post-comment`. Standalone counterpart to the post-PR review `/sdlc` already runs. |
+| `/plan-html` | Claude + Copilot + Codex | Render any markdown plan as a self-contained, shareable HTML page (embedded CSS, zero JS, native `<details>` collapsibles, light/dark mode). Opt-in: pass the plan file as the argument — no auto-emit. Use to share plans with stakeholders or scroll-engage long plans in a browser. |
+| `/data-source-pattern` | Claude + Copilot + Codex | Pattern guide for ingesting external data: discovery pipeline / seed script / direct API, plus how to author a web-discovery skill (WebSearch vs headless browser, session cookies, source trust tiers, dedup-upsert) |
+| `/logging-conventions` | Claude + Copilot + Codex | Enforce structured logging discipline |
+| `/network-engineer` | Claude + Copilot + Codex | Network-security audit methodology: Batfish-parsed configs × vendor PSIRT CVEs × overpermissive-rule rubric → ranked findings report. Pairs with the `network-sec` agent on Claude (parallel stages); Copilot/Codex run the same stages sequentially. Requires consumer-supplied data-source scripts (Batfish, PSIRT, optional Qualys) — see `references/data-source-tools.md`. |
+| `/paloalto-ansible` | Claude + Copilot + Codex | Generate a custom Ansible module against the **official SCM API** (not paloaltonetworks.panos, not SASE), playbook, eval-corpus entry (apply → verify → loop-back), and optional Postgres audit shaped for future ServiceNow migration. Single-agent sequential by default; opt-in `--team` flag escalates to parallel multi-expert orchestration. Domain reference at `skills/paloalto-ansible/references/scm-ansible.md` is reusable from `/task`. |
+| `/post-deploy-verify` | Claude + Copilot + Codex | Stub — post-deploy BRD/PBI-vs-deployed-system verification matrix (depends on Phase 2 BRD/PBI artifacts; see `BRAINSTORM-PIPELINE.md`) |
 
-† Has a Copilot-optimized overlay at `copilot/skills/<name>/`. The overlay runs the same stages sequentially (no parallel sub-agents or Plan mode) because Copilot's VS Code agent mode doesn't yet support those primitives. When it does, overlays will be upgraded. Cross-tool skills without a † rely only on file I/O + test runners and work identically on both tools.
+All skills run on all three tools. † marks skills with a Copilot-optimized overlay at `copilot/skills/<name>/` that runs the same stages sequentially (no parallel sub-agents or Plan mode) because Copilot's VS Code agent mode doesn't yet support those primitives; when it does, overlays will be upgraded. Codex shares those constraints, so `setup.sh` installs the Copilot overlay for Codex too (a Codex-specific override at `codex/skills/<name>/` wins when one exists — today `/sdlc` and `/sdlc-lite`). Skills without a † rely only on file I/O + test runners and run identically on all three tools.
+
+## Model & cost reference
+
+What each skill dispatches under the hood, and a rough order-of-magnitude
+cost. Token counts are **per typical run**, not worst-case — a `/sdlc` run
+on a tiny plan is closer to the low end, on a multi-module refactor the
+high end. Costs use 2026-04 list pricing: Opus $15 / $75, Sonnet $3 / $15,
+Haiku $1 / $5 per M tokens (input / output).
+
+| Skill | Orchestrator | Sub-agents (per run) | Tokens/run (rough) | Cost/run (rough) |
+|---|---|---|---|---|
+| `/cheatsheet` | host model | none — file I/O only | <1k | ~$0.00 |
+| `/status` | host model | none — reads `TASKS.md` | <1k | ~$0.00 |
+| `/gotcha` | host model | none — read/append `GOTCHAS.md` | <1k | ~$0.00 |
+| `/data-source-pattern` | host model | none — reference doc | <1k | ~$0.00 |
+| `/logging-conventions` | host model | none — reference doc | <1k | ~$0.00 |
+| `/test-check` | host model | none — runs tests + log audit | 1k–3k | ~$0.01 |
+| `/plan-html` | host model | none — markdown read → HTML write | 3k–10k | ~$0.01–$0.05 |
+| `/task` | host model | none — inline TDD | 5k–15k | $0.02–$0.10 |
+| `/repo-health` | host model | 2 × Haiku (dead-code + gotchas-currency); 3 procedural checks | 5k–20k | $0.02–$0.10 |
+| `/review-pr` | host model | none — wraps the built-in `/review` primitive on the captured diff | 5k–30k | $0.02–$0.30 |
+| `/eval-harness` | host model | 0–1 × Sonnet (optional fix loop) | 5k–30k | $0.02–$0.30 |
+| `/paloalto-ansible` (default) | host (Sonnet) | none — sequential module + playbook + eval entry | 15k–40k | $0.05–$0.30 |
+| `/flowsim` | host model | none — plan-vs-code grep | 10k–40k | $0.05–$0.40 |
+| `/e2e-loop` | host model | 1 × Sonnet per fix iteration | 10k–30k / iter | $0.05–$0.30 / iter |
+| `/network-engineer` | host model | 2 × Haiku (Batfish + PSIRT parsing, parallel on Claude) + 1 × Sonnet or Opus (overpermissive-rule judgement) | 20k–80k | $0.15–$1.00 |
+| `/repo-onboarding` | host model (Opus recommended) | 0–1 × Sonnet (pattern detection) | 20k–60k | $0.30–$1.00 |
+| `/brainstorm` (`light`) | host (Opus) | 3 × Haiku lens agents | 20k–50k | $0.10–$0.40 |
+| `/brainstorm` (`deep`) | host (Opus) | 3 × Haiku + 1 × Sonnet stress-test | 30k–70k | $0.20–$0.80 |
+| `/brainstorm` (`ultra`) | host (Opus) | 3 × Haiku + 1 × Sonnet + 2 × Opus | 60k–120k | $1.00–$3.00 |
+| `/brainstorm-deep` | host (Opus) | 4 × Sonnet perspective-frame agents (parallel) by default; `--frames` overrides; structured saturation Q&A stays inline | 30k–80k | $0.20–$0.80 |
+| `/brainstorm-team` | host (Opus) | 6 × Sonnet teammates (4 parallel, 2 sequential) | 60k–150k | $0.60–$2.00 |
+| `/paloalto-ansible --team` | host (Opus) | 3 × Sonnet (default) or 4 × Sonnet (`--with-audit`); Teammate 1 sequential, then remaining teammates parallel | 40k–100k | $0.30–$1.00 |
+| `/dead-code-review` | host (Opus) | 3 × Haiku + 2 × Sonnet + 1 × Opus (parallel) | 80k–200k | $0.80–$2.50 |
+| `/post-deploy-verify` | host model | 2 × Haiku + 1 × Sonnet **per PBI batch** | scales with batch | $0.10–$1.00 / batch |
+| `/sdlc-lite` | host (Opus) | same fan-out as `/sdlc` minus the PR/review tail | 90k–280k | $2.50–$9.00 |
+| `/sdlc` | host (Opus) | 3 × Haiku (sanity) + 1 × Opus (impl) + 2–4 × Haiku/Sonnet (validate) + optional Opus/Sonnet (eval-fix) + Sonnet (e2e) | 100k–300k | $3.00–$10.00 |
+
+**Notes / caveats**:
+
+- The "host model" / "orchestrator" is whichever model is running the
+  Claude Code or Copilot session — the toolkit doesn't pin it. Costs
+  above assume Opus for Plan-mode-bearing and fan-out-heavy skills
+  (`/brainstorm`, `/brainstorm-deep`, `/sdlc`, `/dead-code-review`,
+  `/paloalto-ansible --team`) and whatever the user has selected otherwise.
+- **Orchestrator context dominates real cost.** An Opus orchestrator
+  carrying a 100k-token codebase context across 5 sub-agent dispatches
+  pays the input cost 5× — agent dispatch fees themselves are usually
+  10–20% of the bill. Keeping orchestrator context tight is the highest-
+  leverage cost lever.
+- Sonnet is the right default for parallel sub-agents that do bounded
+  code-search / pattern-match / judgement work. Opus is reserved for
+  cross-module reasoning where one wrong call costs more than the whole
+  fan-out. Haiku is right when the task is "find the regex match" not
+  "judge what to do about it."
+- **`/network-engineer` cost depends on tier choice.** Haiku for
+  parsing-heavy Batfish/PSIRT lookups is right; the question is whether
+  rule-judgement runs on Sonnet (cheap, fine for most rule overlaps)
+  or Opus (when cross-config reasoning matters, e.g. multi-vendor
+  firewall consolidation). Cost row above brackets both.
+- These numbers are calibration, not budgeting. Real runs vary 3–5× with
+  repo size, plan complexity, and how much context the orchestrator has
+  already accumulated when the skill fires.
 
 ## Flows
 
@@ -96,6 +164,7 @@ Tool-specific walkthroughs are in `docs/`:
 
 - **[docs/FLOW-CLAUDE-CODE.md](docs/FLOW-CLAUDE-CODE.md)** — install, daily loop, sub-agent use, `/sdlc` stages, `project.json` config, TASKS.md vs native Tasks.
 - **[docs/FLOW-COPILOT.md](docs/FLOW-COPILOT.md)** — install via `gh skill install` or `setup.sh`, `chat.agentSkillsLocations`, `/skills` menu, overlay semantics, cloud agent specifics, `disable-model-invocation`.
+- **[docs/AUTONOMOUS-DISCOVERY.md](docs/AUTONOMOUS-DISCOVERY.md)** — optional pattern for running discovery skills unattended on a schedule: a watcher daemon driving the headless `claude` CLI against a job queue. Reference only, not shipped by `setup.sh`.
 
 ## Typical workflow
 

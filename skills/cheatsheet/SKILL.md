@@ -9,7 +9,7 @@ description: >
   and `/cheatsheet <name>` for a deep-dive on a specific skill.
 argument-hint: "[skill-name] [--brief] [--tool auto|claude|copilot]"
 metadata:
-  brainstorm-toolkit-applies-to: claude copilot
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Cheatsheet
@@ -68,6 +68,11 @@ installed skill in this repo and prints a categorized one-page guide.
 4. **Output target**: print directly to the conversation. Do not write any
    file. Do not drop a `.next-action` sentinel — `/cheatsheet` is
    informational, never a chain start.
+
+**Note for `/sdlc` and `/sdlc-lite` deep-dives**: their Stage 2 (implement)
+auto-decomposes a large multi-surface plan (≥2 disjoint surfaces, ≥6 steps)
+into focused per-lane subagents plus a converge step; small / single-surface
+plans run a single agent unchanged. No flag — the gate is automatic.
 
 ## When this skill triggers
 

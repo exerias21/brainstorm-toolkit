@@ -7,7 +7,7 @@ description: >
   runs the same stages, but inline and sequentially (no parallel worker spawning).
   Use when you have a finalized plan in plans/ or TASKS.md and want the pipeline
   to drive the delivery.
-argument-hint: "{plan_file} [--dry-run] [--skip-eval] [--skip-flowsim] [--max-fix-loops N]"
+argument-hint: "{plan_file}"
 metadata:
   brainstorm-toolkit-applies-to: copilot
 disable-model-invocation: true
@@ -50,8 +50,6 @@ Report scope:
 **Estimated complexity**: Small / Medium / Large
 ```
 
-If `--dry-run`, stop here.
-
 ## Stage 1.5 — Sanity-check the plan (inline, sequential)
 
 Before committing time to implementation, run three checks yourself — one pass for each:
@@ -81,16 +79,35 @@ Infer the project's patterns from its README, CLAUDE.md, AGENTS.md, and existing
 
 ## Stage 2 — Implement
 
-Execute the plan steps yourself, in order. No worker handoff — you are the implementation layer.
+**Ground in the live code first.** Before writing anything, follow `skills/sdlc/templates/convention-grounding.md`: the existing code is the source of truth (not `AGENTS.md` / `CLAUDE.md` — read those as hints, verify against code, follow the code when they disagree). Find the 2–3 closest existing implementations and reuse their patterns (layout, naming, error handling, the data-access seam, shared utilities) instead of inventing parallel ones. If the plan has a `## Conventions & reuse` block, honor it and re-verify it against current code.
 
-Rules:
-- Follow the implementation steps in order.
-- Use the exact file paths specified.
+Stage 2 is **auto-gated** (no flag). Small / single-surface plans you implement in one pass; large multi-surface plans you implement **lane by lane in order**, then reconcile. You are always the implementation layer — there is no worker handoff — but the gate decides whether to split the work into focused lanes.
+
+### Gate
+
+From the parsed plan, compute:
+- `surfaces_touched` = distinct surfaces the planned files match (frontend: `*.tsx/jsx/vue/svelte/css/scss`; backend: `*.py/go/rb/java/ts` in server dirs; data: `migrations/`, `schema/`, `models/`, `*.sql`; docs: `*.md`, `docs/`).
+- `task_count` = number of implementation steps.
+- `DECOMPOSE_MIN_TASKS` = `6` by default (override via `pipeline.decompose_min_tasks` in `.claude/project.json`).
+
+**Decompose iff** `surfaces_touched >= 2` AND `task_count >= DECOMPOSE_MIN_TASKS` AND the per-surface file sets are disjoint (no file in two surfaces, not all in one). Otherwise implement single-pass. Note the decision and its inputs in your scope report — never decide silently.
+
+### Single-pass (default)
+
+Implement the plan steps yourself, in order:
+- Follow the steps in order; use the exact file paths.
 - Follow patterns from referenced existing files.
-- Do NOT add features beyond what the plan specifies.
-- Do NOT skip steps or take shortcuts.
+- Do NOT add features beyond the plan; do NOT skip steps.
 
-After implementation:
+### Decompose (large multi-surface plans) — sequential lanes
+
+1. **Decompose.** Classify the planned files by surface into disjoint **lanes** (data / backend / frontend / docs). For each lane note its files, its steps, which lanes it depends on, and the **interface contract** — the shared types, endpoint shapes, and seams other lanes must honor. If you cannot make the lanes file-disjoint, fall back to single-pass.
+2. **Implement each lane in dependency order** (default `data → backend → frontend`), one lane fully before the next. While in a lane, edit only that lane's files and code against the recorded contract — do not reach into another lane's files. Implementing downstream lanes against the fixed contract (instead of guessing) is what keeps the pieces consistent.
+3. **Converge.** After all lanes are done, reconcile across them: wire up imports, call sites, and shared types; sweep the changed files for unresolved imports or colliding symbols; fix any seam mismatch where a lane diverged from its contract.
+
+When decomposed, record the lane list and the gate decision in the run state (`stage2_decomposed`, `lanes`) and write `decompose.json` / one `implement-<lane>.json` per lane / `converge.json` instead of a single `implement.json`.
+
+After implementation (either path):
 - Run `git diff --stat` and confirm the expected files were created or modified.
 - If you hit an error or blocker, STOP and report — don't paper over it.
 
@@ -108,7 +125,7 @@ The runner discovers new features by scanning `<eval.features_dir>/*/` — no re
 
 **No testable surface** (pure config change, doc-only) → note and proceed.
 
-If `--skip-eval`, skip to Stage 5.
+If no `eval.runner` is configured in `.claude/project.json`, skip Stages 3 and 4 (no eval surface to drive a fix loop) and proceed to Stage 5.
 
 ## Stage 4 — Eval + sequential fix loop
 
@@ -120,7 +137,7 @@ Run the configured eval runner:
 Parse JSON results.
 - If all pass: proceed to Stage 5.
 - If failures: fix them yourself inline — one failure at a time, or batched by file, whatever is clearer. Re-run the eval after each batch. Count each pass as one fix loop.
-- If you've burned `--max-fix-loops` (default 3) and failures remain: report, pause, suggest `--skip-eval` as an escape hatch or ask the user whether to revise the plan.
+- If you've burned 3 fix-loop iterations and failures remain: report, pause, and ask the user to fix manually then re-run `/sdlc {plan_file}`.
 
 ## Stage 5 — Run /test-check
 
@@ -132,11 +149,11 @@ Invoke `/test-check` to run the project's configured test suite and log audit. I
 
 ## Stage 5.6 — Flow simulation (/flowsim)
 
-Unless `--skip-flowsim` or `--skip-eval` was passed, invoke `/flowsim {plan_file}`. Flowsim reads the plan, traces each claimed flow through the source, and writes a structured report to `plans/flowsim-{feature_slug}.json`.
+Run when a parent plan is available (i.e. you passed a plan file rather than a bare task row). Invoke `/flowsim {plan_file}`. Flowsim reads the plan, traces each claimed flow through the source, and writes a structured report to `plans/flowsim-{feature_slug}.json`.
 
 - No mismatches: record "flowsim: all flows aligned" in the commit trailer and proceed to Stage 6.
 - Mismatches: fix the code at each `file:line` anchor (or, if the plan was wrong, update the plan). Re-run `/flowsim`.
-- Persistent mismatches past max fix loops: stop before PR and report. A human should adjudicate whether the plan or the implementation is wrong.
+- Persistent mismatches past 3 fix-loop iterations: stop before PR and report. A human should adjudicate whether the plan or the implementation is wrong.
 
 ## Stage 6 — Create PR
 

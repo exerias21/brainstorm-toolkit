@@ -15,6 +15,7 @@
       "strict": false,
       "skills": [
         "./skills/brainstorm",
+        "./skills/brainstorm-deep",
         "./skills/brainstorm-team",
         "./skills/cheatsheet",
         "./skills/data-source-pattern",
@@ -24,11 +25,15 @@
         "./skills/flowsim",
         "./skills/gotcha",
         "./skills/logging-conventions",
+        "./skills/network-engineer",
+        "./skills/paloalto-ansible",
+        "./skills/plan-html",
         "./skills/post-deploy-verify",
         "./skills/repo-health",
         "./skills/repo-onboarding",
         "./skills/review-pr",
         "./skills/sdlc",
+        "./skills/sdlc-lite",
         "./skills/status",
         "./skills/task",
         "./skills/test-check"
