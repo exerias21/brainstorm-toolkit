@@ -23,6 +23,7 @@ CHEATSHEET.md
 .claude/project.json
 .claude/pipeline/
 .claude/.next-action
+.claude/scheduled_tasks.lock
 
 # Installed plugin artifacts — produced by setup.sh when this repo is its own
 # install target for dogfooding. The canonical source lives in skills/,
