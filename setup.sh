@@ -163,8 +163,9 @@ for skill_dir in "$PLUGIN_ROOT"/skills/*/; do
 
   if [[ "$want_codex" -eq 1 ]] && applies_to_includes "$skill_dir" codex; then
     # Codex CLI scans $CWD/.agents/skills/<name>/SKILL.md per its Agent Skills spec.
-    # Codex shares Copilot's runtime constraints (no Plan mode, no parallel
-    # sub-agents), so fall through in this order:
+    # Codex has its own plan mode, but not Claude Code's Workflow tool or its
+    # Agent-tool parallel sub-agent fan-out, so the sequential Copilot overlay
+    # is the right fit. Fall through in this order:
     #   1. codex/skills/<name>/   — a Codex-tuned override, if one exists
     #   2. copilot/skills/<name>/ — the sequential Copilot overlay (correct for Codex)
     #   3. skills/<name>/         — the canonical (Claude-shaped) skill as a last resort

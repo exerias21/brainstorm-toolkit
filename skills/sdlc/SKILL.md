@@ -17,38 +17,44 @@ Autonomous feature delivery: plan file in, PR out.
 /brainstorm → plan → /sdlc → sanity-check → implement → eval → fix → validate → flowsim → PR → human review
 ```
 
-## Execution mode — Workflow on Claude Code, prose everywhere else
+## Execution mode — prose by default, deterministic Workflow when ultracode is on
 
-This skill has **two** equivalent expressions of the same pipeline:
+This skill has **two** equivalent expressions of the same pipeline. **The prose
+Stages 1–7 below are the default and the source of truth.** Use the Workflow
+only when explicitly opted in.
 
-1. **Claude Code (preferred): the deterministic Workflow** at
-   `workflows/sdlc-pipeline.workflow.js` (installed to
-   `.claude/skills/sdlc/workflows/sdlc-pipeline.workflow.js`). It encodes the
-   control flow the prose only describes — the Stage 2 decompose gate arithmetic,
-   the *single* 3-iteration fix budget shared across Stages 4/5/5.5/5.6,
-   dependency-ordered lane dispatch, and the parallel barriers — as code, so they
-   can't be miscounted, silently serialized, or mis-gated. Invoke it with the
-   **Workflow** tool:
+**Use the deterministic Workflow IFF ALL of these hold:**
+- you are on **Claude Code with the Workflow tool available**, AND
+- **ultracode is explicitly enabled** — the user typed `ultracode`, the session
+  has ultracode on, or the user asked for the Workflow / multi-agent
+  orchestration by name, AND
+- `pipeline.skip_workflow` is **not** `true` in `.claude/project.json`.
 
-   ```
-   Workflow({
-     scriptPath: ".claude/skills/sdlc/workflows/sdlc-pipeline.workflow.js",
-     args: { mode: "sdlc", plan_file: "<plan path>" }
-   })
-   ```
+When all three hold, invoke:
 
-   The script orchestrates; each stage's **agent** still does the work and writes
-   the state envelope (the script sandbox has no filesystem access). It is
-   resumable via `resumeFromRunId`. Skip it (and use the prose path below) if the
-   Workflow tool is unavailable, or if `pipeline.skip_workflow: true` in
-   `.claude/project.json`.
+```
+Workflow({
+  scriptPath: ".claude/skills/sdlc/workflows/sdlc-pipeline.workflow.js",
+  args: { mode: "sdlc", plan_file: "<plan path>" }
+})
+```
 
-2. **Copilot / Codex (and Claude fallback): the prose stages below.** Those
-   runtimes have no Workflow tool, no Plan mode, and no parallel sub-agents, so
-   they follow Stages 1–7 sequentially. **The prose stages are the source of
-   truth**; the Workflow mirrors them. If you change a stage's contract, change
-   the prose first, then update the Workflow to match (and re-run
-   `node --check`-style validation on the script).
+The Workflow (`workflows/sdlc-pipeline.workflow.js`) encodes the control flow the
+prose only describes — the Stage 2 decompose gate arithmetic, the *single*
+3-iteration fix budget shared across Stages 4/5/5.5/5.6, dependency-ordered lane
+dispatch, and the parallel barriers — as code, so they can't be miscounted,
+silently serialized, or mis-gated. The script orchestrates; each stage's **agent**
+does the work and writes the state envelope (the script sandbox has no filesystem
+access). Resumable via `resumeFromRunId`.
+
+**Otherwise — the default — follow the prose Stages 1–7 below.** That default
+path covers: any Claude run where ultracode wasn't requested, Copilot and Codex
+(no Workflow tool — Codex has its own plan mode, but not this JS orchestration
+primitive), older Claude Code without the tool, and `skip_workflow: true`. **The
+prose stages are the source of truth; the Workflow mirrors them.** If you change
+a stage's contract, change the prose first, then bring the Workflow + overlays
+into line (and re-run `node --check`-style validation on the script) — see
+`CLAUDE.md` → "Workflow-backed skills … the three-way sync contract".
 
 ## Arguments
 
