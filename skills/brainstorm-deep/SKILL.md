@@ -34,6 +34,53 @@ The differentiator vs `/brainstorm` is **structured saturation**: questions are 
 - User asks for more rigor than `/brainstorm` provided on a previous run
 - A previous `/brainstorm` produced a plan the user is uncertain about — this skill can re-engage on the same topic with deeper clarification
 
+## Execution mode — prose by default; Pass 3 fan-out via Workflow when ultracode is on
+
+This skill is a **hybrid**, so unlike `/sdlc` only *part* of it can ever run as a
+Workflow. The interactive passes (Pass 1 understand, Pass 2 saturate-by-questioning),
+the variant **selection**, and the expectation-contract pre-write gate are
+conversational — they **always run in the main thread** and can never be scripted
+(a Workflow orchestrates autonomous agents and cannot pause to converse).
+
+**The prose passes below are the default and the source of truth.** The one
+autonomous slice — **Pass 3's parallel perspective-frame fan-out + variant
+drafting** — is delegated to a deterministic Workflow **only when explicitly opted
+in** (same flag and gate as `/sdlc`):
+
+**Use the Workflow for Pass 3 IFF ALL of:** Claude Code with the Workflow tool
+available, **ultracode explicitly enabled** (keyword, session flag, or asked-for by
+name), and `pipeline.skip_workflow` not `true` in `.claude/project.json`.
+
+When that holds, run Passes 1–2 interactively as usual, then at Pass 3 invoke:
+
+```
+Workflow({
+  scriptPath: ".claude/skills/brainstorm-deep/workflows/brainstorm-deep.workflow.js",
+  args: {
+    framing:        "<agreed 'what we're solving' from Pass 1>",
+    clarifications: "<the Q-A captured in Pass 2>",
+    conventions:    "<the path:line reuse recon from Pass 1>",
+    frames:         ["inversion","pre-mortem","steelman","adjacent-reuse"],  // or --frames
+    ambition:       null   // or "conservative"|"default"|"ambitious" for --ambition
+  }
+})
+```
+
+It runs one Sonnet agent per frame **in a guaranteed parallel barrier** (no
+silently-serialized or dropped frames), validates each frame's output shape, drafts
+the variants, and returns `{frames, conflicts, variants}`. **You then continue in
+the main thread**: surface any `conflicts` for the user, present the `variants` for
+selection, assemble the plan per the Output template, run the four-section
+expectation-contract gate (Step 5), and Write.
+
+**Otherwise — the default — run Pass 3 as prose** (the in-thread single-message
+parallel Agent dispatch in Pass 3 below). That covers any non-ultracode Claude run,
+Copilot/Codex (no Workflow tool — Codex has its own plan mode, but not this JS
+orchestration primitive, and uses the sequential overlay), older Claude Code, and
+`skip_workflow: true`. **The prose is the source of truth; the Workflow mirrors
+it** — change the prose first, then the Workflow (see `CLAUDE.md` → "Workflow-backed
+skills … the three-way sync contract").
+
 ## How it works
 
 ### Step 0: Enter Plan mode

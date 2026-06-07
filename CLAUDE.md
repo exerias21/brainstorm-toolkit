@@ -56,7 +56,11 @@ README.md               # User-facing docs
 
 ## Workflow-backed skills (Claude-only ultracode layer) — the three-way sync contract
 
-Some skills (currently `/sdlc` + `/sdlc-lite`, via `skills/sdlc/workflows/sdlc-pipeline.workflow.js`) ship a **deterministic Workflow-tool implementation** alongside their prose stages. The Workflow tool is a **Claude Code-specific primitive** — Codex and Copilot do not have it (Codex *does* have its own plan mode, but not this JS orchestration tool), so they run the prose path. This means a Workflow-backed cross-tool skill has **up to three expressions of the same logic**:
+Some skills ship a **deterministic Workflow-tool implementation** alongside their prose stages:
+- `/sdlc` + `/sdlc-lite` — `skills/sdlc/workflows/sdlc-pipeline.workflow.js` (one parameterized script, full pipeline).
+- `/brainstorm-deep` — `skills/brainstorm-deep/workflows/brainstorm-deep.workflow.js` (Pass 3's frame fan-out only — a **hybrid**; its interactive passes can never be a Workflow).
+
+The Workflow tool is a **Claude Code-specific primitive** — Codex and Copilot do not have it (Codex *does* have its own plan mode, but not this JS orchestration tool), so they run the prose path. It is used **only when ultracode is explicitly enabled** (keyword / session flag / asked-for) and `pipeline.skip_workflow` is not `true`; otherwise the prose path runs even on Claude. This means a Workflow-backed cross-tool skill has **up to three expressions of the same logic**:
 
 1. The **canonical prose** in `skills/<name>/SKILL.md` — the **source of truth**.
 2. The **Workflow script** (`skills/<name>/workflows/*.workflow.js`) — a Claude-only enhancement that *mirrors* the prose.
