@@ -20,11 +20,18 @@ the frontend gate.**
 
 | Surface | Default globs | project.json key |
 |---|---|---|
-| frontend | `**/*.{tsx,jsx,vue,svelte,css,scss}` | `discipline.frontend_globs` |
-| backend  | `**/*.{py,go,rb,java,ts}` (server dirs) | `discipline.backend_globs` |
+| frontend | `**/*.{tsx,jsx,vue,svelte,css,scss}`, `frontend/**/*.ts` | `discipline.frontend_globs` |
+| backend  | `**/*.{py,go,rb,java,ts}` (`.ts` is dual-surface; see note below) | `discipline.backend_globs` |
 | data     | `**/migrations/**`, `**/schema/**`, `**/models/**`, `*.sql` | `discipline.data_globs` |
 | docs     | `**/*.md`, `docs/**` | `discipline.docs_globs` |
 | **deploy-delta** | `requirements.txt`, `pyproject.toml`, `poetry.lock`, `package.json`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `go.mod`, `Cargo.toml`, `Gemfile.lock`, `Dockerfile`, `**/Dockerfile` | `discipline.deploy_delta_globs` |
+
+> **`.ts` is dual-surface.** `.ts` matches the backend glob everywhere; it ALSO
+> matches frontend under a `frontend/` root, so `frontend/src/lib/util.ts` counts
+> as BOTH surfaces and trips the frontend e2e/visual + `ui`-validator gate (a
+> `.ts`-only frontend change must not silently skip those). A frontend-only TS
+> repo that keeps sources at the repo root (no `frontend/` dir) should add
+> `src/**/*.ts` (or its layout) to `discipline.frontend_globs`.
 
 ## Gate semantics
 

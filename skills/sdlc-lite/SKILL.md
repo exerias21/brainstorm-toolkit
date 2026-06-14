@@ -29,6 +29,32 @@ commits, pushes, and opens a PR; **`/sdlc-lite` does no git writes at all** — 
 hands you a validated, ready-to-commit working tree. Only `/sdlc` touches git
 history.
 
+## Execution mode — prose by default, same Workflow as `/sdlc` when ultracode is on
+
+**The prose stages below are the default and the source of truth.** Use the
+deterministic Workflow only when explicitly opted in — and it's the *same* script
+`/sdlc` uses (`skills/sdlc/workflows/sdlc-pipeline.workflow.js`), parameterized to
+hand off instead of opening a PR. The two skills diverge in exactly one place
+(Stage 6) — one `args.mode` branch — so it's zero template *and* zero workflow
+duplication.
+
+**Use the Workflow IFF ALL of:** Claude Code with the Workflow tool available,
+**ultracode explicitly enabled** (keyword, session flag, or asked-for by name),
+and `pipeline.skip_workflow` not `true`. Then invoke:
+
+```
+Workflow({
+  scriptPath: ".claude/skills/sdlc/workflows/sdlc-pipeline.workflow.js",
+  args: { mode: "sdlc-lite", input: "<plan-file | task-id | task-range | description>" }
+})
+```
+
+It does **no git writes** in `sdlc-lite` mode — runs the full pipeline, stops at
+the edge of git, leaves a validated working tree + a `handoff.json` sidecar.
+**Otherwise — the default — follow the prose stages below** (any non-ultracode
+Claude run, Copilot/Codex, no tool, or `skip_workflow: true`). The prose is the
+source of truth the Workflow mirrors.
+
 ## Prerequisites
 
 - You are on the branch the changes should land on (typically an open PR's
