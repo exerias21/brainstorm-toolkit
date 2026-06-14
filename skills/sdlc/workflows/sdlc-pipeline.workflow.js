@@ -304,7 +304,7 @@ const slug = parse.feature_slug
 const cfg = parse.config || {}
 const discipline = cfg.discipline || {}
 const skillRepo = !!parse.skill_repo_mode
-const minTasks = cfg.decompose_min_tasks || 6
+const minTasks = cfg.decompose_min_tasks ?? 6
 const fixBudget = makeBudget(3) // shared across Stages 4/5/5.5/5.6
 
 // ----- Stage 1.5 — Sanity check: 3 Haiku agents in parallel (true barrier) ---
@@ -365,6 +365,7 @@ const gate = computeGate(parse.files_to_change, parse.implementation_step_count,
 log(`Stage 2 gate: surfaces=${gate.surface_count} [${gate.surfaces_touched.join(',')}], tasks=${gate.task_count}/${minTasks}, disjoint=${gate.files_disjoint} -> ${gate.decision}`)
 
 let implementResults = []
+let convergeResult = null
 if (gate.decision === 'single-agent') {
   // Default path — one Opus agent, unchanged behavior.
   const impl = await agent(
@@ -452,7 +453,7 @@ Return the structured object (set lane="${lane.lane}").`,
     }
     // 2c — converge (orchestrator step as an agent: rebuild global consistency).
     const mergedFiles = [...new Set(implementResults.flatMap((r) => (r.files_changed || []).map((f) => f.path)))]
-    await agent(
+    convergeResult = await agent(
       `You are Stage 2c (converge) for "${parse.feature_name}". All lanes implemented into one
 shared tree (sequential — no conflicts). Rebuild global consistency:
 1. Resolve cross-lane integration: wire imports, call sites, shared types so lanes connect.
@@ -469,7 +470,10 @@ ${envelopeNote(slug, 'converge', 'Write data.merged_files, data.integration_fixe
   }
 }
 
-const changedFiles = [...new Set(implementResults.flatMap((r) => (r.files_changed || []).map((f) => f.path)))]
+const changedFiles = [...new Set([
+  ...implementResults.flatMap((r) => (r.files_changed || []).map((f) => f.path)),
+  ...(convergeResult?.files_changed || []).map((f) => f.path),
+])]
 const touched = touchedSurfaces(changedFiles, discipline)
 
 // ----- Stage 3 — Generate evals --------------------------------------------

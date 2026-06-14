@@ -60,7 +60,7 @@
   },
 
   "pipeline": {
-    "_comment": "Optional. Knobs read by /sdlc. All keys default to false/unset.",
+    "_comment": "Optional. Knobs read by /sdlc. Most keys default to false/unset; decompose_min_tasks defaults to 6 when unset.",
     "skip_secret_scan": false,
     "skip_review": false,
     "_decompose_min_tasks_comment": "Optional. Stage 2 fans out into per-surface lanes only when surfaces>=2 AND task_count>=this AND the file sets are disjoint. Default 6.",
