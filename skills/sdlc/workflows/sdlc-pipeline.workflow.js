@@ -1,6 +1,6 @@
 export const meta = {
   name: 'sdlc-pipeline',
-  description: 'Claude-only deterministic implementation of the /sdlc and /sdlc-lite plan-to-PR pipeline (gate + decompose/dispatch/converge + shared fix-budget loop); mirrors the prose stages in skills/sdlc/SKILL.md, which remain the cross-tool source of truth',
+  description: 'Claude-only deterministic implementation of the /sdlc and /sdlc-lite plan-to-PR pipeline (gate + decompose/dispatch/converge + shared fix-budget loop); mirrors the prose stages in .claude/skills/sdlc/SKILL.md, which remain the cross-tool source of truth',
   phases: [
     { title: 'Setup', detail: 'bootstrap: read project.json + plan, init state envelope, parse plan' },
     { title: 'Sanity', detail: '3 Haiku pre-flight agents in parallel' },
@@ -39,7 +39,7 @@ function envelopeNote(slug, stage, extra = '') {
 STATE ENVELOPE (best-effort; never fail the stage on a write error — log
 "[state-envelope] write failed: <err>; continuing" to stderr and proceed):
 - Update ${envelopePath(slug)}/run.json: set stage="${stage}", refresh updated_at.
-- Write ${envelopePath(slug)}/stage-outputs/${stage}.json per skills/sdlc/templates/state-schema.md
+- Write ${envelopePath(slug)}/stage-outputs/${stage}.json per .claude/skills/sdlc/templates/state-schema.md
   (schema_version 1, stage, status, started_at, ended_at, summary, data{}).
 - On success append "${stage}" to run.json.stages_completed (once).${extra ? '\n- ' + extra : ''}`
 }
@@ -48,12 +48,44 @@ STATE ENVELOPE (best-effort; never fail the stage on a write error — log
 // SURFACE GATE — pure JS over the parse agent's file list (no FS needed).
 // Mirrors skills/sdlc/templates/changed-files-gate.md default globs.
 // =====================================================================
+
+// Convert a minimatch-style glob to a RegExp. Patterns without a `/` are
+// treated as basename matchers (match anywhere in the path).
+function matchGlob(filePath, pattern) {
+  const p = filePath.toLowerCase()
+  const pat = pattern.toLowerCase()
+  let src = ''
+  let i = 0
+  while (i < pat.length) {
+    const c = pat[i]
+    if (c === '*' && pat[i + 1] === '*') {
+      if (pat[i + 2] === '/') {
+        src += '(?:[^/]+/)*' // **/ = any number of leading path segments
+        i += 3
+      } else {
+        src += '.*' // ** at end = anything
+        i += 2
+      }
+    } else if (c === '*') {
+      src += '[^/]*'
+      i++
+    } else if (c === '?') {
+      src += '[^/]'
+      i++
+    } else if (/[.+^${}()|[\]\\]/.test(c)) {
+      src += '\\' + c
+      i++
+    } else {
+      src += c
+      i++
+    }
+  }
+  // Basename-only patterns (no `/`) can match anywhere in the path.
+  if (!pat.includes('/')) return new RegExp(`(^|/)${src}$`).test(p)
+  return new RegExp(`^${src}$`).test(p)
+}
+
 function surfacesFor(path, discipline = {}) {
-  // NOTE: this v1 uses the DEFAULT globs only. Per-repo `discipline.*` overrides
-  // (changed-files-gate.md) are NOT yet applied here — the param is reserved so
-  // a caller can pass them once a glob engine is added. Repos without overrides
-  // (the common case) are fully faithful; a repo that customizes `discipline`
-  // gets default surface classification under the Workflow path until then.
   const p = path.toLowerCase()
   const ext = (p.match(/\.([a-z0-9]+)$/) || [])[1] || ''
   const base = p.split('/').pop() || ''
@@ -67,17 +99,43 @@ function surfacesFor(path, discipline = {}) {
     'cargo.toml', 'gemfile.lock',
   ]
 
-  if (FRONTEND_EXT.includes(ext)) hits.add('frontend')
-  if (BACKEND_EXT.includes(ext)) hits.add('backend')
-  // `.ts` is backend by the server glob, but a `.ts` under a `frontend/` root is
-  // also a frontend file — mirror changed-files-gate.md so a `.ts`-only frontend
-  // change still trips the e2e/visual + `ui`-validator gate (else they skip).
-  if (ext === 'ts' && /(^|\/)frontend\//.test(p)) hits.add('frontend')
+  // For each surface: if discipline provides override globs, use glob matching;
+  // otherwise apply the default extension/path-based heuristics.
+  if (discipline.frontend_globs) {
+    if (discipline.frontend_globs.some((g) => matchGlob(p, g))) hits.add('frontend')
+  } else {
+    if (FRONTEND_EXT.includes(ext)) hits.add('frontend')
+    // `.ts` is backend by the server glob, but a `.ts` under a `frontend/` root is
+    // also a frontend file — mirror changed-files-gate.md so a `.ts`-only frontend
+    // change still trips the e2e/visual + `ui`-validator gate (else they skip).
+    if (ext === 'ts' && /(^|\/)frontend\//.test(p)) hits.add('frontend')
+  }
+
+  if (discipline.backend_globs) {
+    if (discipline.backend_globs.some((g) => matchGlob(p, g))) hits.add('backend')
+  } else {
+    if (BACKEND_EXT.includes(ext)) hits.add('backend')
+  }
+
   // `**/<dir>/**` globs: `**/` matches zero dirs, so anchor with (^|/) to catch
   // a top-level `models/order.py` too (not just `app/models/order.py`).
-  if (/(^|\/)migrations\//.test(p) || /(^|\/)schema\//.test(p) || /(^|\/)models\//.test(p) || ext === 'sql') hits.add('data')
-  if (ext === 'md' || /(^|\/)docs\//.test(p)) hits.add('docs')
-  if (DEPLOY_FILES.includes(base) || base === 'dockerfile' || base.endsWith('dockerfile')) hits.add('deploy-delta')
+  if (discipline.data_globs) {
+    if (discipline.data_globs.some((g) => matchGlob(p, g))) hits.add('data')
+  } else {
+    if (/(^|\/)migrations\//.test(p) || /(^|\/)schema\//.test(p) || /(^|\/)models\//.test(p) || ext === 'sql') hits.add('data')
+  }
+
+  if (discipline.docs_globs) {
+    if (discipline.docs_globs.some((g) => matchGlob(p, g))) hits.add('docs')
+  } else {
+    if (ext === 'md' || /(^|\/)docs\//.test(p)) hits.add('docs')
+  }
+
+  if (discipline.deploy_delta_globs) {
+    if (discipline.deploy_delta_globs.some((g) => matchGlob(p, g))) hits.add('deploy-delta')
+  } else {
+    if (DEPLOY_FILES.includes(base) || base === 'dockerfile' || base.endsWith('dockerfile')) hits.add('deploy-delta')
+  }
   return [...hits]
 }
 
@@ -268,8 +326,9 @@ INPUT (${MODE === 'sdlc-lite' ? 'plan file path, task id, task range, or ad-hoc 
 
 DO, in order:
 1. Read .claude/project.json (every key optional). Resolve into config{}:
-   main_branch, eval.runner, test.unit, test.frontend, test.e2e, logs.command,
-   pipeline.decompose_min_tasks, discipline{} (surface-glob overrides). Missing -> null.
+   main_branch, eval_runner (eval.runner), test_unit (test.unit), test_frontend (test.frontend),
+   test_e2e (test.e2e), logs_command (logs.command), decompose_min_tasks (pipeline.decompose_min_tasks),
+   discipline{} (surface-glob overrides). Missing -> null.
 2. Detect skill_repo_mode = does .claude-plugin/marketplace.json exist at repo root?
    VENDORED-SKILL GUARD: if it does NOT exist but the plan targets
    .claude/skills/**, .github/skills/**, or .agents/skills/** -> STOP and report
@@ -360,7 +419,7 @@ if (critical.length > 0) {
 // ----- Stage 2 — Implement (auto-gated) --------------------------------------
 phase('Implement')
 
-const grounding = `GROUND IN LIVE CODE FIRST (skills/sdlc/templates/convention-grounding.md):
+const grounding = `GROUND IN LIVE CODE FIRST (.claude/skills/sdlc/templates/convention-grounding.md):
 existing code is the source of truth (AGENTS.md/CLAUDE.md are stale-able hints);
 reuse the 2-3 closest existing implementations' patterns, don't invent parallel
 ones; if the plan has a "## Conventions & reuse" block, honor AND re-verify it.`
@@ -523,7 +582,7 @@ ${envelopeNote(slug, 'eval-fix', `Write data.fix_loops_run, data.max_fix_loops=3
 // Stage 5 — full validation (test-check). Gated by the changed-files surfaces.
 const validateGate = () => agent(
   `You are Stage 5 (full validation) for "${parse.feature_name}". ${skillRepo
-    ? 'SKILL-REPO MODE: run skills/sdlc/templates/stage-5-skill-repo.md HARD checks (validate_skills.py, marketplace registration, template-reference resolve, setup.sh dry install) and SOFT checks; green iff all HARD pass.'
+    ? 'SKILL-REPO MODE: run .claude/skills/sdlc/templates/stage-5-skill-repo.md HARD checks (validate_skills.py, marketplace registration, template-reference resolve, setup.sh dry install) and SOFT checks; green iff all HARD pass.'
     : `Run the /test-check procedure driven by the diff's surfaces (touched: ${[...touched].join(',') || 'none'}):
 - log audit ${cfg.logs_command ? `(${cfg.logs_command})` : '(skip — no logs.command)'}
 - frontend tests ${cfg.test_frontend && touched.has('frontend') ? `(${cfg.test_frontend})` : '(skip)'}
@@ -616,7 +675,7 @@ phase('Deliver')
 
 // Secret scan (warn-only, never blocks) runs in both modes.
 const secretScanNote = `Secret-scan the changed files (gitleaks if available, else the regex
-fallback in skills/sdlc/SKILL.md Stage 6). WARN-ONLY: surface findings (file:line), HIGH gets
+fallback in .claude/skills/sdlc/SKILL.md Stage 6). WARN-ONLY: surface findings (file:line), HIGH gets
 a "⚠ HIGH:" prefix + a GitHub Push-Protection note, but NEVER block. ${envelopeNote(slug, 'secret-scan', 'Write data.tool, data.files_scanned[], data.high_findings, data.medium_findings. Status always "pass".')}`
 
 const rebuildNote = touched.has('deploy-delta')

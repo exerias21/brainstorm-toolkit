@@ -21,7 +21,7 @@ the frontend gate.**
 | Surface | Default globs | project.json key |
 |---|---|---|
 | frontend | `**/*.{tsx,jsx,vue,svelte,css,scss}`, `frontend/**/*.ts` | `discipline.frontend_globs` |
-| backend  | `**/*.{py,go,rb,java,ts}` (server dirs) | `discipline.backend_globs` |
+| backend  | `**/*.{py,go,rb,java,ts}` (`.ts` is dual-surface; see note below) | `discipline.backend_globs` |
 | data     | `**/migrations/**`, `**/schema/**`, `**/models/**`, `*.sql` | `discipline.data_globs` |
 | docs     | `**/*.md`, `docs/**` | `discipline.docs_globs` |
 | **deploy-delta** | `requirements.txt`, `pyproject.toml`, `poetry.lock`, `package.json`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `go.mod`, `Cargo.toml`, `Gemfile.lock`, `Dockerfile`, `**/Dockerfile` | `discipline.deploy_delta_globs` |
