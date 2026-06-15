@@ -12,7 +12,13 @@
       "name": "brainstorm-toolkit",
       "description": "Skills that work across Claude Code and GitHub Copilot, unified by a shared AGENTS.md + TASKS.md contract. Includes ideation (/brainstorm), autonomous delivery (/sdlc), task execution (/task), onboarding (/repo-onboarding), and more.",
       "source": "./",
-      "strict": false,
+      "strict": true,
+      "agents": [
+        "./agents/e2e-test-runner.md",
+        "./agents/network-sec.md",
+        "./agents/sdlc-pipeline.md",
+        "./agents/ux-plan-validator.md"
+      ],
       "skills": [
         "./skills/brainstorm",
         "./skills/brainstorm-deep",
