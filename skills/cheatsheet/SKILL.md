@@ -23,16 +23,20 @@ installed skill in this repo and prints a categorized one-page guide.
   body (deep-dive mode). If omitted, list everything.
 - `--brief`: one-line-per-skill mode. Skip the descriptions and chains
   footer. Good for a teammate who already knows the toolkit.
-- `--tool auto|claude|copilot`: which install root to read.
-  - `auto` (default): probe `.claude/skills/` first, then `.github/skills/`.
-  - `claude`: force `.claude/skills/`.
-  - `copilot`: force `.github/skills/`.
+- `--tool auto|claude|copilot`: which install root to read. `auto` (default)
+  probes in order (see Procedure step 1); `claude`/`copilot` force one root.
 
 ## Procedure
 
-1. **Resolve install root** per `--tool`. If the resolved root doesn't exist,
-   error out with: "no skills installed. Run `bash setup.sh --target .` from
-   the brainstorm-toolkit plugin root."
+1. **Resolve install root** per `--tool`:
+   - `claude` → `.claude/skills/`; `copilot` → `.github/skills/`.
+   - `auto` (default) → the first that exists: `.claude/skills/`,
+     `.github/skills/`, then the plugin's own skills root — used for a
+     *plugin* install, where nothing is file-copied into the repo. Derive it
+     from this skill's own base directory (`<base>/..`, the parent of
+     `<base>/cheatsheet`), equal to `${CLAUDE_PLUGIN_ROOT}/skills/` when set.
+   - If none exist, error: "no skills installed — run `bash setup.sh
+     --target .`, or install the brainstorm-toolkit plugin."
 
 2. **Single-skill mode** (`[skill-name]` given):
    - Glob `<root>/<skill-name>/SKILL.md`. If absent, fall back to a
