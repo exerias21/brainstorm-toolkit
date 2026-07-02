@@ -35,7 +35,8 @@ When all three hold, invoke:
 ```
 Workflow({
   scriptPath: ".claude/skills/sdlc/workflows/sdlc-pipeline.workflow.js",
-  args: { mode: "sdlc", plan_file: "<plan path>" }
+  args: { mode: "sdlc", plan_file: "<plan path>",
+          model_cap: "<resolved cap: --model flag > project.json models.cap > null>" }
 })
 ```
 
@@ -202,9 +203,22 @@ Read the plan file and extract structured information:
 
 ---
 
+## Model cap (all sub-agent dispatches)
+
+Every agent this pipeline dispatches — the sanity Haikus, the Opus implementer,
+the decompose lanes, the fix agent, the validators — honors the **model-tier
+cap**. Resolve each dispatch's tier per
+[`templates/model-cap.md`](templates/model-cap.md): `--model <tier>` flag >
+`project.json` `models.cap` > the tier named at the site. **Before each
+dispatch, print `model: <tier> (cap: <cap|none>)`** and dispatch at that tier.
+**The default is Sonnet-first**: with no `--model`/`models.cap` set the fan-out
+resolves to Sonnet (Opus sites → Sonnet, Haiku stays Haiku); `--model opus` opts
+a run up to Opus. Emit the session-model nudge once when a cap is active. On the Workflow path the same
+resolution is enforced by `capModel()` at the `agent()` seam.
+
 ## Stage 1.5: Plan Sanity Check
 
-Before spending Opus tokens on implementation, verify the plan is actually
+Before spending implementation tokens, verify the plan is actually
 correct. Launch 3 Haiku agents **in parallel** (single message) to check
 different dimensions. This is cheap insurance — catches wrong file paths,
 missing steps, and known gotchas before they become bugs.
@@ -274,7 +288,8 @@ On Stage 2a entry set `run.json.data.stage2_decomposed` (bool) and
 
 When the gate says **don't decompose**, run Stage 2 exactly as before: read the
 prompt from `templates/stage-2-implement.md`, substitute `{feature_name}` and
-`{plan_content}`, dispatch one Opus agent. After it completes: review the git
+`{plan_content}`, dispatch one implement agent — **Sonnet by default** (Opus
+only on `--model opus` opt-up); see **Model cap** above. After it completes: review the git
 diff summary, verify expected files, and **STOP** + report if it reports
 blockers. Write `stage-outputs/implement.json` with `data.agent_model`,
 `data.files_changed[]` (path + added/removed from `git diff --numstat`),
@@ -390,7 +405,8 @@ Proceed to Stage 5.
 ### If failures:
 1. Parse the structured JSON results
 2. For each failure, extract: test name, expected vs actual, file path, function
-3. Spawn a fix agent (Opus for complex fixes, Sonnet for targeted fixes) using
+3. Spawn a fix agent — **Sonnet by default** (Opus only on `--model opus`
+   opt-up), per the **Model cap** section — using
    the prompt at `templates/stage-4-fix-eval.md`. Substitute `{feature_name}`,
    `{results_json}`, and `{file_paths}` before dispatch.
 4. After fix agent completes, re-run evals
@@ -690,12 +706,13 @@ Create a pull request for human review.
    tracking needed). Skip this step entirely if `pipeline.skip_review: true`
    in `.claude/project.json`.
 
-7. **Capture gotchas (knowledge sink)**: if this run hit a non-obvious trap —
-   a surprising dependency, an ordering constraint, a footgun the next person
-   would also hit — prompt to append it to `GOTCHAS.md` via `/gotcha`. The
-   **durable project file is the sink, not model memory**: a lesson that only
-   lives in this session's memory didn't really get learned. One nudge, not a
-   gate. Skip if nothing non-obvious came up.
+7. **Capture at loop-exit (knowledge sink)**: run the shared protocol in
+   `skills/gotcha/SKILL.md`. Auto-draft a gotcha **only** on an objective
+   trigger — a fix-loop that **failed-then-recovered** (eval/test/flowsim), or
+   the user voicing surprise — route it through gotcha's dedup, and one-tap
+   confirm. The **durable project file is the sink, not model memory**. A clean
+   run stays silent (no vibe-gating "was anything non-obvious?"). `/sdlc` commits
+   the capture with the run; it does not use the `.next-action` seam.
 
 **State write**: write `stage-outputs/pr-create.json` with `data.branch`,
 `data.pr_url`, `data.pr_number`, `data.commit_sha`. On success, set

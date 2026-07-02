@@ -24,7 +24,7 @@ After install you have:
 - `AGENTS.md` + `CLAUDE.md` at repo root (Codex reads `AGENTS.md`).
 - `TASKS.md` at repo root.
 - `scripts/eval-runner.py`, `scripts/check_docker_logs.py` — invoked by skills via terminal.
-- `.claude/project.json.example` (rename to `.claude/project.json`; Codex skills read it too).
+- `.claude/project.json.example` (rename to `.claude/project.json`; Codex skills read it too). Note: the `models.cap` model-tier ceiling is **advisory** on Codex — stages run inline in the session model, so set your session model to the cap tier for savings (see `skills/sdlc/templates/model-cap.md`).
 
 ## Where skills live
 

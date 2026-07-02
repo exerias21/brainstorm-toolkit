@@ -103,6 +103,7 @@ Create `.claude/project.json` from `.claude/project.json.example`. Every key is 
 - `gotchas_file` → used by `/gotcha`, `/sdlc` sanity check
 - `main_branch` → used by `/sdlc` for PR base
 - `modules` → used by `/brainstorm` cross-module check
+- `models.cap` → **ceiling** on sub-agent model tier for `/sdlc`, `/sdlc-lite`, `/brainstorm*` (e.g. `{"cap":"sonnet"}` drops Opus dispatches to Sonnet, leaves Haiku/Sonnet alone). Per-run override: `--model <tier>` (flag > config > default). Governs sub-agents, not the session orchestrator. See `skills/sdlc/templates/model-cap.md`.
 
 ## TASKS.md vs native Tasks
 

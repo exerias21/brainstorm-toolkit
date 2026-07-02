@@ -45,7 +45,8 @@ and `pipeline.skip_workflow` not `true`. Then invoke:
 ```
 Workflow({
   scriptPath: ".claude/skills/sdlc/workflows/sdlc-pipeline.workflow.js",
-  args: { mode: "sdlc-lite", input: "<plan-file | task-id | task-range | description>" }
+  args: { mode: "sdlc-lite", input: "<plan-file | task-id | task-range | description>",
+          model_cap: "<resolved cap: --model flag > project.json models.cap > null>" }
 })
 ```
 
@@ -136,6 +137,9 @@ per-surface file sets are disjoint.
 - **Single-agent (default):** reuse `skills/sdlc/templates/stage-2-implement.md`,
   substitute `{feature_name}` and `{plan_content}`; Opus agent on Claude, inline
   on Copilot/Codex. Writes `implement.json`, no decompose/converge sidecars.
+  **Model cap applies** (inherited from `/sdlc` Stage 2): the implement/fix/lane
+  tiers are lowered per `skills/sdlc/templates/model-cap.md` — `--model <tier>`
+  flag > `project.json models.cap` > default.
 - **Decompose (large multi-surface plan):** run 2a/2b/2c per `/sdlc` Stage 2 —
   `skills/sdlc/templates/stage-2a-decompose.md` (Sonnet decomposer →
   `decompose.json`), `skills/sdlc/templates/stage-2b-dispatch.md` (one subagent
@@ -208,9 +212,15 @@ themselves. (Want the commit + PR done for you? That's `/sdlc`.)
    or one bundle). Sanity-check (1.5) ran once up front; plan-validate and
    flowsim ran once at the end over the shared parent plan.
 
-3. **Capture gotchas (knowledge sink)**: if the run hit a non-obvious trap,
-   prompt to append it to `GOTCHAS.md` via `/gotcha` — the durable project
-   file is the sink, not model memory. One nudge, skip if nothing came up.
+3. **Capture at loop-exit + seam** — run the shared protocol in
+   `skills/gotcha/SKILL.md`. Auto-draft a gotcha **only** on an objective
+   trigger — a test/eval/flowsim fix-loop that **failed-then-recovered**, or the
+   user voicing surprise — route it through gotcha's dedup, and one-tap confirm.
+   A clean run stays silent (no vibe-gating). If capture is **declined/deferred**,
+   drop the seam sentinel instead: `echo "/gotcha <drafted text>" >
+   .claude/.next-action` (only if absent — the outermost run wins; never a bare
+   `/gotcha`). On Codex (no Stop hook) also print `Next: /gotcha …` inline so the
+   seam degrades gracefully.
 
 4. **Close out**: mark each resolved `TASKS.md` row `[x]`, move to `Done`, set
    `status: completed` in the task file(s) — the work is implemented and

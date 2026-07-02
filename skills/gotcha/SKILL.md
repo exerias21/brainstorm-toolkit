@@ -58,6 +58,25 @@ listed gotchas apply to the code you're about to write. If a gotcha applies, fol
 prescribed fix. You don't need to mention the gotcha to the user unless it materially
 changes your approach from what they might expect.
 
+## Capture at loop-exit (model-invoked) — the shared protocol
+
+The delivery skills (`/task`, `/sdlc-lite`, `/sdlc`) run this at the end of a
+run. Goal: turn a hard-won trap into a durable entry **without capture fatigue**.
+
+**Objective trigger — auto-draft ONLY on hard evidence of a trap:**
+- a test / eval / flowsim fix-loop actually ran and **failed-then-recovered**, or
+- the user explicitly voiced surprise ("huh", "that's a gotcha", "didn't expect").
+
+A clean run (no fix-loop, no surprise) produces **no prompt** — skip silently.
+Do not gate on a vibe like "was anything non-obvious?"; that fires every run.
+
+**When triggered:** auto-draft the entry yourself in the format above (don't make
+the user compose it), route it through the **dedup check** (update a similar
+existing entry, never duplicate), and ask a **single** confirm before writing.
+Create `gotchas_file` only on confirm. Emit `/gotcha <drafted text>` — never a
+bare `/gotcha` (that's review mode). If the user declines, the caller may drop a
+`.next-action` sentinel instead (see each delivery skill's seam step).
+
 ## Default Categories
 
 When creating a new gotchas file, start with these category headings (omit any that

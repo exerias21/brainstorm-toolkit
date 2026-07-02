@@ -19,6 +19,8 @@ Sequential version of the SDLC pipeline. Unlike the Claude Code canonical (which
 
 When Copilot's VS Code agent mode gains parallel worker support (Copilot CLI already has `/fleet`), this overlay can be upgraded. Today it ships as a useful degraded version — slower but complete.
 
+**Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/model-cap.md`) is honored wherever sub-agents are dispatched. On this runtime every stage runs inline in the session model, so the cap is advisory here — set your session model to the cap tier for the savings.
+
 ## Prerequisites
 
 - Plan file exists at the path you passed, OR you are pointing at TASKS.md.
@@ -175,6 +177,7 @@ Run when a parent plan is available (i.e. you passed a plan file rather than a b
 4. Push: `git push -u origin sdlc/{feature-slug}`.
 5. Create PR via `gh pr create` with a body that includes: plan file link, eval results, test results, flowsim summary, files changed.
 6. Trigger a code review pass over the diff. On Copilot, invoke `/review` if available; otherwise summarize the diff yourself in the chat (severity-tagged: blocker / nit / question). Skip if `pipeline.skip_review: true` in `.claude/project.json`. The review stays in chat — post it as a PR comment via the GitHub MCP only if the user asked for team-visible review.
+7. **Capture at loop-exit** — run the shared protocol in `skills/gotcha/SKILL.md` ("Capture at loop-exit"). Auto-draft a gotcha entry **only** on an objective trigger — a fix-loop (eval/test/flowsim) that **failed-then-recovered**, or the user voicing surprise — route it through gotcha's dedup check, and ask a single confirm. A clean run stays silent (no vibe-gating). `/sdlc` commits the capture with the run; it does not use the `.next-action` seam.
 
 Do NOT switch back to `main` after the PR — leave the branch checked out so the user can inspect.
 

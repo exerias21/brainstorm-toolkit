@@ -51,6 +51,10 @@ but verify against the code and trust the code when they disagree (a mismatch
 usually means the doc is stale). Search the codebase per the procedure in
 `skills/sdlc/templates/convention-grounding.md`:
 
+- **Check `GOTCHAS.md` for the touched area** (scoped injection): read the
+  configured `gotchas_file` if it exists and surface only entries matching
+  the idea's area/keywords — cap at the top few, never inline the whole
+  file. Skip silently when the file is absent.
 - **Find the 2–3 closest existing implementations** to the idea (same layer,
   same kind of thing) and note the patterns they follow with `path:line`
   citations — layout, naming, error handling, the data-access seam, shared
@@ -192,6 +196,11 @@ Before the single-pass validator in Step 7, optionally run a multi-lens vet
 using the `--vet [light|deep|ultra|none]` flag. Multiple passes catch issues
 one validator misses. Copilot runs them **sequentially in the main context**
 (no parallel sub-agents), so the cost is wall-clock-time-linear with mode.
+
+A **model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; see
+`skills/sdlc/templates/model-cap.md`) would govern each pass's sub-agent tier
+on Claude — here the passes run inline in the session model, so the cap is
+advisory: set your session model to the cap tier for the savings.
 
 **Mode resolution** when `--vet` is not passed explicitly:
 - `<5` implementation steps in the saved plan → `none` (skip; go to Step 7).

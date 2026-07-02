@@ -81,7 +81,7 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 | `/repo-health` | Claude + Copilot + Codex | Read-only hygiene sweep (dead code + tests + deps + secrets + gotchas-currency); prints a scored report and the highest-impact next command. |
 | `/test-check` | Claude + Copilot + Codex | Run configured tests + log audit after changes (one-shot, no fix loop) |
 | `/e2e-loop` | Claude + Copilot + Codex † | Run e2e tests in a fix loop with flaky-test guard (dispatches `e2e-test-runner` agent on Claude, inline on Copilot) |
-| `/gotcha` | Claude + Copilot + Codex | View or append project pitfalls |
+| `/gotcha` | Claude + Copilot + Codex | View/append project pitfalls — auto-drafted at loop-exit by `/task`, `/sdlc`, `/sdlc-lite` on real traps (objective trigger), and injected at `/brainstorm` start |
 | `/eval-harness` | Claude + Copilot + Codex | Run pytest + fixture evals with optional fix loop |
 | `/flowsim` | Claude + Copilot + Codex | Trace claimed plan flows through source code and flag mismatches |
 | `/dead-code-review` | Claude + Copilot + Codex † | Dead-code scan with test verification (sequential on Copilot) |
@@ -244,9 +244,19 @@ Or in plain text:
   },
   "gotchas_file": "GOTCHAS.md",
   "main_branch": "main",
-  "modules": ["api", "web", "worker"]
+  "modules": ["api", "web", "worker"],
+  "models": { "cap": "sonnet" }
 }
 ```
+
+`models.cap` is a **ceiling** on sub-agent model tier for the fan-out skills:
+`sonnet` lowers every Opus dispatch to Sonnet while leaving Haiku/Sonnet agents
+untouched (so you cut Opus spend without upgrading the cheap agents). Per-run
+override: `--model <tier>` (precedence: flag > `models.cap` > default). It
+governs sub-agents only, not the session orchestrator — see
+`skills/sdlc/templates/model-cap.md`. **The fan-out is Sonnet-first by
+default:** out of the box `/sdlc`, `/sdlc-lite`, `/brainstorm --vet ultra`, and
+every ultracode Workflow run Sonnet — `--model opus` is the deliberate opt-up.
 
 ### Which skill reads which key
 
@@ -256,7 +266,8 @@ Or in plain text:
 | `/eval-harness` | `eval.*` |
 | `/sdlc` | `gotchas_file`, `eval.*`, `main_branch`, delegates to `/test-check` |
 | `/gotcha` | `gotchas_file` |
-| `/brainstorm` | `modules` |
+| `/brainstorm` | `modules`, `models.cap` |
+| `/sdlc`, `/sdlc-lite`, `/brainstorm-deep`, `/brainstorm-team` | `models.cap` (sub-agent tier ceiling) |
 | `/task`, `/status` | (none — read TASKS.md directly) |
 | `/repo-onboarding` | writes all of the above |
 

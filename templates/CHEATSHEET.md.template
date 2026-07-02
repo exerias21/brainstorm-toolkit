@@ -61,6 +61,21 @@ Execution tiers — same pipeline in the middle, different ending:
   No flag — the gate is automatic.
 ```
 
+Cost control — cap the sub-agent model tier (for enterprise / token budgets):
+
+```
+  project.json → "models": { "cap": "sonnet" }    (standing policy, every run)
+  or per run:    /sdlc-lite {plan} --model sonnet  (precedence: flag > config > default)
+
+  A CEILING, not a swap: Opus dispatches drop to the cap; Haiku/Sonnet are left
+  untouched (Haiku is NOT upgraded). Governs sub-agents only — for full savings
+  also set your session model. Applies to /sdlc, /sdlc-lite, /brainstorm*.
+  Contract: skills/sdlc/templates/model-cap.md
+
+  DEFAULT is Sonnet-first: /sdlc, /sdlc-lite, /brainstorm --vet, and ultracode
+  workflows run Sonnet out of the box — --model opus is the deliberate opt-up.
+```
+
 In parallel, runnable any time:
 
 ```
@@ -69,7 +84,9 @@ In parallel, runnable any time:
   /flowsim {plan}   → trace claimed flows through code, flag drift
   /review-pr [pr|branch] → on-demand code review for any PR or branch
   /plan-html {plan} → render any markdown plan as a single-file shareable HTML
-  /gotcha "<entry>" → capture a hard-won pitfall
+  /gotcha "<entry>" → capture a pitfall (also auto-drafted at loop-exit by
+                      /task, /sdlc, /sdlc-lite on real traps; injected at
+                      /brainstorm start)
 ```
 
 Ideation family — pick by ambiguity, not by topic:
@@ -106,7 +123,7 @@ Domain-specific skills (cross-tool; opt-in by need):
 | `/repo-health` | Hygiene sweep + score | weekly, or pre-release |
 | `/test-check` | Run tests + log audit | before shipping |
 | `/flowsim {plan}` | Plan-vs-code drift check | post-merge sanity |
-| `/gotcha "..."` | Append a project pitfall | after a bug bites |
+| `/gotcha "..."` | Append a pitfall (auto-drafted at loop-exit on real traps) | after a bug bites |
 | `/repo-onboarding` | Regenerate AGENTS.md / project.json | new repo intake |
 | `/dead-code-review` | Multi-agent unused-code scan | pre-cleanup, monthly |
 

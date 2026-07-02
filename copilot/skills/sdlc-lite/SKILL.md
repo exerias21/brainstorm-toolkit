@@ -22,6 +22,8 @@ runs every stage inline, one at a time. Same stages as `/sdlc`; the only
 difference is Stage 6 — `/sdlc-lite` does **no git writes** (it hands you a
 validated tree to commit), while `/sdlc` commits + opens a PR.
 
+**Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/model-cap.md`) is honored wherever sub-agents are dispatched. On this runtime every stage runs inline in the session model, so the cap is advisory here — set your session model to the cap tier for the savings.
+
 ## When to use
 
 | Skill | Input | Terminal action |
@@ -136,7 +138,15 @@ push, PR, or `/review`. You review and commit.
    ```
    **Range**: changes from all tasks accumulate in the tree; you slice the
    commits when you review.
-3. Mark each resolved `TASKS.md` row `[x]`, move to `Done`, set
+3. **Capture at loop-exit + seam** — run the shared protocol in
+   `skills/gotcha/SKILL.md`. Auto-draft a gotcha entry **only** on an
+   objective trigger — a fix-loop that **failed-then-recovered**, or the
+   user voicing surprise — route it through gotcha's dedup, one-tap confirm.
+   A clean run stays silent (no vibe-gating). If capture is
+   **declined/deferred**, drop the seam sentinel instead:
+   `echo "/gotcha <drafted text>" > .claude/.next-action` (only if absent —
+   never a bare `/gotcha`).
+4. Mark each resolved `TASKS.md` row `[x]`, move to `Done`, set
    `status: completed` in the task file(s) — work is done and validated; only
    the commit is left to you.
 
