@@ -43,6 +43,7 @@ MODEL_CAP_FAN_OUT_SKILLS = {
     "brainstorm",
     "brainstorm-deep",
     "brainstorm-team",
+    "dead-code-review",
 }
 MODEL_CAP_REF = "model-cap.md"
 

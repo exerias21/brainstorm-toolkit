@@ -207,7 +207,7 @@ Write to `plans/brainstorm-deep-<topic-slug>.md`. Slug is derived from the user'
 ## When to redirect to a sibling skill
 
 - Ask is small, well-scoped, low-stakes → `/brainstorm`
-- User wants faster divergent ideation with model-tier-driven rigor (3 Haiku + Sonnet stress-test + 2 Opus reviewers) **on a plan they're already mostly happy with** → `/brainstorm --vet ultra`. Difference: `ultra` is a *validator stack* applied to an existing draft; `brainstorm-deep` is a *clarification loop* run before the draft exists. If you're not sure what you want, you want this skill, not `ultra`.
+- User wants faster divergent ideation with model-tier-driven rigor (3 Haiku + Sonnet stress-test + 2 reviewers, Sonnet by default) **on a plan they're already mostly happy with** → `/brainstorm --vet ultra`. Difference: `ultra` is a *validator stack* applied to an existing draft; `brainstorm-deep` is a *clarification loop* run before the draft exists. If you're not sure what you want, you want this skill, not `ultra`.
 - User wants competitive analysis or a multi-persona team to write separate sections → `/brainstorm-team`
 - User already has a clear PBI in mind and just wants it written up → `/task` for now (`/pbi` will be the right answer once Phase 1D lands; it doesn't exist yet)
 - Ask is "audit the existing X for issues," not "design something new" → `/repo-health` or `/dead-code-review`

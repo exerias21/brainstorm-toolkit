@@ -122,7 +122,7 @@ fall back to text-only behavior when it isn't. Make the dependency soft.
 
 ### Step 5 — Dispatch fix agent (if real failures remain)
 
-Spawn a fix agent with structured failure data. Use Sonnet for targeted fixes, Opus only if the failures span many files or suggest structural issues.
+Spawn a fix agent with structured failure data. Use Sonnet for targeted fixes; escalate to Opus only if failures span many files or suggest structural issues — and only when not capped (honors `project.json` `models.cap` / `--model`; Sonnet-first by default).
 
 ```
 Agent(

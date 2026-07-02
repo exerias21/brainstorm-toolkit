@@ -1,7 +1,7 @@
 ---
 name: dead-code-review
 description: >
-  Comprehensive dead code detection and removal. Launches parallel review agents (Opus 4.6) to scan
+  Comprehensive dead code detection and removal. Launches parallel review agents (tiered by load, Sonnet-first — capped per project.json models.cap / --model) to scan
   backend Python, frontend TypeScript, database/migrations, documentation, and scripts for unused
   imports, dead functions, orphaned components, stale plans, redundant migrations, and more. Also runs
   test suite before and after to verify zero regressions. Invoke with /dead-code-review or trigger
@@ -38,8 +38,11 @@ Run all three test suites and record pass/fail counts:
 
 Launch up to 6 agents in parallel. Each agent does **research only** — no edits — and reports back
 findings with confidence levels. Models are tiered by reasoning load: Haiku for grep-heavy hygiene
-work, Sonnet for code-pattern reasoning across one language, Opus only for cross-module dependency
-reasoning where wrong calls have high blast radius. NO subagents.
+work, Sonnet for code-pattern reasoning across one language, and an Opus tier for cross-module
+dependency reasoning where wrong calls have high blast radius. **Model cap:** these are *defaults* —
+resolve each per `skills/sdlc/templates/model-cap.md` (`--model <tier>` > `project.json` `models.cap` >
+the tier here). The fan-out is **Sonnet-first**, so the Opus tier runs Sonnet unless you opt up with
+`--model opus`; print `model: <tier> (cap: <cap|none>)` before each dispatch. NO subagents.
 
 #### Agent 1: Backend Python Reviewer (Sonnet)
 Scans ALL files in `backend/` for:
@@ -64,8 +67,9 @@ Scans ALL files in `frontend/src/` for:
 - Unused dependencies in `package.json` (grep for package import across all files)
 - Stale test files testing deleted components
 
-#### Agent 3: Database & Migration Reviewer (Opus)
-Cross-module dependency reasoning: a wrong drop here can break production. Opus warranted.
+#### Agent 3: Database & Migration Reviewer (Opus-tier — Sonnet by default under the cap)
+Cross-module dependency reasoning: a wrong drop here can break production — the Opus tier is warranted
+by load, but under the Sonnet-first default it runs Sonnet unless you opt up (`--model opus`).
 Scans ALL files in `backend/migrations/` and queries the live database:
 - Unused tables (exist in DB but never referenced in Python code)
 - Unused columns (defined but never SELECT'd/INSERT'd/UPDATE'd)
@@ -124,8 +128,9 @@ Provide a summary table:
 
 ## Rules
 
-- Use the tiered model assignments above (Haiku / Sonnet / Opus) — do NOT promote everything to Opus
-  by default. The tier is chosen for each agent based on reasoning load and blast radius of a wrong
+- Use the tiered model assignments above (Haiku / Sonnet / Opus) — do NOT promote everything to Opus.
+  The fan-out is **Sonnet-first**, so the Opus tier is an explicit opt-up (`--model opus`); each agent's
+  tier is chosen based on reasoning load and blast radius of a wrong
   call. If a specific run genuinely needs deeper analysis (e.g., the database agent flags ambiguous
   cross-module references), promote that single agent — not the whole fleet.
 - Agents do NOT use subagents — each does all its own work

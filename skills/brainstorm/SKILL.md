@@ -244,7 +244,8 @@ one validator misses.
 - Plan grep finds keywords (`migration`, `auth`, `secret`, `oauth`,
   `public api`, `deploy`, `rollback`, `prod`) in "Files to change" or
   "Implementation Steps" → suggest `ultra` to the user. These flag
-  high-blast-radius plans where Opus-level scrutiny is worth the cost.
+  high-blast-radius plans where extra scrutiny is worth it (opt up with
+  `--model opus` for the vet reviewers if warranted).
 - User can always override the suggestion via explicit `--vet <mode>`.
 
 **Mode behavior**:
@@ -277,7 +278,7 @@ and emit the session-model nudge once when a cap is active.
 After Sonnet stress-test, dispatch the two agents (Sonnet by default; Opus on
 `--model opus` opt-up) in a single message:
 
-1. **architectural-coherence** (Opus). Prompt:
+1. **architectural-coherence** (capped tier — Sonnet by default). Prompt:
    > Read the plan at {plan_file} and the project's CLAUDE.md/AGENTS.md.
    > Check whether the plan's structure fits the codebase's existing
    > architecture: layering, abstraction boundaries, naming conventions,
@@ -285,7 +286,7 @@ After Sonnet stress-test, dispatch the two agents (Sonnet by default; Opus on
    > "the plan works in isolation but violates the established X
    > convention." Cap report at 300 words.
 
-2. **edge-case-divergence** (Opus). Prompt:
+2. **edge-case-divergence** (capped tier — Sonnet by default). Prompt:
    > Read the plan at {plan_file}. For each acceptance criterion,
    > enumerate 3–5 edge cases the plan does NOT explicitly handle:
    > nulls, empty inputs, concurrent writes, partial failures, auth
