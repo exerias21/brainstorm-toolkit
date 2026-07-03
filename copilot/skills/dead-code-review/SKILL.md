@@ -14,7 +14,7 @@ disable-model-invocation: true
 
 # Dead Code Review (Copilot Edition — Sequential)
 
-Six review phases done in order. Unlike the Claude canonical (which spawns six parallel Opus workers), this version walks them yourself, one at a time. Slower but complete.
+Six review phases done in order. Unlike the Claude canonical (which spawns parallel workers, Sonnet-first and tiered by load), this version walks them yourself, one at a time. Slower but complete. The model-tier cap (`skills/sdlc/templates/model-cap.md`) is **advisory** here — phases run inline in your session model, so set your session model for the savings.
 
 ## When to invoke
 

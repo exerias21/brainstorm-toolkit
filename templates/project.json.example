@@ -40,6 +40,11 @@
   "main_branch": "main",
   "modules": ["api", "web", "worker"],
 
+  "models": {
+    "_comment": "Optional. A CEILING on sub-agent model tier for the fan-out skills (/sdlc, /sdlc-lite, /brainstorm*). See skills/sdlc/templates/model-cap.md. 'cap' lowers any dispatch above it (opus->cap) and leaves haiku/sonnet at or below it untouched — set 'sonnet' to stop Opus spend without upgrading Haiku agents. Per-run override: --model <tier>. Omit for no cap. Governs sub-agents only, not the session orchestrator.",
+    "cap": "sonnet"
+  },
+
   "migrations": {
     "_comment": "Optional. Read by /repo-health Check 6 (static migration drift) and /post-deploy-verify. Omit entirely if the project has no migrations — the check self-skips.",
     "dir": "backend/migrations",

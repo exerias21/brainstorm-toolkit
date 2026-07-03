@@ -1,10 +1,12 @@
 # Stage 2 — Implementation agent prompt
 
-One Opus agent. Substitute `{feature_name}` and `{plan_content}` before dispatch.
+One implement agent — **Sonnet by default** (Opus only on `--model opus`
+opt-up), per the model cap (`skills/sdlc/templates/model-cap.md`). Substitute
+`{feature_name}` and `{plan_content}` before dispatch.
 
 ---
 
-## Agent: implement (Opus)
+## Agent: implement (Sonnet by default; Opus on opt-up)
 
 **description**: Implement {feature_name}
 

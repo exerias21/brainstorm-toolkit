@@ -53,7 +53,7 @@ DECOMPOSE_MIN_TASKS` (default 6, overridable via `.claude/project.json`
 `pipeline.decompose_min_tasks`) AND the per-surface file sets are disjoint.
 Record the decision + its inputs (never silent).
 
-- **Single-agent (default — unchanged):** dispatch one Opus agent on the whole
+- **Single-agent (default — unchanged):** dispatch one implement agent (Sonnet by default; Opus opt-up via `--model opus`) on the whole
   plan (`templates/stage-2-implement.md`); follow steps exactly, use existing
   patterns, `git diff --stat`, stop on blockers. Writes `implement.json`.
 - **Decompose (large multi-surface plans):**

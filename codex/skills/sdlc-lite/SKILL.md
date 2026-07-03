@@ -24,6 +24,8 @@ one closely; tune independently if Codex behavior diverges. Same stages as
 `/sdlc`; the only difference is Stage 6 — `/sdlc-lite` does **no git writes**
 (hands you a validated tree to commit), while `/sdlc` commits + opens a PR.
 
+**Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/model-cap.md`) is honored wherever sub-agents are dispatched. On this runtime every stage runs inline in the session model, so the cap is advisory here — set your session model to the cap tier for the savings.
+
 ## When to use
 
 | Skill | Input | Terminal action |
@@ -149,9 +151,17 @@ push, PR, or `/review`. You review and commit.
    ```
    **Range**: changes from all tasks accumulate in the tree; you slice the
    commits when you review.
-3. **Capture gotchas (knowledge sink)**: if the run hit a non-obvious trap,
-   prompt to append it to `GOTCHAS.md` via `/gotcha` — the durable project file
-   is the sink, not model memory. One nudge, skip if nothing came up.
+3. **Capture at loop-exit + seam** — run the shared protocol in
+   `.agents/skills/gotcha/SKILL.md` (canonical: `skills/gotcha/SKILL.md`).
+   Auto-draft a gotcha entry **only** on an objective trigger — a fix-loop
+   that **failed-then-recovered**, or the user voicing surprise — route it
+   through gotcha's dedup, one-tap confirm. A clean run stays silent (no
+   vibe-gating). If capture is **declined/deferred**, drop the seam
+   sentinel: `echo "/gotcha <drafted text>" > .claude/.next-action` (only if
+   absent — never a bare `/gotcha`). **Codex has no Stop hook** to surface
+   that sentinel, so also print an inline `Next: /gotcha <drafted text>`
+   line in the Stage 7 report as the fallback, so the suggestion isn't
+   silently lost.
 4. Mark each resolved `TASKS.md` row `[x]`, move to `Done`, set
    `status: completed` in the task file(s) — work is done and validated; only
    the commit is left to you.

@@ -61,7 +61,8 @@ Workflow({
     clarifications: "<the Q-A captured in Pass 2>",
     conventions:    "<the path:line reuse recon from Pass 1>",
     frames:         ["inversion","pre-mortem","steelman","adjacent-reuse"],  // or --frames
-    ambition:       null   // or "conservative"|"default"|"ambitious" for --ambition
+    ambition:       null,  // or "conservative"|"default"|"ambitious" for --ambition
+    model_cap:      null   // resolved cap: --model flag > project.json models.cap > null
   }
 })
 ```
@@ -131,7 +132,7 @@ Goal: stress-test the agreed framing from multiple angles, then produce a plan t
 
 1. **Read `templates/perspective-frames.md`** for the 8 available frames.
 2. **Pick frames.** Defaults: `inversion`, `pre-mortem`, `steelman`, `adjacent-reuse`. `--frames <comma-list>` overrides.
-3. **Dispatch in parallel.** In a **single message**, fire one Agent tool call per frame with `subagent_type: "general-purpose"`, **Sonnet** model. Each agent gets the agreed framing, the user's clarified answers, and the frame's prompt from the template. Each returns ≤300 words.
+3. **Dispatch in parallel.** In a **single message**, fire one Agent tool call per frame with `subagent_type: "general-purpose"`, **Sonnet** model (honors the model cap — a `haiku` cap lowers it further; see `skills/sdlc/templates/model-cap.md`, `--model <tier>` > `project.json models.cap` > default). Each agent gets the agreed framing, the user's clarified answers, and the frame's prompt from the template. Each returns ≤300 words.
 4. **Synthesize.** Frames go in their own labeled section in the plan (`## Perspective passes`); they inform the design but do not override user intent. If a frame's output contradicts a user clarification, surface the conflict for the user to resolve, don't silently side with the agent.
 5. **Produce three plan variants** at different ambition levels:
    - **Conservative** — minimum viable, narrowest scope, smallest blast radius.
@@ -206,7 +207,7 @@ Write to `plans/brainstorm-deep-<topic-slug>.md`. Slug is derived from the user'
 ## When to redirect to a sibling skill
 
 - Ask is small, well-scoped, low-stakes → `/brainstorm`
-- User wants faster divergent ideation with model-tier-driven rigor (3 Haiku + Sonnet stress-test + 2 Opus reviewers) **on a plan they're already mostly happy with** → `/brainstorm --vet ultra`. Difference: `ultra` is a *validator stack* applied to an existing draft; `brainstorm-deep` is a *clarification loop* run before the draft exists. If you're not sure what you want, you want this skill, not `ultra`.
+- User wants faster divergent ideation with model-tier-driven rigor (3 Haiku + Sonnet stress-test + 2 reviewers, Sonnet by default) **on a plan they're already mostly happy with** → `/brainstorm --vet ultra`. Difference: `ultra` is a *validator stack* applied to an existing draft; `brainstorm-deep` is a *clarification loop* run before the draft exists. If you're not sure what you want, you want this skill, not `ultra`.
 - User wants competitive analysis or a multi-persona team to write separate sections → `/brainstorm-team`
 - User already has a clear PBI in mind and just wants it written up → `/task` for now (`/pbi` will be the right answer once Phase 1D lands; it doesn't exist yet)
 - Ask is "audit the existing X for issues," not "design something new" → `/repo-health` or `/dead-code-review`

@@ -33,6 +33,20 @@ HARD_FORBIDDEN_COPILOT_PATTERNS = [
 
 VALID_TARGETS = {"claude", "copilot", "codex"}
 
+# C: the fan-out skills — these dispatch sub-agents (the Agent tool / Workflow
+# agent() seam) and are therefore governed by the shared model-tier cap
+# contract at skills/sdlc/templates/model-cap.md. Each must carry a one-line
+# pointer to that file so the cap rule is checkable, not just documented.
+MODEL_CAP_FAN_OUT_SKILLS = {
+    "sdlc",
+    "sdlc-lite",
+    "brainstorm",
+    "brainstorm-deep",
+    "brainstorm-team",
+    "dead-code-review",
+}
+MODEL_CAP_REF = "model-cap.md"
+
 
 def parse_targets(raw_value: str) -> list[str]:
     value = raw_value.strip().strip('"').strip("'")
@@ -276,6 +290,30 @@ def overlay_parity_warnings(
     return warnings
 
 
+def model_cap_pointer_warnings(skills_root: Path) -> list[str]:
+    """C: soft-warn when a fan-out skill's canonical SKILL.md doesn't
+    reference the shared model-tier cap contract (`model-cap.md`).
+
+    Conservative by design: only checks the five skills named in
+    MODEL_CAP_FAN_OUT_SKILLS (the sub-agent-dispatching skills governed by
+    the cap); every other skill is left alone. A missing pointer is a soft
+    warning, not a validation failure — the pointer rollout across skills
+    can land independently of this gate.
+    """
+    warnings: list[str] = []
+    for name in sorted(MODEL_CAP_FAN_OUT_SKILLS):
+        skill_file = skills_root / name / "SKILL.md"
+        if not skill_file.exists():
+            continue
+        content = skill_file.read_text(encoding="utf-8")
+        if MODEL_CAP_REF not in content:
+            warnings.append(
+                f"{skill_file}: fan-out skill does not reference the shared "
+                f"model-cap contract (`{MODEL_CAP_REF}`)"
+            )
+    return warnings
+
+
 def main() -> int:
     repo_root = Path(__file__).resolve().parent.parent
     skills_root = resolve_skills_root(repo_root)
@@ -316,6 +354,9 @@ def main() -> int:
             )
         )
         count += 1
+
+    # C: fan-out skills must point at the shared model-cap contract (soft warning).
+    all_warnings.extend(model_cap_pointer_warnings(skills_root))
 
     # Validate copilot overrides if present
     if copilot_overrides_root is not None:

@@ -12,6 +12,24 @@ export const meta = {
 }
 
 // ---------------------------------------------------------------------------
+// MODEL-TIER CAP — a ceiling on sub-agent model tier (never a swap/upgrade).
+// See skills/sdlc/templates/model-cap.md for the canonical semantics:
+//   haiku(1) < sonnet(2) < opus(3);  effective = min(default, cap).
+// A null/invalid cap falls through to the stage default. Applied at EVERY
+// agent() model site below (static AND the dynamic lane.model/v.model sites),
+// so no dispatch can silently leak a higher tier than the cap allows.
+// ---------------------------------------------------------------------------
+const MODEL_TIER_RANK = { haiku: 1, sonnet: 2, opus: 3 }
+function capModel(defaultTier, cap) {
+  if (!cap) return defaultTier
+  if (!(cap in MODEL_TIER_RANK)) return defaultTier // malformed cap -> no cap
+  return MODEL_TIER_RANK[cap] < MODEL_TIER_RANK[defaultTier] ? cap : defaultTier
+}
+// Sonnet-first: the fan-out defaults to Sonnet; Opus is an explicit opt-up
+// (args.model_cap === 'opus' → no ceiling → Opus sites run at full power).
+const MODEL_CAP = args?.model_cap ?? 'sonnet'
+
+// ---------------------------------------------------------------------------
 // This script is an ENHANCEMENT layer, not a replacement. skills/sdlc/SKILL.md
 // (prose) is the source of truth and the cross-tool (Copilot/Codex) fallback.
 // The script encodes the parts the prose only DESCRIBES: the gate arithmetic,
@@ -253,7 +271,7 @@ const DECOMPOSE_SCHEMA = {
           files: { type: 'array', items: { type: 'string' } },
           steps: { type: 'array', items: { type: 'string' } },
           depends_on: { type: 'array', items: { type: 'string' } },
-          model: { type: 'string', enum: ['sonnet', 'opus'] },
+          model: { type: 'string', enum: ['haiku', 'sonnet', 'opus'] },
           contract: { type: 'string' },
         },
       },
@@ -302,7 +320,7 @@ async function runGatedFix(label, gateAgentFn, fixPromptFn, budget, phaseName) {
   while (result && !result.green && budget.remaining() > 0) {
     budget.used += 1
     log(`${label}: ${result.fail_count} failing — fix attempt ${budget.used}/${budget.max} (shared budget)`)
-    await agent(fixPromptFn(result.failures), { label: `fix:${label}#${budget.used}`, phase: phaseName, model: 'opus' })
+    await agent(fixPromptFn(result.failures), { label: `fix:${label}#${budget.used}`, phase: phaseName, model: capModel('opus', MODEL_CAP) })
     result = await gateAgentFn()
   }
   const paused = result && !result.green && budget.remaining() === 0
@@ -353,7 +371,7 @@ Set has_plan_target=false ONLY for an ad-hoc sdlc-lite description with no plan 
 task parent_plan (then Stage 5.5/5.6 self-skip); otherwise true.
 
 Return the structured object (config + parse fields + skill_repo_mode + has_plan_target + continuity_note).`,
-  { label: 'parse+bootstrap', phase: 'Setup', schema: PARSE_SCHEMA, model: 'sonnet' }
+  { label: 'parse+bootstrap', phase: 'Setup', schema: PARSE_SCHEMA, model: capModel('sonnet', MODEL_CAP) }
 )
 
 if (!parse) throw new Error('sdlc-pipeline: bootstrap failed')
@@ -392,7 +410,7 @@ ${s.prompt}
 
 Set critical=true ONLY for plan-invalidating problems (references nonexistent files,
 entire approach misguided). Return the structured object.`,
-    { label: `sanity:${s.focus}`, phase: 'Sanity', schema: SANITY_SCHEMA, model: 'haiku' }
+    { label: `sanity:${s.focus}`, phase: 'Sanity', schema: SANITY_SCHEMA, model: capModel('haiku', MODEL_CAP) }
   )
 ))).filter(Boolean)
 
@@ -407,7 +425,7 @@ AGENT FINDINGS (focus/status/issue_count): ${JSON.stringify(sanity.map((s) => ({
 ALL ISSUES: ${JSON.stringify(sanity.flatMap((s) => s.issues))}
 ${hasIssues && critical.length === 0 ? 'Non-critical issues exist: AUTO-PATCH the plan file with the corrections, then note what was fixed.' : 'No auto-patch needed.'}
 ${envelopeNote(slug, 'sanity-check', `Set data.agents, data.auto_patched=${hasIssues && critical.length === 0}, data.issues. Status "pass" (or "pass" auto_patched) — or "paused" if critical.`)}`,
-  { label: 'persist:sanity-check', phase: 'Sanity', model: 'haiku' }
+  { label: 'persist:sanity-check', phase: 'Sanity', model: capModel('haiku', MODEL_CAP) }
 )
 
 if (critical.length > 0) {
@@ -444,7 +462,7 @@ ${planRefForAgents}
 If you hit an unresolvable blocker, leave it in blockers_reported and STOP.
 ${envelopeNote(slug, 'implement', `Write data per the implement shape; include in summary the gate inputs that kept this single-agent (surfaces=${gate.surface_count}, tasks=${gate.task_count}, disjoint=${gate.files_disjoint}). NO decompose/converge sidecars.`)}
 Return the structured object.`,
-    { label: 'implement', phase: 'Implement', schema: IMPLEMENT_SCHEMA, model: 'opus' }
+    { label: 'implement', phase: 'Implement', schema: IMPLEMENT_SCHEMA, model: capModel('opus', MODEL_CAP) }
   )
   implementResults = impl ? [impl] : []
   if (impl?.blockers_reported?.length) {
@@ -468,7 +486,7 @@ PLANNED FILES: ${JSON.stringify(parse.files_to_change)}
 ${planRefForAgents}
 ${envelopeNote(slug, 'decompose', `Write data.gate_inputs=${JSON.stringify(gate)}, data.gate_decision, data.lanes[]. Also set run.json.data.stage2_decomposed=true and run.json.data.lanes=<lane names>.`)}
 Return the structured object.`,
-    { label: 'decompose', phase: 'Implement', schema: DECOMPOSE_SCHEMA, model: 'sonnet' }
+    { label: 'decompose', phase: 'Implement', schema: DECOMPOSE_SCHEMA, model: capModel('sonnet', MODEL_CAP) }
   )
 
   const lanes = decompose?.lanes ?? []
@@ -481,7 +499,7 @@ ${grounding}
 ${planRefForAgents}
 ${envelopeNote(slug, 'implement', 'Single-agent after 2a collapse; note the collapse in summary.')}
 Return the structured object.`,
-      { label: 'implement', phase: 'Implement', schema: IMPLEMENT_SCHEMA, model: 'opus' }
+      { label: 'implement', phase: 'Implement', schema: IMPLEMENT_SCHEMA, model: capModel('opus', MODEL_CAP) }
     )
     implementResults = impl ? [impl] : []
   } else {
@@ -504,7 +522,7 @@ If the contract is wrong/insufficient, STOP and report a blocker — do not touc
 After implementing run ${'`'}git diff --numstat -- <your files>${'`'}.
 ${envelopeNote(slug, `implement-${lane.lane}`, 'Same shape as implement + data.lane. Do NOT append "implement" to stages_completed here (the converge step does that once).')}
 Return the structured object (set lane="${lane.lane}").`,
-        { label: `lane:${lane.lane} (${lane.model})`, phase: 'Implement', schema: IMPLEMENT_SCHEMA, model: lane.model }
+        { label: `lane:${lane.lane} (${lane.model})`, phase: 'Implement', schema: IMPLEMENT_SCHEMA, model: capModel(lane.model, MODEL_CAP) }
       )
       contracts[lane.lane] = lane.contract
       if (laneRes) implementResults.push(laneRes)
@@ -528,7 +546,7 @@ shared tree (sequential — no conflicts). Rebuild global consistency:
 LANES + CONTRACTS: ${JSON.stringify(lanes.map((l) => ({ lane: l.lane, contract: l.contract })))}
 CHANGED FILES: ${JSON.stringify(mergedFiles)}
 ${envelopeNote(slug, 'converge', 'Write data.merged_files, data.integration_fixes, data.import_check{status,unresolved}, data.symbol_collisions. THEN append "implement" to run.json.stages_completed ONCE.')}`,
-      { label: 'converge', phase: 'Implement', model: 'sonnet' }
+      { label: 'converge', phase: 'Implement', model: capModel('sonnet', MODEL_CAP) }
     )
   }
 }
@@ -556,7 +574,7 @@ e.g. ${cfg.test_unit || 'tests/'}) and set data.coverage_route="test.unit". No t
 surface -> schema/smoke tests, else record skipped_reason. Evals come BEFORE running them.
 ${planRefForAgents}
 ${envelopeNote(slug, 'generate-evals', 'Write data.evals_created[], data.skipped_reason (or null), data.coverage_route if routed to test.unit. Status "pass" even when skipped.')}`,
-    { label: 'generate-evals', phase: 'Evals', model: 'sonnet' }
+    { label: 'generate-evals', phase: 'Evals', model: capModel('sonnet', MODEL_CAP) }
   )
 }
 
@@ -569,7 +587,7 @@ if (!evalsSkipped) {
     `Run the evals: ${'`'}${evalRunner} --feature ${slug} --output json${'`'}. Parse the JSON.
 Return green=true iff all pass; else list each failure (name, expected-vs-actual detail, file).
 ${envelopeNote(slug, 'eval-fix', `Write data.fix_loops_run, data.max_fix_loops=3, data.final_pass_count, data.final_fail_count, data.remaining_failures[]. (This gate may be re-run by the fix loop; persist the latest counts.)`)}`,
-    { label: 'eval-run', phase: 'Verify', schema: GATE_RESULT_SCHEMA, model: 'sonnet' }
+    { label: 'eval-run', phase: 'Verify', schema: GATE_RESULT_SCHEMA, model: capModel('sonnet', MODEL_CAP) }
   )
   const evalFix = await runGatedFix(
     'eval', evalGate,
@@ -591,7 +609,7 @@ const validateGate = () => agent(
 - eval regression ${evalRunner && !evalsSkipped ? '(run)' : '(skip)'}
 Report only NEW failures as failures (note pre-existing separately in detail); green iff no new failures.`}
 ${envelopeNote(slug, 'validate', skillRepo ? 'Write data.mode="skill-repo" + checks/soft_checks per state-schema.md.' : 'Write data.layers{logs,frontend,backend,e2e,eval}, data.new_failures[], data.preexisting_failures[].')}`,
-  { label: 'validate', phase: 'Verify', schema: GATE_RESULT_SCHEMA, model: 'sonnet' }
+  { label: 'validate', phase: 'Verify', schema: GATE_RESULT_SCHEMA, model: capModel('sonnet', MODEL_CAP) }
 )
 const validate = await runGatedFix(
   'validate', validateGate,
@@ -623,7 +641,7 @@ if (!skillRepo && evalRunner && hasPlanTarget) {
 .claude/agents/ux-plan-validator.md). Validate that every ${v.key} requirement in the plan
 is actually fulfilled by the implementation. Return green/failures for your focus only.
 ${planRefForAgents}`,
-        { label: `validate:${v.key}`, phase: 'Verify', schema: GATE_RESULT_SCHEMA, model: v.model }
+        { label: `validate:${v.key}`, phase: 'Verify', schema: GATE_RESULT_SCHEMA, model: capModel(v.model, MODEL_CAP) }
       )
     ))).filter(Boolean)
     const failures = reports.flatMap((r) => r.failures || [])
@@ -646,7 +664,7 @@ ${planRefForAgents}`,
   await agent(
     `Persist Stage 5.5 for slug "${slug}".
 ${envelopeNote(slug, 'plan-validate', `Write data.validators_launched=${JSON.stringify(selected.map((v) => v.key))}, data.validators_skipped=${JSON.stringify(skipped)}, data.totals, data.failures[].`)}`,
-    { label: 'persist:plan-validate', phase: 'Verify', model: 'haiku' }
+    { label: 'persist:plan-validate', phase: 'Verify', model: capModel('haiku', MODEL_CAP) }
   )
   if (planValidate.paused) return await pauseOnBudget('plan-validate', planValidate.failures)
 }
@@ -660,7 +678,7 @@ target with --max-hops 3; it writes plans/flowsim-${slug}.json. Read it, count f
 status; any MISMATCH is a failure (report its file:line anchor). green iff no MISMATCH.
 ${planRefForAgents}
 ${envelopeNote(slug, 'flowsim', `Write a SUMMARY sidecar: data.report_path, data.json_path="plans/flowsim-${slug}.json", data.flow_count, data.mismatches, data.unclear, data.missing. The canonical JSON stays at plans/flowsim-${slug}.json.`)}`,
-      { label: 'flowsim', phase: 'Verify', schema: GATE_RESULT_SCHEMA, model: 'sonnet' }
+      { label: 'flowsim', phase: 'Verify', schema: GATE_RESULT_SCHEMA, model: capModel('sonnet', MODEL_CAP) }
     )
     const flowsim = await runGatedFix(
       'flowsim', flowsimGate,
@@ -695,7 +713,7 @@ if (MODE === 'sdlc') {
 DO NOT merge. DO NOT switch back to ${cfg.main_branch || 'main'} after creating the PR.
 ${envelopeNote(slug, 'pr-create', 'Write data.branch, data.pr_url, data.pr_number, data.commit_sha. Set run.json.status="complete".')}
 Return a short report including the PR URL.`,
-    { label: 'pr-create', phase: 'Deliver', model: 'sonnet' }
+    { label: 'pr-create', phase: 'Deliver', model: capModel('sonnet', MODEL_CAP) }
   )
   return { status: 'complete', mode: MODE, slug, changedFiles, pr }
 } else {
@@ -709,7 +727,7 @@ Return a short report including the PR URL.`,
    set task files status: completed. ${rebuildNote}
 ${envelopeNote(slug, 'handoff', 'Write data.branch, data.files_changed[], data.committed=false, data.suggested_commit_msg. Set run.json.status="complete".')}
 Return a short report making explicit that NOTHING was committed — the next move is the user's.`,
-    { label: 'handoff', phase: 'Deliver', model: 'sonnet' }
+    { label: 'handoff', phase: 'Deliver', model: capModel('sonnet', MODEL_CAP) }
   )
   return { status: 'complete', mode: MODE, slug, changedFiles, handoff }
 }
@@ -744,7 +762,7 @@ async function closeRun(status, reason) {
   await agent(
     `Close out the ${MODE} run for slug "${slug}": set run.json.status="${status}" (terminal),
 refresh updated_at. Reason: ${reason}. Best-effort; never throw.`,
-    { label: `close:${status}`, model: 'haiku' }
+    { label: `close:${status}`, model: capModel('haiku', MODEL_CAP) }
   )
 }
 

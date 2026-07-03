@@ -72,6 +72,11 @@ usually means the doc is stale). Use Glob, Grep, and Read directly in the main
 context window. Follow the procedure in
 [`skills/sdlc/templates/convention-grounding.md`](../sdlc/templates/convention-grounding.md):
 
+- **Check `GOTCHAS.md` for the touched area** (scoped injection): read the
+  configured `gotchas_file` if it exists and surface only entries matching the
+  idea's area/keywords — cap at the top few, never inline the whole file. Skip
+  silently when the file is absent. This puts hard-won pitfalls in front of the
+  idea *before* it's shaped, not only at Step 7 validation.
 - **Find the 2–3 closest existing implementations** to the idea (same layer,
   same kind of thing) and note the patterns they follow with `path:line`
   citations — layout, naming, error handling, the data-access seam, shared
@@ -239,7 +244,8 @@ one validator misses.
 - Plan grep finds keywords (`migration`, `auth`, `secret`, `oauth`,
   `public api`, `deploy`, `rollback`, `prod`) in "Files to change" or
   "Implementation Steps" → suggest `ultra` to the user. These flag
-  high-blast-radius plans where Opus-level scrutiny is worth the cost.
+  high-blast-radius plans where extra scrutiny is worth it (opt up with
+  `--model opus` for the vet reviewers if warranted).
 - User can always override the suggestion via explicit `--vet <mode>`.
 
 **Mode behavior**:
@@ -263,10 +269,16 @@ After the 3 Haiku agents return, dispatch one Sonnet agent with this prompt:
 > Report under 250 words: name the failure mode, the step that introduces
 > it, and a one-line fix.
 
-#### `ultra` — `deep` + 2 Opus agents in parallel
-After Sonnet stress-test, dispatch two Opus agents in a single message:
+#### `ultra` — `deep` + 2 top-tier agents in parallel
+Model cap applies: these two reviewers are **Sonnet by default** (Opus only on
+`--model opus` opt-up), resolved per
+`skills/sdlc/templates/model-cap.md` (`--model <tier>` > `project.json`
+`models.cap` > default). Before dispatch, print `model: <tier> (cap: <cap|none>)`
+and emit the session-model nudge once when a cap is active.
+After Sonnet stress-test, dispatch the two agents (Sonnet by default; Opus on
+`--model opus` opt-up) in a single message:
 
-1. **architectural-coherence** (Opus). Prompt:
+1. **architectural-coherence** (capped tier — Sonnet by default). Prompt:
    > Read the plan at {plan_file} and the project's CLAUDE.md/AGENTS.md.
    > Check whether the plan's structure fits the codebase's existing
    > architecture: layering, abstraction boundaries, naming conventions,
@@ -274,7 +286,7 @@ After Sonnet stress-test, dispatch two Opus agents in a single message:
    > "the plan works in isolation but violates the established X
    > convention." Cap report at 300 words.
 
-2. **edge-case-divergence** (Opus). Prompt:
+2. **edge-case-divergence** (capped tier — Sonnet by default). Prompt:
    > Read the plan at {plan_file}. For each acceptance criterion,
    > enumerate 3–5 edge cases the plan does NOT explicitly handle:
    > nulls, empty inputs, concurrent writes, partial failures, auth

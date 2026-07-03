@@ -22,6 +22,19 @@ export const meta = {
 // dropped frames), and each frame's output shape is schema-validated.
 // ---------------------------------------------------------------------------
 
+// MODEL-TIER CAP — a ceiling on sub-agent model tier (never a swap/upgrade).
+// See skills/sdlc/templates/model-cap.md: haiku(1) < sonnet(2) < opus(3);
+// effective = min(default, cap). A null/invalid cap falls through to the stage
+// default. Applied at every agent() model site below so a `haiku` cap bites.
+const MODEL_TIER_RANK = { haiku: 1, sonnet: 2, opus: 3 }
+function capModel(defaultTier, cap) {
+  if (!cap) return defaultTier
+  if (!(cap in MODEL_TIER_RANK)) return defaultTier // malformed cap -> no cap
+  return MODEL_TIER_RANK[cap] < MODEL_TIER_RANK[defaultTier] ? cap : defaultTier
+}
+// Sonnet-first default (Opus is opt-up via args.model_cap === 'opus').
+const MODEL_CAP = args?.model_cap ?? 'sonnet'
+
 const framing = args?.framing ?? ''
 const clarifications = args?.clarifications ?? '(none captured)'
 const conventions = args?.conventions ?? '(no convention recon provided)'
@@ -148,7 +161,7 @@ contradicts a user clarification above, do not override it, just flag it.
 ${sharedContext}
 
 Return the structured object (frame="${name}").`,
-    { label: `frame:${name}`, phase: 'Frames', schema: FRAME_SCHEMA, model: 'sonnet' }
+    { label: `frame:${name}`, phase: 'Frames', schema: FRAME_SCHEMA, model: capModel('sonnet', MODEL_CAP) }
   )
 }))).filter(Boolean)
 
@@ -177,7 +190,7 @@ PERSPECTIVE-FRAME FINDINGS:
 ${frameResults.map((r) => `### ${r.frame}\n${r.output}`).join('\n\n')}
 
 Return the structured object.`,
-  { label: 'variants', phase: 'Variants', schema: VARIANTS_SCHEMA, model: 'sonnet' }
+  { label: 'variants', phase: 'Variants', schema: VARIANTS_SCHEMA, model: capModel('sonnet', MODEL_CAP) }
 )
 
 // Return structured drafts to the main thread. The main thread (interactive)

@@ -142,3 +142,5 @@ Write to `plans/brainstorm-deep-<topic-slug>.md`. Same naming convention as `/br
 ## Cost note
 
 Sequential frame stress-tests cost similar tokens to the Claude parallel version: `N` frames × (~5k input + a 300-word output), where `N` is the number of selected frames (default 4, set by `--frames`) — so ≈ 20–25k tokens at the default. Latency is higher because they're serialized — that's the Copilot tradeoff until parallel sub-agent primitives ship.
+
+The **model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; see `skills/sdlc/templates/model-cap.md`) is honored wherever sub-agents are dispatched. Here the frame passes run inline in the session model, so the cap is advisory — set your session model to the cap tier for the savings.
