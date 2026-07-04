@@ -71,7 +71,12 @@ skill passes the resolved cap as `args.model_cap`.
 
 ## Runtime regimes
 
-- **Claude + ultracode** → Workflow `capModel()` (deterministic; can't be missed).
+- **Claude + ultracode** → Workflow `capModel()` at each `agent()` seam
+  (deterministic — but applied **per call**: an `agent()` that omits `model`
+  inherits the main-loop/session tier and **bypasses the cap**, so a new dynamic
+  workflow must wrap *every* dispatch in `capModel()` and read
+  `MODEL_CAP = args?.model_cap ?? 'sonnet'`). The orchestrator/session model that
+  runs the control flow is never capped.
 - **Claude, no ultracode** → prose dispatch rule above (checked by the validator).
 - **Copilot / Codex** → stages run **inline in the session model** (no separate
   parallel sub-agents), so the cap is **advisory** here — there is no sub-agent

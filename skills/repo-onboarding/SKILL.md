@@ -82,9 +82,22 @@ Build a draft `project.json` from what you found. Fill in:
 - `gotchas_file` — `GOTCHAS.md` (default)
 - `main_branch` — from git
 - `modules` — inferred from top-level code directories (`src/`, `api/`, `web/`, `packages/*`, etc.)
+- `models.cap` — the standing **sub-agent model-tier ceiling** for every fan-out
+  skill (`/sdlc`, `/dead-code-review`, `/brainstorm-*`, …). A ceiling, not a swap:
+  tiers rank `haiku (1) < sonnet (2) < opus (3)` and `effective = min(default, cap)`
+  — the cap only ever *lowers*, so `cap: "sonnet"` runs Opus sites at Sonnet while
+  Haiku/Sonnet sites are untouched. Governs **sub-agent dispatch only**, never the
+  session orchestrator. Valid values: exactly `haiku`, `sonnet`, `opus`; absent =
+  no cap (skills still default Sonnet-first, but a written cap makes it enforced
+  policy). Full contract: `skills/sdlc/templates/model-cap.md`. **Default the
+  proposal to `{ "cap": "sonnet" }`** — it's the right ceiling for almost every
+  repo (keeps quality on review/verify stages while cutting Opus cost); propose
+  `haiku` only if the user wants to squeeze the cheap mechanical sweeps, or omit
+  it only if they explicitly want uncapped Opus fan-out.
 
 **When unsure, leave the key out.** A missing key causes skills to skip that step
-gracefully — that's better than a wrong command.
+gracefully — that's better than a wrong command. (Exception: `models.cap` — prefer
+proposing `sonnet` over omitting, per above.)
 
 ### Step 3 — Show the user the proposal
 
@@ -101,6 +114,7 @@ Detection notes:
 - Didn't find an eval runner → left eval.* blank
 - Main branch: main (from origin HEAD)
 - Modules inferred from top-level dirs: [api, web]
+- Sub-agent model cap → models.cap: "sonnet" (standing Sonnet-first ceiling)
 
 Does this look right? Any keys to add, remove, or correct?
 ```
@@ -124,6 +138,23 @@ After the user confirms (or adjusts):
 2. Write `AGENTS.md` at repo root. If `CLAUDE.md` is also missing, symlink it to `AGENTS.md` on POSIX, else copy.
 3. If no `TASKS.md`, copy `templates/TASKS.md.template` to repo root.
 4. If no `GOTCHAS.md` at repo root, create one from `examples/GOTCHAS.md.example`.
+5. **Update `.gitignore`** so the toolkit's ephemeral run-state doesn't get
+   committed. Ensure these lines are present (create `.gitignore` if missing;
+   append under a `# brainstorm-toolkit` comment — don't duplicate lines that
+   already exist):
+   ```gitignore
+   # brainstorm-toolkit
+   .claude/pipeline/
+   .claude/.next-action
+   ```
+   `.claude/pipeline/` holds per-run `/sdlc` + `/sdlc-lite` envelopes (transient
+   state, one dir per run — pure churn if tracked); `.claude/.next-action` is the
+   `/repo-health` suggestion drop. **Do NOT ignore `.claude/project.json`,
+   `.claude/settings.json`, or your committed agent/skill definitions — those are
+   shared config and SHOULD be committed** so the toolkit contract travels with
+   the repo. After
+   editing `.gitignore`, `git add .claude/project.json` (and any other freshly
+   written contract files) so they're staged for the user's first commit.
 
 ### Step 5.5 — Offer secret-blocking PreToolUse hook (Claude only)
 
@@ -180,3 +211,5 @@ Report what was written and suggest next steps:
 | `Cargo.toml` | `test.unit` = `cargo test` |
 | Top-level dirs like `api/`, `web/`, `worker/` | `modules` list |
 | `.git/HEAD` or `origin` default | `main_branch` |
+| Always (standing policy) | `models.cap` = `"sonnet"` — Sonnet-first ceiling for sub-agent fan-out; propose `haiku` to squeeze cheap sweeps, omit for uncapped Opus |
+| Repo uses this toolkit (`.claude/pipeline/` will be written) | add `.claude/pipeline/` + `.claude/.next-action` to `.gitignore`; keep `.claude/project.json` tracked |
