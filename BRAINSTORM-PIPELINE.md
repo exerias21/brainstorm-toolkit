@@ -161,11 +161,8 @@ The Jenkins-style pipeline (Goal #1) is a multi-week rebuild. **Goal #2 is indep
 
 > **The original Tier B below has been superseded** by a dogfooded `/brainstorm`
 > session. Original B1/B2/B5/B6 were generic code-repo hygiene applied wholesale
-> to a skills repo; the Inversion lens flagged ~70% as cargo-cult. See the
-> tracked design doc: [`docs/TIER-B-REVISION.md`](docs/TIER-B-REVISION.md)
-> (lifted from the dogfooded `plans/brainstorm-tier-b-revision.md` —
-> `plans/` is intentionally gitignored as consumer-side output, so the
-> design content lives in `docs/` instead).
+> to a skills repo; the Inversion lens flagged ~70% as cargo-cult. The revised
+> Tier B (summarized below) is the outcome of that session.
 >
 > The revised Tier B has two tracks:
 >

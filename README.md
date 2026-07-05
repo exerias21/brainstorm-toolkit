@@ -160,10 +160,7 @@ Haiku $1 / $5 per M tokens (input / output).
 
 ## Flows
 
-Tool-specific walkthroughs are in `docs/`:
-
-- **[docs/FLOW-CLAUDE-CODE.md](docs/FLOW-CLAUDE-CODE.md)** — install, daily loop, sub-agent use, `/sdlc` stages, `project.json` config, TASKS.md vs native Tasks.
-- **[docs/FLOW-COPILOT.md](docs/FLOW-COPILOT.md)** — install via `gh skill install` or `setup.sh`, `chat.agentSkillsLocations`, `/skills` menu, overlay semantics, cloud agent specifics, `disable-model-invocation`.
+- **[docs/FLOW.md](docs/FLOW.md)** — one visual reference for the whole toolkit across Claude Code, Copilot, and Codex: install, the end-to-end flow diagram, the entry-skill picker, per-runtime differences, and model tiers.
 - **[docs/AUTONOMOUS-DISCOVERY.md](docs/AUTONOMOUS-DISCOVERY.md)** — optional pattern for running discovery skills unattended on a schedule: a watcher daemon driving the headless `claude` CLI against a job queue. Reference only, not shipped by `setup.sh`.
 
 ## Typical workflow

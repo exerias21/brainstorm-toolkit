@@ -216,7 +216,7 @@ Some filenames must follow external ecosystem conventions, not RFC 1123. These e
 |---|---|---|
 | `SKILL.md` | UPPERCASE | Claude Code skill spec; required form |
 | `AGENTS.md`, `CLAUDE.md`, `TASKS.md`, `GOTCHAS.md`, `README.md`, `LICENSE` | UPPERCASE | Markdown ecosystem convention for top-level project docs; recognized by GitHub UI, agent SDKs, IDEs |
-| Design docs in `docs/` (e.g., `CONVENTIONS.md`, `BRAINSTORM-PIPELINE.md`, `TIER-B-REVISION.md`, `PHASE-1-STATE-ENVELOPE.md`) | UPPERCASE-KEBAB | Project convention for design docs; visually distinguishes from runtime artifacts |
+| Design docs in `docs/` (e.g., `CONVENTIONS.md`, `FLOW.md`, `REVIEW-FIX-STAGE.md`, `PHASE-1-STATE-ENVELOPE.md`) | UPPERCASE-KEBAB | Project convention for design docs; visually distinguishes from runtime artifacts |
 | Skill bundled resources (e.g., `skills/sdlc/templates/stage-2-implement.md`) | lowercase-kebab | Identity (Loaded by skill at runtime via path lookup) |
 
 The rule: **identity paths are RFC 1123; doc filenames follow ecosystem.** When in doubt, ask: "is this file looked up by a tool, or read by a human?" Tool lookup → identity rules. Human reading → ecosystem.

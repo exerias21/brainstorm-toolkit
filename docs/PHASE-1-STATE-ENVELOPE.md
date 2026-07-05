@@ -540,9 +540,8 @@ plan but worth noting here):
 ## Provenance
 
 This plan emerged from:
-- The original 5-agent brainstorm (`docs/TIER-B-REVISION.md` and
-  `BRAINSTORM-PIPELINE.md` Phase 1 description) which proposed the
-  state envelope.
+- The original 5-agent brainstorm (`BRAINSTORM-PIPELINE.md` Phase 1
+  description) which proposed the state envelope.
 - A follow-up dogfood pass after the first real consumer-repo install
   (teacup). The teacup PR history (PRs #23–#25, the manual PR-A/B/C
   Sign-of-the-Day split) revealed that the multi-PR pattern is real
