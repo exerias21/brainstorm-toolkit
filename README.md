@@ -41,7 +41,7 @@ bash ~/brainstorm-toolkit/setup.sh --target . --tools both
 - Legacy `.github/prompts/*.prompt.md` files from older installs are removed during Copilot installs so the workspace stops advertising prompt-file shims.
 - `agents/*` → `<target>/.claude/agents/` (Claude-only helper agents; VS Code can also discover Claude-format agents from `.claude/agents/` when needed).
 - `scripts/*` → `<target>/scripts/`.
-- `templates/AGENTS.md.template` → `<target>/AGENTS.md` if missing. Symlinks `CLAUDE.md → AGENTS.md` on POSIX, else copies.
+- `templates/AGENTS.md.template` → `<target>/AGENTS.md` if missing. `CLAUDE.md` is written as a **copy** of `AGENTS.md` (setup.sh never symlinks — WSL/NTFS and Windows git handle symlinks poorly); keep the two in sync.
 - `templates/TASKS.md.template` → `<target>/TASKS.md` if missing.
 - `templates/CHEATSHEET.md.template` → `<target>/CHEATSHEET.md` if missing. This is the printable companion to `/cheatsheet`; once present, setup leaves user edits alone.
 - `templates/project.json.example` → `<target>/.claude/project.json.example` (left for you to rename and edit).
@@ -50,7 +50,7 @@ Re-running `setup.sh` is safe — it skips existing files unless you pass `--for
 
 ### Windows note
 
-`setup.sh` is bash; run it under **WSL, Linux, or macOS**. Windows-native git handles symlinks inconsistently, so the `CLAUDE.md → AGENTS.md` link falls back to a copy outside POSIX environments.
+`setup.sh` is bash; run it under **WSL, Linux, or macOS**. It writes `CLAUDE.md` as a plain copy of `AGENTS.md` (never a symlink — Windows-native git and WSL/NTFS handle symlinks inconsistently); keep the two files in sync.
 
 ## The cross-tool contract
 
@@ -58,7 +58,7 @@ Every consumer repo gets four shared files:
 
 | File | Purpose | Read by |
 |---|---|---|
-| `AGENTS.md` | Architecture + agent conventions | Claude Code (via `CLAUDE.md` copy/symlink), Copilot, Cursor, Codex |
+| `AGENTS.md` | Architecture + agent conventions | Claude Code (via `CLAUDE.md` copy), Copilot, Cursor, Codex |
 | `TASKS.md` | Markdown checkbox task queue | All agents, humans, GitHub UI |
 | `GOTCHAS.md` | Project-specific pitfalls | `/gotcha`, `/sdlc` sanity check |
 | `.claude/project.json` | Runner config (tests, logs, eval) | `/test-check`, `/eval-harness`, `/sdlc` |

@@ -9,16 +9,42 @@ Instructions for AI coding agents (Claude Code, GitHub Copilot, Cursor, Codex, e
 ## Layout
 
 ```
-.claude-plugin/         # Plugin + marketplace manifests
-skills/<name>/SKILL.md  # Canonical skills (source of truth, Claude-first)
-copilot/skills/<name>/  # Copilot overrides (only skills that differ from canonical)
-agents/                 # Claude-only sub-agent definitions
-scripts/                # Shared helpers (eval-runner.py, check_docker_logs.py)
-templates/              # AGENTS.md / TASKS.md / project.json templates for consumer repos
-examples/               # GOTCHAS.md.example
-setup.sh                # Installer — copies skills into a target repo for Claude and/or Copilot
-README.md               # User-facing docs
+.claude-plugin/            # Plugin + marketplace manifests
+skills/<name>/SKILL.md     # Canonical skills (source of truth, Claude-first)
+skills/<name>/references/  # Runtime reference a skill LOADS — shipped into consumers by setup.sh
+copilot/skills/<name>/     # Copilot overrides (only skills that differ from canonical)
+codex/skills/<name>/       # Codex overrides (sequential; falls through to copilot/ then canonical)
+agents/                    # Claude-only sub-agent definitions
+scripts/                   # Shared helpers (eval-runner.py, check_docker_logs.py)
+templates/                 # AGENTS.md / TASKS.md / project.json templates for consumer repos
+docs/                      # Maintainer/architecture docs + see-also targets — NOT installed into consumers
+examples/                  # GOTCHAS.md.example
+setup.sh                   # Installer — copies skills into a target repo (Claude / Copilot / Codex)
+README.md                  # User-facing docs
 ```
+
+### `docs/` vs `skills/<name>/references/` — the placement rule
+
+Both hold `.md` reference material; they differ in **who reads them and whether they ship**:
+
+- **`docs/`** — maintainer/architecture docs, and any doc a skill merely *cites* / *see-also's*
+  (`FLOW.md`, `CONVENTIONS.md`, `REVIEW-FIX-STAGE.md`, `PHASE-1-STATE-ENVELOPE.md`). `setup.sh` does
+  **not** copy `docs/`, so these are **zero token weight** in consumer repos. A citation is a one-line
+  pointer (`naming per docs/CONVENTIONS.md`) — the reader jumps to the plugin repo.
+- **`skills/<name>/references/`** — material a skill's prompt instructs the agent to **open and load**
+  at runtime (`network-engineer/references/` CVE rubric, `paloalto-ansible/references/` SCM API).
+  `setup.sh` copies the whole skill tree, so this ships into every consumer that installs the skill —
+  and pays its weight only there.
+
+**Placement test:** does the skill **LOAD** the file to do its job (→ `references/`), or merely
+**CITE** it (→ `docs/`)? A citation is a pointer, not a payload. Never move a maintainer/see-also doc
+into `references/` — that ships it (installed once per tool — up to three identical copies under
+`--tools all`) to every consumer for readers who never open it.
+
+**Per-tool overlays replace the canonical skill tree wholesale** (`setup.sh` installs the overlay
+*instead of* the canonical). So an overlaid skill's runtime references must live in the overlay's own
+`references/` (`copilot/skills/<name>/references/`, `codex/skills/<name>/references/`) — a canonical
+`references/` file under an overlaid skill won't reach that tool. Tool-specific references live there.
 
 ## Skill authoring rules
 

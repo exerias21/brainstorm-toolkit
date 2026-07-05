@@ -221,6 +221,18 @@ Some filenames must follow external ecosystem conventions, not RFC 1123. These e
 
 The rule: **identity paths are RFC 1123; doc filenames follow ecosystem.** When in doubt, ask: "is this file looked up by a tool, or read by a human?" Tool lookup → identity rules. Human reading → ecosystem.
 
+### Where a doc lives — `docs/` vs `skills/<name>/references/`
+
+The naming rule above has a placement sibling. **`docs/`** holds maintainer/architecture docs and
+see-also targets — plugin-repo only, **never installed by `setup.sh`** (zero consumer token weight).
+**`skills/<name>/references/`** holds material a skill's prompt instructs the agent to open and
+**load** at runtime — `setup.sh` copies the whole skill tree, so it ships into every consumer of that
+skill. Placement test: does the skill **LOAD** the file to do its job (→ `references/`), or merely
+**CITE** it (→ `docs/`)? A citation is a pointer, not a payload — moving a cited/see-also doc into
+`references/` ships maintainer prose (installed once per tool — up to three identical copies under
+`--tools all`) to consumers who never open it. Per-tool overlays replace the canonical skill tree
+wholesale, so a *tool-specific* runtime reference must live in that overlay's own `references/`.
+
 ---
 
 ## Migration policy
