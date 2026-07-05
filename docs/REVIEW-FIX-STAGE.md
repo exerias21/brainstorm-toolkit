@@ -14,13 +14,21 @@
 > promoted here from the gitignored `plans/` working copy so the design contract is durable and the
 > `CLAUDE.md`/`README.md` pointers (§7.6–7.7) resolve. Where §7.7's acceptance criterion says
 > "`docs/REVIEW-FIX-STAGE.md` exists containing the reviewer-axis contract, the precedence chains,
-> the `auto_fixable` rubric, D1–D16, and the regression-corpus table," it refers to **this file** —
+> the `auto_fixable` rubric, D1–D17, and the regression-corpus table," it refers to **this file** —
 > that content is already present below (§5, §8, §4.3, §11). Implementation has not started; this is
 > the design of record, not a delivered feature.
 >
 > **Revised 2026-07-05 for Claude Fable 5's sunset** (promotional access ends 2026-07-07 →
 > usage-credit-billed): reviewer default is now Opus; the stage is opt-in (no default-on flip);
 > Fable demoted to a usage-billed opt-in.
+>
+> **Added 2026-07-05 — optional second review pass.** `pipeline.review_fix.passes` (default `1`,
+> the existing single fan-out, unchanged) gains an opt-in `2`: one additional completeness-critic
+> reviewer call at a separate, cheaper `second_pass_model` (default `sonnet`), run after pass 1's
+> lenses return and unioned (never voted) into pass 1's findings before the single verify pass
+> runs (§4.1, §6.1, §7.2, D17). Purely additive — does not change the `passes: 1` default path, the
+> Opus-default reviewer, the stage's opt-in posture, or the `pipeline.review_fix.*` config
+> namespace above.
 
 ---
 
@@ -137,6 +145,31 @@ auto-refutes), a grep result proving a claimed test gap is real, or one call-gra
 claimed side-effect. A finding the verify pass cannot ground this way is refuted, not "probably
 true." This is stronger than same-model re-judgment (which risks the reviewer rubber-stamping its
 own hallucination) and costs nothing extra to specify.
+
+**Optional second pass (recall, `review_fix.passes: 2`).** `pipeline.review_fix.passes` defaults to
+`1` — the single fan-out across the lenses above plus the one verify pass just described,
+byte-for-byte unchanged. Setting it to `2` adds exactly **one** additional reviewer call after pass
+1's lenses return: a **completeness critic**, dispatched at a separate, cheaper model
+(`second_pass_model`, default `sonnet` — §6.1). It is explicitly prompted **not** to re-review from
+scratch — it is given pass 1's findings as context and told to find what pass 1 **missed** (an
+un-flagged side-effect, a config/env/docs drift, an off-by-one/boundary condition, an unverified
+claim), never to re-judge or restate them. Its findings are **unioned** into pass 1's, fingerprint-
+deduped against them (the same `fingerprint()` used by §4.2's oscillation guard), and this is a
+**recall mechanism, never a vote or a consensus check** — the existing default-refute verify pass
+already owns precision, and it then runs exactly once, over the combined (unioned, deduped) set,
+not once per pass. **Rationale:** recall comes from a *different look* at the diff, not a *stronger
+repeat* of the same look; a Sonnet- or Haiku-tier completeness critic captures most of the
+missed-bug catch a second full reviewer fan-out would, at roughly 1/5–1/15 the cost of a second
+Opus pass, and because the union only ever *adds* candidate findings that still have to clear the
+same verify gate, a cheaper second pass can only add confirmed findings — it can never dilute the
+result, since the verify pass still gates everything before anything is confirmed or acted on.
+**Independence caveat:** the *primary* reviewer (Opus by default) is what satisfies §5.4's
+independence-from-the-implementer requirement; the second pass is a bonus recall layer on top of
+that, not a substitute for it. If `second_pass_model` happens to equal the model the implementer
+used this run (e.g. a Sonnet second pass alongside the default Sonnet implementer), that pass
+shares the implementer's blind spots — it still adds fresh-context/completeness value (a second
+look, later, with pass 1's findings in hand), but **not** model-diversity. Setting
+`second_pass_model: "haiku"` keeps the second pass both diverse and cheap in that common case.
 
 **False-positive circuit breaker (per lens, cross-run):** track a rolling confirmed/raw ratio per
 lens across the last 20 runs in `.claude/pipeline/_review-stats.json` (repo-local, already covered
@@ -514,7 +547,11 @@ the existing `poka_yoke` key:
       "max_files": 25,
       "_cost_bound_comment": "Above either ceiling, the diff is partitioned across decompose lanes (or changed-files-gate surfaces) so no single reviewer call carries the whole diff.",
       "lenses": ["correctness", "plan-alignment", "config-env-docs"],
-      "_lenses_comment": "Parallel reviewer-agent focuses fanned out at Stage 5.7. Lens names are lowercase-kebab (CONVENTIONS.md identity rule) -- echoed verbatim into stage-outputs/review.json."
+      "_lenses_comment": "Parallel reviewer-agent focuses fanned out at Stage 5.7. Lens names are lowercase-kebab (CONVENTIONS.md identity rule) -- echoed verbatim into stage-outputs/review.json.",
+      "passes": 1,
+      "_passes_comment": "Optional, default 1 -- the single fan-out across the lenses above plus the existing default-refute verify pass, UNCHANGED. Set to 2 to add ONE additional completeness-critic reviewer call, at second_pass_model below, run after pass 1's lenses return and given pass 1's findings as context -- it is prompted to find what pass 1 MISSED (an un-flagged side-effect, a config drift, an off-by-one/boundary, an unverified claim), not to re-review from scratch. Its findings are UNIONED into pass 1's (fingerprint-deduped, same fingerprint() as the section 4.2 oscillation guard) -- a recall mechanism, never a vote/consensus -- and the single verify pass then runs once over the combined set. Any value other than the integer 2 is treated as 1 (plan D17).",
+      "second_pass_model": "sonnet",
+      "_second_pass_model_comment": "Only read when passes=2. A DIFFERENT, cheaper model than the Opus primary reviewer above -- recall comes from a different look, not a stronger repeat. Default 'sonnet' (~1/5 the Opus cost, most of the missed-bug catch). 'haiku' is cheaper still and maximally diverse when the implementer itself resolved to sonnet (this repo's common default, see models.cap) -- a sonnet-vs-sonnet second pass still adds fresh-context/completeness value but not model-diversity (section 5.4 is NOT re-run for this axis; that independence bump/degrade check applies only to the primary reviewer model above). Resolved the same way as the reviewer-model axis (config value with an invalid/unrecognized value ignored, one warning, falling through to the default) and NEVER passed through capModel() -- 'opus' is a valid override for a full second-Opus completeness pass; see plan D17."
     }
   }
 ```
@@ -547,6 +584,16 @@ const REVIEW_FINDING_SCHEMA = {
     fix: { type: 'string', description: 'the specific change to make' },
   },
 }
+// Merge-time-only fields -- added by the JS merge step in section 7.2's reviewGate(), never
+// emitted by the reviewing lens (or second-pass critic) agent itself, so neither is listed in
+// the properties above: `finding_id` (existing) and, only on a `pipeline.review_fix.passes: 2`
+// run, `pass` (1 | 2) -- which review pass surfaced this finding, section 4.1 / D17. A pass:1 run
+// (the default) never sets `pass` at all; its absence means pass 1. NOTE ON A NAME COLLISION: this
+// `pass` field (the lens-fan-out vs. completeness-critic axis added by review_fix.passes) is a
+// DIFFERENT axis from `reviewPassN` / the `f<passLabel>-<n>` finding_id prefix used elsewhere in
+// section 7.2, which counts reviewGate() re-review iterations across the Stage 5.8 fix loop --
+// two independent meanings of "pass" in this document, disambiguated by field name (`pass` vs.
+// the finding_id's numeric prefix) and never combined into one integer.
 
 const REVIEW_SCHEMA = {
   type: 'object',
@@ -628,6 +675,8 @@ under the `pbi-001`/`task-001` convention.
   "lenses": ["correctness", "plan-alignment", "config-env-docs"],
   "reviewer_model": "opus",
   "independence": "ok",
+  "passes_run": 1,
+  "second_pass_model": null,
   "diff_lines_reviewed": 340,
   "partitioned": false,
   "findings": [
@@ -651,7 +700,14 @@ under the `pbi-001`/`task-001` convention.
 ```
 ```
 `findings` is the raw merged fan-out output across all lenses (each tagged with its producing
-lens and a `finding_id`). **`finding_id` is loop-scoped, not run-global**: it is minted as
+lens and a `finding_id`). `passes_run` (1 or 2) and `second_pass_model` (the effective model
+dispatched for the completeness critic, or `null` when `passes_run` is 1) record the section
+4.1/D17 second-pass knobs actually used this run. When `passes_run` is 2, each item in `findings`
+additionally carries `pass: 1` or `pass: 2` (set at the same merge point, never by the reviewing or
+critic agent itself — see the note beside `REVIEW_FINDING_SCHEMA`, §6.2); a `passes_run: 1` run
+never adds this field, so its absence means pass 1. This `pass` tag is unrelated to the loop-scoped
+`finding_id` numbering described next — two independent axes that happen to share the word "pass."
+**`finding_id` is loop-scoped, not run-global**: it is minted as
 `f<reviewPass>-<n>` where `reviewPass` starts at 0 for the pre-fix-loop initial review (the pass
 this top-level `review.json` snapshot reflects) and increments by one on every subsequent
 re-review inside Stage 5.8's fix loop — see §7.2's `reviewGate()` for why a stable cross-loop id
@@ -1014,6 +1070,20 @@ if (reviewEnabled) {
   // Workflow degrades to auto-apply-then-ALWAYS-pause (D4, enforced further down).
   const REVIEW_MODE = cfg.review_fix?.mode ?? 'interactive'
 
+  // Optional second pass (recall, review_fix.passes:2 -- section 4.1 / D17). REVIEW_PASSES gates
+  // whether reviewGate() below dispatches a completeness critic after pass 1's lenses return; any
+  // value other than the literal number 2 means "off" (1, the unchanged single-fan-out design).
+  // SECOND_PASS_MODEL is resolved the SAME WAY as REVIEW_MODEL below -- a plain cfg read, default
+  // 'sonnet', NEVER passed through capModel() (it is not a member of MODEL_TIER_RANK either) --
+  // but, unlike REVIEW_MODEL, it does NOT go through the §5.4 independence bump/degrade check:
+  // that check exists to make the PRIMARY reviewer independent of the implementer; the second
+  // pass is a bonus recall layer on top of that, not a second independence gate (see the
+  // independence caveat in section 4.1). If SECOND_PASS_MODEL happens to equal MODEL_CAP's
+  // resolved tier this run, that is a documented, accepted tradeoff (diverse-and-cheap 'haiku'
+  // is the escape hatch), never an error or a forced bump.
+  const REVIEW_PASSES = cfg.review_fix?.passes === 2 ? 2 : 1
+  const SECOND_PASS_MODEL = cfg.review_fix?.second_pass_model ?? 'sonnet'
+
   // §5.4 independence resolution -- computed ONCE per run, threaded into planFixes
   // (rubric criterion #4) and into the persist:review envelope (data.independence,
   // data.reviewer_model). Only applies when REVIEW_MODEL is one of the tier names (not
@@ -1132,7 +1202,41 @@ CONFIRMED FINDINGS (indexed): ${JSON.stringify(confirmed.map((f, i) => ({ i, ...
     // reports the ids minted by pass N -- the re-review that ran immediately AFTER the fix. A
     // consumer reading review-fix.json must therefore resolve an id against the pass it names,
     // not assume a stable cross-loop identity (that guarantee does not exist in this design).
-    const raw = reports.flatMap((r) => r.findings || []).map((f, i) => ({ ...f, finding_id: `f${passLabel}-${i + 1}` }))
+    // `let`, not `const` -- the only touch to this line itself -- because the optional
+    // REVIEW_PASSES===2 branch immediately below may extend this array with a second pass's
+    // findings before verify. When REVIEW_PASSES===1 (default), nothing below this line runs and
+    // `raw` is exactly this merge, unchanged (passes:1 stays byte-for-byte the existing design).
+    let raw = reports.flatMap((r) => r.findings || []).map((f, i) => ({ ...f, finding_id: `f${passLabel}-${i + 1}` }))
+
+    // Optional second pass (recall, review_fix.passes:2 -- section 4.1 / D17). NOT a second
+    // fan-out and NOT a vote: ONE completeness-critic call, at the separate/cheaper
+    // SECOND_PASS_MODEL, given pass 1's findings as read-only context and told to find what pass 1
+    // MISSED, not to re-review or re-judge them (that stays the verify pass's job below, run once,
+    // over the union). Findings are fingerprint-deduped against pass 1's (same fingerprint() as
+    // the section 4.2 oscillation guard) so a critic finding landing on a region pass 1 already
+    // flagged never double-counts into verify.
+    if (REVIEW_PASSES === 2) {
+      const critic = await agent(
+        `You are the Stage 5.7 SECOND-PASS COMPLETENESS CRITIC for "${parse.feature_name}". Pass 1
+already ran and reported the findings below -- do NOT re-review from scratch and do NOT re-judge
+them (the verify pass, not you, decides whether they hold up). Your ONLY job is RECALL: find
+defects pass 1 MISSED -- an un-flagged side-effect, a config/env/docs drift, an off-by-one/boundary
+condition, or a claim pass 1 made that does not actually check out. A different look catches
+different bugs than a stronger repeat of the same look; do not resubmit anything already listed
+below.
+PASS 1 FINDINGS (context only -- do not restate): ${JSON.stringify(raw.map(({ severity, file, line, defect }) => ({ severity, file, line, defect })))}
+${planRefForAgents}
+CHANGED FILES: ${JSON.stringify(changedFiles)}
+Return each NEW defect as a finding: {severity, file, line, defect, failure_scenario, fix}.
+Do NOT tag auto_fixable -- that is decided by the Stage 5.8 fix-planner, not you.`,
+        { label: 'review:completeness-critic', phase: 'Review', schema: { type: 'array', items: REVIEW_FINDING_SCHEMA }, model: SECOND_PASS_MODEL }
+      )
+      const pass1Tagged = raw.map((f) => ({ ...f, pass: 1 }))
+      const pass2Raw = (critic || []).map((f, i) => ({ ...f, finding_id: `f${passLabel}-${raw.length + i + 1}`, pass: 2 }))
+      const seen = new Set(pass1Tagged.map((f) => fingerprint(f)))
+      raw = [...pass1Tagged, ...pass2Raw.filter((f) => !seen.has(fingerprint(f)))]
+    }
+
     const confirmed = await verifyFindings(raw)
     const fixSpecs = await planFixes(confirmed)
     const autoFixable = fixSpecs.filter((f) => f.auto_fixable)
@@ -1223,7 +1327,7 @@ ${envelopeNote(slug, `review-fix`, `Append one entry to data.loops[] with fix_sp
   }))
   await agent(
     `Persist Stage 5.7 review for slug "${slug}".
-${envelopeNote(slug, 'review', `Write data.lenses=${JSON.stringify(REVIEW_LENSES)}, data.reviewer_model="${effectiveReviewModel}" (the EFFECTIVE dispatch tier -- already bumped per §5.4 independence if that applied this run; not necessarily the raw REVIEW_MODEL resolution), data.independence="${independence}" (§5.4 -- "ok" or "degraded"), data.findings=${JSON.stringify(review._raw || [])} (the full raw merged finding objects, each carrying its finding_id -- NOT the projected confirmed shape), data.confirmed=${JSON.stringify(confirmedProjected)} (PROJECTED: finding_id + verify_confidence + evidence ONLY), data.deferred_debt (see Appendix B -- run the Appendix B TASKS.md dedup-append algorithm as part of this same persist call, steps 1-5). Do NOT write fix_loops_run/max_fix_loops on this sidecar -- those belong on review-fix.json only (see the review-fix persist call below).`)}`,
+${envelopeNote(slug, 'review', `Write data.lenses=${JSON.stringify(REVIEW_LENSES)}, data.reviewer_model="${effectiveReviewModel}" (the EFFECTIVE dispatch tier -- already bumped per §5.4 independence if that applied this run; not necessarily the raw REVIEW_MODEL resolution), data.independence="${independence}" (§5.4 -- "ok" or "degraded"), data.passes_run=${REVIEW_PASSES} (1 or 2 -- section 4.1 / D17; 1 means the single-fan-out design, unchanged), data.second_pass_model=${REVIEW_PASSES === 2 ? `"${SECOND_PASS_MODEL}"` : 'null'} (the model actually dispatched for the completeness critic this run; null when passes_run is 1, since no critic ran), data.findings=${JSON.stringify(review._raw || [])} (the full raw merged finding objects, each carrying its finding_id -- and, when passes_run is 2, a pass:1|2 field set at this same merge point, never by the reviewing/critic agent itself, see §6.2 -- NOT the projected confirmed shape), data.confirmed=${JSON.stringify(confirmedProjected)} (PROJECTED: finding_id + verify_confidence + evidence ONLY), data.deferred_debt (see Appendix B -- run the Appendix B TASKS.md dedup-append algorithm as part of this same persist call, steps 1-5). Do NOT write fix_loops_run/max_fix_loops on this sidecar -- those belong on review-fix.json only (see the review-fix persist call below).`)}`,
     { label: 'persist:review', phase: 'Review', model: capModel('haiku', MODEL_CAP) }
   )
   // Separate persist call, separate sidecar -- review-fix.json's counters are NOT part of
@@ -1523,7 +1627,7 @@ fresh clone**. Any checked-in file that permanently points at it (rather than at
 *design*, informally, during the PR that implements it) would be a dangling reference the moment
 that PR merges. This diff therefore commits the durable parts — the design contract and the case
 study — as a new tracked file, `docs/REVIEW-FIX-STAGE.md` (design summary: the reviewer-model axis,
-the two enablement precedence chains, the `auto_fixable` rubric, the schemas, D1–D15 verbatim from
+the two enablement precedence chains, the `auto_fixable` rubric, the schemas, D1–D17 verbatim from
 §8, and the regression-corpus table from §11), and has `CLAUDE.md`/`README.md` reference *that*
 path, never `plans/...`.
 
@@ -1601,6 +1705,7 @@ Every open question raised across the seven grounding passes, resolved here — 
 | D14 | Does `--no-fable-review` need a positive-force counterpart flag? | **No — negative form only**, matching `--no-cache`/`--no-verify` precedent. | `--review-model <name>` already doubles as an implicit enable; there's no existing precedent in this repo for a redundant bare positive-force flag. |
 | D15 | Zero-flag-by-design contradiction in `docs/CONVENTIONS.md`? | **Treated as pre-existing stale documentation**, corrected as a companion edit (§3, §6.4) rather than blocking this plan. | `--model` already ships and is documented in two other live files; the "zero-flag by design" line describes a state the repo already left behind. |
 | D16 | If the resolved reviewer model can't be dispatched at runtime, what happens? | **Fall back to the highest available of `opus`/`sonnet`/`haiku`, preferring `opus`** — logged once. `review.json.data.reviewer_model` records the *effective* model actually dispatched (§5.2, §7.2). | This is a **general availability safety net**, not a Fable-specific one: `fable` is explicitly **not** an unavailability case — it remains fully dispatchable after its 2026-07-07 promotional-access sunset (D11/§5.5), just billed via paid usage credits instead of being free/plan-included. Since the default reviewer is now `opus` (§5.2), the fallback target and the default coincide in the common case — this mechanism exists for a genuine dispatch failure on whichever model resolves, not because a cheap default became unreachable. Distinct from D1/§5.2's invalid-*config* fall-through (bad names, not runtime reachability). Forcing a specific reviewer deliberately is `--review-model <name>` (e.g. `fable` or `opus`), a first-class choice separate from this fallback. |
+| D17 | 2nd review pass — a 2nd Opus, or a cheaper different model? | **A cheaper different model (default Sonnet) as a completeness critic, unioned.** | Recall comes from a different look at the diff, not a stronger repeat of the same look; union + the existing default-refute verify pass means a cheaper second pass can only *add* confirmed findings, never dilute the result (the verify pass still gates the combined set before anything is confirmed). A full 2nd-Opus fan-out remains available for a team that wants it via `second_pass_model: "opus"`; `"haiku"` maximizes diversity-and-cheapness for the common case where the implementer itself resolved to Sonnet. |
 
 ---
 
@@ -1764,6 +1869,16 @@ opt-in runs**, not a default-on burn-in (there is none — see above).
       (§7.2), the same mechanism the existing `rebuildNote` uses.
 - [ ] **Cost bound**: a synthetic >1500-line diff triggers partitioned review (`data.partitioned:
       true`), not one call over the full diff.
+- [ ] **Optional second review pass (`pipeline.review_fix.passes: 2`, D17)**: with `passes: 2`,
+      exactly one completeness-critic call runs — dispatched at `second_pass_model` (default
+      `sonnet`, resolved like the reviewer axis, never through `capModel()`) — after the pass-1
+      lens fan-out returns; its findings are unioned into pass 1's (fingerprint-deduped via the
+      same `fingerprint()` as §4.2's oscillation guard) *before* the single default-refute verify
+      pass runs once over the combined set — never a second verify pass, never a vote/consensus.
+      `review.json` records `data.passes_run: 2` and `data.second_pass_model` (the effective model
+      dispatched for the critic). With `passes: 1` (default, and whenever the key is omitted), no
+      second pass runs at all: `data.passes_run: 1`, `data.second_pass_model: null`, and Stage 5.7
+      behaves exactly as it did before this addition.
 - [ ] **False-positive circuit breaker (Phase 4 — see §9.2/§6.3)**: a lens whose 20-run
       confirmed-rate, recorded in `.claude/pipeline/_review-stats.json`, is seeded below 40% is
       excluded from that run's `REVIEW_LENSES` dispatch and appears in `data.demoted_lenses`; 5
@@ -1806,7 +1921,7 @@ opt-in runs**, not a default-on burn-in (there is none — see above).
 - [ ] **`docs/CONVENTIONS.md` / `skills/sdlc/SKILL.md` drift fix**: the stale "zero-flag by design"
       claim and the stale "No flags" Arguments section are corrected in the same PR.
 - [ ] **`docs/REVIEW-FIX-STAGE.md` exists** (§7.6) containing the reviewer-axis contract, both
-      precedence chains, the `auto_fixable` rubric, D1–D15, and the regression-corpus table; a grep
+      precedence chains, the `auto_fixable` rubric, D1–D17, and the regression-corpus table; a grep
       of tracked files for `plans/toolkit-fable-review-fix-loop` returns nothing; every
       `CLAUDE.md`/`README.md` review-stage reference resolves to the `docs/` path, not `plans/...`.
 
