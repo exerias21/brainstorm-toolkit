@@ -72,6 +72,8 @@ into `references/` — that ships it (installed once per tool — up to three id
 - **`TASKS.md`** — markdown checkbox list at repo root; the portable task tracker shared by Claude's `TaskCreate` mirror and Copilot's TODO reading.
 - **`GOTCHAS.md`** — project-specific pitfalls; consulted by `/gotcha` and the sanity-check stage of `/sdlc`.
 - **`.claude/project.json`** — optional per-project config (test commands, eval runner, modules list); every key is optional, missing keys are skipped.
+- **Gotcha flywheel** — the loop-exit capture protocol is centralized in `skills/gotcha/SKILL.md` ("Capture at loop-exit"). `/task`, `/sdlc-lite`, `/sdlc` reference it and auto-draft a gotcha **only on an objective trigger** (a fix-loop that failed-then-recovered, or the user voicing surprise), routed through gotcha's dedup — never a vibe-gate. `/task` + `/sdlc-lite` also drop a `/gotcha <text>` `.next-action` sentinel when capture is declined; the seam is Stop-hook-backed (Claude/Copilot only) so Codex prints an inline `Next:` fallback. `/brainstorm` injects area-scoped gotchas at Step 2 (entry), not only at validation.
+- **Model cap** — `.claude/project.json` `models.cap` (or the per-run `--model <tier>` flag) is a **ceiling** on sub-agent model tier for the fan-out skills (`/sdlc`, `/sdlc-lite`, `/brainstorm*`). The fan-out is **Sonnet-first by default** — the Workflows default `model_cap` to `'sonnet'` and the prose dispatch sites say "Sonnet by default"; Opus is an explicit opt-up via `--model opus`. Keep it that way when adding a fan-out dispatch (default Sonnet, not Opus). Canonical contract: `skills/sdlc/templates/model-cap.md`. Prose is the enforcement surface — each fan-out dispatch resolves the tier (`--model` > `models.cap` > default) and prints `model: <tier> (cap: <cap|none>)` before dispatching; `validate_skills.py` soft-warns if a fan-out skill drops the `model-cap.md` pointer. The Workflow path enforces the same via `capModel()` at the `agent()` seam. Adding/rewording a fan-out dispatch means updating all three legs (prose, workflow, overlays).
 
 ## When modifying skills
 
@@ -79,6 +81,25 @@ into `references/` — that ships it (installed once per tool — up to three id
 - If changing a contract (e.g., where a skill writes files), update the consumers too — grep across `skills/`, `copilot/skills/`, and `README.md`.
 - If a skill exists in both `skills/` (canonical) and `copilot/skills/` (override), changes may need to be reflected in both. The Copilot override is a separate file, not a patch.
 - Avoid adding Claude-only features to cross-tool skills unless the skill also has a Copilot override.
+
+## Workflow-backed skills (Claude-only ultracode layer) — the three-way sync contract
+
+Some skills ship a **deterministic Workflow-tool implementation** alongside their prose stages:
+- `/sdlc` + `/sdlc-lite` — `skills/sdlc/workflows/sdlc-pipeline.workflow.js` (one parameterized script, full pipeline).
+- `/brainstorm-deep` — `skills/brainstorm-deep/workflows/brainstorm-deep.workflow.js` (Pass 3's frame fan-out only — a **hybrid**; its interactive passes can never be a Workflow).
+
+The Workflow tool is a **Claude Code-specific primitive** — Codex and Copilot do not have it (Codex *does* have its own plan mode, but not this JS orchestration tool), so they run the prose path. It is used **only when ultracode is explicitly enabled** (keyword / session flag / asked-for) and `pipeline.skip_workflow` is not `true`; otherwise the prose path runs even on Claude. This means a Workflow-backed cross-tool skill has **up to three expressions of the same logic**:
+
+1. The **canonical prose** in `skills/<name>/SKILL.md` — the **source of truth**.
+2. The **Workflow script** (`skills/<name>/workflows/*.workflow.js`) — a Claude-only enhancement that *mirrors* the prose.
+3. The **Copilot/Codex overlays** (`copilot/skills/<name>/`, `codex/skills/<name>/`) — the cross-tool prose fallback.
+
+**The contract: change the canonical prose first, then bring the Workflow and the overlays into line with it.** Never let the Workflow or an overlay drift ahead of the prose — the prose is what every tool that lacks the Workflow actually executes, and what a reviewer reads. When you change a prose *stage contract* (what a stage gates on, what it writes, the iteration budget, the dispatch order):
+
+- update the Workflow script to match, and re-validate it (compile its body as an async function — top-level `return`/`await` are legal there, so `node --check` mis-flags it; see the commit that added it for the one-liner);
+- update the overlays (they have no Workflow, so the prose change is the *only* way they get the behavior).
+
+`validate_skills.py` guards the prose↔overlay parity leg (soft warning). There is **no automated guard for the prose↔Workflow leg** — keeping them in sync is on the author. A change that only *adds* a Claude-only execution-mode wrapper (not a stage-contract change) needs no overlay edit, because the stages themselves are unchanged.
 
 ## When adding a new skill
 
