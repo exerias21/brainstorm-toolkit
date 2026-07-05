@@ -1,4 +1,4 @@
-# Fable-in-the-loop: an adversarial Review→Fix stage for `/sdlc` + `/sdlc-lite`
+# Adversarial Review→Fix stage for `/sdlc` + `/sdlc-lite`
 
 > **Target repo:** brainstorm-toolkit (this repo). Owns `skills/sdlc/`, `skills/sdlc-lite/`,
 > `skills/sdlc/workflows/sdlc-pipeline.workflow.js`, `skills/sdlc/templates/*`, the four

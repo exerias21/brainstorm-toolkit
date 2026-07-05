@@ -44,7 +44,7 @@ flowchart TD
       S2 --> S3["3 · Generate evals"] --> S4["4 · Eval + fix loop"]
       S4 --> S5["5 · Validate (/test-check: logs · unit · e2e)"] --> S55["5.5 · Plan-validate"]
       S55 --> S56["5.6 · Flowsim (plan⇄code narrative trace)"]
-      S56 -. "planned — see REVIEW-FIX-STAGE.md" .-> S57["5.7 Review + 5.8 Fix (independent Fable reviewer)"]
+      S56 -. "planned — see REVIEW-FIX-STAGE.md" .-> S57["5.7 Review + 5.8 Fix (independent reviewer, opt-in)"]
     end
 
     PIPE --> OUT{"Terminal step (the ONLY place the two differ)"}
