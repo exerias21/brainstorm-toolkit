@@ -284,5 +284,12 @@ it can't surprise you with a PR).
    (task items are already in `TASKS.md`).
 
 Write the next-action sentinel naming the chosen command so Copilot's Stop
-hook surfaces it: `echo "/sdlc-lite plans/brainstorm-[topic-slug].md" > .claude/.next-action`
+hook surfaces it — append ONE structured line (multi-slot seam; coexists with a gotcha
+entry, see `docs/SEAM.md`), deduped by `cmd`:
+`line='{"cmd":"/sdlc-lite plans/brainstorm-[topic-slug].md","source":"brainstorm","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action`
+On Codex (no Stop hook), also print `Next: <command>` inline right after writing
+the sentinel, so the handoff degrades gracefully instead of vanishing. **No-hook
+nudge (SEAM2):** if no Stop hook is wired at all, the sentinel is inert — apply the
+best-effort check in `docs/SEAM.md` and tell the user to enable the plugin (it ships
+the hook, SEAM1) or run `setup.sh`/`/repo-onboarding`.
 (substitute `/sdlc` if that's the established flow). Skip only on "save for later".

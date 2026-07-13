@@ -195,17 +195,31 @@ Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
   mark** (the last item's is already `complete`); the queue's own resume state is the
   `TASKS.md` rows + the sentinel. Just write the sentinel below.
 
-In **both** cases append the structured queue-resume sentinel line per `docs/SEAM.md`:
-  `{"cmd":"/sdlc-lite <plan> --queue","source":"sdlc-lite","confirm":false}` to resume the
-  loop. Use `confirm:true` when the parked action writes git history (e.g. a commit), so
-  auto-continue stops at that human gate instead of running it.
+**Then — ALWAYS, on every park — WRITE THE SENTINEL.** This is the step that keeps getting
+skipped (agents write only `run.json.next_action` and stop, which leaves the loop dead). Be
+exact about *why*: the `.claude/.next-action` **sentinel is the ONLY thing the Stop hook reads
+and auto-surfaces**; `run.json.next_action` is a durable *fallback* that `/next` reads **on
+demand** — it is **NOT** auto-surfaced. A park that sets only the envelope field is invisible
+and cannot self-continue. Run these exact appends (dedup + multi-slot, `docs/SEAM.md`):
 
-Writing the **sentinel** (not only the envelope field) is what lets the Stop hook surface
-the resume — and, with `pipeline.auto_continue: true` set, **execute** it: the loop then
-self-advances batch→batch hands-off from a single plan until a `confirm:true` action, a
-blocked/failed item, or the `pipeline.loop.max_hops` budget parks it. That is the full
-"loop engineering" path — it needs the park writes above honored every time. End
-with a per-item results table (item → status → parked?).
+```sh
+# (A) queue-resume line — ALWAYS when rows remain pending:
+line='{"cmd":"/sdlc-lite <plan> --queue","source":"sdlc-lite","confirm":false}'
+grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action
+# (B) if it parked on a confirm:true action (a commit/rebuild the human must run FIRST),
+#     ALSO append that action so the hook surfaces it:
+line='{"cmd":"<the confirm action>","source":"sdlc-lite","confirm":true}'
+grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action
+```
+
+**Do NOT rely on `run.json.next_action` alone** — the sentinel `echo` above is mandatory on
+every park. Then run the **no-hook nudge** (`docs/SEAM.md` SEAM2): if no Stop hook is wired,
+the line is inert — tell the user to enable the plugin or onboard, or the loop can't continue.
+
+With the sentinel written, the Stop hook surfaces the resume — and with `pipeline.auto_continue:
+true`, **executes** it: the loop self-advances batch→batch hands-off until a `confirm:true`
+action, a blocked/failed item, or the `pipeline.loop.max_hops` budget parks it. End with a
+per-item results table (item → status → parked?).
 
 ## Stage 1.5 — Sanity check
 

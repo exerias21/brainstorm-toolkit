@@ -62,10 +62,13 @@ templates, no new schema beyond `run.json.pipeline = "sdlc-lite"` and a
   stays **canonical** (`state-schema.md`: `feature_slug`/`plan_file` keys, required
   fields, canonical stage names — never `slug`/`plan` or `phase-*` stages; queue/phase
   data goes in `data.*`) with a **distinct per-item slug** `<plan-slug>-<row-id>` (never
-  the shared plan slug — items would collide on one envelope dir). On park do all three:
-  `run.json.status = "paused"`,
-  `run.json.next_action = {cmd, confirm}`, **and** append the sentinel line
-  `{"cmd":"/sdlc-lite <plan> --queue","confirm":false}` (`confirm:true` if it writes git).
+  the shared plan slug — items would collide on one envelope dir). On park: set
+  `run.json.status = "paused"` + `run.json.next_action = {cmd, confirm}`, **and — mandatory,
+  don't skip it —** append the sentinel line:
+  `line='{"cmd":"/sdlc-lite <plan> --queue","source":"sdlc-lite","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action`
+  (plus a `confirm:true` line for the confirm action if it parked on one). The **sentinel is
+  the ONLY thing the Stop hook surfaces**; `run.json.next_action` alone is invisible, so a park
+  that sets only the envelope field leaves the loop dead.
 
 Mark resolved rows `[~]`. Derive `slug` per `docs/CONVENTIONS.md`; initialize
 `.claude/pipeline/<slug>/`.

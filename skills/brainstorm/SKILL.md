@@ -215,9 +215,9 @@ plan mode. You'll know by the plan-file path the host hands you. When that's
 the case:
 - During planning, author into the sandbox file the host gave you (that's all
   it allows).
-- **Immediately after `ExitPlanMode`** (Step 8), persist the canonical copy to
-  repo-root `plans/brainstorm-<topic-slug>.md` — *before* writing the
-  next-action sentinel, so downstream skills find it.
+- **Immediately after `ExitPlanMode`** (Step 8.0 — its literal first action),
+  persist the canonical copy to repo-root `plans/brainstorm-<topic-slug>.md` —
+  *before* writing the next-action sentinel, so downstream skills find it.
 Don't fight the sandbox mid-plan; just re-persist to repo-root the moment the
 sandbox lifts. The repo-root copy is the one downstream skills read.
 
@@ -323,7 +323,18 @@ A brainstorm that ends at a file the user has to manually pick up is a
 **dropped flow**. Default posture: keep the momentum — continue into the
 delivery pipeline rather than stopping at the plan.
 
-**First — is this plan about the toolkit's own vendored skills?** If the plan's
+**Step 8.0 — exit plan mode, then persist the plan to `plans/` FIRST.** This is
+the literal first action of Step 8, before routing or sentinels. If the current
+tool has an explicit plan-mode exit, call `ExitPlanMode` now. Then, **immediately
+and before anything else** — if you authored the plan into a host **sandbox path**
+(`~/.claude/plans/…`, per the Step 6 sandbox note), `Write` the canonical copy to
+`plans/brainstorm-<topic-slug>.md` at the repo root. On sandbox hosts the only
+valid order is **ExitPlanMode → re-persist → sentinel**; the host's "you can now
+start coding" prompt does **not** replace this step. Do not proceed to routing or
+the sentinel until the repo-root plan file exists. (If you never hit a sandbox —
+the plan was already written to `plans/` at Step 6 — this is a no-op; continue.)
+
+**Then — is this plan about the toolkit's own vendored skills?** If the plan's
 changed-files target `.claude/skills/**` (or `.github/skills/**`,
 `.agents/skills/**`) — i.e. it proposes editing *installed/vendored* skill
 copies — **do NOT route it through this consumer repo's `/sdlc`.** Those edits
@@ -343,21 +354,37 @@ re-choose a flow they've already established this session:
   with **no git writes**, so it's the safe default — it can't surprise the user
   with a PR.
 
+> These continuity rules are a slice of `/next`'s **canonical decision ladder**
+> (rung 4 — a plan with no run; see `skills/next/SKILL.md`). `/next` is the source
+> of truth for "what's the next step"; this inline copy keeps `/brainstorm`
+> self-contained when the user hasn't got `/next` in mind.
+
 Drop a **next-action sentinel** naming that command so the Stop hook surfaces
 it. The plan file MUST already exist at `plans/brainstorm-<topic-slug>.md`
-before writing the sentinel — a sentinel pointing at a missing plan is a bug.
+before writing the sentinel — Step 8.0 guarantees this (on a sandbox host that
+means the plan was re-persisted *after* `ExitPlanMode`, never before). A
+sentinel pointing at a missing plan is a bug.
 
 ```
-# Default to the safe pipeline; substitute /sdlc if that's the established flow:
-echo "/sdlc-lite plans/brainstorm-<topic-slug>.md" > .claude/.next-action
+# Append ONE structured line (multi-slot seam — coexists with a gotcha entry;
+# see docs/SEAM.md). Default to the safe pipeline; substitute /sdlc with
+# "confirm":true if that's the established flow (it opens a PR).
+line='{"cmd":"/sdlc-lite plans/brainstorm-<topic-slug>.md","source":"brainstorm","confirm":false}'
+grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action
 ```
 
-The Stop hook (installed by `setup.sh` into both `.claude/settings.json` for
-Claude Code and `.github/hooks/next-action.json` for Copilot) reads the file
-once, prints `Next: <command>`, and deletes it. Skip the sentinel only if the
-user explicitly chose "save for later" with no intent to ship.
+The Stop hook — **shipped by the plugin** (auto-wired when the plugin is enabled,
+SEAM1) or installed by `setup.sh` (`.claude/settings.json` / `.github/hooks/next-action.json`)
+— reads the file once, prints `Next: <command>`, and deletes it. **On Codex (no Stop
+hook), also print `Next: <command>` inline** right after writing the sentinel, so the
+flagship handoff degrades gracefully instead of vanishing. **No-hook nudge (SEAM2):** if
+no hook is wired at all, the sentinel is inert — after writing it, run the best-effort
+check in `docs/SEAM.md` and, if nothing will surface it, tell the user to enable the
+plugin or run `setup.sh`/`/repo-onboarding` (else the `Next:` hint silently never
+appears). Skip the sentinel only if the user explicitly chose "save for later" with no
+intent to ship.
 
-Then exit Plan mode (`ExitPlanMode`) and continue:
+Plan mode is already exited (Step 8.0). Continue:
 
 1. **Show what's being built** (optional, cheap) — offer
    `/plan-html plans/brainstorm-<topic-slug>.md` to render the plan as a

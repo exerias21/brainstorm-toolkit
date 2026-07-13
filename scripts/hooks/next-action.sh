@@ -10,12 +10,30 @@
 #     every Stop).
 #   - Always exits 0; this hook is informational and must never block.
 #
-# Skills that want to surface a follow-up command write the file with one line:
-#   echo '/sdlc plans/brainstorm-add-orders.md' > .claude/.next-action
+# Peek-vs-consume rule: this hook is the ONLY consumer — it alone deletes the
+# file. Any other reader (e.g. a future /next or /status that inspects the
+# pending next-action) must PEEK: read without deleting. A second consumer would
+# eat the hint before the user sees it.
+#
+# Skills surface a follow-up command by APPENDING one line (>>), not overwriting
+# (>), so independent sources coexist. Preferred structured form (multi-slot):
+#   echo '{"cmd":"/sdlc-lite plans/foo.md","source":"brainstorm","confirm":false}' >> .claude/.next-action
+# A bare command line is still accepted (legacy single-slot):
+#   echo '/sdlc plans/brainstorm-add-orders.md' >> .claude/.next-action
+# Set "confirm":true for anything that writes git history (e.g. /sdlc); dedup by
+# cmd at the writer. Full contract: docs/SEAM.md.
 #
 # Cross-tool: the same script is wired into Claude Code's `Stop` hook (via
 # .claude/settings.json) and Copilot's `Stop` hook (via .github/hooks/*.json).
 # Both runtimes consume `systemMessage` from stdout JSON identically.
+#
+# Auto-continue (L9, OPT-IN, default OFF): with `pipeline.auto_continue: true` in
+# .claude/project.json, on Claude Code only, a SINGLE non-confirm sentinel is
+# EXECUTED (return {"decision":"block","reason":"Continue with: <cmd>"}) instead of
+# printed — the session loops itself. Guardrails: never a confirm:true action; a
+# hop budget (`pipeline.loop.max_hops`, default 5) in .claude/.auto-continue-hops
+# bounds the chain; multiple pending actions park to a printed hint. Unset knob ⇒
+# print behavior, unchanged. See docs/SEAM.md.
 
 set -u
 
@@ -38,11 +56,44 @@ NEXT_ACTION_FILE="$PROJ/.claude/.next-action"
 #     (A warning that deletes itself while the condition holds is useless.)
 msgs=()
 
-# 1. Transient next-action hint (fire-once).
+# 1. Transient next-action hint(s), fire-once. MULTI-SLOT: one entry per
+#    non-empty line, so independent sources (e.g. the gotcha seam and a pipeline
+#    handoff) coexist instead of racing for a single slot. Each line is either:
+#      - a JSON object {"cmd": "...", "source": "...", "confirm": bool}, or
+#      - a bare command string (legacy single-slot format — still supported).
+#    `confirm: true` marks an action a human should approve first (e.g. /sdlc,
+#    which opens a PR); a future auto-continue consumer must honor it.
+sentinel_cmds=()      # raw cmds, for the auto-continue decision (L9)
+sentinel_confirm=()   # 0/1 per cmd, parallel to sentinel_cmds
 if [ -s "$NEXT_ACTION_FILE" ]; then
-  cmd="$(awk 'NF{print; exit}' "$NEXT_ACTION_FILE" | sed 's/[[:space:]]*$//')"
+  if command -v python3 >/dev/null 2>&1; then
+    while IFS="$(printf '\t')" read -r cflag cmd; do
+      [ -n "$cmd" ] || continue
+      sentinel_cmds+=("$cmd"); sentinel_confirm+=("$cflag")
+      if [ "$cflag" = "1" ]; then
+        msgs+=("Next: $cmd (confirm before running)")
+      else
+        msgs+=("Next: $cmd")
+      fi
+    done < <(python3 -c '
+import json, sys
+for raw in sys.stdin:
+    s = raw.strip()
+    if not s:
+        continue
+    try:
+        obj = json.loads(s)
+        if not isinstance(obj, dict):
+            raise ValueError
+        cmd = str(obj.get("cmd", "")).strip()
+        if not cmd:
+            continue
+        print(("1" if obj.get("confirm") else "0") + "\t" + cmd)
+    except (ValueError, TypeError):
+        print("0\t" + s)  # not JSON -> legacy bare command (never confirm)
+' < "$NEXT_ACTION_FILE")
+  fi
   rm -f "$NEXT_ACTION_FILE"
-  [ -n "$cmd" ] && msgs+=("Next: $cmd")
 fi
 
 # 2. Condition-derived: a pipeline run left in_progress/paused with a stale
@@ -62,6 +113,60 @@ if [ -d "$PIPE_DIR" ]; then
     msgs+=("⚠ ${stale} stale pipeline run(s) (in_progress/paused >1d). Run /status or /repo-health to reconcile.")
   fi
 fi
+
+# 3. Condition-derived (L8): a brainstorm plan with no pipeline run is a pending
+#    handoff that outlived its fire-once sentinel. Recomputed every Stop, never
+#    stored — persists while the plan sits unbuilt, unlike the sentinel. Guarded
+#    against noise: only `brainstorm-<slug>.md` (the pipeline-intended plans, not
+#    meta docs), only modified in the last 7 days (older ⇒ intentionally parked,
+#    not pending), and only when no .claude/pipeline/<slug>/ envelope exists.
+PLANS_DIR="$PROJ/plans"
+if [ -d "$PLANS_DIR" ]; then
+  pending=0
+  for pf in "$PLANS_DIR"/brainstorm-*.md; do
+    [ -e "$pf" ] || continue
+    [ -n "$(find "$pf" -mtime -7 2>/dev/null)" ] || continue
+    base="$(basename "$pf" .md)"; slug="${base#brainstorm-}"
+    [ -d "$PROJ/.claude/pipeline/$slug" ] && continue
+    pending=$((pending+1))
+  done
+  if [ "$pending" -gt 0 ]; then
+    msgs+=("◆ ${pending} recent plan(s) awaiting a pipeline run. Run /next for the recommended next step.")
+  fi
+fi
+
+# --- Auto-continue (L9) — OPT-IN, Claude-only, guardrailed. Turns a single
+#     non-confirm sentinel into execution by returning {"decision":"block"}
+#     (feeds `reason` back to the model as its next instruction) instead of a
+#     printed hint — the session becomes the loop, the sentinel its program
+#     counter. DEFAULT OFF: with the knob unset, behavior is unchanged (print).
+#     Guardrails (non-negotiable): (1) opt-in `pipeline.auto_continue: true`;
+#     (2) never a `confirm:true` action (those always park to a printed hint);
+#     (3) a hop budget bounds the chain like the 3-iteration fix budget bounds a
+#     fix loop; (4) Claude Code only — gated on CLAUDE_PROJECT_DIR (Copilot/Codex
+#     print). Only a SINGLE pending action auto-continues; multiple → park.
+HOPS_FILE="$PROJ/.claude/.auto-continue-hops"
+PROJECT_JSON="$PROJ/.claude/project.json"
+if [ -n "${CLAUDE_PROJECT_DIR:-}" ] \
+   && [ -f "$PROJECT_JSON" ] \
+   && grep -Eq '"auto_continue"[[:space:]]*:[[:space:]]*true' "$PROJECT_JSON" 2>/dev/null \
+   && [ "${#sentinel_cmds[@]}" -eq 1 ] \
+   && [ "${sentinel_confirm[0]:-1}" = "0" ] \
+   && command -v python3 >/dev/null 2>&1; then
+  max_hops="$(grep -Eo '"max_hops"[[:space:]]*:[[:space:]]*[0-9]+' "$PROJECT_JSON" 2>/dev/null | grep -Eo '[0-9]+' | head -1)"
+  [ -n "$max_hops" ] || max_hops=5
+  if [ -s "$HOPS_FILE" ]; then remaining="$(cat "$HOPS_FILE" 2>/dev/null)"; else remaining="$max_hops"; fi
+  case "$remaining" in ''|*[!0-9]*) remaining="$max_hops";; esac
+  if [ "$remaining" -gt 0 ]; then
+    printf '%s' "$((remaining - 1))" > "$HOPS_FILE"
+    python3 -c 'import json,sys; print(json.dumps({"decision":"block","reason":"Continue with: "+sys.argv[1]}))' "${sentinel_cmds[0]}"
+    exit 0
+  fi
+  # Budget exhausted -> park (print) and reset the chain.
+  msgs+=("⛔ auto-continue hop budget reached — parking. Run the command above to continue.")
+fi
+# Any print path ends the chain: reset the hop budget for the next one.
+rm -f "$HOPS_FILE" 2>/dev/null || true
 
 [ ${#msgs[@]} -gt 0 ] || exit 0
 
