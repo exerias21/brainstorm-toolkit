@@ -14,6 +14,7 @@
       "source": "./",
       "strict": true,
       "agents": [
+        "./agents/conductor.md",
         "./agents/e2e-test-runner.md",
         "./agents/network-sec.md",
         "./agents/sdlc-pipeline.md",
@@ -32,9 +33,11 @@
         "./skills/gotcha",
         "./skills/logging-conventions",
         "./skills/network-engineer",
+        "./skills/next",
         "./skills/paloalto-ansible",
         "./skills/plan-html",
         "./skills/post-deploy-verify",
+        "./skills/pr-followup",
         "./skills/repo-health",
         "./skills/repo-onboarding",
         "./skills/review-pr",
@@ -42,7 +45,8 @@
         "./skills/sdlc-lite",
         "./skills/status",
         "./skills/task",
-        "./skills/test-check"
+        "./skills/test-check",
+        "./skills/triage"
       ]
     }
   ]

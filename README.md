@@ -74,9 +74,12 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 | `/brainstorm-deep` | Claude + Copilot + Codex † | Clarification-heavy ideation for ambiguous or high-stakes ideas. Three-pass loop (understand → saturate → plan-with-alternates), perspective-frame sub-agents, expectation-contract output. Slower than `/brainstorm`, more rigorous. |
 | `/brainstorm-team` | Claude + Copilot + Codex † | 6-agent team for competitive + product research incl. a lateral-thinking agent (sequential on Copilot) |
 | `/task` | Claude + Copilot + Codex | Create one bounded task and execute it with TDD on the current branch — no flags, always TDD |
-| `/sdlc-lite` | Claude + Copilot + Codex † | The full `/sdlc` pipeline with a different ending — sanity → implement → evals → fix → validate → plan-validate → flowsim, then **hands you the validated changes to commit yourself** (no commit, branch, push, or PR — only `/sdlc` touches git). Stage 2 auto-decomposes large multi-surface plans into focused per-lane subagents + a converge step; small / single-surface plans run a single agent unchanged. Takes a plan file, a task id, a task range (`1-5`), or an ad-hoc description. Use to run full discipline on work you want to review and commit onto an open PR's branch. |
+| `/sdlc-lite` | Claude + Copilot + Codex † | The full `/sdlc` pipeline with a different ending — sanity → implement → evals → fix → validate → plan-validate → flowsim, then **hands you the validated changes to commit yourself** (no commit, branch, push, or PR — only `/sdlc` touches git). Stage 2 auto-decomposes large multi-surface plans into focused per-lane subagents + a converge step; small / single-surface plans run a single agent unchanged. Takes a plan file, a task id, a task range (`1-5`), or an ad-hoc description. Use to run full discipline on work you want to review and commit onto an open PR's branch. Same optional Review→Fix stage as `/sdlc`, warn-only on surviving findings (consistent with its warn-only secret scan) rather than blocking handoff. Supports `--resume` (same envelope-resume as `/sdlc`; resume keys on the resolved slug) and `--queue [N]` (attended backlog loop: selects pending TASKS.md rows by priority, re-scans between items so mid-run additions join, parks on any paused/confirm item — no git writes). |
 | `/status` | Claude + Copilot + Codex | Quick readout of TASKS.md counts + active task |
-| `/sdlc` | Claude + Copilot + Codex † | Plan → implement → eval → test → flowsim → PR. Stage 2 auto-decomposes large multi-surface plans into focused per-lane subagents + a converge step (single agent for small / single-surface plans). No flags; skill-repo mode auto-detected from `.claude-plugin/marketplace.json` |
+| `/next` | Claude + Copilot + Codex † | The conductor — joins pipeline run-state + `.next-action` sentinel + TASKS.md + plans + git into ONE recommended next command with a one-line rationale. Read-only by default; `--go` executes the top pick (still confirming before any git-history write). Consolidates the next-step ladder scattered across `/brainstorm` Step 8, `/repo-health`, and `/status`. |
+| `/triage` | Claude + Copilot + Codex | The red-path fix recommender — turns a PAUSED/failed pipeline run into a diagnosis + one command. Classifies the failure from its sidecar (flaky / code-defect / plan-wrong / config-missing / abandoned), drafts the fix for a real code defect (reusing the Review→Fix finding schema + `auto_fixable` rubric), and hands back a `--resume` re-entry that reuses the run's green stages. Read-only by default; `--go` opt-in. `/next` rung 1 routes here. |
+| `/pr-followup` | Claude + Copilot + Codex | The PR back-edge — reads an open PR's review threads + requested changes + CI status (`gh` locally / GitHub MCP hosted), classifies each open item with `/triage`'s vocabulary, drafts the fix batch, and runs it through `/sdlc-lite` on the PR branch (no git writes — you push). Turns "address the review feedback / CI failed" into one command; records `pr_followup_of` in the envelope. |
+| `/sdlc` | Claude + Copilot + Codex † | Plan → implement → eval → test → flowsim → PR. Stage 2 auto-decomposes large multi-surface plans into focused per-lane subagents + a converge step (single agent for small / single-surface plans). Skill-repo mode auto-detected from `.claude-plugin/marketplace.json`. Optional, opt-in adversarial Review→Fix stage after flowsim (reviewer axis, default Opus once enabled — `--review-model <name>` or `pipeline.review_fix.enabled: true` to turn on, `--no-review` always wins) surfaces defects a green test/flowsim run structurally can't catch. `--resume` picks up a paused/failed run from the first non-passing stage (reusing the green stages) instead of restarting from Stage 1. |
 | `/repo-onboarding` | Claude + Copilot + Codex | Generate AGENTS.md + TASKS.md + project.json + GOTCHAS.md |
 | `/repo-health` | Claude + Copilot + Codex | Read-only hygiene sweep (dead code + tests + deps + secrets + gotchas-currency); prints a scored report and the highest-impact next command. |
 | `/test-check` | Claude + Copilot + Codex | Run configured tests + log audit after changes (one-shot, no fix loop) |
@@ -157,6 +160,17 @@ Haiku $1 / $5 per M tokens (input / output).
 - These numbers are calibration, not budgeting. Real runs vary 3–5× with
   repo size, plan complexity, and how much context the orchestrator has
   already accumulated when the skill fires.
+
+## Case studies
+
+**Why the Review→Fix stage exists.** A `/sdlc-lite` run reported everything green — 969→981
+tests passing, flowsim 7/7 match, plan-validate 8/8, clean container logs. Three independent
+adversarial review passes (a different model from the implementer, run manually) then found 6
+real bugs the green suite never caught — a double-decoded URL, an hourly in-memory state reset
+hammering an external API, a mis-classified recurrence rule, a stale frontend query-key
+invalidation, an over-broad geo deny-list, and a missing env-var default — plus a 7th surfaced
+by a live-data check. Total cost: ~240k tokens across 3 passes, each 1–6 minutes. See
+`docs/REVIEW-FIX-STAGE.md` for the full write-up and the Review→Fix stage design.
 
 ## Flows
 
@@ -265,6 +279,7 @@ every ultracode Workflow run Sonnet — `--model opus` is the deliberate opt-up.
 | `/gotcha` | `gotchas_file` |
 | `/brainstorm` | `modules`, `models.cap` |
 | `/sdlc`, `/sdlc-lite`, `/brainstorm-deep`, `/brainstorm-team` | `models.cap` (sub-agent tier ceiling) |
+| `/sdlc`, `/sdlc-lite` | `pipeline.review_fix.*` (reviewer-model axis — independent of `models.cap`) |
 | `/task`, `/status` | (none — read TASKS.md directly) |
 | `/repo-onboarding` | writes all of the above |
 
