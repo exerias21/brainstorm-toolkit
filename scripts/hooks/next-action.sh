@@ -23,14 +23,16 @@
 # Set "confirm":true for anything that writes git history (e.g. /sdlc); dedup by
 # cmd at the writer. Full contract: docs/SEAM.md.
 #
-# Cross-tool: the same script is wired into Claude Code's `Stop` hook (via
-# .claude/settings.json) and Copilot's `Stop` hook (via .github/hooks/*.json).
-# Both runtimes consume `systemMessage` from stdout JSON identically.
+# Cross-tool: the SAME script is wired into every runtime's `Stop` hook — Claude Code
+# (`.claude/settings.json`), Copilot (`.github/hooks/*.json`), and Codex
+# (`.codex/hooks.json`; Codex has a Stop hook with the same decision:block contract).
+# All consume `systemMessage` from stdout JSON identically for the printed hint.
 #
 # Auto-continue (L9, OPT-IN, default OFF): with `pipeline.auto_continue: true` in
-# .claude/project.json, on Claude Code only, a SINGLE non-confirm sentinel is
-# EXECUTED (return {"decision":"block","reason":"Continue with: <cmd>"}) instead of
-# printed — the session loops itself. Guardrails: never a confirm:true action; a
+# .claude/project.json, on Claude Code OR Codex (both honor Stop-hook decision:block),
+# a SINGLE non-confirm sentinel is EXECUTED (return
+# {"decision":"block","reason":"Continue with: <cmd>"}) instead of printed — the
+# session loops itself. Guardrails: never a confirm:true action; a
 # hop budget (`pipeline.loop.max_hops`, default 5) in .claude/.auto-continue-hops
 # bounds the chain; multiple pending actions park to a printed hint. Unset knob ⇒
 # print behavior, unchanged. See docs/SEAM.md.
@@ -41,11 +43,14 @@ set -u
 # context payloads on either runtime.
 cat >/dev/null 2>&1 || true
 
-# Resolve relative to the project root. Claude Code sets CLAUDE_PROJECT_DIR;
-# Copilot sets the cwd to the workspace root.
+# Resolve relative to the project root. Claude Code sets CLAUDE_PROJECT_DIR; Copilot
+# sets cwd to the workspace root; Codex runs the hook with the session cwd (and may be
+# started from a subdirectory), so fall back to the git top-level, then cwd.
 PROJ="."
 if [ -n "${CLAUDE_PROJECT_DIR:-}" ] && [ -d "$CLAUDE_PROJECT_DIR" ]; then
   PROJ="$CLAUDE_PROJECT_DIR"
+elif _gr="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -n "$_gr" ]; then
+  PROJ="$_gr"
 fi
 NEXT_ACTION_FILE="$PROJ/.claude/.next-action"
 
@@ -143,11 +148,14 @@ fi
 #     Guardrails (non-negotiable): (1) opt-in `pipeline.auto_continue: true`;
 #     (2) never a `confirm:true` action (those always park to a printed hint);
 #     (3) a hop budget bounds the chain like the 3-iteration fix budget bounds a
-#     fix loop; (4) Claude Code only — gated on CLAUDE_PROJECT_DIR (Copilot/Codex
-#     print). Only a SINGLE pending action auto-continues; multiple → park.
+#     fix loop; (4) runtime must support Stop-hook decision:block — Claude
+#     (CLAUDE_PROJECT_DIR) or Codex (CODEX_* env; both honor decision:block per their
+#     docs). Copilot stays print-only (its block-equivalent is unverified). NOTE: the
+#     Codex env marker (CODEX_HOME) should be confirmed on a real Codex install; if it
+#     doesn't match, auto-continue safely falls back to print. SINGLE action only → park.
 HOPS_FILE="$PROJ/.claude/.auto-continue-hops"
 PROJECT_JSON="$PROJ/.claude/project.json"
-if [ -n "${CLAUDE_PROJECT_DIR:-}" ] \
+if { [ -n "${CLAUDE_PROJECT_DIR:-}" ] || [ -n "${CODEX_HOME:-}" ]; } \
    && [ -f "$PROJECT_JSON" ] \
    && grep -Eq '"auto_continue"[[:space:]]*:[[:space:]]*true' "$PROJECT_JSON" 2>/dev/null \
    && [ "${#sentinel_cmds[@]}" -eq 1 ] \

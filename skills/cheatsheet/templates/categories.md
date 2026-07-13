@@ -15,10 +15,12 @@ brainstorm-team:      Plan
 task:                 Plan
 plan-html:            Plan
 status:               Discover
+next:                 Discover
 cheatsheet:           Discover
 repo-onboarding:      Discover
 sdlc:                 Build & ship
 sdlc-lite:            Build & ship
+triage:               Build & ship
 review-pr:            Build & ship
 flowsim:              Build & ship
 test-check:           Build & ship

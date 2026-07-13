@@ -158,6 +158,24 @@ Stakeholder-readable markdown:
 Also write a structured JSON sidecar at `delivery/post-deploy-<env>-<timestamp>.json`
 for downstream tooling (CI gates, dashboards).
 
+### Step 4.5 — Route non-green requirements back into the queue
+
+A matrix that lives only in chat is invisible to `/status` and any future
+conductor — the finding dies when the session ends. Close the loop: for each
+**RED** or **YELLOW** requirement, append a row to `TASKS.md` (at repo root,
+`Active / Pending`) so the follow-up work is queued, not just reported:
+
+```
+- [ ] (P1) REQ-003 failed post-deploy probe (endpoint 500) — plans/<slug>.md
+- [ ] (P2) REQ-002 post-deploy probe incomplete (bounce rate unchecked) — plans/<slug>.md
+```
+
+RED → `(P1)`, YELLOW → `(P2)`; reference the plan/BRD the requirement came from.
+GRAY (unverifiable) rows are config gaps, not delivery gaps — surface them in the
+matrix but do **not** queue a task (re-running with credentials is the fix). If
+`TASKS.md` doesn't exist, create it from `templates/TASKS.md.template`. This is
+the closing bracket of the same re-entry convention `/sdlc` Stage 6 opens.
+
 ### Step 5 — Block-or-proceed signal
 
 If invoked from a CI pipeline:

@@ -47,6 +47,14 @@ MODEL_CAP_FAN_OUT_SKILLS = {
 }
 MODEL_CAP_REF = "model-cap.md"
 
+# D: the review-fix skills -- sdlc and sdlc-lite ship an adversarial Review->Fix
+# stage governed by the reviewer-model axis contract at
+# skills/sdlc/templates/review-model.md. Deliberately separate from
+# MODEL_CAP_FAN_OUT_SKILLS: different axis, and brainstorm*/dead-code-review
+# have no review stage.
+REVIEW_STAGE_SKILLS = {"sdlc", "sdlc-lite"}
+REVIEW_MODEL_REF = "review-model.md"
+
 
 def parse_targets(raw_value: str) -> list[str]:
     value = raw_value.strip().strip('"').strip("'")
@@ -314,6 +322,23 @@ def model_cap_pointer_warnings(skills_root: Path) -> list[str]:
     return warnings
 
 
+def review_model_pointer_warnings(skills_root: Path) -> list[str]:
+    """D: soft-warn when sdlc/sdlc-lite's canonical SKILL.md doesn't reference
+    the shared reviewer-model contract (`review-model.md`)."""
+    warnings: list[str] = []
+    for name in sorted(REVIEW_STAGE_SKILLS):
+        skill_file = skills_root / name / "SKILL.md"
+        if not skill_file.exists():
+            continue
+        content = skill_file.read_text(encoding="utf-8")
+        if REVIEW_MODEL_REF not in content:
+            warnings.append(
+                f"{skill_file}: review-stage skill does not reference the shared "
+                f"reviewer-model contract (`{REVIEW_MODEL_REF}`)"
+            )
+    return warnings
+
+
 def main() -> int:
     repo_root = Path(__file__).resolve().parent.parent
     skills_root = resolve_skills_root(repo_root)
@@ -357,6 +382,8 @@ def main() -> int:
 
     # C: fan-out skills must point at the shared model-cap contract (soft warning).
     all_warnings.extend(model_cap_pointer_warnings(skills_root))
+    # D: review-fix skills must point at the shared reviewer-model contract (soft warning).
+    all_warnings.extend(review_model_pointer_warnings(skills_root))
 
     # Validate copilot overrides if present
     if copilot_overrides_root is not None:

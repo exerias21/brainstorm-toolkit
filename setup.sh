@@ -357,9 +357,43 @@ JSON
   echo "  wrote: $hook_file"
 }
 
+# Install the Codex Stop hook as .codex/hooks.json. Codex has a Stop hook with the SAME
+# {"decision":"block","reason":...} continuation contract as Claude Code
+# (learn.chatgpt.com/docs/hooks). Uses the git top-level for the script path (Codex may
+# start the hook from a subdirectory). NOTE: project-local .codex/ hooks only fire once
+# the user TRUSTS the directory (Codex prompts via `/hooks`).
+install_stop_hook_codex() {
+  local hook_file="$TARGET/.codex/hooks.json"
+  local cmd
+  if [[ "$COPY_SCRIPTS" -eq 1 ]]; then
+    cmd='bash "$(git rev-parse --show-toplevel)/scripts/hooks/next-action.sh"'
+  else
+    local hook_path_escaped
+    printf -v hook_path_escaped '%q' "$PLUGIN_ROOT/scripts/hooks/next-action.sh"
+    cmd="bash $hook_path_escaped"
+  fi
+  if [[ -f "$hook_file" && "$FORCE" -ne 1 ]]; then
+    echo "  skip (exists): $hook_file"
+    return
+  fi
+  local cmd_json=${cmd//\"/\\\"}   # JSON-escape embedded double-quotes
+  mkdir -p "$(dirname "$hook_file")"
+  cat > "$hook_file" <<JSON
+{
+  "hooks": {
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "$cmd_json", "timeout": 10 }] }
+    ]
+  }
+}
+JSON
+  echo "  wrote: $hook_file (trust the .codex/ dir via /hooks to activate)"
+}
+
 echo "[gitignore]"
 ensure_gitignored ".claude/pipeline/"
 ensure_gitignored ".claude/.next-action"
+ensure_gitignored ".claude/.auto-continue-hops"
 
 if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
   if [[ "$want_claude" -eq 1 ]]; then
@@ -369,6 +403,10 @@ if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
   if [[ "$want_copilot" -eq 1 ]]; then
     echo "[hooks] Copilot Stop hook"
     install_stop_hook_copilot
+  fi
+  if [[ "$want_codex" -eq 1 ]]; then
+    echo "[hooks] Codex Stop hook"
+    install_stop_hook_codex
   fi
 else
   echo "[hooks] skipped (--no-hooks)"

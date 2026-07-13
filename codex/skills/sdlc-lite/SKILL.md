@@ -77,7 +77,10 @@ templates, no new schema beyond `run.json.pipeline = "sdlc-lite"` and a
 
 Mark resolved rows `[~]`. Derive `slug` per `docs/CONVENTIONS.md`. Capture
 `base_commit = git rev-parse HEAD` and initialize `.claude/pipeline/<slug>/`
-with `pipeline: "sdlc-lite"`, `base_commit`, `status: "in_progress"`.
+with `pipeline: "sdlc-lite"`, `base_commit`, `status: "in_progress"`, **and the
+computed required fields that get dropped otherwise (DQ6):**
+`plan_hash: "sha256:$(sha256sum <plan> | cut -d' ' -f1)"`, `started_at` = `updated_at`
+= `"$(date -u +%Y-%m-%dT%H:%M:%SZ)"`. Omitting them breaks `--resume` + staleness detection.
 
 **`--resume`:** if `--resume` was passed, read the existing `run.json` instead of
 re-initializing — reject on a `plan_hash` mismatch, skip stages whose sidecar shows
@@ -248,10 +251,10 @@ push, PR, or `/review`. You review and commit.
    vibe-gating). If capture is **declined/deferred**, drop the seam
    sentinel — append ONE structured line deduped by `cmd` (see `docs/SEAM.md`):
    `line='{"cmd":"/gotcha <drafted text>","source":"sdlc-lite","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action`
-   (never a bare `/gotcha`). **Codex has no Stop hook** to surface
-   that sentinel, so also print an inline `Next: /gotcha <drafted text>`
-   line in the Stage 7 report as the fallback, so the suggestion isn't
-   silently lost.
+   (never a bare `/gotcha`). Codex **does** have a Stop hook (`.codex/hooks.json`, shipped
+   by the plugin / `setup.sh`) that surfaces this — but until it's wired **and the `.codex/`
+   dir is trusted** (`/hooks`), also print an inline `Next: /gotcha <drafted text>` line in
+   the Stage 7 report as the fallback, so the suggestion isn't silently lost.
 4. Mark each resolved `TASKS.md` row `[x]`, move to `Done`, set
    `status: completed` in the task file(s) — work is done and validated; only
    the commit is left to you.

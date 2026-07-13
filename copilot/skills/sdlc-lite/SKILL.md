@@ -71,7 +71,10 @@ templates, no new schema beyond `run.json.pipeline = "sdlc-lite"` and a
   that sets only the envelope field leaves the loop dead.
 
 Mark resolved rows `[~]`. Derive `slug` per `docs/CONVENTIONS.md`; initialize
-`.claude/pipeline/<slug>/`.
+`.claude/pipeline/<slug>/` with the canonical `run.json` — **including the computed
+required fields that get dropped otherwise (DQ6):**
+`plan_hash: "sha256:$(sha256sum <plan> | cut -d' ' -f1)"`, `started_at` = `updated_at`
+= `"$(date -u +%Y-%m-%dT%H:%M:%SZ)"`. Omitting them breaks `--resume` + `/status`/`/repo-health` staleness.
 
 **`--resume`:** if `--resume` was passed, read the existing `run.json` instead of
 re-initializing — reject on a `plan_hash` mismatch, skip stages whose sidecar shows

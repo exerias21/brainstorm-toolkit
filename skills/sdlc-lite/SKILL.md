@@ -165,10 +165,15 @@ Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
    one plan shares that plan's slug, so per-item envelopes keyed on it would all collide in
    one `.claude/pipeline/<plan-slug>/` dir (the dogfood showed exactly this — one envelope
    overwritten per item). A row with a linked `plans/tasks/task-N-<slug>.md` uses that task
-   slug instead. The envelope is
-   canonical per `skills/sdlc/templates/state-schema.md`: the required keys
-   (`schema_version`, `feature_slug`, `plan_file`, `plan_hash`, `args`, `started_at`,
-   `updated_at`) **and canonical stage names** in `stage` / `stages_completed`
+   slug instead. The envelope is canonical per `skills/sdlc/templates/state-schema.md` —
+   **all** required keys, including the three that keep getting dropped because they need
+   *computing* (write them, don't skip):
+   `plan_hash: "sha256:$(sha256sum <plan-file> | cut -d' ' -f1)"`,
+   `started_at` / `updated_at: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"` (refresh `updated_at` on
+   every stage transition). **Omitting `plan_hash` / `started_at` / `updated_at` silently
+   breaks `--resume`'s plan-edit guard and `/status` + `/repo-health` staleness detection.**
+   Plus `schema_version: 1`, `feature_slug`, `plan_file`, `base_commit`, `args`, and
+   **canonical stage names** in `stage` / `stages_completed`
    (`implement`, `validate`, `handoff`, … — **never** phase labels like `phase-B-implement`
    or `phase-0`). Queue/phase bookkeeping is **additive in `data.*`**
    (`data.queue_mode: true`, `data.phase`, `data.tasks_done[]`) — never rename a canonical
@@ -364,7 +369,7 @@ themselves. (Want the commit + PR done for you? That's `/sdlc`.)
    (multi-slot: it now coexists with the pipeline handoff instead of racing it;
    see `docs/SEAM.md`):
    `line='{"cmd":"/gotcha <drafted text>","source":"sdlc-lite","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action`
-   (never a bare `/gotcha`). On Codex (no Stop hook) also print `Next: /gotcha …`
+   (never a bare `/gotcha`). On Codex (as a fallback until its `.codex/hooks.json` Stop hook is wired+trusted) also print `Next: /gotcha …`
    inline so the seam degrades gracefully.
 
 4. **Close out**: mark `[x]` and move to `Done` **both** the rows resolved in

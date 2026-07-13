@@ -7,7 +7,7 @@ description: >
   runs the same stages, but inline and sequentially (no parallel worker spawning).
   Use when you have a finalized plan in plans/ or TASKS.md and want the pipeline
   to drive the delivery.
-argument-hint: "{plan_file}"
+argument-hint: "{plan_file} [--resume]"
 metadata:
   brainstorm-toolkit-applies-to: copilot
 disable-model-invocation: true
@@ -28,6 +28,12 @@ When Copilot's VS Code agent mode gains parallel worker support (Copilot CLI alr
 - `.claude/project.json` exists with at least `main_branch`; `test.*`, `logs.*`, and `eval.*` recommended so Stages 4–5 work.
 
 ## Stage 1 — Parse the plan
+
+**`--resume`:** if `--resume` was passed, do NOT re-init a fresh envelope — read the
+existing `.claude/pipeline/<slug>/run.json`, reject if the plan's `plan_hash` changed
+since the paused run ("plan changed — start fresh"), skip every stage whose sidecar
+shows `status: "pass"`, and resume at the first non-passing stage (follows `/sdlc`'s
+canonical Resumption rules). If no prior run exists, error rather than starting fresh.
 
 Read the plan file fully. Valid sources:
 - `plans/brainstorm-<slug>.md` with Direction / Implementation Steps / Acceptance Criteria.
@@ -139,7 +145,7 @@ Run the configured eval runner:
 Parse JSON results.
 - If all pass: proceed to Stage 5.
 - If failures: fix them yourself inline — one failure at a time, or batched by file, whatever is clearer. Re-run the eval after each batch. Count each pass as one fix loop.
-- If you've burned 3 fix-loop iterations and failures remain: report, pause, and ask the user to fix manually then re-run `/sdlc {plan_file}`.
+- If you've burned 3 fix-loop iterations and failures remain: report and pause with a **Diagnosis** — name the failure class (flaky / code-defect / plan-wrong / config-missing, inferred from the remaining failures) and ONE recommended next command (flaky → re-run the gate; code-defect → `/task fix: <failure>`; plan-wrong → `/brainstorm` the failing step; config-missing → set it in `.claude/project.json`), then ask the user to fix manually and re-run `/sdlc {plan_file} --resume` (resumes the paused run, reusing the green stages; use a fresh `/sdlc {plan_file}` if you edited the plan — that changes the plan hash, which `--resume` rejects). Fastest path: `/triage {slug}` does this classification and drafts the fix for you.
 
 ## Stage 5 — Run /test-check
 
@@ -156,6 +162,66 @@ Run when a parent plan is available (i.e. you passed a plan file rather than a b
 - No mismatches: record "flowsim: all flows aligned" in the commit trailer and proceed to Stage 6.
 - Mismatches: fix the code at each `file:line` anchor (or, if the plan was wrong, update the plan). Re-run `/flowsim`.
 - Persistent mismatches past 3 fix-loop iterations: stop before PR and report. A human should adjudicate whether the plan or the implementation is wrong.
+
+## Stage 5.7 — Adversarial review (inline, sequential)
+
+**Opt-in, permanently — never runs by default.** Runs after Stage 5.6 flowsim, before Stage 6,
+only when explicitly turned on this run (`--review-model <name>`, or an explicit
+`pipeline.review_fix.enabled: true`; default reviewer `opus` once enabled — see
+`skills/sdlc/templates/review-model.md`). An omitted `pipeline.review_fix` block, or
+`enabled` left unset, means OFF — there is no default-on flip. Skipped when not opted in,
+`--no-review` was passed, `pipeline.review_fix.enabled: false`, or the changed-files-gate reports a
+docs-only diff — **unless a `.claude-plugin/marketplace.json` exists at the repo root**, in which
+case this is a
+skill repo, `.md` skill files ARE the code surface (there is no separate `.env`/compose surface to
+gate on here), and this docs-only self-skip does not apply — Stage 5.7 runs, with the
+config/env/docs lens repointed to `skills/sdlc/templates/stage-5-skill-repo.md`'s structural checks in place of
+env/compose checks. (This mirrors D6 / plan §5.3 gate 1's exemption on the canonical/Workflow side;
+this overlay runtime has no other skill-repo detection of its own, so the marketplace-manifest
+check above IS its skill-repo signal.)
+
+**No parallel sub-agents on this runtime.** Run each of the three lenses — correctness,
+plan⇌code alignment, config/env/docs consistency (checklist:
+`skills/sdlc/templates/review-correctness-checklist.md`) — as one sequential inline pass over the
+diff, re-reading it fresh for each lens. If a genuinely separate reviewer integration is
+configured and reachable (e.g. an MCP tool exposing Fable), call it once per lens instead of
+self-reviewing; otherwise review under an adversarial persona in the session model itself and say
+explicitly in the Stage 7 report which mode ran.
+
+Collect findings (`{severity, file:line, defect, failure_scenario, fix}`), then run one
+adversarially-skeptical, evidence-required verify pass (default-refute: drop anything not
+independently confirmable from the diff). Write `stage-outputs/review.json`. Zero confirmed
+findings → skip Stage 5.8.
+
+**False-positive circuit breaker.** Even though this runtime reviews inline with no sub-agent seam,
+it still updates the same cross-run ledger, `.claude/pipeline/_review-stats.json`: after each run,
+append this run's raw/confirmed counts per lens and recompute demotion. A lens repeatedly producing
+unconfirmable findings is auto-demoted from dispatch (skipped, and recorded in
+`review.json.data.demoted_lenses`) until 5 consecutive runs at ≥60% confirmed-rate re-promote it.
+
+## Stage 5.8 — Fix-prompt generation + approve loop
+
+For confirmed findings, draft a structured fix spec per finding, applying the auto_fixable rubric
+(a bug fixing an explicit contract vs. a product/design decision — see
+`skills/sdlc/templates/review-model.md`). Per `pipeline.review_fix.mode` (default `interactive`):
+- **`interactive`**: present each fix spec for approve / edit / skip. Approved specs run through
+  the existing Stage 2/4 implement+fix machinery inline, then a fresh adversarial re-review of the
+  touched files (this loop iteration's own pass) decides whether another iteration is needed. Loop
+  until clean or `max_fix_loops` (own budget, separate from the Stage 4 fix budget).
+- **`auto`**: after `auto_approve_after` consecutive approvals, or confidence ≥
+  `confidence_threshold`, apply and continue — EXCEPT `auto_fixable: false` findings (design
+  decisions), which are always surfaced, never auto-applied.
+- **`off`**: report only.
+
+**Post-fix validation (once, after the loop exits — not per iteration):** if any fix was applied
+this run, re-run the Stage 5 `validate` gate exactly once before Stage 6. A regression there pauses
+the run for **both** `/sdlc` and `/sdlc-lite` — an objective test break, unlike the severity-gated
+review-finding blocking below, stops both modes rather than handing off broken code (see the
+canonical prose's "Post-fix validation").
+
+Write a single `stage-outputs/review-fix.json` with `data.loops[]` (one entry per pass) — never
+numbered `review-fix-<n>.json` files. `/sdlc` treats a surviving HIGH-severity confirmed finding as
+blocking Stage 6; stop and report rather than opening the PR.
 
 ## Stage 6 — Create PR
 
@@ -178,6 +244,8 @@ Run when a parent plan is available (i.e. you passed a plan file rather than a b
 5. Create PR via `gh pr create` with a body that includes: plan file link, eval results, test results, flowsim summary, files changed.
 6. Trigger a code review pass over the diff. On Copilot, invoke `/review` if available; otherwise summarize the diff yourself in the chat (severity-tagged: blocker / nit / question). Skip if `pipeline.skip_review: true` in `.claude/project.json`. The review stays in chat — post it as a PR comment via the GitHub MCP only if the user asked for team-visible review.
 7. **Capture at loop-exit** — run the shared protocol in `skills/gotcha/SKILL.md` ("Capture at loop-exit"). Auto-draft a gotcha entry **only** on an objective trigger — a fix-loop (eval/test/flowsim) that **failed-then-recovered**, or the user voicing surprise — route it through gotcha's dedup check, and ask a single confirm. A clean run stays silent (no vibe-gating). `/sdlc` commits the capture with the run; it does not use the `.next-action` seam.
+
+8. **Leave re-entry rows** so the queue keeps the follow-up (a finished run seeds its own next step): always append `- [ ] (P2) verify PR #<n> of {feature-slug} merged & deployed — /post-deploy-verify plans/{feature-slug}.md`; when a manifest/lockfile/Dockerfile changed (deploy-delta), also `- [ ] (P1) rebuild <env> for {feature-slug} (dependency change — rebuild, not restart) — plans/{feature-slug}.md`. Also set `run.json.next_action = {"cmd": "/post-deploy-verify plans/{feature-slug}.md", "confirm": false}` (L8) so `/next` recovers the handoff after the sentinel fires.
 
 Do NOT switch back to `main` after the PR — leave the branch checked out so the user can inspect.
 

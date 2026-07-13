@@ -194,12 +194,18 @@ Run again with --no-deps if dep audit is too slow on this repo.
 
 The "Suggested next" is the highest-impact actionable command (priority:
 unapplied migration > dep HIGH > stale pipeline run > test failure > stale
-gotcha > orphan file > skipped test > stale memory). Only
-write this command to `.claude/.next-action` if the repo is already set up
+gotcha > orphan file > skipped test > stale memory). This hygiene-priority
+ladder is the health-sweep specialization of `/next`'s **canonical decision
+ladder** (it feeds `/next` rung 7 — hygiene when nothing else is queued; `/next`
+is the source-of-truth conductor, see `skills/next/SKILL.md`). Only
+append this command to `.claude/.next-action` if the repo is already set up
 for that integration (for example, the file already exists or `.gitignore`
-already covers `.claude/.next-action` or `.claude/`). Otherwise, print the
-suggestion in the report only. If no actionable findings, write nothing —
-clean repos shouldn't nag.
+already covers `.claude/.next-action` or `.claude/`). Append ONE structured line,
+deduped by `cmd` (multi-slot seam; set `confirm:true` only if the command writes
+git history; see `docs/SEAM.md`):
+`line='{"cmd":"<suggested command>","source":"repo-health","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action`.
+Otherwise, print the suggestion in the report only. If no actionable findings,
+write nothing — clean repos shouldn't nag.
 
 Optionally cache the report at `.claude/pipeline/last-health.json` only if
 that cache location already exists or is already gitignored. This is

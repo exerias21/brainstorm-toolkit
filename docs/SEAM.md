@@ -67,15 +67,22 @@ grep -rlqs 'next-action' .claude/settings.json ~/.claude/settings.json .github/h
 
 ## Cross-tool
 
-- **Claude Code + Copilot** wire the hook into their `Stop` event (via `.claude/settings.json`
-  and `.github/hooks/next-action.json`); both read `systemMessage` identically.
-- **Codex has no Stop hook** — writers must ALSO print `Next: <cmd>` inline so the handoff
-  doesn't silently vanish on that runtime.
+- **Claude Code, Copilot, AND Codex** all have a `Stop` hook — wired via
+  `.claude/settings.json`, `.github/hooks/next-action.json`, and **`.codex/hooks.json`**
+  respectively. Codex's Stop hook uses the same `systemMessage` / `decision:block` contract
+  (learn.chatgpt.com/docs/hooks). The plugin ships it (SEAM1); `setup.sh` wires it for
+  copy-installs. Two Codex caveats: project-local `.codex/` hooks fire only once the user
+  **trusts** the directory (`/hooks`), and Codex may run the hook from a subdirectory, so the
+  script path resolves via the git top-level.
+- **Inline fallback** — writers still ALSO print `Next: <cmd>` inline (useful on Codex before
+  the hook is trusted, or on any runtime with no hook wired) so the handoff never silently
+  vanishes.
 
 ## Auto-continue (Lever C / L9) — OPT-IN, default off
 
-With `pipeline.auto_continue: true` in `.claude/project.json`, on **Claude Code only**, the
-Stop hook stops *printing* the next action and starts *executing* it: it returns
+With `pipeline.auto_continue: true` in `.claude/project.json`, on **Claude Code or Codex**
+(both honor the Stop-hook `decision:block` contract), the Stop hook stops *printing* the next
+action and starts *executing* it: it returns
 `{"decision":"block","reason":"Continue with: <cmd>"}`, which feeds `<cmd>` back to the model
 as its next instruction. The session becomes the loop; the sentinel is its program counter.
 
@@ -89,8 +96,10 @@ Guardrails (all enforced in `next-action.sh`, all non-negotiable):
    `.claude/.auto-continue-hops`, decremented per hop; at 0 the loop parks. Bounds a runaway
    `brainstorm → pipeline → gotcha → …` chain exactly like the 3-iteration fix budget bounds a
    fix loop. Reset whenever the chain ends in a print.
-5. **Claude-only** — gated on `CLAUDE_PROJECT_DIR`. Copilot's block-equivalent is unverified and
-   Codex has no hook, so on both the printed hint remains the seam.
+5. **Runtime must support `decision:block`** — gated on `CLAUDE_PROJECT_DIR` (Claude) or a
+   `CODEX_*` env (Codex; both honor `decision:block`). Copilot's block-equivalent is unverified,
+   so it stays print-only. (The Codex env marker should be confirmed on a real install; if it
+   doesn't match, auto-continue safely falls back to print.)
 
 ## Deliberately NOT here (deferred)
 

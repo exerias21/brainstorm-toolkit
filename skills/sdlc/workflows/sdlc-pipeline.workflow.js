@@ -7,8 +7,19 @@ export const meta = {
     { title: 'Implement', detail: 'auto-gate -> single-agent OR decompose/dispatch/converge' },
     { title: 'Evals', detail: 'generate evals (skipped in skill-repo / no eval.runner)' },
     { title: 'Verify', detail: 'eval-fix + validate + plan-validate + flowsim share one 3-iteration budget' },
+    { title: 'Review', detail: '5.7 adversarial review (reviewer axis, default opus, opt-in) + 5.8 fix loop; own budget; never blocks sdlc-lite' },
     { title: 'Deliver', detail: 'mode branch: /sdlc -> PR, /sdlc-lite -> handoff' },
   ],
+}
+
+// ---------------------------------------------------------------------------
+// ARGS STRING-GUARD -- some Workflow hosts deliver `args` as a JSON STRING, not
+// an object, so every `args?.x` access below would silently read `undefined`
+// off a string rather than throwing -- masking the bug as "no args were
+// passed." Parse defensively before ANY args?.xxx access in this file.
+// ---------------------------------------------------------------------------
+if (typeof args === 'string') {
+  try { args = JSON.parse(args) } catch { args = {} }
 }
 
 // ---------------------------------------------------------------------------
@@ -24,6 +35,16 @@ function capModel(defaultTier, cap) {
   if (!cap) return defaultTier
   if (!(cap in MODEL_TIER_RANK)) return defaultTier // malformed cap -> no cap
   return MODEL_TIER_RANK[cap] < MODEL_TIER_RANK[defaultTier] ? cap : defaultTier
+}
+// --model junk-string guard (§5.2 / §7.3): apply model-cap.md's "unknown value ->
+// ignore, warn once, fall through" rule to the raw --model value BEFORE it becomes
+// MODEL_CAP. Without this, a truthy junk string (e.g. a typo'd `--model fable`,
+// meaning --review-model) reaches capModel(), which returns defaultTier unchanged
+// for any cap not in MODEL_TIER_RANK -- silently no-op'ing the cap at EVERY site
+// (running every Opus dispatch at full Opus, zero warning). fable is NOT a cap tier.
+if (args?.model_cap != null && !(args.model_cap in MODEL_TIER_RANK)) {
+  log('model_cap not a tier — ignoring; did you mean --review-model?')
+  args.model_cap = null
 }
 // Sonnet-first: the fan-out defaults to Sonnet; Opus is an explicit opt-up
 // (args.model_cap === 'opus' → no ceiling → Opus sites run at full power).
@@ -218,6 +239,7 @@ const PARSE_SCHEMA = {
         logs_command: { type: ['string', 'null'] },
         decompose_min_tasks: { type: ['integer', 'null'] },
         discipline: { type: 'object' },
+        review_fix: { type: ['object', 'null'] },
       },
     },
     continuity_note: { type: ['string', 'null'], description: 'set if continuity detection found a prior in-flight/advanced run on this feature branch; null otherwise' },
@@ -300,6 +322,77 @@ const GATE_RESULT_SCHEMA = {
   },
 }
 
+// Stage 5.7 reviewer output. One call per lens; the agent may return 0..N findings.
+// auto_fixable is NOT set here -- the reviewing lens only reports the defect; the
+// fix-planner (Stage 5.8) applies the rubric in §4.3's "auto_fixable rubric".
+const REVIEW_FINDING_SCHEMA = {
+  type: 'object',
+  required: ['severity', 'file', 'defect', 'failure_scenario', 'fix'],
+  properties: {
+    severity: { type: 'string', enum: ['low', 'medium', 'high'] },
+    file: { type: 'string' },
+    line: { type: ['integer', 'null'] },
+    defect: { type: 'string', description: 'one-sentence statement of the defect' },
+    failure_scenario: { type: 'string', description: 'concrete inputs/state -> wrong output/crash' },
+    fix: { type: 'string', description: 'the specific change to make' },
+  },
+}
+// Merge-time-only fields -- added by the JS merge step in reviewGate() below, never
+// emitted by the reviewing lens (or second-pass critic) agent itself: `finding_id`,
+// `lens` (copied from the lens's own REVIEW_SCHEMA.lens at the merge point -- §4.2),
+// and, only on a passes:2 run, `pass` (1 | 2). A pass:1 run never sets `pass`.
+
+const REVIEW_SCHEMA = {
+  type: 'object',
+  required: ['lens', 'findings'],
+  properties: {
+    // NOT a hardcoded enum: pipeline.review_fix.lenses (§6.1) is project-configurable,
+    // and the circuit breaker can demote a default lens at runtime. Validate lens
+    // membership in JS against the run's OWN resolved lens list, not in the schema.
+    lens: { type: 'string' },
+    findings: { type: 'array', items: REVIEW_FINDING_SCHEMA },
+  },
+}
+
+// Stage 5.7 default-refute, evidence-required verify pass. One verdict per input
+// finding, indexed (not content-matched) so a paraphrase can't cause a false
+// confirm/refute. `evidence` is mandatory when verdict==='confirmed'; `confidence`
+// is REQUIRED on every verdict -- it feeds the `auto`-mode confidence_threshold gate
+// and review.json.confirmed[].verify_confidence.
+const VERIFY_VERDICT_SCHEMA = {
+  type: 'object',
+  required: ['finding_index', 'verdict', 'rationale', 'confidence'],
+  properties: {
+    finding_index: { type: 'integer' },
+    verdict: { type: 'string', enum: ['confirmed', 'refuted'] },
+    rationale: { type: 'string', description: 'one line: the evidence that confirms it, or why it is a nit/hallucination' },
+    evidence: { type: ['string', 'null'], description: 'a fresh file:line quote, grep hit, or one-hop call-graph fact -- required (non-null) when verdict=confirmed' },
+    confidence: { type: 'number', minimum: 0, maximum: 1, description: 'how confident this verdict is, 0-1. For a confirmed verdict this becomes review.json.confirmed[].verify_confidence and, in auto mode, is compared against confidence_threshold.' },
+  },
+}
+
+// Stage 5.8 fix-planner output: applies the auto_fixable rubric to each confirmed finding.
+const FIX_SPEC_SCHEMA = {
+  type: 'object',
+  required: ['finding_index', 'auto_fixable', 'spec'],
+  properties: {
+    finding_index: { type: 'integer' },
+    auto_fixable: { type: 'boolean' },
+    reason: { type: ['string', 'null'], description: 'required (non-null) when auto_fixable=false -- which rubric criterion failed' },
+    spec: { type: 'string', description: 'the fix instruction the fix agent will execute' },
+  },
+}
+
+// Phase 4 circuit-breaker read: the demotion-aware lens list resolved from the
+// rolling per-lens confirmed-rate ledger (.claude/pipeline/_review-stats.json, §6.3).
+const REVIEW_STATS_SCHEMA = {
+  type: 'object',
+  required: ['demoted_lenses'],
+  properties: {
+    demoted_lenses: { type: 'array', items: { type: 'string' }, description: 'lens names whose ledger entry has demoted===true going into this run' },
+  },
+}
+
 // =====================================================================
 // SHARED FIX BUDGET — the single largest determinism win. Stages 4, 5, 5.5,
 // 5.6 all draw from ONE 3-iteration budget (SKILL.md: "counts toward the
@@ -346,6 +439,7 @@ DO, in order:
 1. Read .claude/project.json (every key optional). Resolve into config{}:
    main_branch, eval_runner (eval.runner), test_unit (test.unit), test_frontend (test.frontend),
    test_e2e (test.e2e), logs_command (logs.command), decompose_min_tasks (pipeline.decompose_min_tasks),
+   review_fix (pipeline.review_fix — the whole object, or null if the key is absent),
    discipline{} (surface-glob overrides). Missing -> null.
 2. Detect skill_repo_mode = does .claude-plugin/marketplace.json exist at repo root?
    VENDORED-SKILL GUARD: if it does NOT exist but the plan targets
@@ -448,7 +542,7 @@ log(`Stage 2 gate: surfaces=${gate.surface_count} [${gate.surfaces_touched.join(
 let implementResults = []
 let convergeResult = null
 if (gate.decision === 'single-agent') {
-  // Default path — one Opus agent, unchanged behavior.
+  // Default path — one implement agent (Sonnet by default via the cap; Opus only on --model opus). Unchanged behavior.
   const impl = await agent(
     `You are Stage 2 (single-agent implement) for "${parse.feature_name}".
 ${grounding}
@@ -688,6 +782,420 @@ ${envelopeNote(slug, 'flowsim', `Write a SUMMARY sidecar: data.report_path, data
     if (flowsim.paused) return await pauseOnBudget('flowsim', flowsim.failures)
 }
 
+// ----- Stage 5.7/5.8 — Adversarial review + fix (reviewer axis, default 'opus') -----
+phase('Review')
+
+// REVIEW_MODEL is a SEPARATE axis from MODEL_CAP/capModel(). capModel() only
+// ranks haiku<sonnet<opus (MODEL_TIER_RANK) and silently falls through to the
+// default tier for anything else -- 'fable' would be swallowed. NEVER pass
+// REVIEW_MODEL through capModel(); pass it straight to agent({ model: ... }).
+// §5.2 name validation -- "unknown → ignore with one warning, fall through": nothing else on
+// the Workflow path enforces this (capModel() never sees REVIEW_MODEL, so its own junk-string
+// rule can't help here). An unknown --review-model value falls through to cfg.review_fix?.model
+// ?? 'opus'; a junk cfg value never re-adopts itself and lands on 'opus'.
+const KNOWN_REVIEW_MODELS = ['fable', 'opus', 'sonnet', 'haiku']
+let REVIEW_MODEL = args?.review_model ?? cfg.review_fix?.model ?? 'opus'
+if (!KNOWN_REVIEW_MODELS.includes(REVIEW_MODEL)) {
+  const fallThrough = KNOWN_REVIEW_MODELS.includes(cfg.review_fix?.model) ? cfg.review_fix.model : 'opus'
+  log(`review: unknown reviewer model "${REVIEW_MODEL}" -- ignoring with one warning, falling through to ${fallThrough} (§5.2).`)
+  REVIEW_MODEL = fallThrough
+}
+const reviewBlocking = MODE === 'sdlc' ? (cfg.review_fix?.blocking ?? true) : false // /sdlc blocks by default; sdlc-lite never blocks
+// OPT-IN, PERMANENTLY (D8 / §5.3 / §9.2) -- there is no default-on flip, planned or shipped.
+// "omitted" (no flag, no explicit enabled:true) always resolves OFF. Only an explicit
+// --review-model flag or an explicit pipeline.review_fix.enabled:true turns the stage on;
+// --no-review always wins over either (checked separately below, never folded into the
+// opt-in condition itself, so it short-circuits regardless of how the run opted in).
+const reviewOptedIn = !!args?.review_model || cfg.review_fix?.enabled === true
+// Accept BOTH the boolean and the string form -- the SKILL.md invocation placeholder can pass
+// no_review through as the string "true", and §5.3 says --no-review ALWAYS wins; a strict
+// === true here would silently re-enable review for a string-typed opt-out.
+const reviewOptedOut = args?.no_review === true || args?.no_review === 'true'
+// Reuse the REAL existing primitive -- `touched` is already computed once above
+// (`const touched = touchedSurfaces(changedFiles, discipline)`), the same Set Stage 5/5.5
+// already gate on. No new helper needed. The docs-only auto-off gate does NOT apply in
+// skill-repo mode (§5.3 gate 1 / D6) -- a skill repo's .md skill files ARE its code surface.
+const noReviewSurface = !skillRepo && (touched.size === 0 || (touched.size === 1 && touched.has('docs')))
+const reviewEnabled = reviewOptedIn && !reviewOptedOut && !noReviewSurface
+
+// Hoisted so Stage 6 (below, outside this if-block) can thread a note into the PR/handoff
+// prompt -- same pattern as the existing `rebuildNote` const. Stay empty when review didn't run.
+let reviewSurvivingHigh = []
+let reviewDesignDecisions = []
+
+if (reviewEnabled) {
+  const DEFAULT_LENSES = ['correctness', 'plan-alignment', 'config-env-docs']
+  // Phase 4 false-positive circuit breaker (§9.2 Phase 4 / §6.3): read the rolling per-lens
+  // confirmed-rate ledger so a lens marked demoted GOING INTO this run is dropped from dispatch.
+  // The script has no FS -> a tiny agent reads .claude/pipeline/_review-stats.json (best-effort;
+  // missing/unparseable -> no demotions). Demotion never changes THIS run's own writeback (the
+  // persist:review step still records this run's raw/confirmed per dispatched lens), only which
+  // lenses dispatch this run (§6.3).
+  const reviewStats = await agent(
+    `Read .claude/pipeline/_review-stats.json (repo-local rolling per-lens review confirmed-rate
+ledger, §6.3). If it does not exist or cannot be parsed, return {demoted_lenses: []} (best-effort,
+never fail). Otherwise return demoted_lenses = every lens name whose entry has demoted===true.`,
+    { label: 'review:read-stats', phase: 'Review', schema: REVIEW_STATS_SCHEMA, model: capModel('haiku', MODEL_CAP) }
+  )
+  const demotedLenses = reviewStats?.demoted_lenses ?? []
+  // REVIEW_LENSES = configured (or default) lenses MINUS any lens the ledger marks demoted for
+  // this repo (§6.3: `.filter(l => !stats.lenses[l]?.demoted)`). Phases 1-3 had no ledger, so
+  // demotedLenses was always [] there; the filter is a no-op until the breaker has history.
+  const REVIEW_LENSES = (cfg.review_fix?.lenses ?? DEFAULT_LENSES).filter((l) => !demotedLenses.includes(l))
+  // SEPARATE budget from fixBudget (shared by Stages 4/5/5.5/5.6) -- see §4.4 for why sharing
+  // it is wrong.
+  const reviewBudget = makeBudget(cfg.review_fix?.max_fix_loops ?? 3)
+  // 'off': Stage 5.7 (review) still runs -- findings still get written to review.json --
+  // but Stage 5.8 (the fix loop below) never runs at all (see §4.2). 'interactive' on the
+  // Workflow degrades to auto-apply-then-ALWAYS-pause (D4, enforced further down).
+  const REVIEW_MODE = cfg.review_fix?.mode ?? 'interactive'
+
+  // Optional second pass (recall, review_fix.passes:2 -- §4.1 / D17). REVIEW_PASSES gates
+  // whether reviewGate() below dispatches a completeness critic after pass 1's lenses return; any
+  // value other than the literal number 2 means "off" (1, the unchanged single-fan-out design).
+  // SECOND_PASS_MODEL is resolved the SAME WAY as REVIEW_MODEL -- a plain cfg read, default
+  // 'sonnet', NEVER passed through capModel() -- but, unlike REVIEW_MODEL, it does NOT go through
+  // the §5.4 independence bump/degrade check: that check exists to make the PRIMARY reviewer
+  // independent of the implementer; the second pass is a bonus recall layer, not a second
+  // independence gate (§4.1 independence caveat).
+  const REVIEW_PASSES = cfg.review_fix?.passes === 2 ? 2 : 1
+  const SECOND_PASS_MODEL = cfg.review_fix?.second_pass_model ?? 'sonnet'
+
+  // §5.4 independence resolution -- computed ONCE per run, threaded into planFixes
+  // (rubric criterion #4) and into the persist:review envelope (data.independence,
+  // data.reviewer_model). Only applies when REVIEW_MODEL is one of the tier names (not
+  // 'fable' -- fable is independent of the ladder by construction, so it is always "ok").
+  const TIER_NAMES = ['haiku', 'sonnet', 'opus']
+  let independence = 'ok'
+  // The ACTUAL dispatch tier for this run -- starts equal to REVIEW_MODEL, reassigned below
+  // on a same-tier bump. Every reviewer/verify/fix-planner agent() call and the persist:review
+  // envelope use THIS variable, never the original REVIEW_MODEL const, once a bump applies.
+  let effectiveReviewModel = REVIEW_MODEL
+  if (TIER_NAMES.includes(REVIEW_MODEL)) {
+    // Anchored to the Stage 2 single-agent implement dispatch site (`model: capModel('opus',
+    // MODEL_CAP)`) -- 'opus' is that call's own default tier, NOT 'sonnet'. Using the wrong
+    // default here would resolve implementerTier='sonnet' even when the implementer actually
+    // runs at opus (--model opus), letting a same-tier opus/opus pair silently register as
+    // independent (§5.4). A decompose lane's own tier is per-lane and out of scope here.
+    const implementerTier = capModel('opus', MODEL_CAP)
+    if (REVIEW_MODEL === implementerTier) {
+      if (implementerTier === 'opus') {
+        independence = 'degraded'
+        log(`review: reviewer and implementer both resolve to opus -- independence degraded; every finding this run is forced auto_fixable:false (rubric #4).`)
+      } else {
+        // bump the reviewer one tier up so the two calls are not the same model
+        effectiveReviewModel = TIER_NAMES[TIER_NAMES.indexOf(implementerTier) + 1]
+        log(`review: reviewer and implementer both resolved to ${implementerTier} -- bumping reviewer to ${effectiveReviewModel} for independence.`)
+      }
+    }
+  }
+
+  // Runtime-availability fallback (§5.2 / D16): if effectiveReviewModel is unavailable at dispatch
+  // (a genuine dispatch failure on this account/host -- NOT a Fable-cost issue; Fable is never
+  // treated as unavailable, §5.1/§5.5 -- it's usage-billed, not unreachable), fall back to the
+  // highest available of opus/sonnet/haiku, preferring 'opus' ('sonnet' when opus is ITSELF the
+  // failing model), logged once. agent() returns null on a terminal dispatch error, and every
+  // downstream null-guard would silently SWALLOW that -- an all-null lens fan-out reads as zero
+  // findings, i.e. a false green:true -- so every reviewer-axis dispatch (lenses/verify/
+  // fix-planner; NOT the SECOND_PASS_MODEL critic, which is its own axis and never goes through
+  // the independence bump either) routes through this wrapper: retry ONCE at the fallback tier,
+  // permanently reassigning effectiveReviewModel so later calls and persist:review's
+  // data.reviewer_model name the model that actually ran, never one that didn't. Since 'opus' is
+  // already the default (§5.2), the fallback target and the default coincide in the common case.
+  let reviewFallbackLogged = false
+  const reviewDispatch = async (prompt, opts) => {
+    const attempted = effectiveReviewModel
+    const first = await agent(prompt, { ...opts, model: attempted })
+    if (first != null) return first
+    // Only the FIRST failed dispatch computes/logs the fallback; concurrent lens calls whose
+    // first attempt raced at the old model just retry at the already-reassigned tier.
+    if (effectiveReviewModel === attempted) {
+      const fallbackTier = attempted === 'opus' ? 'sonnet' : 'opus'
+      if (!reviewFallbackLogged) {
+        log(`review: ${attempted} unavailable — falling back to ${fallbackTier}`)
+        reviewFallbackLogged = true
+      }
+      effectiveReviewModel = fallbackTier
+    }
+    // Retry once; a second null degrades through the caller's existing null-guards.
+    return agent(prompt, { ...opts, model: effectiveReviewModel })
+  }
+
+  const runLenses = () => parallel(REVIEW_LENSES.map((lens) => () =>
+    reviewDispatch(
+      `You are the Stage 5.7 "${lens}" adversarial reviewer for "${parse.feature_name}" --
+a DIFFERENT model from the implementer (independence is the point: an independent pass
+catches side-effects, contract drift, double-decode, and config/env/docs mismatches a
+plan-derived test suite structurally can't).
+${lens === 'correctness' ? 'Use the checklist at .claude/skills/sdlc/templates/review-correctness-checklist.md.' : ''}
+${skillRepo && lens === 'config-env-docs' ? 'Skill-repo mode: check templates/stage-5-skill-repo.md structural checks instead (no .env/compose surface here).' : ''}
+${planRefForAgents}
+CHANGED FILES: ${JSON.stringify(changedFiles)}
+Return each defect as a finding: {severity, file, line, defect, failure_scenario, fix}.
+Do NOT tag auto_fixable -- that is decided by the Stage 5.8 fix-planner, not you.`,
+      { label: `review:${lens}`, phase: 'Review', schema: REVIEW_SCHEMA } // model set by reviewDispatch (D16)
+    )
+  )).then((rs) => rs.filter(Boolean))
+
+  // Adversarial, evidence-required, default-refute verify pass -- same reviewer axis.
+  // Returns confirmed findings carrying their ALREADY-MINTED finding_id/lens plus
+  // verify_confidence/evidence copied from this call's verdict -- this IS the projection
+  // state-schema.md's review.json.confirmed[] needs.
+  const verifyFindings = async (rawFindings) => {
+    if (rawFindings.length === 0) return []
+    const verdicts = await reviewDispatch(
+      `Stage 5.7 verify pass for "${parse.feature_name}" (DEFAULT-REFUTE, EVIDENCE-REQUIRED: a
+finding survives only if you attach a FRESH file:line quote, grep hit, or one-hop call-graph
+fact from THIS call -- not copied from the original finding. When in doubt, refute.)
+FINDINGS (indexed): ${JSON.stringify(rawFindings.map((f, i) => ({ i, ...f })))}
+Return one verdict per index; evidence is required (non-null) when verdict=confirmed. Also
+score confidence (0-1) on every verdict -- how sure you are given the evidence you found; this
+value is persisted as review.json's verify_confidence and, in auto mode, gates auto-approval.`,
+      { label: 'review:verify', phase: 'Review', schema: { type: 'array', items: VERIFY_VERDICT_SCHEMA } } // model set by reviewDispatch (D16)
+    )
+    const byIdx = new Map((verdicts || []).filter((v) => v.verdict === 'confirmed' && v.evidence).map((v) => [v.finding_index, v]))
+    return rawFindings
+      .map((f, i) => (byIdx.has(i) ? { ...f, verify_confidence: byIdx.get(i).confidence, evidence: byIdx.get(i).evidence } : null))
+      .filter(Boolean)
+  }
+
+  // Fix-planner: applies the auto_fixable rubric (§4.3) -- NOT the reviewing lens.
+  // Null-guarded like every other agent() result in this file (agent() returns null on a
+  // terminal dispatch error -- the §5.2/D16 case); a bare null here would TypeError at the
+  // reviewGate call site's .filter() and kill the run instead of degrading.
+  const planFixes = async (confirmed) => {
+    if (confirmed.length === 0) return []
+    return (await reviewDispatch(
+      `Stage 5.8 fix-planner for "${parse.feature_name}". For each CONFIRMED finding, apply the
+auto_fixable rubric: true only if (1) it corrects an explicit existing contract, (2) it does NOT
+change a user-observable default, (3) failure_scenario names a concrete reproducible input, and
+(4) this run's independence is "ok" (this run's independence: "${independence}"${independence === 'degraded' ? ' -- DEGRADED: every finding below MUST be marked auto_fixable:false with reason "degraded independence (rubric #4)", regardless of how criteria 1-3 evaluate' : ''}).
+Anything failing (1), (2), or (4) is auto_fixable:false with reason naming which criterion
+failed -- these are NEVER auto-fixed, always surfaced.
+CONFIRMED FINDINGS (indexed): ${JSON.stringify(confirmed.map((f, i) => ({ i, ...f })))}`,
+      { label: 'review:fix-plan', phase: 'Review', schema: { type: 'array', items: FIX_SPEC_SCHEMA } } // model set by reviewDispatch (D16)
+    )) || []
+  }
+
+  // Custom gate -- deliberately NOT vanilla runGatedFix. "green" ignores auto_fixable=false
+  // findings (design decisions never gate the loop, never burn the review budget, never appear
+  // in the fix agent's payload). reviewPassN counts reviewGate() CALLS, not fix-loop iterations
+  // -- it starts at 0 for the pre-loop initial call and increments on every subsequent re-review.
+  // reviewGate() re-executes runLenses() (and this mint step) on EVERY call, so a later loop's
+  // "f1" is NOT the same defect as an earlier loop's "f1" -- ids are scoped per pass.
+  let reviewPassN = 0
+  const reviewGate = async () => {
+    const passLabel = reviewPassN
+    reviewPassN += 1
+    const reports = await runLenses()
+    // Mint finding_id + tag lens HERE, at the merge point, before verify -- the only place all
+    // lenses' output is in one array. `lens` is copied from each report's own REVIEW_SCHEMA.lens
+    // (§4.2: lens is tagged on every merged finding; the oscillation fingerprint depends on it).
+    // IDs are loop-scoped: `f<passLabel>-<n>`. `let`, not `const` -- the passes:2 branch below may
+    // extend this array before verify. When REVIEW_PASSES===1 (default), nothing below runs.
+    let raw = reports
+      .flatMap((r) => (r.findings || []).map((f) => ({ ...f, lens: r.lens })))
+      .map((f, i) => ({ ...f, finding_id: `f${passLabel}-${i + 1}` }))
+
+    // Optional second pass (recall, review_fix.passes:2 -- §4.1 / D17). NOT a second fan-out and
+    // NOT a vote: ONE completeness-critic call, at the separate/cheaper SECOND_PASS_MODEL, given
+    // pass 1's findings as read-only context and told to find what pass 1 MISSED. Findings are
+    // fingerprint-deduped against pass 1's so a critic finding on a region pass 1 already flagged
+    // never double-counts into verify.
+    if (REVIEW_PASSES === 2) {
+      const critic = await agent(
+        `You are the Stage 5.7 SECOND-PASS COMPLETENESS CRITIC for "${parse.feature_name}". Pass 1
+already ran and reported the findings below -- do NOT re-review from scratch and do NOT re-judge
+them (the verify pass, not you, decides whether they hold up). Your ONLY job is RECALL: find
+defects pass 1 MISSED -- an un-flagged side-effect, a config/env/docs drift, an off-by-one/boundary
+condition, or a claim pass 1 made that does not actually check out. A different look catches
+different bugs than a stronger repeat of the same look; do not resubmit anything already listed
+below.
+PASS 1 FINDINGS (context only -- do not restate): ${JSON.stringify(raw.map(({ severity, file, line, defect }) => ({ severity, file, line, defect })))}
+${planRefForAgents}
+CHANGED FILES: ${JSON.stringify(changedFiles)}
+Return each NEW defect as a finding: {severity, file, line, defect, failure_scenario, fix}.
+Do NOT tag auto_fixable -- that is decided by the Stage 5.8 fix-planner, not you.`,
+        { label: 'review:completeness-critic', phase: 'Review', schema: { type: 'array', items: REVIEW_FINDING_SCHEMA }, model: SECOND_PASS_MODEL }
+      )
+      const pass1Tagged = raw.map((f) => ({ ...f, pass: 1 }))
+      // Tag the 'completeness-critic' pseudo-lens HERE (M2): fingerprint() is file:lens:bucket,
+      // so an untagged critic finding keys as file:undefined:bucket -- undedupable, invisible to
+      // the oscillation guard, and a violation of state-schema's "every review.json finding
+      // carries a lens". It is a PSEUDO-lens only: never in REVIEW_LENSES, never dispatched,
+      // never in the Phase-4 perLensStats ledger below (not a configured/demotable lens).
+      const pass2Raw = (critic || []).map((f, i) => ({ ...f, lens: 'completeness-critic', finding_id: `f${passLabel}-${raw.length + i + 1}`, pass: 2 }))
+      // Dedup pass 2 against pass 1 by REGION: re-key pass 1's findings under the critic's own
+      // pseudo-lens so the fingerprint comparison is lens-agnostic -- a critic finding in a
+      // file:line-bucket that pass 1 already flagged (under ANY lens) never double-counts into
+      // verify. A lens-inclusive comparison could never match: the pseudo-lens is structurally
+      // distinct from every pass-1 lens name.
+      const seen = new Set(pass1Tagged.map((f) => fingerprint({ ...f, lens: 'completeness-critic' })))
+      raw = [...pass1Tagged, ...pass2Raw.filter((f) => !seen.has(fingerprint(f)))]
+    }
+
+    const confirmed = await verifyFindings(raw)
+    const fixSpecs = await planFixes(confirmed)
+    const autoFixable = fixSpecs.filter((f) => f.auto_fixable)
+    const designDecisions = fixSpecs.filter((f) => !f.auto_fixable)
+    return {
+      green: autoFixable.length === 0,
+      fail_count: autoFixable.length,
+      failures: autoFixable.map((f) => ({ name: `fix:${f.finding_index}`, detail: f.spec, file: confirmed[f.finding_index]?.file })),
+      _raw: raw,
+      _confirmed: confirmed,
+      _designDecisions: designDecisions,
+      _autoFixable: autoFixable,
+    }
+  }
+
+  let review = await reviewGate() // ALWAYS runs once -- Stage 5.7 always executes when
+                                   // reviewEnabled; only Stage 5.8's fix loop is mode-gated.
+  let loops = []
+  let loopN = 0
+  // 'off': report only, Stage 5.8 NEVER runs (§4.2) -- gate the loop condition explicitly rather
+  // than relying on the budget alone (a mode='off' run should not spend even one fix attempt).
+  while (REVIEW_MODE !== 'off' && !review.green && reviewBudget.remaining() > 0) {
+    reviewBudget.used += 1
+    loopN += 1
+    log(`review-fix: ${review.fail_count} auto-fixable finding(s) -- fix attempt ${loopN}/${reviewBudget.max} (own review budget, separate from the shared fix budget)`)
+    // Oscillation guard: refuse to re-attempt a finding whose fingerprint already appears in a
+    // PRIOR loop's fixed_fingerprints (§4.2). FIX_SPEC_SCHEMA carries only finding_index/
+    // auto_fixable/reason/spec -- ANY finding-level field (severity, file, line, lens) must be
+    // read off review._confirmed[f.finding_index], never off the fix-spec object itself.
+    const priorFingerprints = new Set(loops.flatMap((l) => l.fixed_fingerprints))
+    const thisLoopFingerprints = review._autoFixable.map((f) => fingerprint(review._confirmed[f.finding_index]))
+    const oscillating = thisLoopFingerprints.filter((fp) => priorFingerprints.has(fp))
+    if (oscillating.length > 0) {
+      // Diagnosis — mirrors SKILL.md Stage 4 PAUSED shape (review-fix pauses are a distinct class).
+      const oscDiagnosis = `class: review-oscillation (a finding re-appears after being marked fixed) -- run \`/triage <slug>\` or inspect stage-outputs/review.json, adjudicate the thrashing finding by hand (accept it, or change the fix approach), then \`/sdlc <plan> --resume\`.`
+      log(`review-fix: ${oscillating.length} finding(s) re-appeared after being marked fixed -- oscillation, not a fresh bug. Pausing for human adjudication. Diagnosis: ${oscDiagnosis}`)
+      await closeRun('paused', 'review-fix oscillation detected')
+      return { status: 'paused', stage: 'review-fix', reason: 'oscillation', oscillating, diagnosis: oscDiagnosis }
+    }
+    // Fix agent edits code -> implementer work, so it stays under MODEL_CAP like every other fix
+    // agent in this file (contrast with reviewer/verify/fix-planner above, at effectiveReviewModel).
+    await agent(
+      `Fix ONLY these confirmed, auto-fixable review findings for "${parse.feature_name}"
+(do NOT touch design-decision findings -- those are reported, never fixed).
+FINDINGS TO FIX: ${JSON.stringify(review.failures)}
+${envelopeNote(slug, `review-fix`, `Append one entry to data.loops[] with fix_specs=${JSON.stringify(review._autoFixable.map((f) => ({ finding_id: review._confirmed[f.finding_index]?.finding_id, auto_fixable: true, spec: f.spec })))} (finding_id mapped from FIX_SPEC_SCHEMA.finding_index HERE in JS -- the sidecar is id-keyed, never index-keyed), decisions=one {finding_id, action:"approved", mode:"interactive", reason:"workflow auto-apply (D4)"} per fix_spec (Workflow mode has no human channel), and fixed_fingerprints=${JSON.stringify(thisLoopFingerprints)}. Do NOT write reverify here -- the re-review that would confirm it has not run yet; it is back-filled by the persist:review-fix call below.`)}`,
+      { label: `fix:review#${loopN}`, phase: 'Review', model: capModel('opus', MODEL_CAP) }
+    )
+    review = await reviewGate() // the re-review that immediately follows this loop's fix
+    loops.push({
+      loop: loopN,
+      fixed_fingerprints: thisLoopFingerprints,
+      // Computed HERE in JS, from the pass that just ran -- NOT something the fix agent above
+      // could have written (it ran before this re-review existed).
+      reverify: { status: review.green ? 'pass' : 'fail', remaining_findings: review.failures },
+    })
+  }
+
+  const designDecisions = review._designDecisions || []
+  // Only TRUE high-severity confirmed findings count as "surviving HIGH" (§4.2 scopes /sdlc's
+  // blocking posture to HIGH). FIX_SPEC_SCHEMA objects carry NO severity -- dereference it
+  // through the CONFIRMED finding the spec was computed from (review._confirmed[f.finding_index]).
+  const survivingHigh = [
+    ...(review.green ? [] : review._autoFixable
+      .filter((f) => review._confirmed[f.finding_index]?.severity === 'high')
+      .map((f) => ({ finding_index: f.finding_index, severity: 'high', detail: f.spec, file: review._confirmed[f.finding_index]?.file }))),
+    ...designDecisions.filter((f) => review._confirmed[f.finding_index]?.severity === 'high'),
+  ]
+  reviewSurvivingHigh = survivingHigh
+  reviewDesignDecisions = designDecisions
+
+  // review.json's confirmed[] is a PROJECTION (finding_id + verify_confidence + evidence only) --
+  // the full finding object stays in findings[] (same finding_id). Project it here.
+  const confirmedProjected = (review._confirmed || []).map((f) => ({
+    finding_id: f.finding_id, verify_confidence: f.verify_confidence, evidence: f.evidence,
+  }))
+  // Phase 4 writer-side ledger update (§6.3): this run's raw/confirmed count PER DISPATCHED lens,
+  // fed to the persist agent so it appends {raw, confirmed, ts} to _review-stats.json and
+  // recomputes each lens's demoted flag (drop <40%, re-promote after 5 consecutive >=60%).
+  // Maps over REVIEW_LENSES ONLY -- the pass-2 'completeness-critic' pseudo-lens is excluded by
+  // construction: it is not a configured/demotable lens, so its findings never feed (or dilute)
+  // any real lens's confirmed-rate in the ledger.
+  const perLensStats = REVIEW_LENSES.map((lens) => ({
+    lens,
+    raw: (review._raw || []).filter((f) => f.lens === lens).length,
+    confirmed: (review._confirmed || []).filter((f) => f.lens === lens).length,
+  }))
+  await agent(
+    `Persist Stage 5.7 review for slug "${slug}".
+${envelopeNote(slug, 'review', `Write data.lenses=${JSON.stringify(REVIEW_LENSES)}, data.reviewer_model="${effectiveReviewModel}" (the EFFECTIVE dispatch tier -- already bumped per §5.4 independence if that applied; not necessarily the raw REVIEW_MODEL), data.independence="${independence}" (§5.4 -- "ok" or "degraded"), data.passes_run=${REVIEW_PASSES} (1 or 2 -- §4.1/D17), data.second_pass_model=${REVIEW_PASSES === 2 ? `"${SECOND_PASS_MODEL}"` : 'null'} (the model dispatched for the completeness critic; null when passes_run is 1), data.findings=${JSON.stringify(review._raw || [])} (full raw merged finding objects, each carrying finding_id + lens -- and, when passes_run is 2, a pass:1|2 field -- NOT the projected confirmed shape), data.confirmed=${JSON.stringify(confirmedProjected)} (PROJECTED: finding_id + verify_confidence + evidence ONLY), data.demoted_lenses=${JSON.stringify(demotedLenses)} (this run's view of lenses skipped because _review-stats.json marked them demoted going in), data.deferred_debt (see Appendix B -- run its TASKS.md dedup-append algorithm, steps 1-5, as part of this same persist call). Do NOT write fix_loops_run/max_fix_loops on this sidecar -- those belong on review-fix.json only.
+- PHASE 4 CIRCUIT-BREAKER LEDGER (§6.3): also update .claude/pipeline/_review-stats.json (repo-local, best-effort; create it {schema_version:1, lenses:{}} if absent). For each entry in THIS_RUN_PER_LENS=${JSON.stringify(perLensStats)}: push {raw, confirmed, ts:<now ISO8601>} onto lenses[lens].runs (cap runs[] at the last 20, evicting oldest); then recompute lenses[lens].demoted -- set true when the windowed confirmed-rate sum(confirmed)/sum(raw) < 0.40, flip back to false after 5 consecutive runs at >=60%. Do NOT change which lenses ran this run; this only affects subsequent runs.`)}`,
+    { label: 'persist:review', phase: 'Review', model: capModel('haiku', MODEL_CAP) }
+  )
+  // Separate persist call, separate sidecar -- review-fix.json's counters are NOT part of
+  // review.json's shape. Only runs when a fix loop actually executed.
+  if (loopN > 0) {
+    await agent(
+      `Persist Stage 5.8 review-fix for slug "${slug}".
+${envelopeNote(slug, 'review-fix', `Write data.fix_loops_run=${loopN}, data.max_fix_loops=${reviewBudget.max}, data.final_pass_count, data.final_fail_count, data.remaining_failures[] -- computed from the already-appended data.loops[] entries. Also backfill each loop entry's reverify field from ${JSON.stringify(loops)} (one {loop, fixed_fingerprints, reverify} object per completed iteration, keyed by loop number) -- the pass-N gate result computed in JS immediately after that loop's fix, not something the fix agent could know at its own call time.`)}`,
+      { label: 'persist:review-fix', phase: 'Review', model: capModel('haiku', MODEL_CAP) }
+    )
+  }
+
+  // Post-fix validation (§4.2): a review-fix loop edits code AFTER Stage 5's validate gate already
+  // passed once. Re-run that SAME gate -- reusing the validateGate const from Stage 5, one call,
+  // no new budget -- to catch a regression the fix loop introduced. Only when a fix actually ran.
+  if (loopN > 0) {
+    const revalidate = await validateGate()
+    if (!revalidate.green) {
+      // Diagnosis — mirrors SKILL.md Stage 4 PAUSED shape (review-fix pauses are a distinct class).
+      const regDiagnosis = `class: code-defect (fix-introduced regression) -- the review fix broke a previously-green validate. Run \`/triage <slug>\` or inspect the new failures + stage-outputs/review.json, revert or redo the regressing fix, then \`/sdlc <plan> --resume\`.`
+      log(`review-fix: post-fix validate regression -- ${(revalidate.failures || []).length} new failure(s) introduced by the fix loop. Diagnosis: ${regDiagnosis}`)
+      await closeRun('paused', 'review-fix introduced a validate regression')
+      return { status: 'paused', stage: 'review-fix', reason: 'post-fix-validate-regression', failures: revalidate.failures, diagnosis: regDiagnosis }
+    }
+  }
+
+  // Budget exhaustion is LOG-ONLY here, never a pause of its own -- blocking is decided once,
+  // below, by severity + reviewBlocking (an unresolved TRUE-high finding at budget exhaustion IS
+  // in survivingHigh, so the check below already covers it).
+  if (!review.green && reviewBudget.remaining() === 0) {
+    log(`review-fix: ${review.fail_count} auto-fixable finding(s) persist after ${reviewBudget.max} review-budget attempts (blocking decided below, per severity + reviewBlocking).`)
+  }
+
+  // D4 / §4.2: the Workflow tool has no mid-run human-prompt primitive, so 'interactive' mode HERE
+  // means auto-apply-then-ALWAYS-pause-before-Stage-6 -- never true per-finding approve/edit/skip
+  // (prose-path-only). Pause whenever there is anything a human hasn't seen yet: unresolved design
+  // decisions, OR any fix was applied this run (loopN>0) -- even if otherwise green and
+  // non-blocking for /sdlc-lite. INDEPENDENT of reviewBlocking (which only governs /sdlc's HIGH gate).
+  if (REVIEW_MODE === 'interactive' && (designDecisions.length > 0 || loopN > 0)) {
+    log(`review-fix: 'interactive' mode on the Workflow always pauses before Stage 6 (D4) -- ${designDecisions.length} design-decision finding(s), ${loopN} fix loop(s) this run.`)
+    await closeRun('paused', 'interactive-mode review pause before Stage 6')
+    return { status: 'paused', stage: 'review-fix', reason: 'interactive-mode-pause', designDecisions, loops_run: loopN }
+  }
+
+  // REVIEW_MODE !== 'off' is REQUIRED here, not decorative: 'off' means "report only; Stage 5.8
+  // does not run at all" (§4.2/§6.1) -- yet Stage 5.7 still ran and its findings are real.
+  // Without this guard, an 'off' run with >=1 surviving true-HIGH finding would pause /sdlc anyway
+  // -- the ONE mode documented as least intrusive would become the one that can still hard-block.
+  if (survivingHigh.length > 0 && reviewBlocking && REVIEW_MODE !== 'off') {
+    log(`review-fix: ${survivingHigh.length} surviving HIGH finding(s) -- pausing before PR (review_fix.blocking, default true for /sdlc; always false for sdlc-lite).`)
+    await closeRun('paused', 'unresolved HIGH review findings')
+    return { status: 'paused', stage: 'review-fix', survivingHigh }
+  } else if (survivingHigh.length > 0) {
+    log(`review-fix: ${survivingHigh.length} surviving HIGH finding(s) -- WARNING only (${REVIEW_MODE === 'off' ? "mode='off' is report-only by design, never blocks" : 'sdlc-lite never blocks'}). Listed in the handoff report.`)
+  }
+} else {
+  // Previously-missing else branch: mirrors the evalsSkipped pattern exactly -- a self-skip is a
+  // log line, no sidecar, no agent call. This file never appends to run.json.stages_skipped for
+  // ANY stage (confirmed live; the state-schema.md stages_skipped convention is honored on the
+  // prose/overlay paths, not this Workflow today -- §4.1's "Workflow-path caveat"), so this else
+  // branch matches the existing log-only pattern rather than inventing new behavior.
+  log(`Stage 5.7 skipped -- ${!reviewOptedIn ? 'not opted in (no --review-model flag and no review_fix.enabled:true -- opt-in, permanently, D8)' : reviewOptedOut ? 'opted out (--no-review)' : 'docs-only/no-surface diff (§5.3 gate 1; does not apply in skill-repo mode)'}.`)
+}
+
+// TODO (§7.2 -- enumerated, not silently droppable; must close before claiming Stage 5.7/5.8
+// complete): (1) the max_diff_lines/max_files cost-bound diff partition (§4.1) -- sum
+// added+removed from implementResults'/convergeResult's files_changed and, over either ceiling,
+// partition files across decompose lanes (or changed-files-gate surfaces) so no single reviewer
+// call carries the whole diff; (2) auto_approve_after/confidence_threshold-driven auto-approval
+// throttling for 'auto' mode beyond the fix-planner's per-finding auto_fixable rubric.
+
 // ----- Stage 6 — Deliver (the ONLY place the two modes diverge) -------------
 phase('Deliver')
 
@@ -700,6 +1208,19 @@ const rebuildNote = touched.has('deploy-delta')
   ? 'A dependency manifest/lockfile/Dockerfile changed — lead the report with "⚙ Rebuild required (not restart)".'
   : ''
 
+// Re-entry rows: a finished run seeds its own next step instead of dead-ending (SKILL.md Stage 6 "Leave re-entry rows").
+const verifyRow = MODE === 'sdlc'
+  ? `- [ ] (P2) verify PR #<n> of ${slug} merged & deployed — /post-deploy-verify plans/${slug}.md`
+  : `- [ ] (P2) verify ${slug} deployed — /post-deploy-verify plans/${slug}.md`
+const reentryNote = `After delivery, append TASKS.md re-entry rows so the loop continues: a "${verifyRow}" row${touched.has('deploy-delta') ? `, plus a "- [ ] (P1) rebuild <env> for ${slug} (dependency change — rebuild, not restart)" row` : ''}. Also set run.json.next_action = {"cmd": "/post-deploy-verify plans/${slug}.md", "confirm": false} (durable handoff, L8) so /next recovers it after the sentinel fires.`
+
+// Threads §4.2's promised handoff-report surfacing into the SAME prompt rebuildNote already uses
+// -- without this, Stage 6 never reads stage-outputs/review.json and "listed prominently in the
+// handoff report" would depend on the agent noticing it unprompted.
+const reviewNote = (reviewSurvivingHigh.length > 0 || reviewDesignDecisions.length > 0)
+  ? `Review->Fix (Stage 5.7/5.8) surfaced ${reviewSurvivingHigh.length} surviving finding(s) and ${reviewDesignDecisions.length} design-decision finding(s) this run -- read stage-outputs/review.json and list them prominently in the report.`
+  : ''
+
 if (MODE === 'sdlc') {
   const pr = await agent(
     `You are Stage 6 (create PR) for "${parse.feature_name}". CHANGED FILES: ${JSON.stringify(changedFiles)}.
@@ -709,7 +1230,7 @@ if (MODE === 'sdlc') {
    feat: message + Co-Authored-By trailer, push -u origin, and ${'`'}gh pr create${'`'} with the
    Summary/Implementation/Test Results/Files Changed body from SKILL.md Stage 6.
 4. Invoke /review on the branch (skip if pipeline.skip_review). Prompt /gotcha if a non-obvious
-   trap surfaced. ${rebuildNote}
+   trap surfaced. ${rebuildNote} ${reviewNote} ${reentryNote}
 DO NOT merge. DO NOT switch back to ${cfg.main_branch || 'main'} after creating the PR.
 ${envelopeNote(slug, 'pr-create', 'Write data.branch, data.pr_url, data.pr_number, data.commit_sha. Set run.json.status="complete".')}
 Return a short report including the PR URL.`,
@@ -724,7 +1245,7 @@ Return a short report including the PR URL.`,
 2. Show ${'`'}git diff --stat${'`'}, the changed-file list, and a SUGGESTED commit message.
    Do NOT run git add/commit/checkout/push/gh pr create or /review. Leave the tree as-is.
 3. Prompt /gotcha if a non-obvious trap surfaced. Mark resolved TASKS.md rows [x] -> Done,
-   set task files status: completed. ${rebuildNote}
+   set task files status: completed. ${rebuildNote} ${reviewNote} ${reentryNote}
 ${envelopeNote(slug, 'handoff', 'Write data.branch, data.files_changed[], data.committed=false, data.suggested_commit_msg. Set run.json.status="complete".')}
 Return a short report making explicit that NOTHING was committed — the next move is the user's.`,
     { label: 'handoff', phase: 'Deliver', model: capModel('sonnet', MODEL_CAP) }
@@ -735,6 +1256,17 @@ Return a short report making explicit that NOTHING was committed — the next mo
 // =====================================================================
 // Helpers used above (hoisted function declarations)
 // =====================================================================
+
+// §4.2 oscillation-guard fingerprint: a plain composite string over a *finding*
+// object (never a FIX_SPEC_SCHEMA object, which has no file/lens/line). No hash --
+// the file has zero require/import statements and this is only an in-memory
+// Set-equality key, so a crypto dependency buys nothing. Bucketing line into tens
+// is stable under a small in-bucket shift; a bucket-boundary crossing re-fingerprints
+// as "new" (fails open to one extra fix attempt, never a false oscillation-pause).
+function fingerprint(f) {
+  return `${f?.file}:${f?.lens}:${Math.floor((f?.line ?? 0) / 10)}`
+}
+
 function topoSort(lanes) {
   // Dependency-respecting order (default data -> backend -> frontend). Stable;
   // falls back to input order if depends_on is missing/cyclic.
@@ -756,18 +1288,30 @@ function topoSort(lanes) {
   return out
 }
 
-async function closeRun(status, reason) {
+async function closeRun(status, reason, nextAction) {
   // Always-close-the-run contract (SKILL.md Stage 6). Delegated to an agent
-  // because the script has no FS access.
+  // because the script has no FS access. `nextAction` (L8): the durable handoff
+  // ({cmd, confirm}) mirrored into run.json.next_action so /next recovers it
+  // after the fire-once sentinel; paused runs pass their /triage entry point.
+  const naNote = nextAction ? ` Also set run.json.next_action = ${JSON.stringify(nextAction)} (durable handoff, L8).` : ''
   await agent(
     `Close out the ${MODE} run for slug "${slug}": set run.json.status="${status}" (terminal),
-refresh updated_at. Reason: ${reason}. Best-effort; never throw.`,
+refresh updated_at.${naNote} Reason: ${reason}. Best-effort; never throw.`,
     { label: `close:${status}`, model: capModel('haiku', MODEL_CAP) }
   )
 }
 
 async function pauseOnBudget(stage, failures) {
-  log(`${stage}: failures persist after ${fixBudget.max} shared fix attempts — pausing for human.`)
-  await closeRun('paused', `${stage} failures after max fix loops`)
-  return { status: 'paused', stage, remaining_failures: failures }
+  // Diagnosis block — mirrors SKILL.md Stage 4 PAUSED: name a failure class + ONE command that works today
+  // (fastest path is /triage <slug>, which classifies + drafts the fix; then prefer --resume over a fresh re-run). Class is inferred from this stage's own sidecar.
+  const rec = {
+    'eval-fix': 'code-defect → `/task fix: <failure>`; flaky → re-run `/eval-harness` (or `/test-check`)',
+    'validate': 'config-missing → fix the failing check/command in `.claude/project.json`',
+    'plan-validate': 'plan-wrong → `/brainstorm` the failing step to revise the plan',
+    'flowsim': 'plan-wrong (plan↔code mismatch) → fix the code at the flagged anchor, or revise the plan',
+  }[stage] || 'inspect the stage sidecar; fix the root cause'
+  const diagnosis = `class inferred from stage-outputs/${stage}.json → ${rec}; then \`/sdlc <plan> --resume\` (reuses the green stages; fresh run only if you edited the plan)`
+  log(`${stage}: failures persist after ${fixBudget.max} shared fix attempts — pausing for human. Diagnosis: ${diagnosis}`)
+  await closeRun('paused', `${stage} failures after max fix loops`, { cmd: `/triage ${slug}`, confirm: false })
+  return { status: 'paused', stage, remaining_failures: failures, diagnosis }
 }

@@ -82,6 +82,10 @@ documented, confirm-gated exception — it's the only path that writes.
 
 ## Rules
 
+- **`/status` is the readout; `/next` is the recommendation.** For "which command
+  should I run next" — joining pipeline runs, the `.next-action` sentinel, plans,
+  and git, not just the queue — point the user to `/next` (its decision ladder is
+  the canonical next-step procedure this skill's "next up" line mirrors a slice of).
 - Pure read by default, no file writes. The sole exception is `--prune-stale`
   above, which is explicit and confirm-gated.
 - No subagent calls, no multi-step workflows.
