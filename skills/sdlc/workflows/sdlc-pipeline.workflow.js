@@ -824,7 +824,7 @@ let reviewSurvivingHigh = []
 let reviewDesignDecisions = []
 
 if (reviewEnabled) {
-  const DEFAULT_LENSES = ['correctness', 'plan-alignment', 'config-env-docs']
+  const DEFAULT_LENSES = ['correctness', 'plan-alignment', 'config-env-docs', 'security']
   // Phase 4 false-positive circuit breaker (§9.2 Phase 4 / §6.3): read the rolling per-lens
   // confirmed-rate ledger so a lens marked demoted GOING INTO this run is dropped from dispatch.
   // The script has no FS -> a tiny agent reads .claude/pipeline/_review-stats.json (best-effort;
@@ -928,6 +928,7 @@ a DIFFERENT model from the implementer (independence is the point: an independen
 catches side-effects, contract drift, double-decode, and config/env/docs mismatches a
 plan-derived test suite structurally can't).
 ${lens === 'correctness' ? 'Use the checklist at .claude/skills/sdlc/templates/review-correctness-checklist.md.' : ''}
+${lens === 'security' ? 'Use the checklist at .claude/skills/sdlc/templates/review-security-checklist.md.' : ''}
 ${skillRepo && lens === 'config-env-docs' ? 'Skill-repo mode: check templates/stage-5-skill-repo.md structural checks instead (no .env/compose surface here).' : ''}
 ${planRefForAgents}
 CHANGED FILES: ${JSON.stringify(changedFiles)}

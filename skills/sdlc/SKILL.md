@@ -726,7 +726,7 @@ activated, two auto-off gates still apply: the diff is docs-only/touches no code
 the code surface there and would otherwise silently disable the stage in the repo that dogfoods it).
 
 Runs after Stage 5.6 flowsim, before Stage 6, once enabled and not auto-off'd. Fans out
-**3 reviewer passes on distinct lenses** (parallel sub-agents on Claude; sequential inline passes
+**4 reviewer passes on distinct lenses** (parallel sub-agents on Claude; sequential inline passes
 on Copilot/Codex), each at the reviewer model resolved above:
 
 | Lens | What it looks for |
@@ -734,6 +734,7 @@ on Copilot/Codex), each at the reviewer model resolved above:
 | `correctness` | Logic bugs, wrong SQL, races, param types, edge cases, side-effects. Prompt from `templates/review-correctness-checklist.md`. |
 | `plan-alignment` | Every acceptance criterion in the plan actually met; no contract drift between plan and diff. |
 | `config-env-docs` | Env-var names match across code/`.env.example`/compose; docs not stale; no new secrets. In skill-repo mode this lens repoints to `templates/stage-5-skill-repo.md`'s frontmatter/marketplace/template-reference checks instead — there's no `.env`/compose surface in a skill repo. |
+| `security` | Injection (SQL/shell/template), missing authn/authz on new endpoints (incl. IDOR), secrets in code/logs, unsafe deserialization, SSRF/path-traversal, dependency/supply-chain risk, crypto misuse, sensitive-data exposure, XSS. Prompt from `templates/review-security-checklist.md`. Rides the reviewer-model axis like every lens — never `models.cap`. |
 
 Each lens returns structured findings (`REVIEW_FINDING_SCHEMA`, defined in
 `sdlc-pipeline.workflow.js`; `templates/state-schema.md` documents the resulting `review.json`
@@ -1097,7 +1098,7 @@ repo root, this mode activates automatically. No flag required.
 | Stage 5 — Full validation | **substitute** with the procedure in `templates/stage-5-skill-repo.md` |
 | Stage 5.5 — Plan validators | **skip** (no api/ui/data surfaces) |
 | Stage 5.6 — Flowsim | **skip** (skills aren't "flows") |
-| Stage 5.7 — Adversarial review | **adapt** — still runs; correctness + plan-alignment lenses apply equally to prose/JS. The `config-env-docs` lens repoints to the skill-authoring checks in `templates/stage-5-skill-repo.md` (frontmatter/metadata, marketplace registration, template-reference resolution) since there is no `.env`/compose surface in a skill repo. |
+| Stage 5.7 — Adversarial review | **adapt** — still runs; correctness + plan-alignment lenses apply equally to prose/JS, and the `security` lens applies its skill-repo shell-injection check (item 10 — quoting/eval in skill prose + hook scripts). The `config-env-docs` lens repoints to the skill-authoring checks in `templates/stage-5-skill-repo.md` (frontmatter/metadata, marketplace registration, template-reference resolution) since there is no `.env`/compose surface in a skill repo. |
 | Stage 5.8 — Fix loop | unchanged (same approve/auto/off machinery) |
 | Stage 6 — Create PR | unchanged |
 | Stage 6 secret scan | unchanged (still scans staged files) |

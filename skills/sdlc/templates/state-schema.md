@@ -286,7 +286,7 @@ lists any name defined by more than one lane. A non-empty `unresolved` or
 #### `review` (Stage 5.7 -- only when the reviewer-model axis resolves ON)
 ```json
 {
-  "lenses": ["correctness", "plan-alignment", "config-env-docs"],
+  "lenses": ["correctness", "plan-alignment", "config-env-docs", "security"],
   "reviewer_model": "opus",
   "independence": "ok",
   "passes_run": 1,
@@ -487,7 +487,8 @@ file per repo, keyed by lens. It backs the Review→Fix stage's false-positive c
   "lenses": {
     "correctness":     { "runs": [{ "raw": 3, "confirmed": 2, "ts": "2026-07-03T18:04:00Z" }], "demoted": false },
     "plan-alignment":  { "runs": [], "demoted": false },
-    "config-env-docs": { "runs": [], "demoted": true }
+    "config-env-docs": { "runs": [], "demoted": true },
+    "security":        { "runs": [], "demoted": false }
   }
 }
 ```

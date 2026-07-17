@@ -37,7 +37,7 @@
 `/sdlc` and `/sdlc-lite` gain two new optional pipeline stages — **Stage 5.7 (adversarial
 review)** and **Stage 5.8 (fix loop)** — that run after Stage 5.6 flowsim and before Stage 6
 (deliver). They fan out N reviewer passes on distinct lenses (correctness, plan⇄code alignment,
-config/env/docs), verify findings adversarially (default-refute), and drive confirmed,
+config/env/docs, security), verify findings adversarially (default-refute), and drive confirmed,
 auto-fixable findings through a bounded fix loop. Design-decision findings are never auto-fixed —
 they are always surfaced to a human. The reviewer is (or approximates, depending on runtime — see
 §5.5) a model independent of the implementer; the reviewer axis is a config/flag knob, default
@@ -123,7 +123,7 @@ skip cleanly (see §5.3 for the resolution/skip logic).
 ### 4.1 Stage 5.7 — `review` (adversarial review)
 
 Runs after Stage 5.6 flowsim, before Stage 6 deliver, when the reviewer-model axis resolves to
-"on" (§5.3). Fans out **3 reviewer passes on distinct lenses** (Claude/ultracode: parallel
+"on" (§5.3). Fans out **4 reviewer passes on distinct lenses** (Claude/ultracode: parallel
 sub-agents; Copilot/Codex/Claude-prose: sequential inline passes — see §7 for the three-way
 split):
 
@@ -132,6 +132,13 @@ split):
 | `correctness` | Logic bugs, wrong SQL, races, param types, edge cases, side-effects. Prompt sourced from `skills/sdlc/templates/review-correctness-checklist.md` (Appendix A — a new template file, not inlined prose, per this repo's "no inline checklists" rule). |
 | `plan-alignment` | Every acceptance criterion in the plan actually met; no contract drift between the plan and the diff. |
 | `config-env-docs` | Env-var names match across code/`.env.example`/compose; docs not stale; no new secrets; (skill-repo mode: repoint to `templates/stage-5-skill-repo.md`'s frontmatter/marketplace/template-reference checks instead — there's no `.env`/compose surface in a skill repo). |
+| `security` | Injection (SQL/shell/template), missing authn/authz on new endpoints (incl. IDOR), secrets in code/logs, unsafe deserialization, SSRF/path-traversal, dependency/supply-chain risk, crypto misuse, sensitive-data exposure, XSS. Prompt sourced from `skills/sdlc/templates/review-security-checklist.md`. Rides the reviewer-model axis like every lens — never `models.cap`; skill-repo mode applies its item-10 shell-injection check to skill prose + hook scripts. |
+
+> **Lens-count note.** `security` was added as a later increment on top of the original
+> three-lens design. The "3-lens" framing in the §11 regression-corpus analysis and the
+> Phase-1 ships-list below is left intact as history — those describe the original three
+> lenses; `security` was not evaluated against that corpus and did not ship in Phase 1.
+> The live default fan-out is now **four** lenses (see `DEFAULT_LENSES`).
 
 Each lens returns **structured findings** shaped by `REVIEW_FINDING_SCHEMA` (§6.2):
 `{severity, file, line, defect, failure_scenario, fix, auto_fixable}`. `auto_fixable` is set by
@@ -546,7 +553,7 @@ the existing `poka_yoke` key:
       "max_diff_lines": 1500,
       "max_files": 25,
       "_cost_bound_comment": "Above either ceiling, the diff is partitioned across decompose lanes (or changed-files-gate surfaces) so no single reviewer call carries the whole diff.",
-      "lenses": ["correctness", "plan-alignment", "config-env-docs"],
+      "lenses": ["correctness", "plan-alignment", "config-env-docs", "security"],
       "_lenses_comment": "Parallel reviewer-agent focuses fanned out at Stage 5.7. Lens names are lowercase-kebab (CONVENTIONS.md identity rule) -- echoed verbatim into stage-outputs/review.json.",
       "passes": 1,
       "_passes_comment": "Optional, default 1 -- the single fan-out across the lenses above plus the existing default-refute verify pass, UNCHANGED. Set to 2 to add ONE additional completeness-critic reviewer call, at second_pass_model below, run after pass 1's lenses return and given pass 1's findings as context -- it is prompted to find what pass 1 MISSED (an un-flagged side-effect, a config drift, an off-by-one/boundary, an unverified claim), not to re-review from scratch. Its findings are UNIONED into pass 1's (fingerprint-deduped, same fingerprint() as the section 4.2 oscillation guard) -- a recall mechanism, never a vote/consensus -- and the single verify pass then runs once over the combined set. Any value other than the integer 2 is treated as 1 (plan D17).",
@@ -601,7 +608,7 @@ const REVIEW_SCHEMA = {
   properties: {
     // NOT a hardcoded enum: pipeline.review_fix.lenses (§6.1) is project-configurable, and
     // the circuit breaker (below) can demote a default lens at runtime -- a fixed
-    // ['correctness','plan-alignment','config-env-docs'] enum would reject a customized or
+    // ['correctness','plan-alignment','config-env-docs','security'] enum would reject a customized or
     // demotion-adjusted lens set. Validate lens membership in JS against the run's OWN
     // resolved lens list instead (see REVIEW_LENSES resolution in §7.2), not in the schema.
     lens: { type: 'string' },
@@ -672,7 +679,7 @@ under the `pbi-001`/`task-001` convention.
 ```
 ```json
 {
-  "lenses": ["correctness", "plan-alignment", "config-env-docs"],
+  "lenses": ["correctness", "plan-alignment", "config-env-docs", "security"],
   "reviewer_model": "opus",
   "independence": "ok",
   "passes_run": 1,
@@ -790,7 +797,8 @@ is **not per-run** — it is a rolling cross-run ledger, one file per repo, keye
   "lenses": {
     "correctness":     { "runs": [{ "raw": 3, "confirmed": 2, "ts": "2026-07-03T18:04:00Z" }], "demoted": false },
     "plan-alignment":  { "runs": [], "demoted": false },
-    "config-env-docs": { "runs": [], "demoted": true }
+    "config-env-docs": { "runs": [], "demoted": true },
+    "security":        { "runs": [], "demoted": false }
   }
 }
 ```
@@ -959,7 +967,7 @@ Add the Stage-substitutions table row for skill-repo mode (§9's "Stage substitu
 `skills/sdlc/SKILL.md` line ~838):
 
 ```markdown
-| Stage 5.7 — Adversarial review | **adapt** — still runs; correctness + plan-alignment lenses apply equally to prose/JS. The `config-env-docs` lens repoints to the skill-authoring checks in `templates/stage-5-skill-repo.md` (frontmatter/metadata, marketplace registration, template-reference resolution) since there is no `.env`/compose surface in a skill repo. |
+| Stage 5.7 — Adversarial review | **adapt** — still runs; correctness + plan-alignment lenses apply equally to prose/JS, and the `security` lens applies its item-10 shell-injection check (quoting/eval in skill prose + hook scripts). The `config-env-docs` lens repoints to the skill-authoring checks in `templates/stage-5-skill-repo.md` (frontmatter/metadata, marketplace registration, template-reference resolution) since there is no `.env`/compose surface in a skill repo. |
 | Stage 5.8 — Fix loop | unchanged (same approve/auto/off machinery) |
 ```
 
@@ -1055,7 +1063,7 @@ let reviewSurvivingHigh = []
 let reviewDesignDecisions = []
 
 if (reviewEnabled) {
-  const DEFAULT_LENSES = ['correctness', 'plan-alignment', 'config-env-docs']
+  const DEFAULT_LENSES = ['correctness', 'plan-alignment', 'config-env-docs', 'security']
   // Circuit-breaker phase (§9.2 Phase 4 -- see the phase note below the reviewGate function):
   // dispatch lenses = configured lenses MINUS any lens _review-stats.json marks demoted for
   // this repo. Phase 1-3 (this code) always dispatches the full configured/default set --
@@ -1508,9 +1516,9 @@ env/compose checks. (This mirrors D6 / plan §5.3 gate 1's exemption on the cano
 this overlay runtime has no other skill-repo detection of its own, so the marketplace-manifest
 check above IS its skill-repo signal — see the design note after these two overlay inserts.)
 
-**No parallel sub-agents on this runtime.** Run each of the three lenses — correctness,
-plan⇌code alignment, config/env/docs consistency (checklist:
-`skills/sdlc/templates/review-correctness-checklist.md`) — as one sequential inline pass over the
+**No parallel sub-agents on this runtime.** Run each of the four lenses — correctness,
+plan⇌code alignment, config/env/docs consistency, security (checklists:
+`skills/sdlc/templates/review-correctness-checklist.md`, `skills/sdlc/templates/review-security-checklist.md`) — as one sequential inline pass over the
 diff, re-reading it fresh for each lens. If a genuinely separate reviewer integration is
 configured and reachable (e.g. an MCP tool exposing Fable), call it once per lens instead of
 self-reviewing; otherwise review under an adversarial persona in the session model itself and say

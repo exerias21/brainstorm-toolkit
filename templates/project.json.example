@@ -92,7 +92,7 @@
       "max_diff_lines": 1500,
       "max_files": 25,
       "_cost_bound_comment": "Above either ceiling, the diff is partitioned across decompose lanes (or changed-files-gate surfaces) so no single reviewer call carries the whole diff.",
-      "lenses": ["correctness", "plan-alignment", "config-env-docs"],
+      "lenses": ["correctness", "plan-alignment", "config-env-docs", "security"],
       "_lenses_comment": "Parallel reviewer-agent focuses fanned out at Stage 5.7. Lens names are lowercase-kebab (CONVENTIONS.md identity rule) -- echoed verbatim into stage-outputs/review.json.",
       "passes": 1,
       "_passes_comment": "Optional, default 1 -- the single fan-out across the lenses above plus the existing default-refute verify pass, UNCHANGED. Set to 2 to add ONE additional completeness-critic reviewer call, at second_pass_model below, run after pass 1's lenses return and given pass 1's findings as context -- it is prompted to find what pass 1 MISSED (an un-flagged side-effect, a config drift, an off-by-one/boundary, an unverified claim), not to re-review from scratch. Its findings are UNIONED into pass 1's (fingerprint-deduped) -- a recall mechanism, never a vote/consensus -- and the single verify pass then runs once over the combined set. Any value other than the integer 2 is treated as 1.",

@@ -180,9 +180,9 @@ env/compose checks. (This mirrors D6 / plan §5.3 gate 1's exemption on the cano
 this overlay runtime has no other skill-repo detection of its own, so the marketplace-manifest
 check above IS its skill-repo signal.)
 
-**No parallel sub-agents on this runtime.** Run each of the three lenses — correctness,
-plan⇌code alignment, config/env/docs consistency (checklist:
-`skills/sdlc/templates/review-correctness-checklist.md`) — as one sequential inline pass over the
+**No parallel sub-agents on this runtime.** Run each of the four lenses — correctness,
+plan⇌code alignment, config/env/docs consistency, security (checklists:
+`skills/sdlc/templates/review-correctness-checklist.md`, `skills/sdlc/templates/review-security-checklist.md`) — as one sequential inline pass over the
 diff, re-reading it fresh for each lens. If a genuinely separate reviewer integration is
 configured and reachable (e.g. an MCP tool exposing Fable), call it once per lens instead of
 self-reviewing; otherwise review under an adversarial persona in the session model itself and say

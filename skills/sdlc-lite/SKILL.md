@@ -316,8 +316,8 @@ Never governed by `models.cap` / `--model`.
 Run `/sdlc` Stage 5.7/5.8 verbatim — same opt-in-only enablement (`--review-model <name>` flag or
 `pipeline.review_fix.enabled: true`; `--no-review` always wins OFF; omitted/absent means
 permanently OFF, no default-on flip), same auto-off gates (docs-only/no-surface diff self-skips
-except in skill-repo mode, which adapts rather than skips), same 3-lens fan-out
-(`correctness`/`plan-alignment`/`config-env-docs`), same verify pass, optional second pass, and
+except in skill-repo mode, which adapts rather than skips), same 4-lens fan-out
+(`correctness`/`plan-alignment`/`config-env-docs`/`security`), same verify pass, optional second pass, and
 false-positive circuit breaker. Runs after Stage 5.6 flowsim, before Stage 6 hand-off. Writes
 `stage-outputs/review.json`; self-skips append `review` to `run.json.stages_skipped`.
 
