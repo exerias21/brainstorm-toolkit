@@ -12,7 +12,7 @@ agent definition** in `agents/`. Read-only by default; recommendation first, exe
 
 ## Evidence the role is missing (and that its logic already exists, scattered)
 
-1. **`agents/` contains only workers.** `e2e-test-runner`, `network-sec`, `sdlc-pipeline`,
+1. **`agents/` contains only workers.** `e2e-test-runner`, `sdlc-pipeline`,
    `ux-plan-validator` — each executes a stage. None reads cross-run state and routes.
 2. **The next-step decision procedure is written down three times, as prose, executable by
    nobody on demand:**

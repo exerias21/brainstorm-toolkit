@@ -16,7 +16,6 @@
       "agents": [
         "./agents/conductor.md",
         "./agents/e2e-test-runner.md",
-        "./agents/network-sec.md",
         "./agents/sdlc-pipeline.md",
         "./agents/ux-plan-validator.md"
       ],
@@ -32,7 +31,6 @@
         "./skills/flowsim",
         "./skills/gotcha",
         "./skills/logging-conventions",
-        "./skills/network-engineer",
         "./skills/next",
         "./skills/paloalto-ansible",
         "./skills/plan-html",

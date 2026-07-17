@@ -29,7 +29,6 @@ eval-harness:         Build & ship
 paloalto-ansible:     Build & ship
 repo-health:          Health
 dead-code-review:     Health
-network-engineer:     Health
 gotcha:               Health
 data-source-pattern:  Knowledge
 logging-conventions:  Knowledge

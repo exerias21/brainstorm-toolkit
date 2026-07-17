@@ -59,7 +59,7 @@ machinery bridging skills is:
 
 ## The core finding: workers without a conductor
 
-Inventory of `agents/`: `e2e-test-runner`, `network-sec`, `sdlc-pipeline`, `ux-plan-validator`.
+Inventory of `agents/`: `e2e-test-runner`, `sdlc-pipeline`, `ux-plan-validator`.
 All four are **workers** — they execute a stage. There is no agent whose job is to look at the
 repo's state (TASKS.md, `.claude/pipeline/*/run.json`, the sentinel, git, open PRs) and answer
 *"what should happen next, and shall I start it?"*

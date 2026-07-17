@@ -92,7 +92,6 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 | `/plan-html` | Claude + Copilot + Codex | Render any markdown plan as a self-contained, shareable HTML page (embedded CSS, zero JS, native `<details>` collapsibles, light/dark mode). Opt-in: pass the plan file as the argument — no auto-emit. Use to share plans with stakeholders or scroll-engage long plans in a browser. |
 | `/data-source-pattern` | Claude + Copilot + Codex | Pattern guide for ingesting external data: discovery pipeline / seed script / direct API, plus how to author a web-discovery skill (WebSearch vs headless browser, session cookies, source trust tiers, dedup-upsert) |
 | `/logging-conventions` | Claude + Copilot + Codex | Enforce structured logging discipline |
-| `/network-engineer` | Claude + Copilot + Codex | Network-security audit methodology: Batfish-parsed configs × vendor PSIRT CVEs × overpermissive-rule rubric → ranked findings report. Pairs with the `network-sec` agent on Claude (parallel stages); Copilot/Codex run the same stages sequentially. Requires consumer-supplied data-source scripts (Batfish, PSIRT, optional Qualys) — see `references/data-source-tools.md`. |
 | `/paloalto-ansible` | Claude + Copilot + Codex | Generate a custom Ansible module against the **official SCM API** (not paloaltonetworks.panos, not SASE), playbook, eval-corpus entry (apply → verify → loop-back), and optional Postgres audit shaped for future ServiceNow migration. Single-agent sequential by default; opt-in `--team` flag escalates to parallel multi-expert orchestration. Domain reference at `skills/paloalto-ansible/references/scm-ansible.md` is reusable from `/task`. |
 | `/post-deploy-verify` | Claude + Copilot + Codex | Stub — post-deploy BRD/PBI-vs-deployed-system verification matrix (depends on Phase 2 BRD/PBI artifacts; see `BRAINSTORM-PIPELINE.md`) |
 
@@ -122,7 +121,6 @@ Haiku $1 / $5 per M tokens (input / output).
 | `/paloalto-ansible` (default) | host (Sonnet) | none — sequential module + playbook + eval entry | 15k–40k | $0.05–$0.30 |
 | `/flowsim` | host model | none — plan-vs-code grep | 10k–40k | $0.05–$0.40 |
 | `/e2e-loop` | host model | 1 × Sonnet per fix iteration | 10k–30k / iter | $0.05–$0.30 / iter |
-| `/network-engineer` | host model | 2 × Haiku (Batfish + PSIRT parsing, parallel on Claude) + 1 × Sonnet or Opus (overpermissive-rule judgement) | 20k–80k | $0.15–$1.00 |
 | `/repo-onboarding` | host model (Opus recommended) | 0–1 × Sonnet (pattern detection) | 20k–60k | $0.30–$1.00 |
 | `/brainstorm` (`light`) | host (Opus) | 3 × Haiku lens agents | 20k–50k | $0.10–$0.40 |
 | `/brainstorm` (`deep`) | host (Opus) | 3 × Haiku + 1 × Sonnet stress-test | 30k–70k | $0.20–$0.80 |
@@ -152,11 +150,6 @@ Haiku $1 / $5 per M tokens (input / output).
   cross-module reasoning where one wrong call costs more than the whole
   fan-out. Haiku is right when the task is "find the regex match" not
   "judge what to do about it."
-- **`/network-engineer` cost depends on tier choice.** Haiku for
-  parsing-heavy Batfish/PSIRT lookups is right; the question is whether
-  rule-judgement runs on Sonnet (cheap, fine for most rule overlaps)
-  or Opus (when cross-config reasoning matters, e.g. multi-vendor
-  firewall consolidation). Cost row above brackets both.
 - These numbers are calibration, not budgeting. Real runs vary 3–5× with
   repo size, plan complexity, and how much context the orchestrator has
   already accumulated when the skill fires.
