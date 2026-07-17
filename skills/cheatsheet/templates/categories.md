@@ -26,7 +26,6 @@ flowsim:              Build & ship
 test-check:           Build & ship
 e2e-loop:             Build & ship
 eval-harness:         Build & ship
-paloalto-ansible:     Build & ship
 repo-health:          Health
 dead-code-review:     Health
 gotcha:               Health

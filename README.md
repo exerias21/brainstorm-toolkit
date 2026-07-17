@@ -92,7 +92,6 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 | `/plan-html` | Claude + Copilot + Codex | Render any markdown plan as a self-contained, shareable HTML page (embedded CSS, zero JS, native `<details>` collapsibles, light/dark mode). Opt-in: pass the plan file as the argument — no auto-emit. Use to share plans with stakeholders or scroll-engage long plans in a browser. |
 | `/data-source-pattern` | Claude + Copilot + Codex | Pattern guide for ingesting external data: discovery pipeline / seed script / direct API, plus how to author a web-discovery skill (WebSearch vs headless browser, session cookies, source trust tiers, dedup-upsert) |
 | `/logging-conventions` | Claude + Copilot + Codex | Enforce structured logging discipline |
-| `/paloalto-ansible` | Claude + Copilot + Codex | Generate a custom Ansible module against the **official SCM API** (not paloaltonetworks.panos, not SASE), playbook, eval-corpus entry (apply → verify → loop-back), and optional Postgres audit shaped for future ServiceNow migration. Single-agent sequential by default; opt-in `--team` flag escalates to parallel multi-expert orchestration. Domain reference at `skills/paloalto-ansible/references/scm-ansible.md` is reusable from `/task`. |
 | `/post-deploy-verify` | Claude + Copilot + Codex | Stub — post-deploy BRD/PBI-vs-deployed-system verification matrix (depends on Phase 2 BRD/PBI artifacts; see `BRAINSTORM-PIPELINE.md`) |
 
 All skills run on all three tools. † marks skills with a Copilot-optimized overlay at `copilot/skills/<name>/` that runs the same stages sequentially (no parallel sub-agents or Plan mode) because Copilot's VS Code agent mode doesn't yet support those primitives; when it does, overlays will be upgraded. Codex shares those constraints, so `setup.sh` installs the Copilot overlay for Codex too (a Codex-specific override at `codex/skills/<name>/` wins when one exists — today `/sdlc` and `/sdlc-lite`). Skills without a † rely only on file I/O + test runners and run identically on all three tools.
@@ -118,7 +117,6 @@ Haiku $1 / $5 per M tokens (input / output).
 | `/repo-health` | host model | 2 × Haiku (dead-code + gotchas-currency); 3 procedural checks | 5k–20k | $0.02–$0.10 |
 | `/review-pr` | host model | none — wraps the built-in `/review` primitive on the captured diff | 5k–30k | $0.02–$0.30 |
 | `/eval-harness` | host model | 0–1 × Sonnet (optional fix loop) | 5k–30k | $0.02–$0.30 |
-| `/paloalto-ansible` (default) | host (Sonnet) | none — sequential module + playbook + eval entry | 15k–40k | $0.05–$0.30 |
 | `/flowsim` | host model | none — plan-vs-code grep | 10k–40k | $0.05–$0.40 |
 | `/e2e-loop` | host model | 1 × Sonnet per fix iteration | 10k–30k / iter | $0.05–$0.30 / iter |
 | `/repo-onboarding` | host model (Opus recommended) | 0–1 × Sonnet (pattern detection) | 20k–60k | $0.30–$1.00 |
@@ -127,7 +125,6 @@ Haiku $1 / $5 per M tokens (input / output).
 | `/brainstorm` (`ultra`) | host (Opus) | 3 × Haiku + 1 × Sonnet + 2 × Opus | 60k–120k | $1.00–$3.00 |
 | `/brainstorm-deep` | host (Opus) | 4 × Sonnet perspective-frame agents (parallel) by default; `--frames` overrides; structured saturation Q&A stays inline | 30k–80k | $0.20–$0.80 |
 | `/brainstorm-team` | host (Opus) | 6 × Sonnet teammates (4 parallel, 2 sequential) | 60k–150k | $0.60–$2.00 |
-| `/paloalto-ansible --team` | host (Opus) | 3 × Sonnet (default) or 4 × Sonnet (`--with-audit`); Teammate 1 sequential, then remaining teammates parallel | 40k–100k | $0.30–$1.00 |
 | `/dead-code-review` | host (Opus) | 3 × Haiku + 2 × Sonnet + 1 × Opus (parallel) | 80k–200k | $0.80–$2.50 |
 | `/post-deploy-verify` | host model | 2 × Haiku + 1 × Sonnet **per PBI batch** | scales with batch | $0.10–$1.00 / batch |
 | `/sdlc-lite` | host (Opus) | same fan-out as `/sdlc` minus the PR/review tail | 90k–280k | $2.50–$9.00 |
@@ -138,8 +135,8 @@ Haiku $1 / $5 per M tokens (input / output).
 - The "host model" / "orchestrator" is whichever model is running the
   Claude Code or Copilot session — the toolkit doesn't pin it. Costs
   above assume Opus for Plan-mode-bearing and fan-out-heavy skills
-  (`/brainstorm`, `/brainstorm-deep`, `/sdlc`, `/dead-code-review`,
-  `/paloalto-ansible --team`) and whatever the user has selected otherwise.
+  (`/brainstorm`, `/brainstorm-deep`, `/sdlc`, `/dead-code-review`)
+  and whatever the user has selected otherwise.
 - **Orchestrator context dominates real cost.** An Opus orchestrator
   carrying a 100k-token codebase context across 5 sub-agent dispatches
   pays the input cost 5× — agent dispatch fees themselves are usually

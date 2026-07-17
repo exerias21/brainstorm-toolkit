@@ -32,7 +32,6 @@
         "./skills/gotcha",
         "./skills/logging-conventions",
         "./skills/next",
-        "./skills/paloalto-ansible",
         "./skills/plan-html",
         "./skills/post-deploy-verify",
         "./skills/pr-followup",

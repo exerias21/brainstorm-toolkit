@@ -32,7 +32,7 @@ Both hold `.md` reference material; they differ in **who reads them and whether 
   **not** copy `docs/`, so these are **zero token weight** in consumer repos. A citation is a one-line
   pointer (`naming per docs/CONVENTIONS.md`) — the reader jumps to the plugin repo.
 - **`skills/<name>/references/`** — material a skill's prompt instructs the agent to **open and load**
-  at runtime (`paloalto-ansible/references/` SCM API, `sdlc/templates/` review checklists).
+  at runtime (`sdlc/templates/` review checklists — e.g. the correctness/security lens rubrics).
   `setup.sh` copies the whole skill tree, so this ships into every consumer that installs the skill —
   and pays its weight only there.
 
