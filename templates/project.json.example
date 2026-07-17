@@ -73,6 +73,31 @@
     "_skip_workflow_comment": "Claude-only off-switch for every Workflow-backed skill (/sdlc, /sdlc-lite, and /brainstorm-deep Pass 3). When true, they use their prose path instead of the deterministic Workflow even when ultracode is on. The Workflow is also only used when ultracode is explicitly enabled; this flag forces prose regardless. Copilot/Codex always use the prose path (no Workflow tool).",
     "skip_workflow": false,
     "_poka_yoke_comment": "Claude-only. When true, /repo-onboarding writes a PreToolUse hook to .claude/settings.json that blocks Write/Edit when a likely secret is in the payload. Enabling this key alone does NOT install the hook — see AGENTS.md 'Hooks (Claude-only)' for the settings.json schema. Copilot consumers gain nothing from this key (no PreToolUse equivalent); rely on the Stage 6 gitleaks scan instead.",
-    "poka_yoke": false
+    "poka_yoke": false,
+
+    "review_fix": {
+      "_comment": "Optional, OFF by default. Adversarial Review->Fix stage (Stage 5.7 review / Stage 5.8 fix loop) for /sdlc and /sdlc-lite -- runs after Stage 5.6 flowsim, before Stage 6. DIFFERENT feature from 'skip_review' above: skip_review silences the single-pass built-in /review diff check at Stage 6 (post-PR, same model); review_fix is a separate pre-PR N-lens adversarial review + fix loop, default reviewer model 'opus' (see skills/sdlc/templates/review-model.md). Both toggle independently. Omit this whole block to accept the defaults below (stage stays OFF). OPT-IN, PERMANENTLY: there is no default-on flip, planned or shipped. An explicit --review-model <name> flag or an explicit enabled:true here is required to activate the stage; omitted, absent, or enabled:false all mean OFF.",
+      "enabled": false,
+      "model": "opus",
+      "_model_comment": "Reviewer-model name. Default 'opus' -- a SEPARATE axis from models.cap / --model (see skills/sdlc/templates/review-model.md, 'Reviewer model is a separate axis'). Valid values: opus, sonnet, haiku, fable -- none of the four is ever passed to capModel(). Override per-run with --review-model <name> (e.g. --review-model fable for an explicit, cost-aware opt-in into Claude Fable 5 -- its promotional/plan-included access ends 2026-07-07; it remains dispatchable but is now billed via paid usage credits outside plan limits, which is why it is no longer the default). RUNTIME-AVAILABILITY FALLBACK: if the resolved model can't be dispatched at all, the stage falls back to the highest available of opus/sonnet/haiku, opus preferred (logged) rather than no-op'ing; review.json.data.reviewer_model records the effective model actually used.",
+      "mode": "interactive",
+      "_mode_comment": "One of 'interactive' (default: each confirmed finding's fix spec is presented for approve/edit/skip -- degrades to auto-fix-then-pause under the Claude Workflow tool, which has no mid-run prompt primitive), 'auto' (auto-approve after auto_approve_after consecutive approvals OR confidence >= confidence_threshold -- design-decision findings, auto_fixable:false, are NEVER auto-approved regardless of mode), 'off' (report only, Stage 5.8 does not run).",
+      "max_fix_loops": 3,
+      "_max_fix_loops_comment": "Own budget, separate from the shared 3-iteration budget across Stages 4/5/5.5/5.6.",
+      "auto_approve_after": 2,
+      "confidence_threshold": 0.85,
+      "_confidence_threshold_comment": "auto mode only. A confirmed finding's adversarial-verify confidence >= this value lets it bypass the auto_approve_after counter.",
+      "blocking": true,
+      "_blocking_comment": "Whether a surviving HIGH-severity confirmed finding blocks Stage 6. Defaults true (matches /sdlc's PR-gate posture); /sdlc-lite treats this as false-equivalent regardless of the value here (warn-and-handoff is its posture by design, consistent with its warn-only secret scan).",
+      "max_diff_lines": 1500,
+      "max_files": 25,
+      "_cost_bound_comment": "Above either ceiling, the diff is partitioned across decompose lanes (or changed-files-gate surfaces) so no single reviewer call carries the whole diff.",
+      "lenses": ["correctness", "plan-alignment", "config-env-docs", "security"],
+      "_lenses_comment": "Parallel reviewer-agent focuses fanned out at Stage 5.7. Lens names are lowercase-kebab (CONVENTIONS.md identity rule) -- echoed verbatim into stage-outputs/review.json.",
+      "passes": 1,
+      "_passes_comment": "Optional, default 1 -- the single fan-out across the lenses above plus the existing default-refute verify pass, UNCHANGED. Set to 2 to add ONE additional completeness-critic reviewer call, at second_pass_model below, run after pass 1's lenses return and given pass 1's findings as context -- it is prompted to find what pass 1 MISSED (an un-flagged side-effect, a config drift, an off-by-one/boundary, an unverified claim), not to re-review from scratch. Its findings are UNIONED into pass 1's (fingerprint-deduped) -- a recall mechanism, never a vote/consensus -- and the single verify pass then runs once over the combined set. Any value other than the integer 2 is treated as 1.",
+      "second_pass_model": "sonnet",
+      "_second_pass_model_comment": "Only read when passes=2. A DIFFERENT, cheaper model than the Opus primary reviewer above -- recall comes from a different look, not a stronger repeat. Default 'sonnet' (~1/5 the Opus cost, most of the missed-bug catch). 'haiku' is cheaper still and maximally diverse when the implementer itself resolved to sonnet (this repo's common default, see models.cap) -- a sonnet-vs-sonnet second pass still adds fresh-context/completeness value but not model-diversity (the independence-bump/degrade check applies only to the primary reviewer model above). Resolved the same way as the reviewer-model axis (config value with an invalid/unrecognized value ignored, one warning, falling through to the default) and NEVER passed through capModel() -- 'opus' is a valid override for a full second-Opus completeness pass."
+    }
   }
 }

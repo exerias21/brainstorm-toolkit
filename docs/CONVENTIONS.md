@@ -75,6 +75,8 @@ eval-fix           # Stage 4
 validate           # Stage 5 (test suite)
 plan-validate      # Stage 5.5 (api/ui/data validators)
 flowsim            # Stage 5.6
+review             # Stage 5.7 (adversarial N-lens review; skipped when the reviewer-model axis resolves off)
+review-fix         # Stage 5.8 (fix loop over confirmed findings; single cumulative sidecar, see state-schema.md)
 secret-scan        # Stage 6 step 2
 pr-create          # Stage 6 step 3
 report             # Stage 7
@@ -141,6 +143,8 @@ Algorithm:
 4. Result must match the identity regex `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`. If it doesn't (e.g., the plan filename was empty or all-symbols), the slug derivation FAILS and the calling skill stops with a clear error.
 
 This is mechanical, predictable, and case-insensitive — the latter critical because case-mismatched slugs ("AddOrders" vs "addorders") are the exact bug the lowercase-FS rule defends against.
+
+**Queued per-item slugs (`/sdlc-lite --queue`).** A queue loops many `TASKS.md` rows that all reference *one* plan file — so the plan-file slug above is **shared** across them and can't identify a per-item envelope. A queued item therefore derives a **distinct** slug: `<plan-slug>-<row-id>` (the row's stable id, lowercased — e.g. plan `verify-queue` + row `Q1` → `verify-queue-q1`), or, when the row links a `plans/tasks/task-N-<slug>.md`, that task slug. Same row → same slug → resumable; different rows → different `.claude/pipeline/<slug>/` dirs → no collision.
 
 ### Command-line flags
 
@@ -241,7 +245,7 @@ wholesale, so a *tool-specific* runtime reference must live in that overlay's ow
 
 **Artifact IDs**: aliases supported indefinitely. `task-N` (legacy, no padding) is recognized as equivalent to `task-NNN` by any code that resolves task IDs. New artifacts use the canonical zero-padded form. No batch migration.
 
-**Flags**: aliases supported indefinitely in skills that still take flags. `/sdlc`, `/task`, and `/sdlc-lite` are zero-flag by design and recognize no aliases. Skills that do accept flags use `--no-X` for boolean negation; older `--skip-X` aliases are tolerated where they appear historically.
+**Flags**: aliases supported indefinitely in skills that still take flags. `/task` is zero-flag by design. `/sdlc` and `/sdlc-lite` already ship `--model <tier>` (see `model-cap.md`) and now also `--review-model <name>` / `--no-review` (see `review-model.md`) — both follow the `--no-X`/`--X <value>` forms above. Skills that do accept flags use `--no-X` for boolean negation; older `--skip-X` aliases are tolerated where they appear historically.
 
 **Paths**: forward-only. New artifacts land in canonical directories. Existing artifacts in old layouts stay where they are — moving them would break references in tracked plan files.
 

@@ -8,7 +8,7 @@ description: >
   commit yourself (e.g. onto an open PR's branch). Takes a plan file (like
   /sdlc), a task id, a task range (e.g. "1-5"), or an ad-hoc description. Only
   /sdlc touches git history; /sdlc-lite leaves that to you.
-argument-hint: "<plan-file | task-id | task-range | description>"
+argument-hint: "<plan-file | task-id | task-range | description> [--resume] [--queue [N]]"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
 ---
@@ -40,13 +40,19 @@ duplication.
 
 **Use the Workflow IFF ALL of:** Claude Code with the Workflow tool available,
 **ultracode explicitly enabled** (keyword, session flag, or asked-for by name),
-and `pipeline.skip_workflow` not `true`. Then invoke:
+`pipeline.skip_workflow` not `true`, **and neither `--resume` nor `--queue` was
+passed** — resuming a paused envelope is prose-path only (the Workflow sandbox
+can't read prior sidecars; see **Resumption**), and `--queue` runs the backlog
+**loop** in prose (selection + re-scan + stop conditions live in **Queue mode**;
+each *selected item* then dispatches per these same rules). Then invoke:
 
 ```
 Workflow({
   scriptPath: ".claude/skills/sdlc/workflows/sdlc-pipeline.workflow.js",
   args: { mode: "sdlc-lite", input: "<plan-file | task-id | task-range | description>",
-          model_cap: "<resolved cap: --model flag > project.json models.cap > null>" }
+          model_cap: "<resolved cap: --model flag > project.json models.cap > null>",
+          review_model: <the --review-model value, or null if the flag was not passed>,
+          no_review: <true iff --no-review was passed, else false> }
 })
 ```
 
@@ -71,6 +77,16 @@ Writes to `.claude/pipeline/<slug>/` — same path and sidecar shapes as `/sdlc`
 - `run.json.pipeline = "sdlc-lite"` (distinguishes from `/sdlc` runs).
 - Stage 6 sidecar is `handoff.json`
   (`{branch, files_changed[], committed: false, suggested_commit_msg}`)
+
+**Resumption (`--resume`).** `/sdlc-lite <input> --resume` resumes a paused/failed
+prior run for the resolved slug instead of restarting from scratch — it follows
+`/sdlc`'s **Resumption** rules verbatim (read `run.json`; reject on a `plan_hash`
+mismatch; skip stages whose sidecar shows `status: "pass"`; resume at the first
+non-passing one; prose-path only). The only difference is the terminal stage
+(hand-off, not PR). Resume keys on the **resolved slug**, so an ad-hoc-description
+run must be resumed with the *same description text* (a reworded description
+derives a different slug → "no prior run"); task-id / range / plan-file inputs
+resolve to a stable slug and resume cleanly.
   instead of `pr-create.json`. No schema bump — both additive.
 
 For a task **range**, `run.json.data.task_range` records the resolved ids.
@@ -104,10 +120,21 @@ Detect the argument shape:
    file using `/task`'s procedure (`skills/task/SKILL.md` Sections 1–2), then
    proceed. There's no plan, so plan-validate/flowsim self-skip (Stage 5.5/5.6).
 
+5. **Queue mode** — arg is `--queue [N]`. Select the work set from `TASKS.md` **by
+   state + priority** (not a hand-typed range): the `Active / Pending` rows, top
+   `N` (or `pipeline.loop.max_items`, default 5) by priority `P1 > P2 > P3`, an
+   `[~]` in-progress row first. Then loop the pipeline over them with a re-scan and
+   stop conditions — see **Queue mode** below (that re-scan is what makes it a loop,
+   not a one-shot range).
+
 Mark resolved rows `[~]` (in-progress). Derive `slug` per the algorithm in
 `docs/CONVENTIONS.md`. Capture `base_commit` = `git rev-parse HEAD` and
 initialize the state envelope at `.claude/pipeline/<slug>/` with
 `pipeline: "sdlc-lite"`, `base_commit`, `status: "in_progress"`.
+**Queue-mode exception:** the plan-file slug is shared by every row of a plan, so a
+queued item derives a **distinct per-item slug** (`<plan-slug>-<row-id>`, or the
+linked task-file slug) — see **Queue mode** — otherwise all its items collide on one
+`.claude/pipeline/<slug>/` envelope.
 
 **Continuity detection** (prompt, never auto) — same tightened logic as
 `/sdlc`: **skip entirely when on the `main_branch`** (merges make every run an
@@ -116,6 +143,88 @@ most-recently-updated** run whose `base_commit` is an ancestor of HEAD, and
 prompt **only** if it's non-terminal OR complete with HEAD advanced past its
 recorded `commit_sha` (follow-up landed outside the pipeline). One prompt at
 most, or none.
+
+## Queue mode (`--queue`) — attended backlog loop
+
+`--queue` runs the pipeline over the pending backlog and **re-scans between items**,
+so work appended *during* the run (a `/triage`-drafted fix, a brainstorm follow-up)
+joins the loop — that re-scan is what makes it a loop rather than a fixed batch.
+**No git writes** (it's `/sdlc-lite`): the whole loop leaves validated changes in
+your tree for you to commit; it never runs `/sdlc` or opens a PR. The loop itself is
+**prose-orchestrated** — each item runs the normal sdlc-lite pipeline (prose or, under
+ultracode, the Workflow per item); the selection, re-scan, and stop conditions are here.
+
+Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
+
+1. **Select** the next item — highest-priority `Active / Pending` row (`[~]` first).
+   Mark it `[~]`.
+2. **Run** the full pipeline (Stages 1.5–6) for that item as a single-item run — its
+   own **canonical envelope** and its own shared 3-iteration fix budget. **Each item's
+   `feature_slug` is distinct per row** — `<plan-slug>-<row-id>` (e.g. row `Q1` of
+   `plans/verify-queue.md` → `verify-queue-q1`), **never the bare plan slug**: every row of
+   one plan shares that plan's slug, so per-item envelopes keyed on it would all collide in
+   one `.claude/pipeline/<plan-slug>/` dir (the dogfood showed exactly this — one envelope
+   overwritten per item). A row with a linked `plans/tasks/task-N-<slug>.md` uses that task
+   slug instead. The envelope is canonical per `skills/sdlc/templates/state-schema.md` —
+   **all** required keys, including the three that keep getting dropped because they need
+   *computing* (write them, don't skip):
+   `plan_hash: "sha256:$(sha256sum <plan-file> | cut -d' ' -f1)"`,
+   `started_at` / `updated_at: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"` (refresh `updated_at` on
+   every stage transition). **Omitting `plan_hash` / `started_at` / `updated_at` silently
+   breaks `--resume`'s plan-edit guard and `/status` + `/repo-health` staleness detection.**
+   Plus `schema_version: 1`, `feature_slug`, `plan_file`, `base_commit`, `args`, and
+   **canonical stage names** in `stage` / `stages_completed`
+   (`implement`, `validate`, `handoff`, … — **never** phase labels like `phase-B-implement`
+   or `phase-0`). Queue/phase bookkeeping is **additive in `data.*`**
+   (`data.queue_mode: true`, `data.phase`, `data.tasks_done[]`) — never rename a canonical
+   key (it is `feature_slug`/`plan_file`, not `slug`/`plan`) or overwrite `stage`.
+3. **Stop conditions** (checked after each item — *every stop is a parked
+   next-action, never a dead end*):
+   - `stop_on: pause` (**always on**) — item ends `paused`/`failed` → write its
+     `/triage <slug>` hint to the seam and **park**. Never plow past a red run.
+   - `stop_on: confirm` (**always on**) — the item's next action is `confirm: true`
+     (would write git history) → park.
+   - `max_items` (default `5`, or the `[N]` arg) — items consumed this invocation.
+   - `max_consecutive_failures` (default `2`) — distinct-item failures before parking.
+4. **Re-scan** `TASKS.md` for newly-appended rows and **go to 1**, until a stop
+   condition parks the loop or the queue is empty.
+
+**On park**, which envelope work you do depends on *why* it parked:
+- **An item's own pipeline paused/failed** (`stop_on: pause`) → that **item's** envelope gets
+  the full Stage 6 close-out: `status = "paused"` (**never leave it `in_progress`** — a parked
+  run left `in_progress` is flagged stale by `/status`/`/repo-health` after ~24h) +
+  `next_action = {cmd, confirm}` (the `/triage <slug>` or `--resume`, L8). Then write the
+  queue-resume sentinel below.
+- **A queue-level stop** (`max_items` / `max_consecutive_failures` / a `confirm:true` action
+  reached, with the current item already **complete**) → there is **no in-flight envelope to
+  mark** (the last item's is already `complete`); the queue's own resume state is the
+  `TASKS.md` rows + the sentinel. Just write the sentinel below.
+
+**Then — ALWAYS, on every park — WRITE THE SENTINEL.** This is the step that keeps getting
+skipped (agents write only `run.json.next_action` and stop, which leaves the loop dead). Be
+exact about *why*: the `.claude/.next-action` **sentinel is the ONLY thing the Stop hook reads
+and auto-surfaces**; `run.json.next_action` is a durable *fallback* that `/next` reads **on
+demand** — it is **NOT** auto-surfaced. A park that sets only the envelope field is invisible
+and cannot self-continue. Run these exact appends (dedup + multi-slot, `docs/SEAM.md`):
+
+```sh
+# (A) queue-resume line — ALWAYS when rows remain pending:
+line='{"cmd":"/sdlc-lite <plan> --queue","source":"sdlc-lite","confirm":false}'
+grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action
+# (B) if it parked on a confirm:true action (a commit/rebuild the human must run FIRST),
+#     ALSO append that action so the hook surfaces it:
+line='{"cmd":"<the confirm action>","source":"sdlc-lite","confirm":true}'
+grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action
+```
+
+**Do NOT rely on `run.json.next_action` alone** — the sentinel `echo` above is mandatory on
+every park. Then run the **no-hook nudge** (`docs/SEAM.md` SEAM2): if no Stop hook is wired,
+the line is inert — tell the user to enable the plugin or onboard, or the loop can't continue.
+
+With the sentinel written, the Stop hook surfaces the resume — and with `pipeline.auto_continue:
+true`, **executes** it: the loop self-advances batch→batch hands-off until a `confirm:true`
+action, a blocked/failed item, or the `pipeline.loop.max_hops` budget parks it. End with a
+per-item results table (item → status → parked?).
 
 ## Stage 1.5 — Sanity check
 
@@ -139,8 +248,9 @@ overridable via `.claude/project.json` `pipeline.decompose_min_tasks`) AND the
 per-surface file sets are disjoint.
 
 - **Single-agent (default):** reuse `skills/sdlc/templates/stage-2-implement.md`,
-  substitute `{feature_name}` and `{plan_content}`; Opus agent on Claude, inline
-  on Copilot/Codex. Writes `implement.json`, no decompose/converge sidecars.
+  substitute `{feature_name}` and `{plan_content}`; **Sonnet by default** (Opus
+  only on `--model opus`, per `skills/sdlc/templates/model-cap.md`) on Claude,
+  inline on Copilot/Codex. Writes `implement.json`, no decompose/converge sidecars.
   **Model cap applies** (inherited from `/sdlc` Stage 2): the implement/fix/lane
   tiers are lowered per `skills/sdlc/templates/model-cap.md` — `--model <tier>`
   flag > `project.json models.cap` > default.
@@ -166,7 +276,11 @@ degenerates cleanly into edit + commit.
 
 Reuse `/sdlc` Stage 4 verbatim. Max 3 iterations (hardcoded). Skip when Stage 3
 was skipped. If failures persist after 3 iterations, pause with `/sdlc`'s
-message shape and ask the user to fix manually, then re-run.
+message shape — **including its Diagnosis block** (fastest path `/triage <slug>`,
+which classifies the failure + drafts the fix; or name the class + one command
+from `eval-fix.json` inline) — and ask the user to fix manually, then
+`/sdlc-lite <input> --resume` (reuses the green stages; use a fresh run if you
+edited the plan).
 
 ## Stage 5 — Validate
 
@@ -189,6 +303,36 @@ plan and it always runs.
 Same gating as 5.5: run `/flowsim <plan-target>` whenever a plan target exists;
 skip with a note when none does. Mismatches feed the Stage 4 fix loop (counts
 toward the budget). Process results per `/sdlc` Stage 5.6.
+
+## Reviewer model (Stage 5.7/5.8 only)
+
+Same independent axis as `/sdlc` — see
+[`skills/sdlc/templates/review-model.md`](../sdlc/templates/review-model.md):
+`--review-model <name>` flag > `pipeline.review_fix.model` (project.json) > skill default `opus`.
+Never governed by `models.cap` / `--model`.
+
+## Stage 5.7 — Adversarial review
+
+Run `/sdlc` Stage 5.7/5.8 verbatim — same opt-in-only enablement (`--review-model <name>` flag or
+`pipeline.review_fix.enabled: true`; `--no-review` always wins OFF; omitted/absent means
+permanently OFF, no default-on flip), same auto-off gates (docs-only/no-surface diff self-skips
+except in skill-repo mode, which adapts rather than skips), same 4-lens fan-out
+(`correctness`/`plan-alignment`/`config-env-docs`/`security`), same verify pass, optional second pass, and
+false-positive circuit breaker. Runs after Stage 5.6 flowsim, before Stage 6 hand-off. Writes
+`stage-outputs/review.json`; self-skips append `review` to `run.json.stages_skipped`.
+
+## Stage 5.8 — Fix loop
+
+Run `/sdlc` Stage 5.8 verbatim — same `auto_fixable` rubric, same `pipeline.review_fix.mode`
+(interactive/auto/off) machinery, same independence enforcement and oscillation guard, same
+cumulative `stage-outputs/review-fix.json`, and the same separate fix-loop budget
+(`review.max_fix_loops`, independent of the shared Stages 4/5/5.5/5.6 budget). One divergence,
+matching `/sdlc-lite`'s existing warn-vs-block posture at Stage 6: a surviving HIGH-severity
+confirmed finding does **not** block here — it is listed prominently in the Stage 7 handoff report
+and the human decides whether to fix before committing, consistent with `/sdlc-lite`'s existing
+warn-only secret-scan posture. **Post-fix validation still applies unconditionally**: if any fix
+was applied this run, re-run the Stage 5 `validate` gate exactly once before Stage 6; a regression
+there pauses the run for `/sdlc-lite` too (an objective break, not an adversarial opinion).
 
 ## Stage 6 — Hand off (no commit, no git writes)
 
@@ -221,10 +365,12 @@ themselves. (Want the commit + PR done for you? That's `/sdlc`.)
    trigger — a test/eval/flowsim fix-loop that **failed-then-recovered**, or the
    user voicing surprise — route it through gotcha's dedup, and one-tap confirm.
    A clean run stays silent (no vibe-gating). If capture is **declined/deferred**,
-   drop the seam sentinel instead: `echo "/gotcha <drafted text>" >
-   .claude/.next-action` (only if absent — the outermost run wins; never a bare
-   `/gotcha`). On Codex (no Stop hook) also print `Next: /gotcha …` inline so the
-   seam degrades gracefully.
+   drop the seam sentinel instead — append ONE structured line, deduped by `cmd`
+   (multi-slot: it now coexists with the pipeline handoff instead of racing it;
+   see `docs/SEAM.md`):
+   `line='{"cmd":"/gotcha <drafted text>","source":"sdlc-lite","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action`
+   (never a bare `/gotcha`). On Codex (as a fallback until its `.codex/hooks.json` Stop hook is wired+trusted) also print `Next: /gotcha …`
+   inline so the seam degrades gracefully.
 
 4. **Close out**: mark `[x]` and move to `Done` **both** the rows resolved in
    Stage 0 **and** any `Active / Pending` `TASKS.md` row referencing this plan
@@ -232,12 +378,22 @@ themselves. (Want the commit + PR done for you? That's `/sdlc`.)
    task file(s). If a plan-file run genuinely matched no rows, **say so in the
    report** rather than silently skipping. The work is implemented and
    validated; only the commit is left to you.
+   **Also leave re-entry rows** so the queue keeps the follow-up (`/sdlc-lite`
+   opens no PR, so these are conditioned on delivery, not a PR number): when the
+   changed-files gate flagged the **deploy-delta** surface, append
+   `- [ ] (P1) rebuild <env> for <slug> (dependency change — rebuild, not restart) — plans/<slug>.md`;
+   and a `- [ ] (P2) verify <slug> deployed — /post-deploy-verify plans/<slug>.md`
+   row closes the loop the same way `/sdlc` Stage 6 does.
 
 **State write**: `stage-outputs/handoff.json` =
 `{branch, files_changed[], committed: false, suggested_commit_msg}`. **Always
 set `run.json.status` to a terminal value** (`complete`, or `paused` if you
 stopped mid-pipeline) before exiting — never leave it `in_progress`, or
-`/repo-health` and `/status` will (correctly) flag it as a stale run. This holds
+`/repo-health` and `/status` will (correctly) flag it as a stale run. **Also set
+`run.json.next_action = {cmd, confirm}` (L8)** when the run proposes a follow-up —
+on pause the `/triage <slug>` / `--resume` command, on complete the primary
+re-entry (e.g. `/post-deploy-verify plans/<slug>.md`) — so `/next` recovers the
+handoff after the fire-once sentinel; omit when there's none. This holds
 for **retro / validation-only runs** too (Stage 2 skipped because the code
 already landed): advance `run.json.stage`/`stages_completed` as each validation
 sidecar is written, add `implement` to `stages_skipped`, and close on a terminal
