@@ -90,7 +90,7 @@ mid-task. Only reach for it if you've measured a win.
   set `CLAUDE_CODE_AUTO_COMPACT_WINDOW`. `DISABLE_AUTO_COMPACT` turns auto-compaction off.
 - **Codex:** `model_auto_compact_token_limit` (top-level config.toml only; clamped ≤90%; no env, no off-switch).
 
-## The real lever for a long queue: batch handoff (docs-only, not shipped)
+## The real lever for a long queue: batch handoff (opt-in runner)
 
 For a genuinely long `--queue` run, don't fight the main session's growth or try to force compaction —
 **bound it by re-launching**. Run a batch of **X** items in one process, then hand off to a **fresh
@@ -111,21 +111,28 @@ backlog, not a handful of items.
 It reuses the existing `--queue [N]` cap (N = the per-batch size): each fresh process runs `--queue X`,
 parks when it hits X, and the runner relaunches until the queue drains.
 
-```sh
-# loop-runner.sh — opt-in, unattended; NOT installed by setup.sh. Cross-tool via $ENGINE.
-# Each iteration is a FRESH process that runs ONE batch of X items, then exits → clean context per batch.
-#   ENGINE='claude -p --permission-mode dontAsk --max-budget-usd 5'  (dontAsk, NOT --dangerously-skip-permissions)
-#   ENGINE='codex exec -m gpt-5.6-terra --ephemeral --json'          (--ephemeral: don't persist the rollout)
-BATCH=5   # X — items per fresh process; tune to per-item context footprint
-set -eu
-while grep -qE '^\- \[ \] ' TASKS.md; do            # pending rows remain?
-  $ENGINE "Run /sdlc-lite --queue $BATCH. Durable state is under .claude/pipeline/; \
-read your position from disk, do not resume any prior session." || { echo "batch failed — stopping"; break; }
-done
-```
+### The shipped runner: `scripts/loop-runner.sh`
+The toolkit ships this as an **opt-in script you run yourself** — `setup.sh` copies it into `scripts/`
+(with the rest of the tree), but it is **not** a skill, **not** wired to any hook, and **not** a daemon.
 
-Never `resume`/`--continue` — both tools reload the *full* prior transcript on resume, defeating the
-clean-context goal. Pass the state **path** in the prompt instead.
+```
+bash scripts/loop-runner.sh [--queue X] [--fresh yes|no] [--engine claude|codex] [--model M] [--dry-run]
+```
+- **X (batch size)** resolves: `--queue X` flag > `.claude/project.json` `pipeline.loop.batch_size` >
+  `pipeline.loop.max_items` > **5**. (5–10 is the useful range.)
+- **`--fresh no`** runs the whole queue in ONE process (no context reset) — for short queues where a
+  reset isn't worth the per-process baseline re-pay.
+- **`--dry-run`** prints the batch-1 command and exits — preview it before letting it loose.
+- Claude uses `claude -p --allowed-tools "Bash,Read,Write,Edit,Glob,Grep,Skill,…"` (auto-approve list,
+  mirroring `AUTONOMOUS-DISCOVERY.md`); Codex uses `codex exec --ephemeral --full-auto`. Neither
+  `resume`s — both would reload the full prior transcript and defeat the clean context; state is passed
+  by **path** in the prompt. Extra engine flags via `LOOP_RUNNER_EXTRA` (e.g. `--max-budget-usd 5`).
+- It makes **no git commits** (sdlc-lite hands off a validated tree) and stops if a batch makes no
+  progress (parked/blocked items are left for `/status` → `/triage`).
+
+**⚠ It launches headless agents that edit files and run Bash unattended on the current repo** — review
+the allowlist and understand the scope before running. This is the Lever-C operational tradeoff; use it
+for a genuinely long backlog, not a handful of items.
 
 > Note: Codex's own "Goal Mode" guidance recommends the *opposite* — keeping related work in one growing
 > session. That inherits every limitation above and doesn't solve context bloat; it's OpenAI's default,
