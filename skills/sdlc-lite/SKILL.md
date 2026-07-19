@@ -226,6 +226,12 @@ true`, **executes** it: the loop self-advances batch→batch hands-off until a `
 action, a blocked/failed item, or the `pipeline.loop.max_hops` budget parks it. End with a
 per-item results table (item → status → parked?).
 
+**Long runs — context hygiene.** A many-hour `--queue`/auto-continue loop accumulates context in
+the one orchestrator session (per-item pipeline work already runs in isolated subagents). The plugin
+ships a reseed hook so the auto-compaction that fires on Claude/Codex stays lossless for the loop (it
+re-points at the on-disk envelope/sentinel after a compact/clear); config knobs + the
+fresh-process-per-item escalation are in `docs/LOOP-HYGIENE.md` (plugin repo).
+
 ## Stage 1.5 — Sanity check
 
 Run `/sdlc` Stage 1.5 verbatim (the 3-agent pre-flight on Claude; sequential on

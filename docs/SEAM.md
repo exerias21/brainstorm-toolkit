@@ -105,3 +105,11 @@ Guardrails (all enforced in `next-action.sh`, all non-negotiable):
 
 - **Unattended worker** (Lever C / L12) — a daemon polling the queue headlessly. Stays a
   documented deployment pattern in `docs/` (see `AUTONOMOUS-DISCOVERY.md`), not a shipped skill.
+
+## Related — loop context hygiene
+
+A companion cross-tool hook, `scripts/hooks/reseed-context.sh`, is wired to the post-reset event
+(Claude `SessionStart` matcher `compact|clear`; Codex `PostCompact`). After the orchestrator session
+is compacted/cleared mid-loop it re-injects a pointer to the durable on-disk state (envelope +
+this sentinel + `TASKS.md`) so aggressive auto-compaction stays lossless for a long `--queue`/
+auto-continue run. Contract + the config knobs + the fresh-process escalation: `docs/LOOP-HYGIENE.md`.

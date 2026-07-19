@@ -376,7 +376,7 @@ install_stop_hook_codex() {
     echo "  skip (exists): $hook_file"
     return
   fi
-  local cmd_json=${cmd//\"/\\\"}   # JSON-escape embedded double-quotes
+  local cmd_json=${cmd//\"/\\\"}     # JSON-escape embedded double-quotes
   mkdir -p "$(dirname "$hook_file")"
   cat > "$hook_file" <<JSON
 {
@@ -390,6 +390,88 @@ JSON
   echo "  wrote: $hook_file (trust the .codex/ dir via /hooks to activate)"
 }
 
+# Install the Codex PostCompact reseed hook by jq-MERGING a PostCompact array into
+# .codex/hooks.json. Separate from install_stop_hook_codex (which skips-on-exist,
+# writing the whole file) so an EXISTING Codex install that only had `Stop` still
+# gains PostCompact on a plain re-run — and without clobbering any hand-added hooks.
+# Idempotent by command string.
+install_reseed_hook_codex() {
+  local hook_file="$TARGET/.codex/hooks.json"
+  local cmd
+  if [[ "$COPY_SCRIPTS" -eq 1 ]]; then
+    cmd='bash "$(git rev-parse --show-toplevel)/scripts/hooks/reseed-context.sh"'
+  else
+    local reseed_path_escaped
+    printf -v reseed_path_escaped '%q' "$PLUGIN_ROOT/scripts/hooks/reseed-context.sh"
+    cmd="bash $reseed_path_escaped"
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "  skip: jq not installed — add a PostCompact hook manually to $hook_file:"
+    echo "        {\"hooks\":{\"PostCompact\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\",\"timeout\":10}]}]}}"
+    return
+  fi
+  mkdir -p "$(dirname "$hook_file")"
+  [[ -f "$hook_file" ]] || echo '{}' > "$hook_file"
+  if jq -e --arg cmd "$cmd" '
+        any(.hooks.PostCompact[]?.hooks[]?; .command == $cmd)
+      ' "$hook_file" >/dev/null 2>&1; then
+    echo "  skip: Codex PostCompact reseed hook already wired ($cmd)"
+    return
+  fi
+  local tmp; tmp="$(mktemp)"
+  if jq --arg cmd "$cmd" '
+    .hooks //= {} |
+    .hooks.PostCompact //= [] |
+    .hooks.PostCompact += [{ "hooks": [{ "type": "command", "command": $cmd, "timeout": 10 }] }]
+  ' "$hook_file" > "$tmp" && mv "$tmp" "$hook_file"; then
+    echo "  wrote: $hook_file (added PostCompact reseed; trust the .codex/ dir via /hooks to activate)"
+  else
+    rm -f "$tmp"
+    echo "  error: failed to update $hook_file with Codex PostCompact reseed hook" >&2
+    return 1
+  fi
+}
+
+# Install the Claude SessionStart reseed hook (matcher compact|clear) into settings.json.
+# Separate from install_stop_hook_claude (which early-returns when the Stop hook already
+# exists) so re-runs still wire the reseed leg. Idempotent by command string.
+install_reseed_hook_claude() {
+  local settings="$TARGET/.claude/settings.json"
+  local cmd
+  if [[ "$COPY_SCRIPTS" -eq 1 ]]; then
+    cmd="bash scripts/hooks/reseed-context.sh"
+  else
+    local reseed_path_escaped
+    printf -v reseed_path_escaped '%q' "$PLUGIN_ROOT/scripts/hooks/reseed-context.sh"
+    cmd="bash $reseed_path_escaped"
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "  skip: jq not installed — add SessionStart reseed hook manually to $settings:"
+    echo "        {\"hooks\":{\"SessionStart\":[{\"matcher\":\"compact|clear\",\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\"}]}]}}"
+    return
+  fi
+  mkdir -p "$(dirname "$settings")"
+  [[ -f "$settings" ]] || echo '{}' > "$settings"
+  if jq -e --arg cmd "$cmd" '
+        any(.hooks.SessionStart[]?.hooks[]?; .command == $cmd)
+      ' "$settings" >/dev/null 2>&1; then
+    echo "  skip: Claude SessionStart reseed hook already wired ($cmd)"
+    return
+  fi
+  local tmp; tmp="$(mktemp)"
+  if jq --arg cmd "$cmd" '
+    .hooks //= {} |
+    .hooks.SessionStart //= [] |
+    .hooks.SessionStart += [{ "matcher": "compact|clear", "hooks": [{ "type": "command", "command": $cmd }] }]
+  ' "$settings" > "$tmp" && mv "$tmp" "$settings"; then
+    echo "  wrote: $settings (added SessionStart reseed hook)"
+  else
+    rm -f "$tmp"
+    echo "  error: failed to update $settings with Claude SessionStart reseed hook" >&2
+    return 1
+  fi
+}
+
 echo "[gitignore]"
 ensure_gitignored ".claude/pipeline/"
 ensure_gitignored ".claude/.next-action"
@@ -399,14 +481,18 @@ if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
   if [[ "$want_claude" -eq 1 ]]; then
     echo "[hooks] Claude Stop hook"
     install_stop_hook_claude
+    echo "[hooks] Claude SessionStart reseed hook"
+    install_reseed_hook_claude
   fi
   if [[ "$want_copilot" -eq 1 ]]; then
     echo "[hooks] Copilot Stop hook"
     install_stop_hook_copilot
+    echo "  note: Copilot has no compaction/session hook — see docs/LOOP-HYGIENE.md for the fresh-process loop mitigation"
   fi
   if [[ "$want_codex" -eq 1 ]]; then
-    echo "[hooks] Codex Stop hook"
+    echo "[hooks] Codex Stop + PostCompact hooks"
     install_stop_hook_codex
+    install_reseed_hook_codex
   fi
 else
   echo "[hooks] skipped (--no-hooks)"

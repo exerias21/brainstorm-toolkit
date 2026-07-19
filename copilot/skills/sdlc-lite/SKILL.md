@@ -69,6 +69,9 @@ templates, no new schema beyond `run.json.pipeline = "sdlc-lite"` and a
   (plus a `confirm:true` line for the confirm action if it parked on one). The **sentinel is
   the ONLY thing the Stop hook surfaces**; `run.json.next_action` alone is invisible, so a park
   that sets only the envelope field leaves the loop dead.
+- **Long runs — context hygiene:** a many-hour loop accumulates context in the one orchestrator
+  session. Config knobs + the fresh-process-per-item escalation (Copilot has no compaction/reseed
+  hook) are in `docs/LOOP-HYGIENE.md` (plugin repo).
 
 Mark resolved rows `[~]`. Derive `slug` per `docs/CONVENTIONS.md`; initialize
 `.claude/pipeline/<slug>/` with the canonical `run.json` — **including the computed

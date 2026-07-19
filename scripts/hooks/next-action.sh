@@ -153,6 +153,8 @@ fi
 #     docs). Copilot stays print-only (its block-equivalent is unverified). NOTE: the
 #     Codex env marker (CODEX_HOME) should be confirmed on a real Codex install; if it
 #     doesn't match, auto-continue safely falls back to print. SINGLE action only → park.
+#     Long-loop context hygiene (the reseed-context.sh companion hook that keeps auto-compaction
+#     lossless for a --queue/auto-continue run) is documented in docs/LOOP-HYGIENE.md.
 HOPS_FILE="$PROJ/.claude/.auto-continue-hops"
 PROJECT_JSON="$PROJ/.claude/project.json"
 if { [ -n "${CLAUDE_PROJECT_DIR:-}" ] || [ -n "${CODEX_HOME:-}" ]; } \

@@ -1,5 +1,5 @@
 {
-  "description": "brainstorm-toolkit — surface the .next-action seam. Enabling the plugin wires the Stop hook in EVERY repo (no per-repo setup.sh needed), so /brainstorm handoffs, /sdlc-lite --queue park-resumes, and gotcha seams actually appear as `Next: …` (and, with pipeline.auto_continue, drive the loop). Merges with any user/project Stop hooks (deduped by command). See docs/SEAM.md.",
+  "description": "brainstorm-toolkit — surface the .next-action seam + keep long loops context-cheap. The Stop hook surfaces /brainstorm handoffs, /sdlc-lite --queue park-resumes, and gotcha seams as `Next: …` (and, with pipeline.auto_continue, drives the loop). The SessionStart hook (matcher compact|clear) reseeds a pointer to the loop's durable on-disk state after a compaction/clear, so aggressive auto-compaction stays lossless for the orchestrator. Merges with any user/project hooks (deduped by command). See docs/SEAM.md and docs/LOOP-HYGIENE.md.",
   "hooks": {
     "Stop": [
       {
@@ -8,6 +8,19 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hooks/next-action.sh",
+            "args": [],
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hooks/reseed-context.sh",
             "args": [],
             "timeout": 10
           }
