@@ -50,61 +50,86 @@ per tool:
 | **Claude Code** | `SessionStart`, matcher `compact\|clear` | `.source` (`startup\|resume\|clear\|compact`) | Also sets `reloadSkills: true` (re-scans skill/command dirs — a harmless no-op here since this hook installs no skills; belt-and-suspenders). Shipped via `hooks/hooks.json` (plugin) and `setup.sh` → `.claude/settings.json`. |
 | **Codex** | `PostCompact` | `.trigger` (`manual\|auto`) | Codex splits the events — `SessionStart` fires only on start/resume, so the reseed point is the separate `PostCompact` event. Shipped via `setup.sh` → `.codex/hooks.json` (**trust the `.codex/` dir via `/hooks` to activate**). |
 
+| **Copilot** | — | — | No compaction/session hook event exists. Use the batch-handoff escalation below. |
+
 The reseed script reads `.hook_event_name` from stdin and echoes it back as `hookEventName`, and reads the trigger tolerantly (`.source // .trigger`), so one script serves both events/tools correctly.
-| **Copilot** | — | — | No compaction/session hook event exists. Use the fresh-process escalation below. |
 
-The script tolerates both field names (`jq -r '.source // .reason'`), so one script serves both tools.
+## Can the loop compact the main session itself, mid-run? No.
 
-## Advanced (manual, OFF by default): lower the auto-compact threshold
+There is **no supported way** for a hook, skill, or the agent to *trigger* a `/compact` mid-session on
+either tool — so the toolkit does **not** auto-shrink a mid-range orchestrator session. That's also by
+design: you don't want a reset dropping live working context in the middle of a single plan (the natural,
+safe reset point is a *completed-item boundary*, after state is flushed to disk — not a size threshold
+that can fire anywhere). As of mid-2026:
 
-Auto-compaction fires near the window limit by default. You *can* make it fire earlier so the
-orchestrator's average context stays smaller — but this is **manual, per-environment, and not
-shipped as a default** (a blind low value burns tokens compacting sessions that never needed it, and
-it's Claude-only). Calibrate it to your observed per-item token footprint (roughly "2–3 queue items'
-worth"), not a round number.
+- **A hook can't trigger compaction.** `PreCompact` is gate-only (blocks/observes an already-triggered
+  compaction; never initiates one). And no hook event carries token counts, so a hook can't even detect
+  "context is large."
+- **The agent can't invoke `/compact` itself.** `/compact` is explicitly excluded from what the `Skill`
+  tool may run (the old `SlashCommand` tool was folded into `Skill`). The tracking request
+  (claude-code #19877) is open, unresolved, and not on the roadmap.
+- **The threshold can't be scoped to the main session.** `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` applies to the
+  main conversation *and every subagent*; Codex's `model_auto_compact_token_limit` is global config only.
+- **The one exception — the Agent SDK.** An SDK loop *driver* can dispatch `/compact` between turns as a
+  `query({continue:true})` prompt, so "compact after X items" is buildable there (subagents untouched,
+  since you compact the main history explicitly). That's a different execution model from the hook-driven
+  interactive CLI the skills run under — use the SDK if you truly need programmatic self-compaction.
 
-- **Claude Code** — env vars (settings.json `env` block or shell):
-  - `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` (1–100) lowers the trigger %. **Caveats:**
-    - ⚠️ On **Opus** it is a **silent no-op unless you also set `CLAUDE_CODE_AUTO_COMPACT_WINDOW`** (the
-      override only affects the proactive-compaction path, which Opus-local doesn't take by default).
-      Sonnet 5 (native 1M window, proactive) honors it directly.
-    - ⚠️ It **applies to subagents too** — in this 100%-subagent-heavy pipeline a global low value can
-      compact a deep fix-loop subagent mid-task. Prefer leaving it default and relying on the reseed
-      hook; only lower it if you've measured a win. `DISABLE_AUTO_COMPACT` turns auto-compaction off.
-- **Codex** — `config.toml` `model_auto_compact_token_limit` (top-level only — **profile-scoped values
-  are silently ignored**; no env var; the value is **clamped to ≤90% of the window**; there is no
-  off-switch, and no live token read for any script/hook). A static conservative number is the only
-  lever Codex offers.
+**What the reseed hook does, then:** it makes whatever compaction *does* happen lossless — Claude's native
+auto-compaction near the window max, or a manual `/compact`/`/clear` — by re-pointing at on-disk state. It
+cannot *cause* a compaction. So on a large-window model (Sonnet 5 ~967k, Opus 1M) a `--queue` run that
+stays well under the ceiling simply never compacts and the hook stays dormant (zero cost). To actually cap
+context on such a run, use batch handoff below — not a threshold.
 
-## Escalation (docs-only, not shipped): fresh process per item
+### Last-resort knob: lower the native auto-compact threshold (NOT recommended)
+You *can* make the native auto-compaction fire earlier via config, but it's the wrong shape here and stays
+**off by default**: it triggers on **size**, so it can fire **mid-plan** (dropping live context), and it
+**also lowers subagent thresholds** (no way to exempt them) — a deep fix-loop worker can get compacted
+mid-task. Only reach for it if you've measured a win.
+- **Claude:** `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` (1–100); on **Opus** it's a silent no-op unless you also
+  set `CLAUDE_CODE_AUTO_COMPACT_WINDOW`. `DISABLE_AUTO_COMPACT` turns auto-compaction off.
+- **Codex:** `model_auto_compact_token_limit` (top-level config.toml only; clamped ≤90%; no env, no off-switch).
 
-When even a compacted single session is too heavy, don't chain in one session at all — run **each
-queue item as a fresh headless process** with clean context, passing the **state-file path** in the
-prompt (never `resume` — both tools reload the *full* prior transcript on resume, which defeats the
-point). This is the toolkit's Lever-C stance: a queue-driving runner is a **deployment pattern you opt
-into**, not a shipped skill/daemon (same reasoning as `docs/AUTONOMOUS-DISCOVERY.md`).
+## The real lever for a long queue: batch handoff (docs-only, not shipped)
 
-- **Claude:** `claude -p "Run /sdlc-lite <task-id>. State is at .claude/pipeline/<slug>/run.json" --output-format json --permission-mode dontAsk --max-budget-usd <cap>`
-  (use `--permission-mode dontAsk`, **not** `--dangerously-skip-permissions`, which hangs on a TTY dialog).
-- **Codex:** `codex exec -m <model> --ephemeral --json "Run the sdlc-lite skill for <task-id>. State is at .claude/pipeline/<slug>/run.json"`
-  (`--ephemeral` skips persisting the rollout; AGENTS.md + `.agents/skills/` auto-load).
+For a genuinely long `--queue` run, don't fight the main session's growth or try to force compaction —
+**bound it by re-launching**. Run a batch of **X** items in one process, then hand off to a **fresh
+process** for the next batch. Clean context every X items; state handed off via disk
+(`.claude/pipeline/<slug>/run.json` + `.next-action` + `TASKS.md`), which the toolkit already externalizes,
+so a cold process reads its position at startup — the reseed hook isn't even needed here. Trigger on
+**item count (X)**, not size: the boundary is clean (never mid-plan) and measurable (you can't read live
+context size from a script anyway).
 
-A minimal driver reads the queue and fires one fresh process per item:
+**Batching beats fresh-process-*per-item*.** Per-item re-pays the full CLAUDE.md/skills/plugin baseline
+*every* item (`N × baseline`); per-batch amortizes it (`N/X × baseline`) while still capping growth at
+~X items' worth. Tune X to your per-item footprint. This is the toolkit's **Lever-C** stance — a
+self-relaunching headless loop is a **deployment pattern you opt into**, not a shipped skill/daemon (same
+reasoning as `docs/AUTONOMOUS-DISCOVERY.md`) — and it carries real operational baggage (headless auth,
+permission mode, claude.ai MCP connectors don't load headless, detachment UX). Worth it for an overnight
+backlog, not a handful of items.
+
+It reuses the existing `--queue [N]` cap (N = the per-batch size): each fresh process runs `--queue X`,
+parks when it hits X, and the runner relaunches until the queue drains.
 
 ```sh
 # loop-runner.sh — opt-in, unattended; NOT installed by setup.sh. Cross-tool via $ENGINE.
-# ENGINE='claude -p'   or   ENGINE='codex exec -m gpt-5.6-terra --ephemeral --json'
+# Each iteration is a FRESH process that runs ONE batch of X items, then exits → clean context per batch.
+#   ENGINE='claude -p --permission-mode dontAsk --max-budget-usd 5'  (dontAsk, NOT --dangerously-skip-permissions)
+#   ENGINE='codex exec -m gpt-5.6-terra --ephemeral --json'          (--ephemeral: don't persist the rollout)
+BATCH=5   # X — items per fresh process; tune to per-item context footprint
 set -eu
-while IFS= read -r row; do
-  id="${row#*task-}"; id="task-${id%% *}"          # extract task-N from a TASKS.md row
-  $ENGINE "Run the sdlc-lite skill for $id. Durable state is under .claude/pipeline/. \
-Do not resume any prior session; read state from disk." || { echo "item $id failed — stopping"; break; }
-done < <(grep -E '^\- \[ \] ' TASKS.md)             # pending rows, top-down
+while grep -qE '^\- \[ \] ' TASKS.md; do            # pending rows remain?
+  $ENGINE "Run /sdlc-lite --queue $BATCH. Durable state is under .claude/pipeline/; \
+read your position from disk, do not resume any prior session." || { echo "batch failed — stopping"; break; }
+done
 ```
 
-> Note: Codex's own "Goal Mode" guidance recommends the *opposite* — keeping related work in one
-> growing session. That inherits every compaction weakness above and does not solve context bloat;
-> treat it as OpenAI's default, not a fix for this problem.
+Never `resume`/`--continue` — both tools reload the *full* prior transcript on resume, defeating the
+clean-context goal. Pass the state **path** in the prompt instead.
+
+> Note: Codex's own "Goal Mode" guidance recommends the *opposite* — keeping related work in one growing
+> session. That inherits every limitation above and doesn't solve context bloat; it's OpenAI's default,
+> not a fix for this problem.
 
 ## See also
 - `docs/SEAM.md` — the `.next-action` seam the Stop hook surfaces / the reseed hook points at.
