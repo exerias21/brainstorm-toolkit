@@ -855,7 +855,15 @@ never fail). Otherwise return demoted_lenses = every lens name whose entry has d
   // REVIEW_LENSES = configured (or default) lenses MINUS any lens the ledger marks demoted for
   // this repo (§6.3: `.filter(l => !stats.lenses[l]?.demoted)`). Phases 1-3 had no ledger, so
   // demotedLenses was always [] there; the filter is a no-op until the breaker has history.
-  const REVIEW_LENSES = (cfg.review_fix?.lenses ?? DEFAULT_LENSES).filter((l) => !demotedLenses.includes(l))
+  const CONFIGURED_LENSES = cfg.review_fix?.lenses ?? DEFAULT_LENSES
+  const REVIEW_LENSES = CONFIGURED_LENSES.filter((l) => !demotedLenses.includes(l))
+  // Mirror the prose contract (SKILL.md Stage 5.7): a reduced fan-out is never silent -- the user
+  // configured fewer lenses to cut cost, so say what actually dispatched and why it differs.
+  log(
+    `review lenses: ${REVIEW_LENSES.join(', ') || '(none)'} (${REVIEW_LENSES.length} of ${DEFAULT_LENSES.length} defaults` +
+      (demotedLenses.length ? `; ${demotedLenses.length} demoted by the circuit breaker` : '') +
+      `)`
+  )
   // SEPARATE budget from fixBudget (shared by Stages 4/5/5.5/5.6) -- see §4.4 for why sharing
   // it is wrong.
   const reviewBudget = makeBudget(cfg.review_fix?.max_fix_loops ?? 3)

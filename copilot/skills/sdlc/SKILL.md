@@ -180,7 +180,11 @@ env/compose checks. (This mirrors D6 / plan §5.3 gate 1's exemption on the cano
 this overlay runtime has no other skill-repo detection of its own, so the marketplace-manifest
 check above IS its skill-repo signal.)
 
-**No parallel sub-agents on this runtime.** Run each of the four lenses — correctness,
+**No parallel sub-agents on this runtime.** Run each **configured** lens
+(`pipeline.review_fix.lenses` in `.claude/project.json`; when the key is absent, all four
+defaults below. Setting fewer cuts this stage's cost roughly linearly — it is one pass per
+lens — so pick by what the diff risks; `correctness` is the highest-yield single lens. Print
+the resolved list before starting.) The defaults: correctness,
 plan⇌code alignment, config/env/docs consistency, security (checklists:
 `skills/sdlc/templates/review-correctness-checklist.md`, `skills/sdlc/templates/review-security-checklist.md`) — as one sequential inline pass over the
 diff, re-reading it fresh for each lens. If a genuinely separate reviewer integration is
