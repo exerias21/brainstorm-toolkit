@@ -26,6 +26,12 @@ one closely; tune independently if Codex behavior diverges. Same stages as
 
 **Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/model-cap.md`) is honored wherever sub-agents are dispatched. On this runtime every stage runs inline in the session model, so the cap is advisory here — set your session model to the cap tier for the savings.
 
+> **`skills/sdlc/templates/*` paths below are citations into the brainstorm-toolkit
+> plugin repo — they are NOT installed on this runtime.** Overlays replace the canonical
+> skill tree wholesale, so `.agents/skills/sdlc/` ships `SKILL.md` only. Do not try to
+> open them; everything this overlay needs to execute is inlined here. Read them in the
+> plugin repo only if you are changing the contract itself.
+
 ## When to use
 
 | Skill | Input | Terminal action |
@@ -105,11 +111,30 @@ For a range, run once over the combined set. Stop and report on a real blocker.
 
 ## Stage 2 — Implement
 
-Run `/sdlc` Stage 2 inline, including its **live-code grounding** (follow
-`.agents/skills/sdlc/templates/convention-grounding.md` — reuse existing
-patterns, treat AGENTS.md/CLAUDE.md as stale-able hints, honor any
-`## Conventions & reuse` block in the plan) and its **auto-gate** (see
-`.agents/skills/sdlc/SKILL.md`). Compute `surfaces_touched` (planned files vs.
+Run `/sdlc` Stage 2 inline, including its **auto-gate** (see
+`.agents/skills/sdlc/SKILL.md`), preceded by **live-code grounding**.
+
+**Live-code grounding** (inlined from `skills/sdlc/templates/convention-grounding.md`;
+scope the recon to the feature's target area, never the whole repo):
+
+1. Find the **2–3 closest existing implementations** of the same kind of thing (another
+   route, migration, component, CLI command) by grep/glob — let the code, not memory,
+   tell you the shape.
+2. Extract their patterns with `path:line` citations: where this kind of code lives,
+   naming, error/logging shape, the data-access seam, dependency + import conventions,
+   test layout.
+3. Read `AGENTS.md` / `CLAUDE.md` / `GOTCHAS.md` / `.claude/project.json` as *stated
+   intent only*. **Where a doc and the live code disagree, the code wins** — record it on
+   the `Doc drift` line and make it actionable in the Stage 6 hand-off (nudge `/gotcha`
+   if it is a genuine trap).
+4. Prefer extending an existing module/helper/type over adding a parallel one; introduce
+   a new pattern only when none fits, and say why.
+
+Honor any `## Conventions & reuse` block already in the plan, re-verifying it against live
+code (the code may have moved since the plan was written). A plan with no reuse and no
+justified new pattern is a red flag — it usually means the recon was skipped.
+
+Compute `surfaces_touched` (planned files vs.
 the surface globs) and `task_count` (step count). **Decompose iff**
 `surfaces_touched >= 2` AND `task_count >= DECOMPOSE_MIN_TASKS` (default `6`,
 override via `pipeline.decompose_min_tasks`) AND the per-surface file sets are
@@ -175,21 +200,21 @@ Skip with a note when none exists.
 **Opt-in, permanently — never runs by default.** Runs after Stage 5.6 flowsim, before Stage 6,
 only when explicitly turned on this run (`--review-model <name>`, or an explicit
 `pipeline.review_fix.enabled: true`; default reviewer `opus` once enabled — see
-`.agents/skills/sdlc/templates/review-model.md` (canonical: `skills/sdlc/templates/review-model.md`)). An omitted `pipeline.review_fix` block, or
+`skills/sdlc/templates/review-model.md`). An omitted `pipeline.review_fix` block, or
 `enabled` left unset, means OFF — there is no default-on flip. Skipped when not opted in,
 `--no-review` was passed, `pipeline.review_fix.enabled: false`, or the changed-files-gate reports a
 docs-only diff — **unless a `.claude-plugin/marketplace.json` exists at the repo root**, in which
 case this is a
 skill repo, `.md` skill files ARE the code surface (there is no separate `.env`/compose surface to
 gate on here), and this docs-only self-skip does not apply — Stage 5.7 runs, with the
-config/env/docs lens repointed to `.agents/skills/sdlc/templates/stage-5-skill-repo.md`'s (canonical: `skills/sdlc/templates/stage-5-skill-repo.md`) structural checks in place of
+config/env/docs lens repointed to `skills/sdlc/templates/stage-5-skill-repo.md`'s structural checks in place of
 env/compose checks. (This mirrors D6 / plan §5.3 gate 1's exemption on the canonical/Workflow side;
 this overlay runtime has no other skill-repo detection of its own, so the marketplace-manifest
 check above IS its skill-repo signal.)
 
 **No parallel sub-agents on this runtime.** Run each of the four lenses — correctness,
 plan⇌code alignment, config/env/docs consistency, security (checklists:
-`.agents/skills/sdlc/templates/review-correctness-checklist.md` + `.agents/skills/sdlc/templates/review-security-checklist.md` (canonical: `skills/sdlc/templates/review-{correctness,security}-checklist.md`)) — as one sequential inline pass over the
+`skills/sdlc/templates/review-correctness-checklist.md` + `skills/sdlc/templates/review-security-checklist.md`) — as one sequential inline pass over the
 diff, re-reading it fresh for each lens. If a genuinely separate reviewer integration is
 configured and reachable (e.g. an MCP tool exposing Fable), call it once per lens instead of
 self-reviewing; otherwise review under an adversarial persona in the session model itself and say
@@ -210,7 +235,7 @@ unconfirmable findings is auto-demoted from dispatch (skipped, and recorded in
 
 For confirmed findings, draft a structured fix spec per finding, applying the auto_fixable rubric
 (a bug fixing an explicit contract vs. a product/design decision — see
-`.agents/skills/sdlc/templates/review-model.md` (canonical: `skills/sdlc/templates/review-model.md`)). Per `pipeline.review_fix.mode` (default `interactive`):
+`skills/sdlc/templates/review-model.md`). Per `pipeline.review_fix.mode` (default `interactive`):
 - **`interactive`**: present each fix spec for approve / edit / skip. Approved specs run through
   the existing Stage 2/4 implement+fix machinery inline, then a fresh adversarial re-review of the
   touched files (this loop iteration's own pass) decides whether another iteration is needed. Loop
@@ -270,6 +295,11 @@ push, PR, or `/review`. You review and commit.
    `- [ ] (P1) rebuild <env> for {feature-slug} (dependency change — rebuild, not restart) — plans/{feature-slug}.md`;
    and a `- [ ] (P2) verify {feature-slug} deployed — /post-deploy-verify plans/{feature-slug}.md`
    row closes the loop the same way `/sdlc` Stage 6 does.
+   **Then print the manual-verification line** from `.claude/project.json` `stack.*` (all
+   keys optional): `stack.rebuild` on the deploy-delta case (a dependency changed, so a
+   plain restart runs stale code), otherwise `stack.up`; append `stack.url` when set.
+   **Printed, never auto-run** — you asked for a validated tree, not a running one. If a
+   needed key is absent, name the key instead of guessing a command.
 
 Write `stage-outputs/handoff.json` =
 `{branch, files_changed[], committed: false, suggested_commit_msg}`. **Always

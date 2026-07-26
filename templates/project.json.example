@@ -18,6 +18,16 @@
     "services": ["api", "web", "worker"]
   },
 
+  "stack": {
+    "_comment": "Optional. How to bring this project's runnable stack up/down for MANUAL verification — the hand-off at the end of /sdlc-lite, or an ad-hoc 'get it running so I can click through'. Every key optional; a missing key means that action is unavailable and skills say so instead of guessing. These are NEVER run automatically: a skill may print the command, and only runs one when you ask.",
+    "up": "docker compose up -d --build",
+    "down": "docker compose down",
+    "_rebuild_comment": "Clean rebuild — used when a dependency manifest changed (see discipline.deploy_delta_globs), where a plain restart would silently run stale code.",
+    "rebuild": "docker compose up -d --build --force-recreate",
+    "_url_comment": "Where to look once it is up. Printed in the hand-off so you don't have to remember the port.",
+    "url": "http://localhost:3000"
+  },
+
   "eval": {
     "_comment": "Used by /eval-harness and /sdlc stages 3-4.",
     "_runner_options": "Two patterns: (1) consumer-resident (setup.sh copied scripts/ into this repo) — use 'python3 scripts/eval-runner.py'; (2) plugin-resident (setup.sh ran with --no-copy-scripts) — use 'python3 /absolute/path/to/brainstorm-toolkit/scripts/eval-runner.py'. Plugin-resident keeps shared infra in one place and benefits from plugin updates without re-running setup.",

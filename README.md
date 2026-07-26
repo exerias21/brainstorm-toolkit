@@ -270,6 +270,9 @@ every ultracode Workflow run Sonnet — `--model opus` is the deliberate opt-up.
 | `/brainstorm` | `modules`, `models.cap` |
 | `/sdlc`, `/sdlc-lite`, `/brainstorm-deep`, `/brainstorm-team` | `models.cap` (sub-agent tier ceiling) |
 | `/sdlc`, `/sdlc-lite` | `pipeline.review_fix.*` (reviewer-model axis — independent of `models.cap`) |
+| `/sdlc-lite --queue`, `scripts/loop-runner.sh`, `scripts/hooks/next-action.sh` | `pipeline.loop.*` (`max_items`, `batch_size`, `max_hops`, `auto_continue`) |
+| `/sdlc`, `/sdlc-lite` | `pipeline.plan_validate.model` (Stage 5.5 validator tier — a default *within* the `models.cap` axis, still capped by it) |
+| `/sdlc-lite` Stage 6 | `stack.up` / `stack.down` / `stack.rebuild` / `stack.url` — printed as the manual-verification line at hand-off, never auto-run |
 | `/task`, `/status` | (none — read TASKS.md directly) |
 | `/repo-onboarding` | writes all of the above |
 
