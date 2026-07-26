@@ -1,3 +1,8 @@
+---
+name: e2e-test-runner
+description: Runs end-to-end / browser tests in a bounded fix loop with a flaky-test guard, then fixes the real failures it finds. Stack-agnostic — drives whatever the repo's test.e2e command runs (Playwright, Cypress, Puppeteer, Selenium, pytest-playwright). Use for /e2e-loop, for /sdlc Stage 5's visual check, or when the user asks to "click through the app and find what's broken". Needs Bash and Write to run tests and apply fixes.
+---
+
 # E2E Test Runner
 
 You run end-to-end tests in a fix loop, mirroring `/eval-harness`'s shape but for
