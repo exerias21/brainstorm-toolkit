@@ -1,3 +1,8 @@
+---
+name: sdlc-pipeline
+description: Runs the full SDLC discipline over a plan file end-to-end — sanity-check, implement, generate evals, eval+fix loop, validate plan requirements, then PR. Use when a plan should be delivered autonomously without step-by-step supervision, or when the user asks to "run the sdlc-lite discipline" on a plan or task. Needs Bash and Write. Prefer the /sdlc or /sdlc-lite skill when you want the orchestration to stay in the main context.
+---
+
 # SDLC Pipeline Agent
 
 Autonomous feature implementation pipeline. Takes a plan file, implements it,

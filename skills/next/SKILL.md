@@ -37,11 +37,37 @@ Gather these (all optional — skip any that's absent, never error):
 - git: current branch, dirty tree, whether HEAD has commits not recorded in any envelope.
 - `.claude/project.json` — `main_branch`, `discipline.staleness_hours`.
 
-**On Claude (optional enhancement):** dispatch the one **Haiku** `conductor` agent
-(`agents/conductor.md`) to do this glob + JSON + git-plumbing join off the main context,
-returning the joined facts. This is a single Haiku read job — never a fan-out, no model-cap
-plumbing. **On Copilot/Codex (and any time the agent is unavailable): do the reads inline** —
-the agent is pure enhancement; the ladder below runs identically on the inline facts.
+**On Claude (optional enhancement):** dispatch the one `conductor` agent to do this glob +
+JSON + git-plumbing join off the main context, returning the joined facts. This is a single
+Haiku read job — never a fan-out, **no model-cap plumbing** (the tier is pinned in the agent's
+own frontmatter, and this site is deliberately exempt from the `models.cap` ladder).
+
+```
+Agent(
+  subagent_type: "conductor",
+  description: "Join next-step state",
+  prompt: """
+    Do your state-join over this repo and return the structured facts.
+
+    Inputs:
+      repo_root: {cwd}
+      main_branch: {project.json main_branch, default 'main'}
+      staleness_hours: {project.json discipline.staleness_hours, default 24}
+
+    Read-only: do not delete the sentinel, do not write any file.
+  """
+)
+```
+
+The agent declares `model: haiku` and `tools: Read, Grep, Glob, Bash`, so the read-only promise
+is structural where it matters: it has **no Write and no Edit**, and therefore cannot create,
+modify, or delete any file — including the sentinel it is forbidden to consume. `Bash` stays
+because the join needs git state, and scoped forms like `Bash(git log:*)` are not a documented
+value for this field. If the plugin is not
+installed the agent name won't resolve; `subagent_type: "brainstorm-toolkit:conductor"` is the
+plugin-scoped form. **On Copilot/Codex (and any time the agent is unavailable): do the reads
+inline** — the agent is pure enhancement; the ladder below runs identically on the inline facts,
+and the fallback is never an error worth reporting.
 
 ## Step 2 — Walk the decision ladder (highest match wins)
 
