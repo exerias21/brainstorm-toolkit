@@ -256,7 +256,7 @@ mismatch, and resume at the first stage whose sidecar isn't `status: "pass"`
 Read the plan file and extract structured information:
 
 1. **Read** the plan file fully. The plan source can be:
-   - A standard brainstorm plan (e.g., `plans/brainstorm-<slug>.md` with Direction / Implementation Steps / Acceptance Criteria sections), OR
+   - A standard brainstorm plan (e.g., `plans/brainstorm-<slug>.md` with Direction / Implementation Steps sections), OR
    - A `TASKS.md`-style checkbox list at repo root — in which case treat every `[ ]` or `[~]` row in the `Active / Pending` section as an implementation step, and follow the `plans/tasks/task-N-<slug>.md` links for detail.
 2. **Extract**:
    - Feature name/slug (from filename or first heading; for TASKS.md input, derive from the row text or first linked task file)
@@ -509,8 +509,7 @@ drafts the fix for a code defect, and hands back the `--resume` re-entry. Or tri
   **code-defect** (a consistent assertion failure) · **plan-wrong** (the failure
   contradicts a plan step) · **config-missing** (a command/env/dep the runner needs).
 - **Recommended next command** (matches the class — all work today; `--resume` reuses the
-  green stages, so prefer it over a fresh re-run; do NOT suggest `/triage`, which doesn't
-  exist yet):
+  green stages, so prefer it over a fresh re-run):
   - flaky → re-run just the gate to confirm: `/eval-harness` (or `/test-check`); if green, `/sdlc {plan_file} --resume`.
   - code-defect → `/task fix: {one-line failure}` (bounded TDD), then `/sdlc {plan_file} --resume` (code changed, plan didn't — resume skips the green stages).
   - plan-wrong → `/brainstorm` the failing step to revise `{plan_file}`, then re-run `/sdlc {plan_file}` **fresh** (NOT `--resume` — editing the plan changes its hash, which resume rejects by design).
@@ -614,8 +613,21 @@ definition (`.claude/agents/ux-plan-validator.md`) as reference for agent behavi
 
 Read the prompts from `templates/stage-5.5-validation.md` (sections: `api`, `ui`,
 `data`, `cross-module`). Substitute `{plan_file}`, `{feature_name}`, and
-`{feature_slug}`, then dispatch the **selected** agents in a single message. Models per
-section: `api` and `ui` use Sonnet; `data` and `cross-module` use Haiku.
+`{feature_slug}`, then dispatch the **selected** agents in a single message.
+
+**Validator model tier.** Built-in defaults: `api` and `ui` use Sonnet; `data` and
+`cross-module` use Haiku. `.claude/project.json` `pipeline.plan_validate.model`
+(`haiku|sonnet|opus`) **replaces the built-in default for all four validators** when set —
+use it when you want a stronger reader judging the plan, since `cross-module` always runs
+and is the catch-all for integration gaps. The resolved tier still passes through the
+**model cap** (`models.cap` / `--model`, see `templates/model-cap.md`), which is a
+*ceiling*: `capModel(effective_default, cap)`. Two consequences worth stating plainly —
+the cap can only lower the tier, never raise it, so with the Sonnet-first default cap
+`plan_validate.model: "opus"` still dispatches Sonnet unless you also pass `--model opus`;
+and raising the tier costs on **every** run that reaches this stage, because
+`cross-module` is unconditional. This is **not** a third model axis — it sets a default
+*within* the fan-out axis and is still capped by it. Print the resolved tier with the
+usual `model: <tier> (cap: <cap|none>)` line before dispatching.
 
 ### Process results
 

@@ -7,7 +7,9 @@ description: >
   (inversion, pre-mortem, steelman, adjacent-reuse) sequentially before
   plan freeze. Output ends with an explicit expectation contract block.
   Invoke when the user says /brainstorm-deep, "I'm not sure what I
-  want", "this is vague", "high stakes", or asks for more rigor than
+  want", "this is vague", "high stakes", "drill me on this", "ask me
+  questions until it's clear", "poke holes in this", "what am I
+  missing?", or asks for more rigor than
   /brainstorm provides. Copilot overlay — sequential where Claude runs
   parallel, no plan-approval primitive (the user steers each pass via
   normal chat).

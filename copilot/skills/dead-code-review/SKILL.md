@@ -4,8 +4,10 @@ description: >
   Sequential dead-code review for Copilot. Walk through six focused review phases
   (backend, frontend, database, docs, scripts, tests) inline, then triage findings
   and remove high-confidence items with test verification. Use /dead-code-review
-  after a major feature, before a release, or when asked to "clean up" the repo.
-  Copilot-adapted version of the canonical — sequential instead of parallel.
+  after a major feature, before a release, or when asked to "clean up" the repo,
+  "what can be deleted", "what's no longer needed", or "what docs are worth keeping
+  vs getting rid of". Copilot-adapted version of the canonical — sequential instead
+  of parallel.
 argument-hint: "[scope] - optional: 'backend', 'frontend', 'database', 'docs', 'full' (default: full)"
 metadata:
   brainstorm-toolkit-applies-to: copilot
