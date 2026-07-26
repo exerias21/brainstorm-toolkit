@@ -135,7 +135,7 @@ Goal: stress-test the agreed framing from multiple angles, then produce a plan t
 
 1. **Read `templates/perspective-frames.md`** for the 8 available frames.
 2. **Pick frames.** Defaults: `inversion`, `pre-mortem`, `steelman`, `adjacent-reuse`. `--frames <comma-list>` overrides.
-3. **Dispatch in parallel.** In a **single message**, fire one Agent tool call per frame with `subagent_type: "general-purpose"`, **Sonnet** model (honors the model cap — a `haiku` cap lowers it further; see `skills/sdlc/templates/model-cap.md`, `--model <tier>` > `project.json models.cap` > default). Each agent gets the agreed framing, the user's clarified answers, and the frame's prompt from the template. Each returns ≤300 words.
+3. **Dispatch in parallel.** In a **single message**, fire one Agent tool call per frame with `subagent_type: "general-purpose"`, **Sonnet** model (honors the model cap — a `haiku` cap lowers it further; see `skills/sdlc/templates/models.md`, `--model <tier>` > `project.json models.cap` > default). Each agent gets the agreed framing, the user's clarified answers, and the frame's prompt from the template. Each returns ≤300 words.
 4. **Synthesize.** Frames go in their own labeled section in the plan (`## Perspective passes`); they inform the design but do not override user intent. If a frame's output contradicts a user clarification, surface the conflict for the user to resolve, don't silently side with the agent.
 5. **Produce three plan variants** at different ambition levels:
    - **Conservative** — minimum viable, narrowest scope, smallest blast radius.

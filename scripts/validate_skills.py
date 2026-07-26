@@ -36,7 +36,7 @@ VALID_TARGETS = {"claude", "copilot", "codex"}
 
 # C: the fan-out skills — these dispatch sub-agents (the Agent tool / Workflow
 # agent() seam) and are therefore governed by the shared model-tier cap
-# contract at skills/sdlc/templates/model-cap.md. Each must carry a one-line
+# contract at skills/sdlc/templates/models.md. Each must carry a one-line
 # pointer to that file so the cap rule is checkable, not just documented.
 MODEL_CAP_FAN_OUT_SKILLS = {
     "sdlc",
@@ -46,15 +46,15 @@ MODEL_CAP_FAN_OUT_SKILLS = {
     "brainstorm-team",
     "dead-code-review",
 }
-MODEL_CAP_REF = "model-cap.md"
+MODEL_CAP_REF = "models.md"
 
 # D: the review-fix skills -- sdlc and sdlc-lite ship an adversarial Review->Fix
 # stage governed by the reviewer-model axis contract at
-# skills/sdlc/templates/review-model.md. Deliberately separate from
+# skills/sdlc/templates/models.md. Deliberately separate from
 # MODEL_CAP_FAN_OUT_SKILLS: different axis, and brainstorm*/dead-code-review
 # have no review stage.
 REVIEW_STAGE_SKILLS = {"sdlc", "sdlc-lite"}
-REVIEW_MODEL_REF = "review-model.md"
+REVIEW_MODEL_REF = "models.md"
 
 
 def parse_targets(raw_value: str) -> list[str]:
@@ -301,7 +301,7 @@ def overlay_parity_warnings(
 
 def model_cap_pointer_warnings(skills_root: Path) -> list[str]:
     """C: soft-warn when a fan-out skill's canonical SKILL.md doesn't
-    reference the shared model-tier cap contract (`model-cap.md`).
+    reference the shared model-tier cap contract (`models.md`).
 
     Conservative by design: only checks the five skills named in
     MODEL_CAP_FAN_OUT_SKILLS (the sub-agent-dispatching skills governed by
@@ -325,7 +325,7 @@ def model_cap_pointer_warnings(skills_root: Path) -> list[str]:
 
 def review_model_pointer_warnings(skills_root: Path) -> list[str]:
     """D: soft-warn when sdlc/sdlc-lite's canonical SKILL.md doesn't reference
-    the shared reviewer-model contract (`review-model.md`)."""
+    the shared reviewer-model contract (`models.md`)."""
     warnings: list[str] = []
     for name in sorted(REVIEW_STAGE_SKILLS):
         skill_file = skills_root / name / "SKILL.md"

@@ -45,7 +45,7 @@ Launch up to 6 agents in parallel. Each agent does **research only** — no edit
 findings with confidence levels. Models are tiered by reasoning load: Haiku for grep-heavy hygiene
 work, Sonnet for code-pattern reasoning across one language, and an Opus tier for cross-module
 dependency reasoning where wrong calls have high blast radius. **Model cap:** these are *defaults* —
-resolve each per `skills/sdlc/templates/model-cap.md` (`--model <tier>` > `project.json` `models.cap` >
+resolve each per `skills/sdlc/templates/models.md` (`--model <tier>` > `project.json` `models.cap` >
 the tier here). The fan-out is **Sonnet-first**, so the Opus tier runs Sonnet unless you opt up with
 `--model opus`; print `model: <tier> (cap: <cap|none>)` before each dispatch. NO subagents.
 

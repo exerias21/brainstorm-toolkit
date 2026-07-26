@@ -272,7 +272,7 @@ After the 3 Haiku agents return, dispatch one Sonnet agent with this prompt:
 #### `ultra` — `deep` + 2 top-tier agents in parallel
 Model cap applies: these two reviewers are **Sonnet by default** (Opus only on
 `--model opus` opt-up), resolved per
-`skills/sdlc/templates/model-cap.md` (`--model <tier>` > `project.json`
+`skills/sdlc/templates/models.md` (`--model <tier>` > `project.json`
 `models.cap` > default). Before dispatch, print `model: <tier> (cap: <cap|none>)`
 and emit the session-model nudge once when a cap is active.
 After Sonnet stress-test, dispatch the two agents (Sonnet by default; Opus on
