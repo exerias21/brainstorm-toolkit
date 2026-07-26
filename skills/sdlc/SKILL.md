@@ -738,8 +738,20 @@ activated, two auto-off gates still apply: the diff is docs-only/touches no code
 the code surface there and would otherwise silently disable the stage in the repo that dogfoods it).
 
 Runs after Stage 5.6 flowsim, before Stage 6, once enabled and not auto-off'd. Fans out
-**4 reviewer passes on distinct lenses** (parallel sub-agents on Claude; sequential inline passes
-on Copilot/Codex), each at the reviewer model resolved above:
+**one reviewer pass per configured lens** (parallel sub-agents on Claude; sequential inline passes
+on Copilot/Codex), each at the reviewer model resolved above.
+
+**Which lenses run — `pipeline.review_fix.lenses`.** Read the array from `.claude/project.json`;
+when the key is absent, use all four defaults below. **Set fewer to cut the stage's cost roughly
+linearly** — the fan-out is one reviewer call per lens at the reviewer model (Opus by default), so
+`["correctness", "plan-alignment"]` is about half the cost of the full set, and `["correctness"]`
+about a quarter. Pick by what the change actually risks: `correctness` is the highest-yield single
+lens; add `security` for anything touching auth, endpoints, or user input; add `plan-alignment`
+when the plan has acceptance criteria you care about; `config-env-docs` matters most when the diff
+touches env vars, compose, or docs. An unrecognized lens name is ignored with one warning (the
+config-schema enum is deliberately open so a repo can add its own). Print the resolved list —
+`review lenses: <a, b, …> (N of 4 defaults)` — before dispatching, so a reduced fan-out is never
+silent. The circuit breaker below may drop a lens from this resolved list at dispatch time.
 
 | Lens | What it looks for |
 |---|---|

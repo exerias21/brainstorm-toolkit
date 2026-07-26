@@ -326,9 +326,11 @@ Never governed by `models.cap` / `--model`.
 Run `/sdlc` Stage 5.7/5.8 verbatim — same opt-in-only enablement (`--review-model <name>` flag or
 `pipeline.review_fix.enabled: true`; `--no-review` always wins OFF; omitted/absent means
 permanently OFF, no default-on flip), same auto-off gates (docs-only/no-surface diff self-skips
-except in skill-repo mode, which adapts rather than skips), same 4-lens fan-out
-(`correctness`/`plan-alignment`/`config-env-docs`/`security`), same verify pass, optional second pass, and
-false-positive circuit breaker. Runs after Stage 5.6 flowsim, before Stage 6 hand-off. Writes
+except in skill-repo mode, which adapts rather than skips), same **configurable** lens fan-out
+(`pipeline.review_fix.lenses`; defaults to all four —
+`correctness`/`plan-alignment`/`config-env-docs`/`security` — and setting fewer cuts the stage's
+cost roughly linearly, one reviewer call per lens), same verify pass, optional second pass, and
+false-positive circuit breaker. Print the resolved list before dispatching, per `/sdlc` Stage 5.7. Runs after Stage 5.6 flowsim, before Stage 6 hand-off. Writes
 `stage-outputs/review.json`; self-skips append `review` to `run.json.stages_skipped`.
 
 ## Stage 5.8 — Fix loop
