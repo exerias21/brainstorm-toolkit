@@ -88,7 +88,7 @@ overlays into line — the three-way-sync contract in [`../CLAUDE.md`](../CLAUDE
 
 - **Fan-out is Sonnet-first.** `models.cap` in `project.json` (or per-run `--model <tier>`) is a
   **ceiling** — it only lowers dispatches above it (Opus→cap), never raises Haiku/Sonnet.
-  `--model opus` opts a run up. Canonical spec: `skills/sdlc/templates/model-cap.md`.
+  `--model opus` opts a run up. Canonical spec: `skills/sdlc/templates/models.md`.
 - **Reviewer axis (planned, opt-in).** The Review→Fix stage adds a *separate* reviewer model
   (default **Opus** — strong, independent from the Sonnet implementer), opt-in via
   `--review-model <name>`. Fable is a cost-aware opt-in (`--review-model fable`) — now usage-billed

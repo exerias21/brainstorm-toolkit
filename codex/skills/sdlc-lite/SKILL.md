@@ -25,9 +25,9 @@ the Copilot one closely; tune independently if Codex behavior diverges. Same sta
 `/sdlc`; the only difference is Stage 6 — `/sdlc-lite` does **no git writes**
 (hands you a validated tree to commit), while `/sdlc` commits + opens a PR.
 
-**Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/model-cap.md`, a plugin-repo citation) is honored wherever sub-agents are dispatched. **The cap is advisory on this runtime** — set your session model to the cap tier for the savings.
+**Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/models.md`, a plugin-repo citation) is honored wherever sub-agents are dispatched. **The cap is advisory on this runtime** — set your session model to the cap tier for the savings.
 
-> **Why advisory here is a Codex-specific story.** Codex *does* have native subagents (`.codex/agents/*.toml`, parallel, `max_threads`) — it is not structurally inline-only the way Copilot is. What blocks tiering is that **per-subagent model override is reported regressed upstream** (subagents inherit the parent model), so the Haiku/Sonnet fan-out runs single-model: functional, but with none of the per-stage cost savings. Reported 2026-07-13 from research, **not verified against a real Codex install**, and it may already be fixed — see the Codex entry under *Runtime regimes* in `model-cap.md` before relying on it either way.
+> **Why advisory here is a Codex-specific story.** Codex *does* have native subagents (`.codex/agents/*.toml`, parallel, `max_threads`) — it is not structurally inline-only the way Copilot is. What blocks tiering is that **per-subagent model override is reported regressed upstream** (subagents inherit the parent model), so the Haiku/Sonnet fan-out runs single-model: functional, but with none of the per-stage cost savings. Reported 2026-07-13 from research, **not verified against a real Codex install**, and it may already be fixed — see the Codex entry under *Runtime regimes* in `models.md` before relying on it either way.
 
 > **`skills/sdlc/templates/*` paths below are citations into the brainstorm-toolkit
 > plugin repo — they are NOT installed on this runtime.** Overlays replace the canonical
@@ -111,8 +111,8 @@ non-terminal OR complete with HEAD advanced past its recorded `commit_sha`
 
 Run `/sdlc` Stage 1.5 inline (sequential pre-flight). Not gated, not optional.
 For a range, run once over the combined set. Stop and report on a real blocker.
-`pipeline.sanity_check.focuses` selects which checks run (default all three); on this
-runtime `pipeline.sanity_check.model` is advisory like every tier — set your session
+`agents.sanity_focuses` selects which checks run (default all three); on this
+runtime `models.sanity` is advisory like every tier — set your session
 model instead.
 
 ## Stage 2 — Implement
@@ -143,7 +143,7 @@ justified new pattern is a red flag — it usually means the recon was skipped.
 Compute `surfaces_touched` (planned files vs.
 the surface globs) and `task_count` (step count). **Decompose iff**
 `surfaces_touched >= 2` AND `task_count >= DECOMPOSE_MIN_TASKS` (default `6`,
-override via `pipeline.decompose_min_tasks`) AND the per-surface file sets are
+override via `agents.decompose_min_tasks`) AND the per-surface file sets are
 disjoint.
 
 - **Single-pass (default):** execute the plan/task steps inline, in order. No
@@ -192,7 +192,7 @@ re-read the plan, verify each requirement is fulfilled, flag failures, route
 findings through the Stage 4 fix loop. **Skip with a note when there is no plan
 target** — nothing to validate against, not an arbitrary gate.
 
-`pipeline.plan_validate.model` (`haiku|sonnet|opus`) sets how strong a reader judges
+`models.plan_review` (`haiku|sonnet|opus`) sets how strong a reader judges
 the plan here; it is still bounded by the model cap, which can only lower it.
 
 ## Stage 5.6 — Flowsim
@@ -206,7 +206,7 @@ Skip with a note when none exists.
 **Opt-in, permanently — never runs by default.** Runs after Stage 5.6 flowsim, before Stage 6,
 only when explicitly turned on this run (`--review-model <name>`, or an explicit
 `pipeline.review_fix.enabled: true`; default reviewer `opus` once enabled — see
-`skills/sdlc/templates/review-model.md`). An omitted `pipeline.review_fix` block, or
+`skills/sdlc/templates/models.md`). An omitted `pipeline.review_fix` block, or
 `enabled` left unset, means OFF — there is no default-on flip. Skipped when not opted in,
 `--no-review` was passed, `pipeline.review_fix.enabled: false`, or the changed-files-gate reports a
 docs-only diff — **unless a `.claude-plugin/marketplace.json` exists at the repo root**, in which
@@ -219,7 +219,7 @@ this overlay runtime has no other skill-repo detection of its own, so the market
 check above IS its skill-repo signal.)
 
 **No parallel sub-agents on this runtime.** Run each **configured** lens
-(`pipeline.review_fix.lenses` in `.claude/project.json`; when the key is absent, all four
+(`agents.code_review_lenses` in `.claude/project.json`; when the key is absent, all four
 defaults below. Setting fewer cuts this stage's cost roughly linearly — it is one pass per
 lens — so pick by what the diff risks; `correctness` is the highest-yield single lens. Print
 the resolved list before starting.) The defaults: correctness,
@@ -245,7 +245,7 @@ unconfirmable findings is auto-demoted from dispatch (skipped, and recorded in
 
 For confirmed findings, draft a structured fix spec per finding, applying the auto_fixable rubric
 (a bug fixing an explicit contract vs. a product/design decision — see
-`skills/sdlc/templates/review-model.md`). Per `pipeline.review_fix.mode` (default `interactive`):
+`skills/sdlc/templates/models.md`). Per `pipeline.review_fix.mode` (default `interactive`):
 - **`interactive`**: present each fix spec for approve / edit / skip. Approved specs run through
   the existing Stage 2/4 implement+fix machinery inline, then a fresh adversarial re-review of the
   touched files (this loop iteration's own pass) decides whether another iteration is needed. Loop

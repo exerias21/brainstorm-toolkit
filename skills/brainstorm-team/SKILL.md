@@ -59,7 +59,7 @@ When triggered, create an agent team with this structure. Adapt the specific res
 ### Default Team (Full Product Review)
 
 ```
-Create an agent team with 6 teammates for a product strategy session. Use Sonnet for each teammate (team-wide; honors the model cap — a `haiku` cap lowers it, see `skills/sdlc/templates/model-cap.md`, `--model <tier>` > `project.json models.cap` > default). Require plan approval before any teammate writes files.
+Create an agent team with 6 teammates for a product strategy session. Use Sonnet for each teammate (team-wide; honors the model cap — a `haiku` cap lowers it, see `skills/sdlc/templates/models.md`, `--model <tier>` > `project.json models.cap` > default). Require plan approval before any teammate writes files.
 
 PROJECT CONTEXT:
 {PROJECT_CONTEXT}

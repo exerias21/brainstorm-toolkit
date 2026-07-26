@@ -58,7 +58,7 @@ real usage; each is independently justifiable and none blocks the others.
   `sdlc-pipeline.workflow.js`, then the four overlays — the three-way-sync contract. L1's
   pause-message change touches the workflow's pause strings too.
 - **Every new agent dispatch** (`/next`'s state-join, `/triage`'s classifier): Sonnet-first /
-  Haiku-preferred, model-cap contract per `skills/sdlc/templates/model-cap.md`; these are read
+  Haiku-preferred, model-cap contract per `skills/sdlc/templates/models.md`; these are read
   jobs — there is no case for Opus.
 - **Hook changes** (L6, L8, L9): the hook stays no-model, exit-0, never-blocks *in print mode*;
   auto-continue is a separately-gated mode, and `setup.sh`'s idempotent hook-wiring needs the

@@ -10,7 +10,7 @@ Model per lane comes from `decompose.json` (`sonnet` default; `opus` for a lane
 flagged high-complexity in 2a). **Apply the model cap to the lane's model before
 dispatch** — and since the fan-out is **Sonnet-first by default**, an
 `opus`-flagged lane dispatches Sonnet unless the run opts up with `--model opus`.
-See `skills/sdlc/templates/model-cap.md`.
+See `skills/sdlc/templates/models.md`.
 
 Substitute `{feature_name}`, `{lane}`, `{lane_files}` (the lane's `files[]`),
 `{lane_steps}` (the lane's `steps[]`), and `{contract}` (the lane's interface
