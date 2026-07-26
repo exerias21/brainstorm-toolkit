@@ -105,25 +105,33 @@ Build a draft `project.json` from what you found. Fill in:
 gracefully — that's better than a wrong command. (Exception: `models.cap` — prefer
 proposing `sonnet` over omitting, per above.)
 
-### Step 3 — Show the user the proposal
+### Step 3 — Show the proposal, then walk the model choices
 
-Present the proposed `project.json` to the user with a brief rationale for each
-section:
+First print the proposed `project.json` with a one-line rationale per detected key
+(`Detected Python + pytest → test.unit`; `docker-compose services [api, web] → logs.* + stack.*`;
+`no eval runner → eval.* left blank`; `main branch from origin HEAD`; …).
 
-```
-Proposed .claude/project.json:
-{ ... }
+**Then ask the model questions explicitly — do not bury them in "does this look right?".**
+Detection can't decide these, they are the main cost/quality levers, and a user who is
+never asked never discovers the key exists. Ask all four at once — prefer the host's **built-in
+interactive question UI** (the multiple-choice picker it already uses to ask you to choose an
+approach): one question per key, options as choices, recommended default first. Where the host has
+no such UI, print a numbered list and take the answers in a single reply. Default first so "just
+accept" is one
+keystroke, and state the cost direction in each option:
 
-Detection notes:
-- Detected Python + pytest → test.unit
-- Detected docker-compose with services [api, web] → logs.*
-- Didn't find an eval runner → left eval.* blank
-- Main branch: main (from origin HEAD)
-- Modules inferred from top-level dirs: [api, web]
-- Sub-agent model cap → models.cap: "sonnet" (standing Sonnet-first ceiling)
+| Ask | Key | Options (default first) |
+|---|---|---|
+| **Ceiling for every sub-agent fan-out — implementers, fix agents, sanity + review lenses.** The single biggest cost lever. | `models.cap` | `sonnet` (Sonnet-first standing default) · `haiku` (cheapest; fine for sweeps/monitoring) · `opus` (**no ceiling** — every stage runs at its own full default tier) · omit |
+| **Which model reads your plan and judges whether the implementation fulfilled it** (Stage 5.5, runs in `/sdlc` + `/sdlc-lite`). | `pipeline.plan_validate.model` | omit → built-in per-validator defaults (api/ui Sonnet, data/cross-module Haiku) · `sonnet` · `opus` (strongest plan reader; `cross-module` runs every time, so this costs on every run) |
+| **Enable the adversarial Review→Fix stage?** Off unless you say yes — it never runs by accident. | `pipeline.review_fix.enabled` / `.model` | `false` (default) · `true` + reviewer `opus` · `true` + reviewer `fable` (usage-billed, explicit opt-in) |
+| **How do you bring this app up for manual verification?** Confirm or correct what was detected. | `stack.up` / `stack.rebuild` / `stack.url` | the detected compose/dev commands · corrected by the user · omit (skills then say which key is missing instead of guessing) |
 
-Does this look right? Any keys to add, remove, or correct?
-```
+Explain the interaction once, because it surprises people: **`models.cap` is a ceiling, not a
+target** — it can only *lower* a stage's default tier, never raise it. So `plan_validate.model:
+"opus"` under `models.cap: "sonnet"` still dispatches Sonnet. If a per-stage tier is meant to
+actually take effect, the cap must be at or above it. Close with the open catch-all: *"Anything
+else to add, remove, or correct?"*
 
 ### Step 4 — Write AGENTS.md (architecture summary)
 
