@@ -394,6 +394,17 @@ themselves. (Want the commit + PR done for you? That's `/sdlc`.)
    `- [ ] (P1) rebuild <env> for <slug> (dependency change — rebuild, not restart) — plans/<slug>.md`;
    and a `- [ ] (P2) verify <slug> deployed — /post-deploy-verify plans/<slug>.md`
    row closes the loop the same way `/sdlc` Stage 6 does.
+   **Then print the manual-verification line** from `.claude/project.json` `stack.*`
+   (all keys optional): the deploy-delta case prints `stack.rebuild` (a dependency
+   changed, so a plain restart would run stale code), otherwise `stack.up`; append
+   `stack.url` when set. This is a **printed suggestion, never auto-run** — the user
+   asked for a validated tree, not a running one. When a needed key is absent, say
+   which key would supply it rather than guessing a command:
+
+   ```
+   Verify: docker compose up -d --build --force-recreate   # stack.rebuild (dependency change)
+   Open:   http://localhost:3000                            # stack.url
+   ```
 
 **State write**: `stage-outputs/handoff.json` =
 `{branch, files_changed[], committed: false, suggested_commit_msg}`. **Always

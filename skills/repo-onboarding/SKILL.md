@@ -77,6 +77,12 @@ Build a draft `project.json` from what you found. Fill in:
 - `test.e2e` — if Playwright/Cypress/etc. was detected
 - `logs.command` — from detected orchestration (docker / kubectl / file tail)
 - `logs.services` — from compose services or k8s deployments
+- `stack.up` / `stack.down` / `stack.rebuild` — how to bring the runnable stack up and
+  down for **manual verification**; propose only from a detected orchestrator, never
+  invent one (see the detection table). `rebuild` is the force-recreate variant used
+  when a dependency manifest changed.
+- `stack.url` — the local URL to open once it is up, if a port is discoverable from
+  compose/Procfile/framework config
 - `eval.runner` — only if `scripts/eval-runner.py` exists (from the toolkit)
 - `eval.features_dir` — `evals/` if dir exists, otherwise blank
 - `gotchas_file` — `GOTCHAS.md` (default)
@@ -205,8 +211,9 @@ Report what was written and suggest next steps:
 | `package.json` with `"test"` script | `test.unit` or `test.frontend` = `npm test` (or pnpm/yarn equivalent) |
 | `pyproject.toml` with `[tool.pytest]` | `test.unit` = `pytest` |
 | `playwright.config.*` at root | `test.e2e` = `npx playwright test` |
-| `docker-compose.yml` | `logs.command` = `docker compose logs {service} --tail={tail}`, `logs.services` from compose services |
-| Kubernetes manifests | `logs.command` = `kubectl logs deploy/{service} --tail={tail}` |
+| `docker-compose.yml` | `logs.command` = `docker compose logs {service} --tail={tail}`, `logs.services` from compose services; `stack.up` = `docker compose up -d --build`, `stack.down` = `docker compose down`, `stack.rebuild` = `docker compose up -d --build --force-recreate`; `stack.url` from the first published host port |
+| Kubernetes manifests | `logs.command` = `kubectl logs deploy/{service} --tail={tail}`; leave `stack.*` unset — a cluster is not a local up/down |
+| `package.json` with a `dev`/`start` script and no compose file | `stack.up` = that script (`npm run dev`); no `stack.rebuild` unless a build step is separate |
 | `go.mod` | `test.unit` = `go test ./...` |
 | `Cargo.toml` | `test.unit` = `cargo test` |
 | Top-level dirs like `api/`, `web/`, `worker/` | `modules` list |
