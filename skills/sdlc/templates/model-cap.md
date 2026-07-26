@@ -78,9 +78,24 @@ skill passes the resolved cap as `args.model_cap`.
   `MODEL_CAP = args?.model_cap ?? 'sonnet'`). The orchestrator/session model that
   runs the control flow is never capped.
 - **Claude, no ultracode** → prose dispatch rule above (checked by the validator).
-- **Copilot / Codex** → stages run **inline in the session model** (no separate
-  parallel sub-agents), so the cap is **advisory** here — there is no sub-agent
-  tier to lower. Honor it by setting the session model (nudge below).
+- **Copilot** → stages run **inline in the session model** (no separate parallel
+  sub-agents), so the cap is **advisory** here — there is no sub-agent tier to
+  lower. Honor it by setting the session model (nudge below).
+- **Codex** → the cap is **advisory** here too, but for a different reason, and the
+  distinction matters if the upstream situation changes. Codex *does* have native
+  subagents (`.codex/agents/*.toml`, parallel, `max_threads`) — so unlike Copilot it
+  is not structurally incapable of a tiered fan-out. What blocks it is that
+  **per-subagent model override is reported regressed upstream** (subagents silently
+  inherit the parent model). While that holds, the Haiku/Sonnet tiered fan-out runs
+  **single-model** on Codex: fully functional, but with none of the per-stage cost
+  savings this contract otherwise implies, and `models.cap` is effectively a no-op.
+  Honor it by setting the session model.
+
+  > **Reported, not verified here** — sourced from web research on 2026-07-13, not
+  > from a hands-on Codex install, and it is an upstream bug that may already be
+  > fixed. Re-check against a real Codex install before relying on either the
+  > limitation or its absence. This note describes *Codex's* behavior only; it
+  > changes nothing about tier defaults or `capModel()` on any runtime.
 
 ## Session nudge
 

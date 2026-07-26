@@ -299,13 +299,39 @@ resolution is enforced by `capModel()` at the `agent()` seam.
 ## Stage 1.5: Plan Sanity Check
 
 Before spending implementation tokens, verify the plan is actually
-correct. Launch 3 Haiku agents **in parallel** (single message) to check
-different dimensions. This is cheap insurance — catches wrong file paths,
+correct. Launch the configured focus agents **in parallel** (single message) to
+check different dimensions. This is cheap insurance — catches wrong file paths,
 missing steps, and known gotchas before they become bugs.
 
 Read the prompts from `templates/stage-1.5-sanity-check.md` (sections: `paths`,
 `completeness`, `gotchas`). Substitute `{plan_file}` and `{feature_name}`, then
-dispatch all three Haiku agents in a single message — one Agent call per section.
+dispatch the selected agents in a single message — one Agent call per section.
+
+**Which focuses run — `pipeline.sanity_check.focuses`.** Read the array from
+`.claude/project.json`; absent means all three defaults. Setting fewer cuts this stage's
+cost roughly linearly (one agent per focus). `paths` is the cheapest and most mechanical
+(file existence); `completeness` is the judgment-heavy one; `gotchas` is only useful when
+a `GOTCHAS.md` exists. An unrecognized focus name is ignored with one warning.
+
+**Which tier — `pipeline.sanity_check.model`.** Built-in default is `haiku` for every
+focus. `.claude/project.json` `pipeline.sanity_check.model` (`haiku|sonnet|opus`)
+**replaces that default for all focuses** when set. Reach for it when this stage is
+reviewing *plans* rather than checking paths: `paths` is genuinely mechanical, but
+`completeness` is asking "does this plan hang together?", which is the kind of judgment a
+stronger reader does better. Raising it costs on **every** run that reaches Stage 1.5 —
+which is every run, since the stage is never gated.
+
+The resolved tier still passes through the **model cap** (`models.cap` / `--model`, see
+`templates/model-cap.md`), which is a *ceiling*: `capModel(effective_default, cap)`. Note
+the consequence, because it is the whole reason this key exists — **the cap can only
+lower, so while the site default is `haiku` there is no way to raise this stage at all.**
+`models.cap: "opus"` does not raise it; `--model opus` does not raise it. Setting
+`sanity_check.model` is the only lever. Once set above `haiku`, the cap applies normally
+(a Sonnet-first cap pulls `opus` back to `sonnet` unless you also pass `--model opus`).
+
+This is **not** a new model axis — it sets a default *within* the fan-out axis and is
+still capped by it. Print `model: <tier> (cap: <cap|none>)` and the resolved focus list —
+`sanity focuses: <a, b, …> (N of 3 defaults)` — before dispatching.
 
 ### Processing results
 
@@ -1115,7 +1141,7 @@ repo root, this mode activates automatically. No flag required.
 | Standard stage | Skill-repo behavior |
 |---|---|
 | Stage 1 — Parse plan | unchanged |
-| Stage 1.5 — Sanity check | unchanged (3 Haiku agents — they generalize fine) |
+| Stage 1.5 — Sanity check | unchanged (the configured focus agents generalize fine; defaults are the 3 Haiku ones) |
 | Stage 2 — Implement | unchanged (gated as standard; a skill repo's single docs surface normally keeps it single-agent) |
 | Stage 3 — Generate evals | **skip** (no test surface) |
 | Stage 4 — Eval + fix loop | **skip** |

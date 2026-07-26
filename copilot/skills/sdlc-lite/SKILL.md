@@ -94,6 +94,9 @@ Resumption rules; error if there's no prior run).
 
 Run `/sdlc` Stage 1.5 inline (sequential pre-flight). Not gated, not optional.
 For a range, run once over the combined set. Stop and report on a real blocker.
+`pipeline.sanity_check.focuses` selects which checks run (default all three); on this
+runtime `pipeline.sanity_check.model` is advisory like every tier — set your session
+model instead.
 
 ## Stage 2 — Implement
 

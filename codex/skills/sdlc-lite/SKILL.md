@@ -18,13 +18,16 @@ disable-model-invocation: true
 
 Sequential version of `/sdlc-lite`. Canonical `/sdlc-lite` uses parallel agent
 dispatch for the sanity-check and Stage 5.5 validators on Claude; this overlay
-runs every stage inline. Codex CLI's 2026 Agent Skills spec, like Copilot's,
-doesn't yet support parallel sub-agent dispatch. This overlay tracks the Copilot
-one closely; tune independently if Codex behavior diverges. Same stages as
+runs every stage inline. Codex CLI's 2026 Agent Skills spec doesn't drive that
+fan-out. (Codex has native subagents and its own plan mode; what it lacks is a
+usable per-subagent model override — see the cap note below.) This overlay tracks
+the Copilot one closely; tune independently if Codex behavior diverges. Same stages as
 `/sdlc`; the only difference is Stage 6 — `/sdlc-lite` does **no git writes**
 (hands you a validated tree to commit), while `/sdlc` commits + opens a PR.
 
-**Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/model-cap.md`) is honored wherever sub-agents are dispatched. On this runtime every stage runs inline in the session model, so the cap is advisory here — set your session model to the cap tier for the savings.
+**Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/model-cap.md`, a plugin-repo citation) is honored wherever sub-agents are dispatched. **The cap is advisory on this runtime** — set your session model to the cap tier for the savings.
+
+> **Why advisory here is a Codex-specific story.** Codex *does* have native subagents (`.codex/agents/*.toml`, parallel, `max_threads`) — it is not structurally inline-only the way Copilot is. What blocks tiering is that **per-subagent model override is reported regressed upstream** (subagents inherit the parent model), so the Haiku/Sonnet fan-out runs single-model: functional, but with none of the per-stage cost savings. Reported 2026-07-13 from research, **not verified against a real Codex install**, and it may already be fixed — see the Codex entry under *Runtime regimes* in `model-cap.md` before relying on it either way.
 
 > **`skills/sdlc/templates/*` paths below are citations into the brainstorm-toolkit
 > plugin repo — they are NOT installed on this runtime.** Overlays replace the canonical
@@ -108,6 +111,9 @@ non-terminal OR complete with HEAD advanced past its recorded `commit_sha`
 
 Run `/sdlc` Stage 1.5 inline (sequential pre-flight). Not gated, not optional.
 For a range, run once over the combined set. Stop and report on a real blocker.
+`pipeline.sanity_check.focuses` selects which checks run (default all three); on this
+runtime `pipeline.sanity_check.model` is advisory like every tier — set your session
+model instead.
 
 ## Stage 2 — Implement
 
