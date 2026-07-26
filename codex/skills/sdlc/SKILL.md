@@ -17,9 +17,11 @@ disable-model-invocation: true
 
 Sequential version of the SDLC pipeline. Unlike the Claude Code canonical (which spawns Haiku/Opus/Sonnet workers in parallel), this overlay executes every stage inline: Codex does the work itself, one stage at a time.
 
-Codex CLI's 2026 Agent Skills spec, like Copilot's, doesn't yet support parallel sub-agent dispatch or Plan mode. This overlay bootstraps from the Copilot overlay and tracks it closely; if Codex-specific behavior diverges, this file can be tuned independently.
+Codex CLI's 2026 Agent Skills spec doesn't drive this toolkit's parallel sub-agent fan-out. (Codex has native subagents and its own plan mode; what it lacks is a usable per-subagent model override — see the cap note below. This overlay runs the stages inline regardless.) This overlay bootstraps from the Copilot overlay and tracks it closely; if Codex-specific behavior diverges, this file can be tuned independently.
 
-**Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/model-cap.md`) is honored wherever sub-agents are dispatched. On this runtime every stage runs inline in the session model, so the cap is advisory here — set your session model to the cap tier for the savings.
+**Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/model-cap.md`, a plugin-repo citation) is honored wherever sub-agents are dispatched. **The cap is advisory on this runtime** — set your session model to the cap tier for the savings.
+
+> **Why advisory here is a Codex-specific story.** Codex *does* have native subagents (`.codex/agents/*.toml`, parallel, `max_threads`) — it is not structurally inline-only the way Copilot is. What blocks tiering is that **per-subagent model override is reported regressed upstream** (subagents inherit the parent model), so the Haiku/Sonnet fan-out runs single-model: functional, but with none of the per-stage cost savings. Reported 2026-07-13 from research, **not verified against a real Codex install**, and it may already be fixed — see the Codex entry under *Runtime regimes* in `model-cap.md` before relying on it either way.
 
 ## Prerequisites
 
@@ -60,7 +62,10 @@ Report scope:
 
 ## Stage 1.5 — Sanity-check the plan (inline, sequential)
 
-Before committing time to implementation, run three checks yourself — one pass for each:
+Before committing time to implementation, run the configured checks yourself — one pass
+for each. `pipeline.sanity_check.focuses` in `.claude/project.json` selects which of the
+three run (default: all). `pipeline.sanity_check.model` is advisory on this runtime —
+stages run inline in the session model, so set that instead.
 
 **Check A — File path reality.** For every file path mentioned in the plan:
 1. Verify the file exists (Glob or `ls`).

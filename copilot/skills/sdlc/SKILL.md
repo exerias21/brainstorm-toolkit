@@ -60,7 +60,10 @@ Report scope:
 
 ## Stage 1.5 — Sanity-check the plan (inline, sequential)
 
-Before committing time to implementation, run three checks yourself — one pass for each:
+Before committing time to implementation, run the configured checks yourself — one pass
+for each. `pipeline.sanity_check.focuses` in `.claude/project.json` selects which of the
+three run (default: all). `pipeline.sanity_check.model` is advisory on this runtime —
+stages run inline in the session model, so set that instead.
 
 **Check A — File path reality.** For every file path mentioned in the plan:
 1. Verify the file exists (Glob or `ls`).

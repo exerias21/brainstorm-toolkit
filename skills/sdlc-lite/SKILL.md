@@ -234,8 +234,11 @@ fresh-process-per-item escalation are in `docs/LOOP-HYGIENE.md` (plugin repo).
 
 ## Stage 1.5 — Sanity check
 
-Run `/sdlc` Stage 1.5 verbatim (the 3-agent pre-flight on Claude; sequential on
-the overlays). This is full SDLC discipline — it is **not** gated or optional.
+Run `/sdlc` Stage 1.5 verbatim (parallel focus agents on Claude; sequential on the
+overlays). This is full SDLC discipline — it is **not** gated or optional. Honors
+`pipeline.sanity_check.model` and `pipeline.sanity_check.focuses` exactly as `/sdlc`
+Stage 1.5 documents them — the default is 3 Haiku agents, and because the cap only
+*lowers*, `sanity_check.model` is the only way to raise this stage.
 For a task range, run it once over the combined set before the implement loop.
 
 If the sanity check surfaces a blocker (plan references nonexistent files,
