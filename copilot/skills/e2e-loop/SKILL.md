@@ -4,8 +4,10 @@ description: >
   Run end-to-end tests in a fix loop — the browser/UI counterpart to /eval-harness.
   Runs the configured test.e2e command, detects flaky tests, applies targeted fixes
   for real failures, and re-runs until green or max_fix_loops is hit. Reads
-  .claude/project.json for commands and optional patterns file. Copilot sequential
-  edition — the canonical dispatches a subagent; this version runs the loop inline.
+  .claude/project.json for commands and optional patterns file. Use for "test the UI",
+  "run the e2e tests", "click through the app and find what's broken", or flaky-test
+  triage. Copilot sequential edition — the canonical dispatches a subagent; this
+  version runs the loop inline.
 argument-hint: "[focus] — optional: test file, directory, or grep pattern"
 metadata:
   brainstorm-toolkit-applies-to: copilot

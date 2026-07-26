@@ -304,6 +304,10 @@ If there is **no plan target** (ad-hoc description, or a task with no
 This is a "nothing to validate against" skip, not an arbitrary gate — give it a
 plan and it always runs.
 
+Validator tier honors `pipeline.plan_validate.model` exactly as `/sdlc` Stage 5.5
+documents it (replaces the per-validator default; still capped by `models.cap` /
+`--model`, which can only lower it).
+
 ## Stage 5.6 — Flowsim
 
 Same gating as 5.5: run `/flowsim <plan-target>` whenever a plan target exists;

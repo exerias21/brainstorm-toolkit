@@ -7,9 +7,12 @@ description: >
   (inversion, pre-mortem, steelman, adjacent-reuse) before plan freeze.
   Output ends with an explicit expectation contract block. Invoke when
   the user says /brainstorm-deep, "I'm not sure what I want", "this is
-  vague", "high stakes", "really important to get right", or asks for
-  more rigor than /brainstorm provides. Use /brainstorm for fast cases
-  and /brainstorm-team for autonomous multi-persona product strategy.
+  vague", "high stakes", "really important to get right", "drill me on
+  this", "ask me questions until it's clear", "poke holes in this",
+  "what am I missing?", or otherwise asks for more rigor than
+  /brainstorm provides — especially before a decision that is expensive
+  to reverse. Use /brainstorm for fast cases and /brainstorm-team for
+  autonomous multi-persona product strategy.
 argument-hint: "[topic] [--fast] [--frames <list>] [--ambition conservative|default|ambitious]"
 metadata:
    brainstorm-toolkit-applies-to: claude copilot codex

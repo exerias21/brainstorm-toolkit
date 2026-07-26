@@ -7,8 +7,10 @@ description: >
   drafts the fix batch, and runs it through `/sdlc-lite` on the PR branch (full discipline, no
   git writes — you push). Records `pr_followup_of` in the envelope. Invoke via
   /pr-followup [<pr#|branch>], or when the user says "address the PR comments", "CI failed on my
-  PR", "handle the review feedback". The downstream sibling of `/triage` (red-path) and the
-  Stage-6 re-entry rows.
+  PR", "handle the review feedback", "the build failed on that PR", "someone left comments on my
+  PR", or "fix what the bot flagged". The downstream sibling of `/triage` (red-path) and the
+  Stage-6 re-entry rows. To review a PR yourself rather than react to existing feedback, use
+  /review-pr.
 argument-hint: "[<pr#|branch>]"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex

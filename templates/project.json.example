@@ -70,6 +70,8 @@
     "skip_review": false,
     "_decompose_min_tasks_comment": "Optional. Stage 2 fans out into per-surface lanes only when surfaces>=2 AND task_count>=this AND the file sets are disjoint. Default 6.",
     "decompose_min_tasks": 6,
+    "_plan_validate_comment": "Optional. Stage 5.5 (plan-requirements validation) runs in /sdlc AND /sdlc-lite. 'model' (haiku|sonnet|opus) REPLACES the built-in per-validator default (api/ui=sonnet, data/cross-module=haiku) for all four validators. Still passes through the model cap, which is a CEILING: with the Sonnet-first default cap, 'opus' here dispatches sonnet unless you also pass --model opus. cross-module always runs, so raising this costs on every run. NOT a third model axis. Leave null to keep the built-in defaults.",
+    "plan_validate": { "model": null },
     "_skip_workflow_comment": "Claude-only off-switch for every Workflow-backed skill (/sdlc, /sdlc-lite, and /brainstorm-deep Pass 3). When true, they use their prose path instead of the deterministic Workflow even when ultracode is on. The Workflow is also only used when ultracode is explicitly enabled; this flag forces prose regardless. Copilot/Codex always use the prose path (no Workflow tool).",
     "skip_workflow": false,
     "_poka_yoke_comment": "Claude-only. When true, /repo-onboarding writes a PreToolUse hook to .claude/settings.json that blocks Write/Edit when a likely secret is in the payload. Enabling this key alone does NOT install the hook — see AGENTS.md 'Hooks (Claude-only)' for the settings.json schema. Copilot consumers gain nothing from this key (no PreToolUse equivalent); rely on the Stage 6 gitleaks scan instead.",

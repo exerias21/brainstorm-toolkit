@@ -6,17 +6,21 @@ description: >
   API route, or background job, (2) adding try/except or catch blocks, (3) creating new API
   endpoints, (4) working on LLM integration code, (5) modifying error handling or fallback logic,
   (6) touching any file that imports logging or structlog, (7) writing frontend code that calls
-  the backend API. This ensures every code change follows the project's structured logging contract
-  so the container-log-audit skill can reliably detect and classify errors.
+  the backend API. Also use it when the user says "add logging", "why is nothing in the logs",
+  "the logs are noisy/unreadable", or "I can't tell what failed from the container output". This
+  ensures every code change follows the project's structured logging contract so `/test-check`'s
+  log audit (and the `/sdlc` validate gate, via `logs.command`) can reliably detect and classify
+  errors.
 metadata:
     brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Logging Conventions
 
-These conventions exist so Docker container logs are machine-readable. The container-log-audit
-skill parses these logs after every test run — if your code doesn't follow these patterns,
-errors become invisible to automation.
+These conventions exist so Docker container logs are machine-readable. `/test-check`'s log-audit
+step (and the `/sdlc` Stage 5 validate gate, via `logs.command` in `.claude/project.json`) parses
+these logs after every test run — if your code doesn't follow these patterns, errors become
+invisible to automation.
 
 ## Backend: How to Log
 

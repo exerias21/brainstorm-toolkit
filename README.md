@@ -83,11 +83,11 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 | `/repo-onboarding` | Claude + Copilot + Codex | Generate AGENTS.md + TASKS.md + project.json + GOTCHAS.md |
 | `/repo-health` | Claude + Copilot + Codex | Read-only hygiene sweep (dead code + tests + deps + secrets + gotchas-currency); prints a scored report and the highest-impact next command. |
 | `/test-check` | Claude + Copilot + Codex | Run configured tests + log audit after changes (one-shot, no fix loop) |
-| `/e2e-loop` | Claude + Copilot + Codex † | Run e2e tests in a fix loop with flaky-test guard (dispatches `e2e-test-runner` agent on Claude, inline on Copilot) |
+| `/e2e-loop` | Claude + Copilot + Codex † | Run e2e/browser tests in a fix loop with flaky-test guard (dispatches `e2e-test-runner` agent on Claude, inline on Copilot). Reach for this instead of hand-composing a Playwright agent fan-out — it fixes what it finds. |
 | `/gotcha` | Claude + Copilot + Codex | View/append project pitfalls — auto-drafted at loop-exit by `/task`, `/sdlc`, `/sdlc-lite` on real traps (objective trigger), and injected at `/brainstorm` start |
 | `/eval-harness` | Claude + Copilot + Codex | Run pytest + fixture evals with optional fix loop |
 | `/flowsim` | Claude + Copilot + Codex | Trace claimed plan flows through source code and flag mismatches |
-| `/dead-code-review` | Claude + Copilot + Codex † | Dead-code scan with test verification (sequential on Copilot) |
+| `/dead-code-review` | Claude + Copilot + Codex † | Parallel dead-code / dead-doc / stale-plan scan with before-and-after test verification (sequential on Copilot). This is the built-in answer to "launch a few agents and clean up everything no longer needed". |
 | `/review-pr` | Claude + Copilot + Codex | On-demand code review for any PR or branch — wraps `/review`, persists to `plans/review-<id>.md`, optional `--post-comment`. Standalone counterpart to the post-PR review `/sdlc` already runs. |
 | `/plan-html` | Claude + Copilot + Codex | Render any markdown plan as a self-contained, shareable HTML page (embedded CSS, zero JS, native `<details>` collapsibles, light/dark mode). Opt-in: pass the plan file as the argument — no auto-emit. Use to share plans with stakeholders or scroll-engage long plans in a browser. |
 | `/data-source-pattern` | Claude + Copilot + Codex | Pattern guide for ingesting external data: discovery pipeline / seed script / direct API, plus how to author a web-discovery skill (WebSearch vs headless browser, session cookies, source trust tiers, dedup-upsert) |

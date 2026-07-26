@@ -147,6 +147,9 @@ re-read the plan, verify each requirement is fulfilled, flag failures, route
 findings through the Stage 4 fix loop. **Skip with a note when there is no plan
 target** — nothing to validate against, not an arbitrary gate.
 
+`pipeline.plan_validate.model` (`haiku|sonnet|opus`) sets how strong a reader judges
+the plan here; it is still bounded by the model cap, which can only lower it.
+
 ## Stage 5.6 — Flowsim
 
 Same condition as 5.5: when a plan target exists, invoke `/flowsim <plan-target>`

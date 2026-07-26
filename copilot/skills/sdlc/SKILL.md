@@ -36,7 +36,7 @@ shows `status: "pass"`, and resume at the first non-passing stage (follows `/sdl
 canonical Resumption rules). If no prior run exists, error rather than starting fresh.
 
 Read the plan file fully. Valid sources:
-- `plans/brainstorm-<slug>.md` with Direction / Implementation Steps / Acceptance Criteria.
+- `plans/brainstorm-<slug>.md` with Direction / Implementation Steps.
 - `plans/tasks/task-N-<slug>.md` (a task file written by `/task`).
 - `TASKS.md` at repo root — treat each `[ ]` or `[~]` row in Active / Pending as one step, follow linked task files for detail.
 

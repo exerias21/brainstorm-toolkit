@@ -240,6 +240,7 @@ const PARSE_SCHEMA = {
         decompose_min_tasks: { type: ['integer', 'null'] },
         discipline: { type: 'object' },
         review_fix: { type: ['object', 'null'] },
+        plan_validate_model: { type: ['string', 'null'] },
       },
     },
     continuity_note: { type: ['string', 'null'], description: 'set if continuity detection found a prior in-flight/advanced run on this feature branch; null otherwise' },
@@ -440,6 +441,7 @@ DO, in order:
    main_branch, eval_runner (eval.runner), test_unit (test.unit), test_frontend (test.frontend),
    test_e2e (test.e2e), logs_command (logs.command), decompose_min_tasks (pipeline.decompose_min_tasks),
    review_fix (pipeline.review_fix — the whole object, or null if the key is absent),
+   plan_validate_model (pipeline.plan_validate.model — haiku|sonnet|opus, or null),
    discipline{} (surface-glob overrides). Missing -> null.
 2. Detect skill_repo_mode = does .claude-plugin/marketplace.json exist at repo root?
    VENDORED-SKILL GUARD: if it does NOT exist but the plan targets
@@ -719,11 +721,23 @@ const hasPlanTarget = parse.has_plan_target ?? (MODE === 'sdlc' || !!parse.plan_
 const flowsimEvidence = !!evalRunner || !!cfg.test_unit
 if (!skillRepo && evalRunner && hasPlanTarget) {
   // Stage 5.5 — plan-requirements validators, surface-gated, parallel barrier.
+  // pipeline.plan_validate.model REPLACES the per-validator default for all four (the
+  // plan reader is worth strengthening: cross-module always runs and is the integration
+  // catch-all). NOT a third model axis — it sets a default WITHIN the fan-out axis and is
+  // still passed through capModel() below, which is a ceiling and can only lower it. So
+  // with the Sonnet-first default cap, 'opus' here still dispatches sonnet unless the run
+  // also passes --model opus. An unknown value falls through to the built-in defaults,
+  // matching model-cap.md's "unknown value -> ignore, warn once" rule.
+  let planValidateModel = cfg.plan_validate_model ?? null
+  if (planValidateModel && !(planValidateModel in MODEL_TIER_RANK)) {
+    log(`plan_validate.model "${planValidateModel}" is not a tier — ignoring; using per-validator defaults`)
+    planValidateModel = null
+  }
   const VALIDATORS = [
-    { key: 'api', model: 'sonnet', when: touched.has('backend') },
-    { key: 'ui', model: 'sonnet', when: touched.has('frontend') },
-    { key: 'data', model: 'haiku', when: touched.has('data') },
-    { key: 'cross-module', model: 'haiku', when: true }, // always — cheap catch-all
+    { key: 'api', model: planValidateModel ?? 'sonnet', when: touched.has('backend') },
+    { key: 'ui', model: planValidateModel ?? 'sonnet', when: touched.has('frontend') },
+    { key: 'data', model: planValidateModel ?? 'haiku', when: touched.has('data') },
+    { key: 'cross-module', model: planValidateModel ?? 'haiku', when: true }, // always — catch-all
   ]
   const selected = VALIDATORS.filter((v) => v.when)
   const skipped = VALIDATORS.filter((v) => !v.when).map((v) => v.key)

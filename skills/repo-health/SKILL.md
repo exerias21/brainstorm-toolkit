@@ -155,7 +155,7 @@ outside the pipeline. Glob `.claude/pipeline/*/run.json`:
 ### Check 8 — Memory-pointer staleness (procedural, repo-local only)
 
 **Scope guard**: only inspect a *repo-local* memory pointer if the project
-declares one (`.claude/project.json::memory.index`, e.g. a committed
+declares one (`.claude/project.json::discipline.memory_index`, e.g. a committed
 `MEMORY.md`). **Never read the user-global `~/.claude/...` memory dir** — that
 is personal, out of repo scope, and not this skill's business. If no repo-local
 memory index is configured → `skip` with reason `no repo-local memory index`.

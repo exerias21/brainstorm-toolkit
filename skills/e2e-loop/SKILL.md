@@ -1,12 +1,15 @@
 ---
 name: e2e-loop
 description: >
-  Run end-to-end tests in a fix loop — the browser/UI counterpart to /eval-harness.
-  Runs the configured test.e2e command, detects flaky tests, dispatches a fix agent
-  for real failures, and re-runs until green or max_fix_loops is hit. Reads
-  .claude/project.json for commands and optional patterns file. Use after changes
-  that touch UI flows or on-demand for flaky-test triage. For one-shot e2e without
-  the loop, use /test-check instead.
+  Run end-to-end / browser tests in a fix loop — the UI counterpart to /eval-harness. Runs the
+  configured test.e2e command, detects flaky tests, dispatches a fix agent for real failures, and
+  re-runs until green or max_fix_loops is hit. THIS IS THE SKILL FOR "spin up some agents to click
+  through the app and test everything" — use it instead of hand-composing an ad-hoc Playwright
+  agent fan-out, because it also fixes what it finds. Reads .claude/project.json for commands and
+  an optional patterns file. Use when the user says /e2e-loop, "test the UI", "run the e2e tests",
+  "click through the app and find what's broken", "the frontend is broken somewhere", or after any
+  change touching UI flows; also for flaky-test triage. For one-shot e2e with no fix loop, use
+  /test-check instead.
 argument-hint: "[focus] — optional: test file, directory, or grep pattern to narrow the run"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
