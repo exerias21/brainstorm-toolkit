@@ -336,9 +336,12 @@ There are **two independent axes**, and conflating them is the classic mistake:
 
 | | Axis 1 — the fan-out ladder | Axis 2 — the adversarial reviewer |
 |---|---|---|
-| Keys | `models.cap`, `.sanity`, `.plan_review`, `.implement` | `models.code_review`, `.code_review_second_pass` |
+| Keys | `models.cap`, `.sanity`, `.plan_review`, `.implement`¹ | `models.code_review`, `.code_review_second_pass` |
 | Values | `haiku` \| `sonnet` \| `opus` | `haiku` \| `sonnet` \| `opus` \| `fable` |
 | Capped? | yes — everything passes through the cap | **never** |
+
+¹ `models.implement` is **reserved, not yet wired** — both Stage 2 dispatch sites hard-code
+`capModel('opus', cap)`. Steer the implementer with `--model` / `models.cap` for now.
 
 `models.cap` is a **ceiling**, not a setting: `effective = min(stage_tier, cap)`. So
 `sonnet` lowers every Opus dispatch while leaving Haiku agents alone — you cut Opus spend

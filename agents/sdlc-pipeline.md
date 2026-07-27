@@ -55,7 +55,7 @@ decompose → dispatch → converge model. No flag — the gate is computed.
 against the changed-files-gate surface globs) and `task_count` (step count).
 **Decompose iff** `surfaces_touched >= 2` AND `task_count >=
 DECOMPOSE_MIN_TASKS` (default 6, overridable via `.claude/project.json`
-`pipeline.decompose_min_tasks`) AND the per-surface file sets are disjoint.
+`agents.decompose_min_tasks`) AND the per-surface file sets are disjoint.
 Record the decision + its inputs (never silent).
 
 - **Single-agent (default — unchanged):** dispatch one implement agent (Sonnet by default; Opus opt-up via `--model opus`) on the whole

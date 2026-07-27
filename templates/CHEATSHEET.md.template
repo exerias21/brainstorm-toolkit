@@ -19,28 +19,34 @@ is the *map*; `/cheatsheet` is the *menu*.
                              ▼
                   plans/brainstorm-*.md
                              │
-       ┌─────────────────────┼──────────────────────┐
-       ▼                     ▼                      ▼
-   /pbi "..."            /sdlc {plan}            /task "..."
-   (bounded               (autonomous              (single-row
-   single PBI)            plan-to-PR)              TDD task)
-       │                     │                      │
-       └──────┬──────────────┘                      │
-              ▼                                     ▼
-        plans/pbi-NNN-*.md                    inline TDD
-              │                                     │
-              ▼                                     │
-        /sdlc {pbi-plan}                            │
-              │                                     │
-              └──────────────┬─────────────────────┘
-                             ▼
-                            PR
-                             │
-                          merged
-                             │
-                             ▼
-                  /post-deploy-verify
-                  (pipeline profile)
+              ┌──────────────┴──────────────┐
+              ▼                             ▼
+       /sdlc {plan}                    /task "..."
+       /sdlc-lite <X>                  (single-row TDD)
+              │                             │
+              ▼                             ▼
+   sanity → implement → evals → fix         inline TDD
+   → validate → plan-validate → flowsim
+   → [review → review-fix]  (opt-in)
+              │                             │
+        ┌─────┴─────┐                       │
+        ▼           ▼                       │
+   /sdlc: PR    /sdlc-lite:                 │
+                validated tree ─────────────┘
+                (you commit)
+                      │
+                   merged
+                      │
+                      ▼
+             /post-deploy-verify
+```
+
+Back-edges — how a stalled or landed run re-enters:
+
+```
+  run paused/failed  → /triage [<slug>]  → drafted fix → /sdlc-lite <X> --resume
+  "where was I?"     → /next             → reads envelope + sentinel + TASKS.md
+  PR got comments    → /pr-followup [<pr#|branch>]
 ```
 
 Execution tiers — same pipeline in the middle, different ending:
@@ -48,41 +54,61 @@ Execution tiers — same pipeline in the middle, different ending:
 ```
   /task "..."       → TDD red→green only. Commits only if you ask.
                       Fast path for a one-liner, util, or rename.
-  /sdlc-lite <X>    → FULL pipeline (sanity → implement → evals → fix →
-                      validate → plan-validate → flowsim), then HANDS YOU
-                      the validated changes to commit. No git writes.
-                      <X> = plan file | task-id | range "1-5" | description.
+  /sdlc-lite <X>    → FULL pipeline, then HANDS YOU the validated changes
+                      to commit. No git writes.
+                      <X> = plan file | task-id | range "1-5" | description
+                            | --queue [N] (attended backlog loop)
   /sdlc {plan}      → FULL pipeline, then commits → branch → push → PR.
                       The only tier that touches git history.
 
   Stage 2 (implement) auto-decomposes a large multi-surface plan (>=2
   disjoint surfaces, >=6 steps) into focused per-lane subagents + a
-  converge step; small / single-surface plans run one agent, unchanged.
-  No flag — the gate is automatic.
+  converge step; small / single-surface plans run one agent. No flag —
+  the gate is automatic. Threshold: agents.decompose_min_tasks (default 6).
 ```
 
-Cost control — cap the sub-agent model tier (for enterprise / token budgets):
+Cost control — two INDEPENDENT model axes. Keep them straight:
 
 ```
-  project.json → "models": { "cap": "sonnet" }    (standing policy, every run)
-  or per run:    /sdlc-lite {plan} --model sonnet  (precedence: flag > config > default)
+  AXIS 1 — the fan-out ladder (haiku < sonnet < opus). A CEILING.
+    project.json → "models": { "cap": "sonnet" }   (standing policy)
+    per run:       /sdlc-lite {plan} --model sonnet
+                   (precedence: flag > config > built-in default)
 
-  A CEILING, not a swap: Opus dispatches drop to the cap; Haiku/Sonnet are left
-  untouched (Haiku is NOT upgraded). Governs sub-agents only — for full savings
-  also set your session model. Applies to /sdlc, /sdlc-lite, /brainstorm*.
-  Contract: skills/sdlc/templates/model-cap.md
+    The cap only ever LOWERS: Opus dispatches drop to it; Haiku is NOT
+    upgraded. Per-stage defaults live in models.sanity / .plan_review /
+    .implement — those are the ONLY way to RAISE a Haiku stage.
+    Governs sub-agents only — for full savings also set your session model.
 
-  DEFAULT is Sonnet-first: /sdlc, /sdlc-lite, /brainstorm --vet, and ultracode
-  workflows run Sonnet out of the box — --model opus is the deliberate opt-up.
+    DEFAULT is Sonnet-first: /sdlc, /sdlc-lite, /brainstorm --vet and the
+    ultracode workflows run Sonnet out of the box; --model opus opts up.
+
+  AXIS 2 — the adversarial reviewer (Stage 5.7/5.8 only). NEVER capped.
+    "models": { "code_review": "opus" }  or  --review-model <name>
+    Accepts fable, which is NOT a rung on the ladder. Opt-in permanently:
+    the stage never runs unless explicitly enabled.
+
+  Reviewer/agent COUNTS are a separate block:
+    "agents": { "code_review_lenses": [...], "code_review_passes": 1,
+                "sanity_focuses": [...] }   ← cost scales ~linearly
+
+  Full contract: skills/sdlc/templates/models.md
 ```
 
 In parallel, runnable any time:
 
 ```
+  /next             → "what should I do now?" — the canonical next-step ladder
+  /status           → current pipeline run state at a glance
   /repo-health      → scored sweep, prints the highest-impact next command
+  /triage [<slug>]  → classify a paused run → drafted fix → --resume re-entry
   /dead-code-review → deeper, multi-agent unused-code scan
   /flowsim {plan}   → trace claimed flows through code, flag drift
   /review-pr [pr|branch] → on-demand code review for any PR or branch
+  /pr-followup [pr] → read PR threads + CI, classify, draft the fix batch
+  /test-check       → run tests + log audit
+  /e2e-loop         → browser/E2E tests in a bounded fix loop
+  /eval-harness     → scaffold + run the eval suite
   /plan-html {plan} → render any markdown plan as a single-file shareable HTML
   /gotcha "<entry>" → capture a pitfall (also auto-drafted at loop-exit by
                       /task, /sdlc, /sdlc-lite on real traps; injected at
@@ -95,18 +121,14 @@ Ideation family — pick by ambiguity, not by topic:
   /brainstorm [topic]      → fast conversational, low ambiguity
   /brainstorm-deep [topic] → clarification-heavy (3-pass + perspective frames
                              + expectation contract) for ambiguous / high-stakes
-  /brainstorm-team [topic] → 6-agent product/competitive research team
+  /brainstorm-team [topic] → multi-agent product/competitive research team
 ```
 
-Domain-specific skills (cross-tool; opt-in by need):
+Convention skills — load a house pattern before writing code:
 
 ```
-  /network-engineer     → Batfish-parsed configs × vendor PSIRT CVEs ×
-                          overpermissive-rule rubric → ranked findings.
-                          Claude + Copilot + Codex; consumer-supplied data sources.
-  /paloalto-ansible     → Custom Ansible module for the SCM API (not panos, not SASE)
-                          + playbook + eval-loop entry. Sequential by default;
-                          --team escalates to parallel multi-expert mode.
+  /data-source-pattern  → the repo's data-access shape
+  /logging-conventions  → structured-logging house style
 ```
 
 ---
@@ -120,6 +142,9 @@ Domain-specific skills (cross-tool; opt-in by need):
 | `/sdlc {plan}` | Autonomous plan-to-PR pipeline (commits + PR) | plan is bounded + clear |
 | `/sdlc-lite <X>` | Full pipeline, hands you the changes to commit (no git writes) | full discipline, you commit (e.g. onto an open PR) |
 | `/task "..."` | One-row TDD task | a single bug or small change |
+| `/next` | What to do now, from run state + sentinel + TASKS.md | after any interruption |
+| `/triage [<slug>]` | Classify a paused run, draft the fix | a pipeline run went red |
+| `/status` | Current run state | mid-pipeline check-in |
 | `/repo-health` | Hygiene sweep + score | weekly, or pre-release |
 | `/test-check` | Run tests + log audit | before shipping |
 | `/flowsim {plan}` | Plan-vs-code drift check | post-merge sanity |
@@ -129,15 +154,19 @@ Domain-specific skills (cross-tool; opt-in by need):
 
 ---
 
-## Profiles
+## Install / refresh
 
-| Profile | Includes | Use when |
+| Route | Command | Scope |
 |---|---|---|
-| `core` (default) | brainstorm, sdlc, sdlc-lite, task, status, repo-health, test-check, flowsim, gotcha, repo-onboarding, dead-code-review, eval-harness, e2e-loop, cheatsheet, plan-html, knowledge skills | local dev — single-developer or small-team workflow |
-| `pipeline` | post-deploy-verify, future brd-ingest / pbi-decompose / approve / deploy / monitor / rollback / coverage | enterprise pipeline with BRD intake, approval gates, deployment skills |
-| `both` | everything | dogfooding the toolkit; mixed environments |
+| Plugin | `/plugin marketplace add <repo>` then `/plugin install brainstorm-toolkit` | Claude Code, all repos |
+| `setup.sh` | `bash <plugin>/setup.sh --target . --tools all` | this repo (Claude + Copilot + Codex) |
+| Global | `bash <plugin>/scripts/sync-global.sh` | `~/.claude/`, no plugin registration |
 
-Re-run `setup.sh --profile <name>` from the plugin root to switch.
+`--tools` takes `claude` \| `copilot` \| `codex` \| `both` \| `all`. Re-run
+`setup.sh` any time; it skips existing files unless you pass `--force`, and
+never overwrites `AGENTS.md` / `CLAUDE.md` / `TASKS.md` / `project.json`.
+Use `sync-global.sh` when the plugin route is blocked (e.g. an org policy
+setting `disableSideloadFlags`); don't run it *and* the plugin together.
 
 ---
 
@@ -146,22 +175,43 @@ Re-run `setup.sh --profile <name>` from the plugin root to switch.
 | File | Owner | Purpose |
 |---|---|---|
 | `AGENTS.md` / `CLAUDE.md` | You | Repo-wide agent instructions. Skip-on-exist; setup.sh writes a template only on first install. |
-| `TASKS.md` | You | Portable task tracker (markdown checkboxes). Toolkit reads but never overwrites. |
+| `TASKS.md` | You | Portable task tracker (markdown checkboxes). Toolkit reads and appends rows; you curate. |
 | `GOTCHAS.md` | You | Project-specific pitfalls. `/gotcha` appends; you curate. |
-| `.claude/project.json` | You | Test commands, log audit, eval runner, modules list. Every key optional; skills skip gracefully when absent. |
-| `.claude/pipeline/<slug>/` | Toolkit | `/sdlc` run journals (run.json + per-stage sidecars). Gitignored. |
-| `.claude/.next-action` | Toolkit | Optional next-command hint file for repos that wire in Stop-hook support. Gitignored when setup.sh creates the ignore entry. |
+| `.claude/project.json` | You | Test commands, log audit, eval runner, modules, plus the `models` / `agents` / `pipeline` blocks. Every key optional; skills skip gracefully when absent. Start from `.claude/project.json.example`. |
+| `.claude/pipeline/<slug>/` | Toolkit | Run journals (`run.json` + per-stage sidecars). Gitignored. Drives `--resume`, `/status`, `/next`. |
+| `.claude/.next-action` | Toolkit | The seam: JSON-lines `{cmd, source, confirm}` the Stop hook surfaces as `Next: …` and then consumes. Gitignored. |
+
+---
+
+## The seam + long loops
+
+```
+  A skill writes .claude/.next-action  →  the Stop hook prints "Next: <cmd>"
+  and deletes it (fire-once). With pipeline.loop.auto_continue: true it
+  EXECUTES a single non-confirm entry instead, bounded by
+  pipeline.loop.max_hops. A confirm:true entry is NEVER auto-run.
+
+  /sdlc-lite <plan> --queue [N]   attended backlog loop; re-scans TASKS.md
+                                  between items so work added mid-run joins
+  scripts/loop-runner.sh          same loop, but a FRESH headless process
+                                  every pipeline.loop.batch_size items, so
+                                  context resets at a clean item boundary
+```
 
 ---
 
 ## Tool-routing quick reference
 
-| Surface | Claude Code | GitHub Copilot |
-|---|---|---|
-| Skills install path | `.claude/skills/<name>/` | `.github/skills/<name>/` |
-| Plan mode (interactive) | Yes | No (linear approval) |
-| Multi-agent parallel | Yes (Agent tool) | Sequential subprocesses |
-| PreToolUse hook | Yes | Yes (Preview) |
+| Surface | Claude Code | GitHub Copilot | Codex |
+|---|---|---|---|
+| Skills install path | `.claude/skills/<name>/` | `.github/skills/<name>/` | `.agents/skills/<name>/` |
+| Stop hook | `.claude/settings.json` | `.github/hooks/` | `.codex/hooks.json` (trust via `/hooks`) |
+| Plan mode (interactive) | Yes | No (linear approval) | Yes (its own) |
+| Multi-agent parallel | Yes (Agent tool) | Sequential | Native subagents, single-model |
+| Workflow tool (ultracode) | Yes | No | No |
+
+Copilot and Codex run the **prose** stages — the canonical source of truth.
+The Workflow script is a Claude-only enhancement that mirrors them.
 
 When in doubt: which tool's prompt did you type the slash into? That's
 where the skill ran. There's no cross-tool dispatch.
@@ -170,15 +220,23 @@ where the skill ran. There's no cross-tool dispatch.
 
 ## Troubleshooting
 
-- **No `Next: /...` hint after a skill** → expected unless you've
-  separately wired in optional Stop-hook support. This toolkit version
-  doesn't install a Stop hook by default.
+- **No `Next: /...` hint after a skill** → the Stop hook isn't wired. The
+  plugin ships it, and `setup.sh` installs it unless you passed `--no-hooks`.
+  On Codex you must also **trust** the `.codex/` dir via `/hooks` — hooks do
+  not fire until you do.
 - **A skill's behavior doesn't match this map** → run `/cheatsheet
   <skill-name>` for the live SKILL.md. This template can drift; the
   SKILL.md files are authoritative.
 - **`/sdlc` complains about missing config** → `.claude/project.json`
   needs `test.unit` (or whatever stage 5 references). Copy from
   `.claude/project.json.example` and fill in.
+- **A config key seems to do nothing** → check it against
+  `skills/sdlc/templates/models.md`. The model/count keys were consolidated
+  into the top-level `models` and `agents` blocks; old `pipeline.*.model`
+  keys are no longer read and fall back to the built-in default.
+- **`--model opus` didn't speed up / strengthen a stage** → the cap is a
+  ceiling and can only lower. A stage whose built-in tier is Haiku is raised
+  only by its per-stage key (`models.sanity`, `models.plan_review`).
 - **A new skill isn't in this map** → it landed after this template was
   generated. `/cheatsheet` will show it; edit this file to keep the map
   current.

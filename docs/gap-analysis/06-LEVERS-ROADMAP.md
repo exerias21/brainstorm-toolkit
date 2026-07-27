@@ -4,27 +4,32 @@ Consolidated from `00`–`05`. Effort scale: S (≤half day, prose-only), M (1�
 or new infrastructure). "Tools" = which runtimes get the behavior (C = Claude Code,
 G = Copilot, X = Codex).
 
+> **Status as of 2026-07-26: Waves 1–3 are SHIPPED (L1–L11). Only L12 and L13 remain.**
+> The effort/prereq/risk columns below are preserved as the original planning record — they
+> describe what was *estimated* before the work, not what is left. The **Status** column is the
+> live one. Ordering rationale below the table is likewise historical.
+
 ---
 
 ## The levers, ranked
 
-| # | Lever | Closes | Effort | Prereqs | Tools | Risk |
-|---|---|---|---|---|---|---|
-| L1 | **Diagnosis block in pause messages** (inline triage-lite: class + one recommended command) | gap 2 (60%) | **S** | none | CGX | none — prose in existing skills |
-| L2 | **Re-entry rows at Stage 6 / close-out** ("verify PR #N deployed → /post-deploy-verify") | gap 5 | **S** | none | CGX | none |
-| L3 | **Codex/Copilot seam parity fixes** (inline `Next:` fallback on the brainstorm handoff; peek-vs-consume rule written down) | gap 3 (partial) | **S** | none | CGX | none |
-| L4 | **`/next` skill + conductor agent** (decision ladder; read-only; `--go` opt-in) | gap 1 | **M** | none (better with L6) | CGX (agent dispatch C-only) | low — read-only default |
-| L5 | **Phase 1B `--resume`** (already fully specced in `docs/PHASE-1-STATE-ENVELOPE.md`) | gap 2 enabler | **M** | none — spec exists | CGX | low — spec answered the edge cases |
-| L6 | **Structured multi-slot sentinel** (JSON-lines; `source`/`confirm`; kills the gotcha-vs-pipeline slot race) | gap 3 | **M** | none | CGX | low — backward-compatible parse |
-| L7 | **`/triage <slug>` skill** (classify paused envelope → drafted fix action; REVIEW-FIX schema reuse) | gap 2 | **M** | L5 (for executable re-entry), L1 (derisks the table) | CGX | low |
-| L8 | **`next_action` in the envelope + condition-derived "plan with no run" warning** | gap 3 | **S/M** | L6 | CG (hook), X via `/next` | low — additive schema |
-| L9 | **Auto-continue Stop-hook mode** (`decision: block` chaining; opt-in knob, confirm-guard, hop budget) | gaps 1+3+4 (the actual loop) | **M** | L4, L6; verify Copilot block-equivalent | **C** (G maybe, X no) | **medium — runaway-chain guardrails are the feature** |
-| L10 | **`/sdlc-lite --queue`** (state+priority selection, re-scan between items, stop conditions) | gap 4 | **M** | none (better after L4) | CGX | low — no git writes by construction |
-| L11 | **`/pr-followup <pr>`** (PR threads/CI → classified → `/sdlc-lite` on the branch) | gap 5 | **M/L** | L7's classification table | CGX (GitHub tooling varies) | medium — external-input handling |
-| L12 | **Unattended delivery worker** (AUTONOMOUS-DISCOVERY pattern over the task queue) | gap 4 ceiling | **L** | L4, L5, L7, L10 + real attended usage | deployment, not a skill | high — keep as docs/ pattern, opt-in infra |
-| L13 | **Phase 6 `/deploy` / `/monitor` / `/rollback`** | gap 5 ceiling | **L** | roadmap-scoped | — | as per BRAINSTORM-PIPELINE.md |
+| # | Lever | Status | Closes | Effort | Prereqs | Tools | Risk |
+|---|---|---|---|---|---|---|---|
+| L1 | **Diagnosis block in pause messages** (inline triage-lite: class + one recommended command) | ✅ shipped | gap 2 (60%) | **S** | none | CGX | none — prose in existing skills |
+| L2 | **Re-entry rows at Stage 6 / close-out** ("verify PR #N deployed → /post-deploy-verify") | ✅ shipped | gap 5 | **S** | none | CGX | none |
+| L3 | **Codex/Copilot seam parity fixes** (inline `Next:` fallback on the brainstorm handoff; peek-vs-consume rule written down) | ✅ shipped | gap 3 (partial) | **S** | none | CGX | none |
+| L4 | **`/next` skill + conductor agent** (decision ladder; read-only; `--go` opt-in) | ✅ shipped | gap 1 | **M** | none (better with L6) | CGX (agent dispatch C-only) | low — read-only default |
+| L5 | **Phase 1B `--resume`** (already fully specced in `docs/PHASE-1-STATE-ENVELOPE.md`) | ✅ shipped | gap 2 enabler | **M** | none — spec exists | CGX | low — spec answered the edge cases |
+| L6 | **Structured multi-slot sentinel** (JSON-lines; `source`/`confirm`; kills the gotcha-vs-pipeline slot race) | ✅ shipped | gap 3 | **M** | none | CGX | low — backward-compatible parse |
+| L7 | **`/triage <slug>` skill** (classify paused envelope → drafted fix action; REVIEW-FIX schema reuse) | ✅ shipped | gap 2 | **M** | L5 (for executable re-entry), L1 (derisks the table) | CGX | low |
+| L8 | **`next_action` in the envelope + condition-derived "plan with no run" warning** | ✅ shipped | gap 3 | **S/M** | L6 | CG (hook), X via `/next` | low — additive schema |
+| L9 | **Auto-continue Stop-hook mode** (`decision: block` chaining; opt-in knob, confirm-guard, hop budget) | ✅ shipped (opt-in, default off) | gaps 1+3+4 (the actual loop) | **M** | L4, L6; verify Copilot block-equivalent | **C** (G maybe, X no) | **medium — runaway-chain guardrails are the feature** |
+| L10 | **`/sdlc-lite --queue`** (state+priority selection, re-scan between items, stop conditions) | ✅ shipped | gap 4 | **M** | none (better after L4) | CGX | low — no git writes by construction |
+| L11 | **`/pr-followup <pr>`** (PR threads/CI → classified → `/sdlc-lite` on the branch) | ✅ shipped | gap 5 | **M/L** | L7's classification table | CGX (GitHub tooling varies) | medium — external-input handling |
+| L12 | **Unattended delivery worker** (AUTONOMOUS-DISCOVERY pattern over the task queue) | ⏳ **deferred** — `scripts/loop-runner.sh` covers the attended batch case; the daemon remains an opt-in docs pattern | gap 4 ceiling | **L** | L4, L5, L7, L10 + real attended usage | deployment, not a skill | high — keep as docs/ pattern, opt-in infra |
+| L13 | **Phase 6 `/deploy` / `/monitor` / `/rollback`** | ⏳ **deferred** | gap 5 ceiling | **L** | roadmap-scoped | — | as per BRAINSTORM-PIPELINE.md |
 
-## Recommended sequence
+## Recommended sequence *(historical — Waves 1–3 are done; kept for the rationale)*
 
 **Wave 1 — prose-only, ship immediately (L1, L2, L3).** No new skills, no schema changes;
 three-way-sync edits to existing SKILL.md files + overlays. After this wave: every pause names

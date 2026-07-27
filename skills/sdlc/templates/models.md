@@ -77,12 +77,16 @@ skill. See *Session nudge*.
 |---|---|---|---|
 | `models.sanity` | 1.5 plan pre-flight | `haiku` (all focuses) | `completeness` is judging whether a plan hangs together — judgment work. Never gated, so this costs on **every** run |
 | `models.plan_review` | 5.5 plan-vs-delivered | `sonnet` (api/ui), `haiku` (data/cross-module) | You want a stronger reader judging delivery. `cross-module` always runs |
-| `models.implement` | 2 implement / lanes | `sonnet` | Rarely — `--model opus` is the usual per-run opt-up |
+| `models.implement` | 2 implement / lanes | `sonnet` (effective) | **⚠ RESERVED — not yet wired.** Both Stage 2 dispatch sites hard-code `capModel('opus', cap)`, so this key is read by nothing today. Steer the implementer with `--model` / `models.cap` instead. The name is reserved so it stays stable when wired |
 
 Each replaces the built-in default for that stage, **then still passes through the cap**:
 `capModel(effective_default, cap)`. So `models.plan_review: "opus"` under the Sonnet-first
 default still dispatches Sonnet unless you also pass `--model opus`. These are defaults
 *within* Axis 1, never a new axis.
+
+**Wired today: `models.sanity` and `models.plan_review` only.** `models.implement` is reserved
+(see the table). A key that parses but gates nothing is the exact failure this contract exists to
+prevent, so it is labelled rather than quietly listed alongside the working two.
 
 ### Resolution (Axis 1)
 
