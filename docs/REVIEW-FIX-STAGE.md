@@ -15,8 +15,23 @@
 > `CLAUDE.md`/`README.md` pointers (§7.6–7.7) resolve. Where §7.7's acceptance criterion says
 > "`docs/REVIEW-FIX-STAGE.md` exists containing the reviewer-axis contract, the precedence chains,
 > the `auto_fixable` rubric, D1–D17, and the regression-corpus table," it refers to **this file** —
-> that content is already present below (§5, §8, §4.3, §11). Implementation has not started; this is
-> the design of record, not a delivered feature.
+> that content is already present below (§5, §8, §4.3, §11).
+>
+> **SHIPPED as of 2026-07-26 — this is now the design of record for a DELIVERED feature.**
+> (An earlier revision of this header said "implementation has not started"; that is no longer
+> true.) Live surfaces: `skills/sdlc/SKILL.md` Stages 5.7/5.8, `skills/sdlc-lite/SKILL.md`
+> Stages 5.7/5.8, `sdlc-pipeline.workflow.js` (`phase('Review')` + the `review-fix` loop with its
+> oscillation guard and post-fix-validate regression gate), and the
+> `review-correctness-checklist.md` / `review-security-checklist.md` lens templates. The stage
+> remains **opt-in, permanently** — it never runs unless explicitly enabled.
+>
+> **Two enumerated gaps are still open** (§7's TODO list, mirrored as a comment in
+> `sdlc-pipeline.workflow.js`): the `max_diff_lines`/`max_files` cost-bound diff partition, and
+> `auto_approve_after`/`confidence_threshold`-driven auto-approval throttling in `auto` mode.
+> Those keys parse but do not yet gate. Shipped ≠ feature-complete.
+>
+> Where this document and the live files disagree on a *config key name*, the live files win:
+> see the superseded-config banner at §6.1.
 >
 > **Revised 2026-07-05 for Claude Fable 5's sunset** (promotional access ends 2026-07-07 →
 > usage-credit-billed): reviewer default is now Opus; the stage is opt-in (no default-on flip);
@@ -26,9 +41,9 @@
 > the existing single fan-out, unchanged) gains an opt-in `2`: one additional completeness-critic
 > reviewer call at a separate, cheaper `models.code_review_second_pass` (default `sonnet`), run after pass 1's
 > lenses return and unioned (never voted) into pass 1's findings before the single verify pass
-> runs (§4.1, §6.1, §7.2, D17). Purely additive — does not change the `passes: 1` default path, the
-> Opus-default reviewer, the stage's opt-in posture, or the `pipeline.review_fix.*` config
-> namespace above.
+> runs (§4.1, §6.1, §7.2, D17). Purely additive — does not change the single-pass default path, the
+> Opus-default reviewer, or the stage's opt-in posture. (The config *namespace* has since moved to
+> the top-level `models` / `agents` blocks — §6.1 banner.)
 
 ---
 
@@ -516,6 +531,28 @@ follows).
 ## 6. Config & state schema
 
 ### 6.1 `templates/project.json.example` — new `pipeline.review_fix` block
+
+> **⚠ SUPERSEDED 2026-07-26 — read `skills/sdlc/templates/models.md` for the live config
+> shape.** This section (and the JSON block below) records the *original* nested layout. The
+> model-tier and count keys have since been consolidated into top-level `models` / `agents`
+> blocks, and the old names are **no longer read** — a repo still using one silently gets the
+> built-in default. The *behavior* keys stayed put. Mapping:
+>
+> | This document says | Live key |
+> |---|---|
+> | `pipeline.review_fix.model` | `models.code_review` |
+> | `pipeline.review_fix.second_pass_model` | `models.code_review_second_pass` |
+> | `pipeline.review_fix.lenses` | `agents.code_review_lenses` |
+> | `pipeline.review_fix.passes` | `agents.code_review_passes` |
+> | `pipeline.review_fix.max_fix_loops` | `agents.code_review_max_fix_loops` |
+> | `pipeline.decompose_min_tasks` | `agents.decompose_min_tasks` |
+> | `pipeline.review_fix.enabled` / `.mode` / `.blocking` / `.confidence_threshold` / `.auto_approve_after` / `.max_diff_lines` / `.max_files` | **unchanged** — stage behavior, not model or count selection |
+>
+> The same rename applies to every `cfg.review_fix?.*` code excerpt later in this document
+> (§7 onward) and to the `pipeline.review_fix.*` key names in the §11 design-decision table,
+> which is preserved as a historical record of what was decided, not as current API.
+> The *sidecar* field names (`review.json`'s `reviewer_model`, `second_pass_model`,
+> `lenses`, `passes_run`) are **unchanged** — those are run outputs, not config.
 
 Renamed away from the original draft's `pipeline.review.*` to avoid colliding with the
 **already-existing, different** `pipeline.skip_review` key (`templates/project.json.example` line

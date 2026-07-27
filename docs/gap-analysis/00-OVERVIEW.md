@@ -92,13 +92,15 @@ this analysis proposes.
 This analysis does not duplicate the existing design corpus — it plugs the hole between them:
 
 - **`BRAINSTORM-PIPELINE.md`** ranked "no resumable state" as gap #1 and built it (state
-  envelope, shipped). But the envelope is **written far more than it is read** — the two
-  consumers that would close the loop (`--resume` 1B, `--inspect` 1C) are still deferred per
-  `docs/PHASE-1-STATE-ENVELOPE.md`'s status snapshot. State without a reader is a journal,
-  not a loop.
-- **`docs/REVIEW-FIX-STAGE.md`** is the designed (not implemented) fix-recommender for the
-  **green** path — adversarial review of code that passed everything. The **red** path (a run
-  that paused mid-pipeline) has no equivalent design anywhere. `02-FIX-RECOMMENDER.md` fills that.
+  envelope, shipped). But the envelope was, at the time of this analysis, **written far more
+  than it was read** — the two consumers that would close the loop (`--resume` 1B, `--inspect`
+  1C) were still deferred. State without a reader is a journal, not a loop. *(Both have since
+  shipped — `--resume` as L5, the inspect surface as `/status` + `/next`.)*
+- **`docs/REVIEW-FIX-STAGE.md`** was, at the time of this analysis, the designed-but-unbuilt
+  fix-recommender for the **green** path — adversarial review of code that passed everything.
+  The **red** path (a run that paused mid-pipeline) had no equivalent design anywhere;
+  `02-FIX-RECOMMENDER.md` fills that. *(Both have since shipped — the green path as Stages
+  5.7/5.8, the red path as `/triage`.)*
 - **`docs/AUTONOMOUS-DISCOVERY.md`** already documents the watcher-daemon pattern for
   unattended *data discovery*. `04-BACKLOG-LOOP.md` shows the same pattern is the ceiling
   option for unattended *delivery* — with much stronger guardrails.
