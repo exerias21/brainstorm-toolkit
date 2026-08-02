@@ -24,6 +24,7 @@
         "./skills/brainstorm-deep",
         "./skills/brainstorm-team",
         "./skills/cheatsheet",
+        "./skills/code-tour",
         "./skills/data-source-pattern",
         "./skills/dead-code-review",
         "./skills/e2e-loop",
