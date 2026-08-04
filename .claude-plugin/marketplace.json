@@ -16,7 +16,6 @@
       "agents": [
         "./agents/conductor.md",
         "./agents/e2e-test-runner.md",
-        "./agents/sdlc-pipeline.md",
         "./agents/ux-plan-validator.md"
       ],
       "skills": [
