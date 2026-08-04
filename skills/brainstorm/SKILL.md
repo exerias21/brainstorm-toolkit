@@ -1,9 +1,9 @@
 ---
 name: brainstorm
 description: >
-  Interactive brainstorming and feature ideation skill. Enters Plan mode to guide the user through
-  structured creative exploration: clarifying the idea, exploring codebase context, generating multiple
-  approaches, evaluating tradeoffs, and producing a concrete action plan. Use this skill whenever the
+  Interactive brainstorming and feature ideation skill. Guides the user through structured creative
+  exploration: clarifying the idea, exploring codebase context, generating multiple
+  approaches, evaluating tradeoffs, and writing a concrete action plan to `plans/`. Use this skill whenever the
   user says /brainstorm, mentions "brainstorm", "let's think through", "I have an idea", "what if we",
   "how should we approach", "let's explore", or otherwise wants to ideate on a feature, improvement,
   or architectural change before jumping into code. This is the conversational planning companion —
@@ -15,10 +15,17 @@ metadata:
 
 # Brainstorm
 
-An interactive ideation skill that enters Plan mode and walks through a structured brainstorming
-process *with* the user. Unlike `/brainstorm-team` (which launches autonomous agents to produce a
+An interactive ideation skill that walks through a structured brainstorming process *with* the
+user. Unlike `/brainstorm-team` (which launches autonomous agents to produce a
 research document), this skill is conversational — it thinks out loud, asks questions, and iterates
 on ideas together with the user before producing an implementation plan.
+
+**This skill does not use Plan mode.** It writes its plan directly to
+`plans/brainstorm-<topic-slug>.md` in the repo. Plan mode's approve-and-proceed gate adds a
+second, redundant approval on top of the conversational convergence this skill already does
+with the user, and its sandbox blocks the repo-root write that every downstream skill
+(`/sdlc`, `/sdlc-lite`, `/flowsim`, `/post-deploy-verify`) depends on. The plan file on disk
+is the artifact — not a plan-mode proposal.
 
 ## When This Skill Triggers
 
@@ -44,11 +51,15 @@ Do not delegate general exploration or ideation to subagents outside these two p
 
 ## How It Works
 
-### Step 0: Enter Plan Mode
+### Step 0: Set the frame (no Plan mode)
 
-Switch to **Plan mode** (`EnterPlanMode`). This is a planning and exploration session, not
-an implementation session. You'll think out loud, explore the codebase, generate options,
-and iterate with the user to converge on a concrete action plan before any code is written.
+**Do NOT call `EnterPlanMode`.** This skill runs in the normal conversational mode and
+persists its output as a file.
+
+Say in one line that this is an exploration session, not an implementation session: you'll
+think out loud, explore the codebase, generate options, and iterate with the user to
+converge on a concrete action plan before any code is written. Write no implementation code
+during Steps 1–7 — the discipline is a working agreement here, not a host-enforced sandbox.
 
 ### Step 1: Understand the Seed
 
@@ -196,30 +207,20 @@ revisiting later) often pick these back up.
 **Use the `Write` tool** to save this to `plans/brainstorm-[topic-slug].md` at the
 **repo root** (the consumer project's working directory) — NOT under `.claude/`.
 
-This is critical: Plan Mode's internal storage in `.claude/` is transient and
-invisible to downstream skills (`/sdlc`, `/flowsim`, `/post-deploy-verify`,
-validators). The persistent plan **must** live at
-`<repo-root>/plans/<slug>.md`. If the `plans/` directory doesn't exist, create
-it first (use a Bash `mkdir -p plans` or include the directory in the Write
+The persistent plan **must** live at `<repo-root>/plans/<slug>.md` — that is the
+only location downstream skills (`/sdlc`, `/sdlc-lite`, `/flowsim`,
+`/post-deploy-verify`, validators) read. If the `plans/` directory doesn't exist,
+create it first (use a Bash `mkdir -p plans` or include the directory in the Write
 target — Write creates parent dirs automatically).
 
-Do this **before** Step 7 (validation) — the validation agent reads the plan
-from this path. Do NOT rely on Plan Mode's "approve plan" affordance to
-persist the file; that's a separate UX from the on-disk artifact this skill
-must produce.
+Do this **before** Step 7 (validation) — the validation agent reads the plan from
+this path.
 
-**Plan-mode sandbox conflict** (common — read this): some hosts run Plan mode
-in a **sandbox that only permits writes to a transient path** (e.g.
-`~/.claude/plans/<random>.md`) and *forbid* writes elsewhere until you exit
-plan mode. You'll know by the plan-file path the host hands you. When that's
-the case:
-- During planning, author into the sandbox file the host gave you (that's all
-  it allows).
-- **Immediately after `ExitPlanMode`** (Step 8.0 — its literal first action),
-  persist the canonical copy to repo-root `plans/brainstorm-<topic-slug>.md` —
-  *before* writing the next-action sentinel, so downstream skills find it.
-Don't fight the sandbox mid-plan; just re-persist to repo-root the moment the
-sandbox lifts. The repo-root copy is the one downstream skills read.
+Because this skill never enters Plan mode (Step 0), the write goes straight to the
+repo root with no sandbox in the way and no re-persist step. If you find yourself
+holding a transient host plan path (`~/.claude/plans/<random>.md`), something
+entered Plan mode against this skill's contract — write the canonical copy to
+`plans/brainstorm-<topic-slug>.md` and continue from there.
 
 **Also append action items to `TASKS.md`** (at repo root). For each implementation step
 that's concrete and bounded enough to stand alone, add a row to the `Active / Pending`
@@ -317,22 +318,17 @@ context and stress-test it against this checklist:
 
 Share the validation feedback with the user. If there are issues, revise the plan together.
 
-### Step 8: Exit Plan Mode and continue the flow
+### Step 8: Continue the flow
 
 A brainstorm that ends at a file the user has to manually pick up is a
 **dropped flow**. Default posture: keep the momentum — continue into the
 delivery pipeline rather than stopping at the plan.
 
-**Step 8.0 — exit plan mode, then persist the plan to `plans/` FIRST.** This is
-the literal first action of Step 8, before routing or sentinels. If the current
-tool has an explicit plan-mode exit, call `ExitPlanMode` now. Then, **immediately
-and before anything else** — if you authored the plan into a host **sandbox path**
-(`~/.claude/plans/…`, per the Step 6 sandbox note), `Write` the canonical copy to
-`plans/brainstorm-<topic-slug>.md` at the repo root. On sandbox hosts the only
-valid order is **ExitPlanMode → re-persist → sentinel**; the host's "you can now
-start coding" prompt does **not** replace this step. Do not proceed to routing or
-the sentinel until the repo-root plan file exists. (If you never hit a sandbox —
-the plan was already written to `plans/` at Step 6 — this is a no-op; continue.)
+**Step 8.0 — confirm the plan file exists before routing.** There is no plan mode
+to exit (Step 0), so this is a one-line check rather than a state transition:
+`plans/brainstorm-<topic-slug>.md` must exist at the repo root — Step 6 wrote it.
+Do not proceed to routing or the sentinel until it does; a sentinel pointing at a
+missing plan is a bug.
 
 **Then — is this plan about the toolkit's own vendored skills?** If the plan's
 changed-files target `.claude/skills/**` (or `.github/skills/**`,
@@ -361,8 +357,7 @@ re-choose a flow they've already established this session:
 
 Drop a **next-action sentinel** naming that command so the Stop hook surfaces
 it. The plan file MUST already exist at `plans/brainstorm-<topic-slug>.md`
-before writing the sentinel — Step 8.0 guarantees this (on a sandbox host that
-means the plan was re-persisted *after* `ExitPlanMode`, never before). A
+before writing the sentinel — Step 6 wrote it and Step 8.0 confirms it. A
 sentinel pointing at a missing plan is a bug.
 
 ```
@@ -384,7 +379,7 @@ plugin or run `setup.sh`/`/repo-onboarding` (else the `Next:` hint silently neve
 appears). Skip the sentinel only if the user explicitly chose "save for later" with no
 intent to ship.
 
-Plan mode is already exited (Step 8.0). Continue:
+The plan file exists on disk (Step 8.0). Continue:
 
 1. **Show what's being built** (optional, cheap) — offer
    `/plan-html plans/brainstorm-<topic-slug>.md` to render the plan as a
@@ -403,8 +398,7 @@ criteria, proceed with delivery (option 2). If it's exploratory or has
 ambiguous tradeoffs, pause for the user to review (offer option 1's HTML view
 first).
 
-If the current tool supports an explicit planning-mode exit, you may use it here. Otherwise,
-just transition conversationally.
+Transition conversationally — there is no planning-mode exit to perform.
 
 ## Tone and Style
 

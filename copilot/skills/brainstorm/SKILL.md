@@ -177,10 +177,10 @@ rejected ones — with a one-line "why not chosen" note.
 
 **Write this to `plans/brainstorm-[topic-slug].md` at the repo root** (the
 consumer project's working directory) — NOT under `.claude/`. Use the file-write
-mechanism the agent has available; Plan Mode's internal storage (where applicable)
-does not persist the artifact downstream skills (`/sdlc`, `/flowsim`,
-`/post-deploy-verify`) consume. The on-disk path `<repo-root>/plans/<slug>.md`
-is the source of truth. Create the `plans/` directory first if it doesn't exist.
+mechanism the agent has available. The on-disk path `<repo-root>/plans/<slug>.md`
+is the source of truth — it is the only location the downstream skills (`/sdlc`,
+`/flowsim`, `/post-deploy-verify`) read. Create the `plans/` directory first if it
+doesn't exist.
 
 Do this **before** Step 7 (validation) — the validation checklist references
 this path.
