@@ -30,6 +30,20 @@ if (typeof args === 'string') {
 // agent() model site below (static AND the dynamic lane.model/v.model sites),
 // so no dispatch can silently leak a higher tier than the cap allows.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// INSTALL-ROOT RESOLUTION — the toolkit installs two ways and its trees live in
+// different places under each: `.claude/skills/…` + `.claude/agents/…` when
+// vendored by setup.sh, versus `<CLAUDE_PLUGIN_ROOT>/skills/…` +
+// `<CLAUDE_PLUGIN_ROOT>/agents/…` under a plugin install — where `.claude/skills/`
+// and `.claude/agents/` do NOT exist at all. Sub-agent prompts must therefore name
+// BOTH roots and let the agent resolve whichever is present; hardcoding the
+// `.claude/…` form sends the agent to a missing path on every plugin-only install.
+// NOTE: written without `${...}` so these strings can't be mistaken for JS
+// interpolation when embedded in the template literals below.
+// ---------------------------------------------------------------------------
+const SDLC_DIR = 'CLAUDE_PLUGIN_ROOT/skills/sdlc (plugin install) or .claude/skills/sdlc (vendored)'
+const AGENTS_DIR = 'CLAUDE_PLUGIN_ROOT/agents (plugin install) or .claude/agents (vendored)'
+
 const MODEL_TIER_RANK = { haiku: 1, sonnet: 2, opus: 3 }
 function capModel(defaultTier, cap) {
   if (!cap) return defaultTier
@@ -78,7 +92,7 @@ function envelopeNote(slug, stage, extra = '') {
 STATE ENVELOPE (best-effort; never fail the stage on a write error — log
 "[state-envelope] write failed: <err>; continuing" to stderr and proceed):
 - Update ${envelopePath(slug)}/run.json: set stage="${stage}", refresh updated_at.
-- Write ${envelopePath(slug)}/stage-outputs/${stage}.json per .claude/skills/sdlc/templates/state-schema.md
+- Write ${envelopePath(slug)}/stage-outputs/${stage}.json per templates/state-schema.md in ${SDLC_DIR}
   (schema_version 1, stage, status, started_at, ended_at, summary, data{}).
 - On success append "${stage}" to run.json.stages_completed (once).${extra ? '\n- ' + extra : ''}`
 }
@@ -531,7 +545,7 @@ if (critical.length > 0) {
 // ----- Stage 2 — Implement (auto-gated) --------------------------------------
 phase('Implement')
 
-const grounding = `GROUND IN LIVE CODE FIRST (.claude/skills/sdlc/templates/convention-grounding.md):
+const grounding = `GROUND IN LIVE CODE FIRST (templates/convention-grounding.md in ${SDLC_DIR}):
 existing code is the source of truth (AGENTS.md/CLAUDE.md are stale-able hints);
 reuse the 2-3 closest existing implementations' patterns, don't invent parallel
 ones; if the plan has a "## Conventions & reuse" block, honor AND re-verify it.`
@@ -694,7 +708,7 @@ ${envelopeNote(slug, 'eval-fix', `Write data.fix_loops_run, data.max_fix_loops=3
 // Stage 5 — full validation (test-check). Gated by the changed-files surfaces.
 const validateGate = () => agent(
   `You are Stage 5 (full validation) for "${parse.feature_name}". ${skillRepo
-    ? 'SKILL-REPO MODE: run .claude/skills/sdlc/templates/stage-5-skill-repo.md HARD checks (validate_skills.py, marketplace registration, template-reference resolve, setup.sh dry install) and SOFT checks; green iff all HARD pass.'
+    ? `SKILL-REPO MODE: run templates/stage-5-skill-repo.md (in ${SDLC_DIR}) HARD checks (validate_skills.py, marketplace registration, template-reference resolve, setup.sh dry install) and SOFT checks; green iff all HARD pass.`
     : `Run the /test-check procedure driven by the diff's surfaces (touched: ${[...touched].join(',') || 'none'}):
 - log audit ${cfg.logs_command ? `(${cfg.logs_command})` : '(skip — no logs.command)'}
 - frontend tests ${cfg.test_frontend && touched.has('frontend') ? `(${cfg.test_frontend})` : '(skip)'}
@@ -732,7 +746,7 @@ if (!skillRepo && evalRunner && hasPlanTarget) {
     const reports = (await parallel(selected.map((v) => () =>
       agent(
         `You are a UX Plan Validator focus="${v.key}" for "${parse.feature_name}" (see
-.claude/agents/ux-plan-validator.md). Validate that every ${v.key} requirement in the plan
+ux-plan-validator.md in ${AGENTS_DIR}). Validate that every ${v.key} requirement in the plan
 is actually fulfilled by the implementation. Return green/failures for your focus only.
 ${planRefForAgents}`,
         { label: `validate:${v.key}`, phase: 'Verify', schema: GATE_RESULT_SCHEMA, model: capModel(v.model, MODEL_CAP) }
@@ -927,8 +941,8 @@ never fail). Otherwise return demoted_lenses = every lens name whose entry has d
 a DIFFERENT model from the implementer (independence is the point: an independent pass
 catches side-effects, contract drift, double-decode, and config/env/docs mismatches a
 plan-derived test suite structurally can't).
-${lens === 'correctness' ? 'Use the checklist at .claude/skills/sdlc/templates/review-correctness-checklist.md.' : ''}
-${lens === 'security' ? 'Use the checklist at .claude/skills/sdlc/templates/review-security-checklist.md.' : ''}
+${lens === 'correctness' ? `Use the checklist templates/review-correctness-checklist.md in ${SDLC_DIR}.` : ''}
+${lens === 'security' ? `Use the checklist templates/review-security-checklist.md in ${SDLC_DIR}.` : ''}
 ${skillRepo && lens === 'config-env-docs' ? 'Skill-repo mode: check templates/stage-5-skill-repo.md structural checks instead (no .env/compose surface here).' : ''}
 ${planRefForAgents}
 CHANGED FILES: ${JSON.stringify(changedFiles)}
@@ -1202,7 +1216,7 @@ phase('Deliver')
 
 // Secret scan (warn-only, never blocks) runs in both modes.
 const secretScanNote = `Secret-scan the changed files (gitleaks if available, else the regex
-fallback in .claude/skills/sdlc/SKILL.md Stage 6). WARN-ONLY: surface findings (file:line), HIGH gets
+fallback in SKILL.md Stage 6, in ${SDLC_DIR}). WARN-ONLY: surface findings (file:line), HIGH gets
 a "⚠ HIGH:" prefix + a GitHub Push-Protection note, but NEVER block. ${envelopeNote(slug, 'secret-scan', 'Write data.tool, data.files_scanned[], data.high_findings, data.medium_findings. Status always "pass".')}`
 
 const rebuildNote = touched.has('deploy-delta')

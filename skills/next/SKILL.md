@@ -37,9 +37,12 @@ Gather these (all optional — skip any that's absent, never error):
 - git: current branch, dirty tree, whether HEAD has commits not recorded in any envelope.
 - `.claude/project.json` — `main_branch`, `discipline.staleness_hours`.
 
-**On Claude (optional enhancement):** dispatch the one **Haiku** `conductor` agent
-(`agents/conductor.md`) to do this glob + JSON + git-plumbing join off the main context,
-returning the joined facts. This is a single Haiku read job — never a fan-out, no model-cap
+**On Claude (optional enhancement):** dispatch the one **Haiku** `conductor` agent to do this
+glob + JSON + git-plumbing join off the main context, returning the joined facts. Dispatch it
+**by type** — `subagent_type: "brainstorm-toolkit:conductor"` under a plugin install, or the
+bare `conductor` when vendored by `setup.sh` (naming per `docs/CONVENTIONS.md` → "Agent
+dispatch"); do not reference the definition by file path, which resolves under only one of
+the two install modes. This is a single Haiku read job — never a fan-out, no model-cap
 plumbing. **On Copilot/Codex (and any time the agent is unavailable): do the reads inline** —
 the agent is pure enhancement; the ladder below runs identically on the inline facts.
 

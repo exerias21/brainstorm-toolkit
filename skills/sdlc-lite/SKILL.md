@@ -46,9 +46,13 @@ can't read prior sidecars; see **Resumption**), and `--queue` runs the backlog
 **loop** in prose (selection + re-scan + stop conditions live in **Queue mode**;
 each *selected item* then dispatches per these same rules). Then invoke:
 
+Resolve `scriptPath` per install mode — `${CLAUDE_PLUGIN_ROOT}/skills/sdlc/workflows/sdlc-pipeline.workflow.js`
+under a plugin install, `.claude/skills/sdlc/workflows/sdlc-pipeline.workflow.js` when
+vendored by `setup.sh`. If neither resolves, run the prose stages instead of failing.
+
 ```
 Workflow({
-  scriptPath: ".claude/skills/sdlc/workflows/sdlc-pipeline.workflow.js",
+  scriptPath: "<resolved per above>",
   args: { mode: "sdlc-lite", input: "<plan-file | task-id | task-range | description>",
           model_cap: "<resolved cap: --model flag > project.json models.cap > null>",
           review_model: <the --review-model value, or null if the flag was not passed>,

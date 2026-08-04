@@ -38,9 +38,18 @@ only when explicitly opted in.
 
 When all three hold, invoke:
 
+**Resolve `scriptPath` first** — the script lives in a different place under each
+install mode, and the wrong one throws:
+- **Plugin install** → `${CLAUDE_PLUGIN_ROOT}/skills/sdlc/workflows/sdlc-pipeline.workflow.js`
+  (there is no `.claude/skills/` at all in this mode).
+- **Vendored install** (`setup.sh`) → `.claude/skills/sdlc/workflows/sdlc-pipeline.workflow.js`.
+
+Use whichever exists; if neither resolves, **fall back to the prose Stages 1–7** rather
+than failing the run.
+
 ```
 Workflow({
-  scriptPath: ".claude/skills/sdlc/workflows/sdlc-pipeline.workflow.js",
+  scriptPath: "<resolved per above>",
   args: { mode: "sdlc", plan_file: "<plan path>",
           model_cap: "<resolved cap: --model flag > project.json models.cap > null>",
           review_model: <the --review-model value, or null if the flag was not passed>,
@@ -547,7 +556,8 @@ than waiting to be asked.
    - Log audit (if `logs.command` configured)
    - Frontend unit tests (if `test.frontend` configured and **frontend surface touched**)
    - Backend unit tests (if `test.unit` configured and **backend surface touched**)
-   - **E2E / visual check — dispatch the `e2e-test-runner` agent** (if `test.e2e`
+   - **E2E / visual check — dispatch the `e2e-test-runner` agent** (by type:
+     `brainstorm-toolkit:e2e-test-runner`, or bare `e2e-test-runner` when vendored) (if `test.e2e`
      configured and **frontend surface touched** per the gate). The agent runs a
      fix loop for e2e failures with a flaky-test guard; its iterations count
      toward the 3-iteration eval-fix budget. If `test.e2e` is not configured but
@@ -609,8 +619,11 @@ restriction.
 ### Launch validation agents in parallel
 
 Spawn the selected agents in a **single message** (parallel launch). Each agent gets the
-plan file path and a specific validation focus. Use the `ux-plan-validator` agent
-definition (`.claude/agents/ux-plan-validator.md`) as reference for agent behavior.
+plan file path and a specific validation focus. Dispatch them **by agent type** —
+`brainstorm-toolkit:ux-plan-validator` under a plugin install, or the bare
+`ux-plan-validator` under a vendored (`setup.sh`) install — so the definition arrives as
+the agent's system prompt rather than a file path that may not exist (naming per
+`docs/CONVENTIONS.md` → "Agent dispatch").
 
 Read the prompts from `templates/stage-5.5-validation.md` (sections: `api`, `ui`,
 `data`, `cross-module`). Substitute `{plan_file}`, `{feature_name}`, and

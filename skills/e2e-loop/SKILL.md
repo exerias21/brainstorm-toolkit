@@ -49,23 +49,37 @@ If `test.e2e` is missing: report and exit. Do not guess a command.
 
 ### Step 1 — Dispatch the e2e-test-runner agent
 
+Dispatch it **by agent type** — the definition is the agent's system prompt, so it
+does not need to be read from a file path (naming per `docs/CONVENTIONS.md` →
+"Agent dispatch"):
+
 ```
 Agent(
-  subagent_type: "general-purpose",
+  subagent_type: "brainstorm-toolkit:e2e-test-runner",
   description: "Run e2e loop for {focus or 'full suite'}",
   prompt: """
-    Execute the e2e-test-runner agent defined at .claude/agents/e2e-test-runner.md.
-
     Inputs:
       feature_slug: {derived from focus, or 'adhoc'}
       focus: {user-provided focus, or omitted for full suite}
       max_fix_loops: {from args, or default 3}
 
-    Follow the agent's Loop section (Steps 1-9) exactly. Return its final
+    Follow your Loop section (Steps 1-9) exactly. Return your final
     structured report verbatim.
   """
 )
 ```
+
+**Resolving the type name** — the two install modes register it differently:
+- **Plugin install** (`/plugin`) → `brainstorm-toolkit:e2e-test-runner` (above).
+- **Vendored install** (`setup.sh`) → the bare type `e2e-test-runner`, discovered
+  from `.claude/agents/`.
+
+Use whichever your agent registry exposes. Only if **neither** type resolves, fall
+back to `subagent_type: "general-purpose"` with a prompt that reads the definition
+from `${CLAUDE_PLUGIN_ROOT}/agents/e2e-test-runner.md` (plugin) or
+`.claude/agents/e2e-test-runner.md` (vendored). Do not hardcode a bare
+`.claude/agents/…` path as the primary route — it does not exist under a
+plugin-only install.
 
 ### Step 2 — Present the agent's report
 

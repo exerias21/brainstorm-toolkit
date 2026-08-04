@@ -1,9 +1,16 @@
 # Stage 5.5 — Plan-requirements validation agent prompts
 
 Up to 4 agents launched in parallel. Substitute `{plan_file}` and
-`{feature_slug}` before dispatch. Each agent references the
-`ux-plan-validator` agent definition at
-`.claude/agents/ux-plan-validator.md` for shared behavior.
+`{feature_slug}` before dispatch.
+
+**Dispatch by agent type**, not by file path — `brainstorm-toolkit:ux-plan-validator`
+(plugin install) or the bare `ux-plan-validator` (vendored via `setup.sh`). The
+definition then arrives as the agent's system prompt and the prompts below only need to
+supply the focus and inputs. Only if neither type resolves, dispatch
+`general-purpose` and have it read the definition from
+`${CLAUDE_PLUGIN_ROOT}/agents/ux-plan-validator.md` or
+`.claude/agents/ux-plan-validator.md` — a bare `.claude/agents/…` path does not exist
+under a plugin-only install. See `docs/CONVENTIONS.md` → "Agent dispatch".
 
 ---
 
@@ -15,7 +22,8 @@ Up to 4 agents launched in parallel. Substitute `{plan_file}` and
 
 ```
 You are a UX Plan Validator with focus="api".
-Read the agent definition at .claude/agents/ux-plan-validator.md for full instructions.
+(If you were dispatched as `general-purpose` rather than by agent type, read the
+ux-plan-validator definition first — see the dispatch note at the top of this file.)
 
 Plan file: {plan_file}
 Feature: {feature_slug}
@@ -38,7 +46,8 @@ Return a structured pass/fail report per endpoint.
 
 ```
 You are a UX Plan Validator with focus="ui".
-Read the agent definition at .claude/agents/ux-plan-validator.md for full instructions.
+(If you were dispatched as `general-purpose` rather than by agent type, read the
+ux-plan-validator definition first — see the dispatch note at the top of this file.)
 
 Plan file: {plan_file}
 Feature: {feature_slug}
@@ -60,7 +69,8 @@ Return a structured pass/fail report per component/page.
 
 ```
 You are a UX Plan Validator with focus="data".
-Read the agent definition at .claude/agents/ux-plan-validator.md for full instructions.
+(If you were dispatched as `general-purpose` rather than by agent type, read the
+ux-plan-validator definition first — see the dispatch note at the top of this file.)
 
 Plan file: {plan_file}
 Feature: {feature_slug}

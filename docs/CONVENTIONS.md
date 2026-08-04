@@ -302,6 +302,41 @@ These were "open" in earlier drafts; the brainstorm + validator pass closed them
 - **Phase-2 / Phase-6 skill names** (`/brd-ingest`, `/pbi-decompose`, `/approve`, `/deploy`, `/monitor`, `/rollback`, `/coverage`) — locked as canonical. All comply with the identity rule. No bikeshedding when these are built.
 - **Stage naming in `run.json`** — semantic kebab (`parse`, `sanity-check`, `implement`...), never decimals. Settled in this doc, supersedes any earlier "open question" framing in `PHASE-1-STATE-ENVELOPE.md`.
 
+## Agent dispatch (install-root resolution)
+
+**Rule: dispatch helper agents by TYPE, never by hardcoded `.claude/agents/<name>.md` path.**
+
+The toolkit installs two ways, and they expose agents differently:
+
+| Install mode | Agent tree on disk | Dispatchable type |
+|---|---|---|
+| **Plugin** (`/plugin`, `claude plugin install`) | `<CLAUDE_PLUGIN_ROOT>/agents/` — **no `.claude/agents/` exists** | `brainstorm-toolkit:<name>` |
+| **Vendored** (`setup.sh`) | `.claude/agents/` | bare `<name>` |
+
+A hardcoded `.claude/agents/<name>.md` read-instruction therefore **dangles on every
+plugin-only install** — the sub-agent gets a missing file and improvises. This was a live
+bug in `/e2e-loop` and `/sdlc` Stage 5.5 until 2026-08-04.
+
+Correct form, in priority order:
+
+1. `subagent_type: "brainstorm-toolkit:<name>"` (plugin install), or bare `<name>` (vendored).
+   The definition arrives as the agent's system prompt — no file read needed.
+2. Only if neither type resolves (Copilot/Codex, which have no typed dispatch): read the
+   definition from `${CLAUDE_PLUGIN_ROOT}/agents/<name>.md` **or** `.claude/agents/<name>.md`,
+   naming both so the agent can resolve whichever is present.
+
+**Typed dispatch requires YAML frontmatter** (`name:` + `description:`) on every file in
+`agents/` — that is what registers the agent under *both* modes and what gives it a real
+description instead of a placeholder. A frontmatter-less agent file is not reliably
+dispatchable.
+
+The same two-root rule applies to **skill-tree paths** (`templates/*.md`, the Workflow
+`scriptPath`): `<CLAUDE_PLUGIN_ROOT>/skills/…` under a plugin install, `.claude/skills/…`
+when vendored. `sdlc-pipeline.workflow.js` centralizes this in its `SDLC_DIR` / `AGENTS_DIR`
+constants; prose skills name both inline. Exception: `.claude/skills/**` appearing as a
+**glob pattern** for skill-repo detection is a path *match*, not a path *resolution* — leave
+those alone.
+
 ## Open questions
 
 These remain genuinely unresolved but are non-blocking:
