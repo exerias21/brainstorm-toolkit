@@ -305,6 +305,44 @@ resolves to Sonnet (Opus sites → Sonnet, Haiku stays Haiku); `--model opus` op
 a run up to Opus. Emit the session-model nudge once when a cap is active. On the Workflow path the same
 resolution is enforced by `capModel()` at the `agent()` seam.
 
+**Config-presence check (once, at Stage 1).** If `.claude/project.json` is **absent** while
+`.claude/project.json.example` is **present**, warn once — every `project.json`-gated setting in
+this repo, `models.cap` included, is silently inert and the run is about to report `cap: none`:
+
+```
+config: .claude/project.json.example exists but project.json does not — no project config is
+        being read (models.cap, pipeline.*, test commands). Copy the example to activate it.
+```
+
+## Output verbosity (default: quiet)
+
+**Default `quiet`.** Stage narration is re-read by every later turn in the same session, so it
+compounds — an audited run averaged 468k context across 5,321 orchestrator turns, and narration is
+the cheapest part of that to give up. Detail is not lost: every stage already writes its sidecar
+under `.claude/pipeline/<slug>/stage-outputs/`, which is the durable record.
+
+Under `quiet`, each stage prints **one** line and nothing else:
+
+```
+<stage> · <verdict> · model: <tier> (cap: <cap|none>)
+```
+
+and the run closes with a single summary table at Stage 7. Do not narrate intermediate reasoning,
+restate file contents, echo sub-agent output, or recap what a stage is about to do.
+
+**Always printed, even under `quiet`** — these are the run's contract, not narration:
+
+- the per-dispatch `model: <tier> (cap: <cap|none>)` line (the cap is only as real as this
+  line — `validate_skills.py` soft-warns that a fan-out skill *references* `model-cap.md`, it does
+  NOT check that the line is printed, so nothing but this instruction enforces it),
+- every gate verdict and any PAUSE/soft-stop block,
+- the `Next:` seam line,
+- warnings: the config-presence check above, the reviewer-axis cost note, the session-model nudge.
+
+Set `pipeline.output.verbosity: "normal"` in `.claude/project.json` to restore full narration.
+Read with graceful-skip — a missing `project.json` means `quiet`, which is the point: the savings
+must not depend on a config file that the audited repo never had.
+
 ## Stage 1.5: Plan Sanity Check
 
 Before spending implementation tokens, verify the plan is actually
@@ -791,6 +829,27 @@ touches env vars, compose, or docs. An unrecognized lens name is ignored with on
 config-schema enum is deliberately open so a repo can add its own). Print the resolved list —
 `review lenses: <a, b, …> (N of 4 defaults)` — before dispatching, so a reduced fan-out is never
 silent. The circuit breaker below may drop a lens from this resolved list at dispatch time.
+
+**How many run — `agents.code_review_max_lenses`** (default `4`, so it is inert until set).
+Applied **after** the circuit-breaker drop, truncating the resolved list **in order** — so
+`1` keeps `correctness`. Use it to cut cost without having to name lenses, and without
+re-editing the list if the defaults change. A non-integer or non-positive value falls through
+to `4`; it must never resolve to `0`, which would silently disable the stage rather than fail it.
+
+**The cap interaction — say it out loud when it applies.** Each lens is one call at the
+*reviewer* model, plus one verify pass and one fix-planner at the same model. `models.cap` does
+**not** govern this axis, deliberately. The interaction is easy to misread: `cap: sonnet` puts
+the implementer on sonnet, which *satisfies* the independence check below, so the reviewer stays
+at full `opus` and no bump/degrade warning ever fires. When a cap is set and the reviewer
+outranks it, emit:
+
+```
+review: reviewer runs <model> on <n> lens(es) + verify + fix-planner. models.cap (<cap>) does
+        NOT govern this axis — lower it with models.code_review, or cut the fan-out with
+        agents.code_review_max_lenses. See templates/models.md.
+```
+
+Never "fix" this by routing the reviewer model through `capModel()` — it silently no-ops.
 
 | Lens | What it looks for |
 |---|---|

@@ -165,9 +165,44 @@ whose `name:` slugs are near-duplicates (Levenshtein < 5), and flag any entry
 whose `description:` references a file path that no longer exists. Report
 `{count, near_duplicates: [[a,b]], dangling: [{name, missing_path}]}`. Cap at 10.
 
+### Check 9 — Config inertness (procedural, cheap)
+
+A pure file-existence test, no agent. If `.claude/project.json.example` exists and
+`.claude/project.json` does **not**, report one HIGH finding:
+
+```
+config inert — .claude/project.json.example exists but project.json does not.
+Every gated setting is silently unread: models.cap (sub-agent tier ceiling),
+pipeline.* (review lenses, verbosity, context threshold), test/eval commands.
+Fix: cp .claude/project.json.example .claude/project.json  (then trim to taste)
+```
+
+This is worth a check of its own because the failure is **silent by design**: skills
+graceful-skip on missing config, so an unread `project.json` is indistinguishable from a
+deliberate no-config run. An audited repo ran the full pipeline for three days with
+`models.cap` set in the *example* file and never loaded, reporting `cap: none` throughout.
+
+If both files exist, or neither does, → `pass`.
+
+**Also report (informational, not scored):** when `project.json` exists but omits
+`agents.code_review_max_lenses` *and* sets `models.cap`, note that the adversarial review
+stage's reviewer is not governed by `models.cap` (see `skills/sdlc/templates/models.md`).
+
+**Token-cost follow-up (pointer, never run here).** This skill does not measure spend — it is a
+hygiene sweep, and a token audit reads the transcript store rather than the repo. When Check 9
+reports a finding, or when the user asks where their tokens went, point at:
+
+```
+python scripts/token-audit.py --list
+python scripts/token-audit.py --session <uuid> --check-cap <tier>
+```
+
+It reports the main-thread vs sub-agent split, per-tier cost, and a context-drag verdict. Name it;
+don't run it as part of the sweep.
+
 ## Roll-up
 
-Compute a score: `100 - min(60, 10*high_findings + 5*high_deps + 4*unapplied_migrations + 3*stale_gotchas + 2*test_failures + 2*stale_pipeline_runs + 1*orphan_files + 1*skipped_tests + 1*stale_memory)`. Floor at 40 — a single bad metric shouldn't drive the score to zero.
+Compute a score: `100 - min(60, 10*high_findings + 5*high_deps + 4*unapplied_migrations + 3*stale_gotchas + 2*test_failures + 2*stale_pipeline_runs + 1*orphan_files + 1*skipped_tests + 1*stale_memory + 5*config_inert)`. Floor at 40 — a single bad metric shouldn't drive the score to zero.
 
 Print the report:
 

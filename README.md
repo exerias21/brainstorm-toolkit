@@ -401,6 +401,14 @@ printing it, so the loop self-advances. It never chains a `confirm: true` action
 - **`scripts/hooks/next-action.sh`** — the Stop hook behind the `.next-action` seam. Reads the sentinel once, prints `Next: <command>`, deletes it. With `pipeline.loop.auto_continue: true` it instead **executes** a single non-`confirm` entry (`decision: block`), bounded by `pipeline.loop.max_hops`. See `docs/SEAM.md`.
 - **`scripts/sync-global.sh`** — user-scope installer for machines without the plugin route (see *Install → Option C*). Copies `skills/*` and `agents/*` into `~/.claude/` and `jq`-merges the Stop + `SessionStart` hooks with absolute paths. `--dry-run` previews, `--uninstall` reverses. Copies rather than symlinks, so re-run it after each `git pull`.
 - **`scripts/hooks/reseed-context.sh`** — installed as a Claude `SessionStart` hook (matcher `compact|clear`) and a Codex `PostCompact` hook. After a compaction or clear it re-points the orchestrator at the loop's durable on-disk state (pipeline envelope + sentinel), so auto-compaction stays lossless for a long `--queue` run.
+- **`scripts/token-audit.py`** — audits where a Claude Code session's tokens actually went. Reads the local transcript store (`~/.claude/projects/**`, read-only, stdlib only, no network) and reports the main-thread vs sub-agent split, per-model-tier cost, a context-drag verdict, and the most expensive sub-agents. `--check-cap sonnet` asserts no sub-agent exceeded a tier and names the reviewer axis when it is the cause.
+
+  ```bash
+  python scripts/token-audit.py --list                                  # find the session
+  python scripts/token-audit.py --session <uuid> --check-cap sonnet     # full breakdown
+  ```
+
+  Use it before tuning cost — the intuitive levers are usually the wrong ones. On an audited run, **81% of tokens were the orchestrator's own context**, not the sub-agent fan-out: shell traffic ~53%, file bodies written into context instead of delegated ~18%, narration only ~7%. Lowering model tiers addressed the remaining 19%.
 
 ## Maintaining this repo
 

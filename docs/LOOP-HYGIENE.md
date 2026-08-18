@@ -34,13 +34,43 @@ subagents — and it's fail-soft regardless.
 
 ## What ships: the reseed hook (cross-tool)
 
-You **cannot force `/compact` or `/clear`** from a hook/skill/config on any tool (and no tool exposes
-live token usage to a script, so a "compact at 55%" policy isn't buildable). But **auto-compaction
+You **cannot force `/compact` or `/clear`** from a hook/skill/config on any tool, so a policy that
+*enforces* "compact at 55%" isn't buildable. But **auto-compaction
 already runs on both Claude Code and Codex** near the window limit. The toolkit ships a small hook —
 `scripts/hooks/reseed-context.sh` — that makes that auto-compaction **lossless for the loop**: after
 a compaction/clear it re-injects a *pointer* to the durable on-disk state (active envelope + sentinel
 + TASKS.md counts) as `additionalContext`, so the orchestrator resumes from files, not from a lossy
 summary. It's fail-soft and emits nothing in any repo not running a loop.
+
+### Correction: live context size *is* readable (detect, not enforce)
+
+An earlier revision of this doc claimed "no tool exposes live token usage to a script." That is too
+strong, and the distinction matters. No tool exposes an **API** for it — but a hook is handed
+`transcript_path`, and the **last `usage` row in that JSONL is the context that was on the wire**:
+
+```
+context = input_tokens + cache_read_input_tokens + cache_creation_input_tokens
+```
+
+Verified against a real transcript: `2 + 637769 + 378` → **638,149 tokens**.
+
+So a threshold policy *is* buildable — as a **detector**, never an enforcer. That is what
+`scripts/hooks/context-watch.sh` ships: a `Stop` hook that measures context, and once it exceeds
+`pipeline.context.warn_above_tokens` (default `250000`) **during an active pipeline run**, emits one
+advisory nudge naming the measured size and the envelope path. It never blocks, never resets, and
+stays silent outside a run.
+
+Being advisory is what justifies the default. An *enforcer* firing early destroys the prompt cache
+and thrashes, so it would need a conservative (high) threshold; an advisory line firing early costs
+one ignorable message. `250000` therefore sits where carrying cost becomes material — roughly
+$0.375/turn in Opus cache reads — not where the window is endangered. It is deliberately **above a
+200k window entirely**: those sessions auto-compact first, and the reseed hook above already makes
+that lossless. On a 200k window, set ~`120000` explicitly.
+
+Diagnose after the fact with `scripts/token-audit.py`, which reads the same transcripts and reports
+the main-thread vs sub-agent split. An audited three-day run spent **81% of its tokens on the
+orchestrator's own context** (5,321 turns × ~468k average), not on the sub-agent fan-out — which is
+why context hygiene, not model-tier capping, is the lever that matters for long loops.
 
 Because tools fire the post-reset event differently, the same script is wired to a different event
 per tool:

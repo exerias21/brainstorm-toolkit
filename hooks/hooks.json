@@ -1,5 +1,5 @@
 {
-  "description": "brainstorm-toolkit — surface the .next-action seam + keep long loops context-cheap. The Stop hook surfaces /brainstorm handoffs, /sdlc-lite --queue park-resumes, and gotcha seams as `Next: …` (and, with pipeline.auto_continue, drives the loop). The SessionStart hook (matcher compact|clear) reseeds a pointer to the loop's durable on-disk state after a compaction/clear, so aggressive auto-compaction stays lossless for the orchestrator. Merges with any user/project hooks (deduped by command). See docs/SEAM.md and docs/LOOP-HYGIENE.md.",
+  "description": "brainstorm-toolkit — surface the .next-action seam + keep long loops context-cheap. Two Stop hooks. next-action.sh surfaces /brainstorm handoffs, /sdlc-lite --queue park-resumes, and gotcha seams as `Next: …` (and, with pipeline.auto_continue, drives the loop). The SessionStart hook (matcher compact|clear) reseeds a pointer to the loop's durable on-disk state after a compaction/clear, so aggressive auto-compaction stays lossless for the orchestrator. Merges with any user/project hooks (deduped by command). `context-watch.sh` measures live context from the hook's own transcript_path and emits an ADVISORY handoff nudge once it exceeds pipeline.context.warn_above_tokens (default 250000) during an active pipeline run -- it never blocks, never resets (no tool can force /clear or /compact). See docs/SEAM.md and docs/LOOP-HYGIENE.md.",
   "hooks": {
     "Stop": [
       {
@@ -8,6 +8,12 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hooks/next-action.sh",
+            "args": [],
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hooks/context-watch.sh",
             "args": [],
             "timeout": 10
           }

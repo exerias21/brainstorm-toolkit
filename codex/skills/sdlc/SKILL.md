@@ -29,6 +29,27 @@ Codex CLI's 2026 Agent Skills spec doesn't drive this toolkit's parallel sub-age
 - Git working tree is clean.
 - `.claude/project.json` exists with at least `main_branch`; `test.*`, `logs.*`, and `eval.*` recommended so Stages 4–5 work.
 
+## Output verbosity (default: quiet)
+
+**Default `quiet`.** Stage narration is re-read by every later turn in the same
+session, so it compounds. Print **one** line per stage —
+`<stage> · <verdict> · model: <tier> (cap: <cap|none>)` — and one summary table at
+the final report. No intermediate narration, no restating file contents, no
+echoing a review pass's full output. Detail already lives in the
+`stage-outputs/` sidecars, which are the durable record.
+
+**Always printed regardless of verbosity:** the per-dispatch `model:` line, every
+gate verdict, any PAUSE block, the `Next:` seam line, and warnings (config-presence,
+reviewer-axis cost note, session-model nudge).
+
+`pipeline.output.verbosity: "normal"` in `.claude/project.json` restores full
+narration. A missing `project.json` means `quiet` — by design: the saving must not
+depend on a file the repo may never have created.
+
+**Config-presence check (once, at the first stage).** If `.claude/project.json` is
+absent while `.claude/project.json.example` is present, warn once — every gated
+setting (`models.cap`, `pipeline.*`, test commands) is silently inert.
+
 ## Stage 1 — Parse the plan
 
 **`--resume`:** if `--resume` was passed, do NOT re-init a fresh envelope — read the
@@ -184,6 +205,14 @@ config/env/docs lens repointed to `.agents/skills/sdlc/templates/stage-5-skill-r
 env/compose checks. (This mirrors D6 / plan §5.3 gate 1's exemption on the canonical/Workflow side;
 this overlay runtime has no other skill-repo detection of its own, so the marketplace-manifest
 check above IS its skill-repo signal.)
+
+**Cap the fan-out with `agents.code_review_max_lenses`** (default `4`, inert until set): it
+truncates the resolved list **in order** after circuit-breaker demotion, so `1` keeps
+`correctness`. A non-integer or non-positive value falls through to `4` — never `0`, which would
+silently disable the stage. Every lens runs at the **reviewer** model (`models.code_review`,
+default `opus`), which `models.cap` does **not** govern; when a cap is set and the reviewer
+outranks it, say so and point at `models.code_review` / `agents.code_review_max_lenses`.
+
 
 **No parallel sub-agents on this runtime.** Run each **configured** lens
 (`agents.code_review_lenses` in `.claude/project.json`; when the key is absent, all four

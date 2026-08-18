@@ -287,14 +287,17 @@ ensure_gitignored() {
 # Install the Stop hook into the consumer's Claude Code settings file so the
 # next-action sentinel is surfaced after Claude finishes a turn. Idempotent:
 # checks for the exact command string before appending.
+# $1 = hook script basename (default next-action.sh), $2 = label for the log line.
 install_stop_hook_claude() {
+  local script="${1:-next-action.sh}"
+  local label="${2:-next-action}"
   local settings="$TARGET/.claude/settings.json"
   local cmd
   if [[ "$COPY_SCRIPTS" -eq 1 ]]; then
-    cmd="bash scripts/hooks/next-action.sh"
+    cmd="bash scripts/hooks/$script"
   else
     local hook_path_escaped
-    printf -v hook_path_escaped '%q' "$PLUGIN_ROOT/scripts/hooks/next-action.sh"
+    printf -v hook_path_escaped '%q' "$PLUGIN_ROOT/scripts/hooks/$script"
     cmd="bash $hook_path_escaped"
   fi
   if ! command -v jq >/dev/null 2>&1; then
@@ -319,7 +322,7 @@ install_stop_hook_claude() {
     .hooks.Stop //= [] |
     .hooks.Stop += [{ "hooks": [{ "type": "command", "command": $cmd }] }]
   ' "$settings" > "$tmp" && mv "$tmp" "$settings"; then
-    echo "  wrote: $settings (added Stop hook for next-action)"
+    echo "  wrote: $settings (added Stop hook for $label)"
   else
     rm -f "$tmp"
     echo "  error: failed to update $settings with Claude Stop hook" >&2
@@ -388,6 +391,47 @@ install_stop_hook_codex() {
 }
 JSON
   echo "  wrote: $hook_file (trust the .codex/ dir via /hooks to activate)"
+}
+
+# Install the Codex context-watch Stop hook by jq-MERGING a second entry into
+# .codex/hooks.json's Stop array. Cannot reuse install_stop_hook_codex: that one writes the
+# whole file and skips-on-exist, so it would never add a second hook to an existing install.
+# Idempotent by command string.
+install_context_watch_codex() {
+  local hook_file="$TARGET/.codex/hooks.json"
+  local cmd
+  if [[ "$COPY_SCRIPTS" -eq 1 ]]; then
+    cmd='bash "$(git rev-parse --show-toplevel)/scripts/hooks/context-watch.sh"'
+  else
+    local cw_path_escaped
+    printf -v cw_path_escaped '%q' "$PLUGIN_ROOT/scripts/hooks/context-watch.sh"
+    cmd="bash $cw_path_escaped"
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "  skip: jq not installed — add a context-watch Stop hook manually to $hook_file:"
+    echo "        {\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\",\"timeout\":10}]}]}}"
+    return
+  fi
+  mkdir -p "$(dirname "$hook_file")"
+  [[ -f "$hook_file" ]] || echo '{}' > "$hook_file"
+  if jq -e --arg cmd "$cmd" '
+        any(.hooks.Stop[]?.hooks[]?; .command == $cmd)
+      ' "$hook_file" >/dev/null 2>&1; then
+    echo "  skip: Codex context-watch hook already wired ($cmd)"
+    return
+  fi
+  local tmp; tmp="$(mktemp)"
+  if jq --arg cmd "$cmd" '
+    .hooks //= {} |
+    .hooks.Stop //= [] |
+    .hooks.Stop += [{ "hooks": [{ "type": "command", "command": $cmd, "timeout": 10 }] }]
+  ' "$hook_file" > "$tmp" && mv "$tmp" "$hook_file"; then
+    echo "  wrote: $hook_file (added context-watch Stop hook)"
+  else
+    rm -f "$tmp"
+    echo "  error: failed to update $hook_file with Codex context-watch hook" >&2
+    return 1
+  fi
 }
 
 # Install the Codex PostCompact reseed hook by jq-MERGING a PostCompact array into
@@ -483,6 +527,7 @@ if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
     install_stop_hook_claude
     echo "[hooks] Claude SessionStart reseed hook"
     install_reseed_hook_claude
+    install_stop_hook_claude context-watch.sh context-watch
   fi
   if [[ "$want_copilot" -eq 1 ]]; then
     echo "[hooks] Copilot Stop hook"
@@ -493,6 +538,7 @@ if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
     echo "[hooks] Codex Stop + PostCompact hooks"
     install_stop_hook_codex
     install_reseed_hook_codex
+    install_context_watch_codex
   fi
 else
   echo "[hooks] skipped (--no-hooks)"
