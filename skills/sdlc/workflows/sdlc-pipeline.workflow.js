@@ -855,7 +855,18 @@ never fail). Otherwise return demoted_lenses = every lens name whose entry has d
   // REVIEW_LENSES = configured (or default) lenses MINUS any lens the ledger marks demoted for
   // this repo (§6.3: `.filter(l => !stats.lenses[l]?.demoted)`). Phases 1-3 had no ledger, so
   // demotedLenses was always [] there; the filter is a no-op until the breaker has history.
-  const REVIEW_LENSES = (cfg.review_fix?.lenses ?? DEFAULT_LENSES).filter((l) => !demotedLenses.includes(l))
+  // max_lenses (default 4 = the full default set, so this is inert until configured) truncates
+  // HOW MANY lenses dispatch; cfg.review_fix.lenses selects WHICH. Applied AFTER the demotion
+  // filter so a demoted lens can never consume one of the allowed slots, and truncating in
+  // `lenses` order so a max_lenses:1 run keeps the highest-yield lens (`correctness` by default
+  // order). Guard the value the same way every other malformed cfg read is guarded -- a
+  // non-positive or non-integer value falls through to the default rather than yielding an empty
+  // fan-out, which would silently disable the whole stage.
+  const rawMaxLenses = cfg.review_fix?.max_lenses
+  const MAX_LENSES = Number.isInteger(rawMaxLenses) && rawMaxLenses > 0 ? rawMaxLenses : 4
+  const REVIEW_LENSES = (cfg.review_fix?.lenses ?? DEFAULT_LENSES)
+    .filter((l) => !demotedLenses.includes(l))
+    .slice(0, MAX_LENSES)
   // SEPARATE budget from fixBudget (shared by Stages 4/5/5.5/5.6) -- see §4.4 for why sharing
   // it is wrong.
   const reviewBudget = makeBudget(cfg.review_fix?.max_fix_loops ?? 3)
@@ -885,6 +896,18 @@ never fail). Otherwise return demoted_lenses = every lens name whose entry has d
   // on a same-tier bump. Every reviewer/verify/fix-planner agent() call and the persist:review
   // envelope use THIS variable, never the original REVIEW_MODEL const, once a bump applies.
   let effectiveReviewModel = REVIEW_MODEL
+  // Cost-surprise guard. models.cap does NOT govern this axis (by design -- §5.1/§5.4: the
+  // reviewer must stay independent of the implementer, so capping it would defeat the stage).
+  // But the interaction reads as a bug from outside: cap:sonnet puts the implementer on sonnet,
+  // which SATISFIES the independence check above, so the reviewer stays on full opus and no
+  // bump/degrade line ever fires -- the user sees "cap: sonnet" and N opus agents with nothing
+  // connecting the two. Say it out loud instead. This is a LOG ONLY: never route REVIEW_MODEL
+  // through capModel() (it would silently no-op back to the call site's default tier -- the
+  // highest-priority hazard on this axis, see templates/review-model.md).
+  if (MODEL_CAP && TIER_NAMES.includes(REVIEW_MODEL) &&
+      TIER_NAMES.indexOf(REVIEW_MODEL) > TIER_NAMES.indexOf(MODEL_CAP)) {
+    log(`review: reviewer runs ${REVIEW_MODEL} on ${REVIEW_LENSES.length} lens(es) + verify + fix-planner. models.cap (${MODEL_CAP}) does NOT govern this axis -- lower it with pipeline.review_fix.model, or cut the fan-out with pipeline.review_fix.max_lenses. See templates/review-model.md.`)
+  }
   if (TIER_NAMES.includes(REVIEW_MODEL)) {
     // Anchored to the Stage 2 single-agent implement dispatch site (`model: capModel('opus',
     // MODEL_CAP)`) -- 'opus' is that call's own default tier, NOT 'sonnet'. Using the wrong

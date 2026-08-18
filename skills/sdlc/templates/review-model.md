@@ -60,6 +60,40 @@ The **effective** model actually dispatched (after this fallback, and after the 
 below) — not the raw resolved name — is what `review.json.data.reviewer_model` records, so the
 sidecar never claims a review ran on a model that wasn't available.
 
+## Cost surface — fan-out width, and the cap interaction users misread
+
+The stage's cost is `(lenses + verify + fix-planner) × reviewer model`, and **every one of those
+calls is at the reviewer model** — so the width of the fan-out, not `models.cap`, is what bounds it.
+
+**Fan-out width** resolves in three steps, in this order:
+
+1. `pipeline.review_fix.lenses` selects **which** lenses (absent → the four defaults).
+2. Circuit-breaker demotion drops any lens the rolling ledger marks demoted.
+3. `pipeline.review_fix.max_lenses` truncates **how many** survive, in list order. Absent, or any
+   non-integer / non-positive value → `4`. Never let it resolve to `0` — an empty fan-out silently
+   disables the stage rather than failing it.
+
+Truncation is list-ordered so a `max_lenses: 1` run keeps `correctness`, the highest-yield lens.
+
+**The interaction to warn about.** `models.cap` does not govern this axis — deliberately, since a
+capped reviewer would collapse onto the implementer and defeat independence. But from outside it
+reads as a bug, and the independence check *hides* it: `cap: sonnet` puts the implementer on
+sonnet, which **satisfies** the same-tier check, so the reviewer stays at full `opus` and no
+bump/degrade line ever fires. The user sees `cap: sonnet` and N `opus` agents, with nothing
+connecting the two.
+
+So when a cap is set **and** the reviewer outranks it, emit once:
+
+```
+review: reviewer runs <model> on <n> lens(es) + verify + fix-planner. models.cap (<cap>) does
+        NOT govern this axis — lower it with pipeline.review_fix.model, or cut the fan-out with
+        pipeline.review_fix.max_lenses. See templates/review-model.md.
+```
+
+This is a **log line only**. Never "fix" the interaction by routing the reviewer model through
+`capModel()` — that silently no-ops it back to the call site's default tier, with zero error and
+zero log line, and is the highest-priority hazard on this axis (see above).
+
 ## Resolution — ENABLEMENT (a separate precedence chain from model choice)
 
 ```

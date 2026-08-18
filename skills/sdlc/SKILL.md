@@ -305,6 +305,44 @@ resolves to Sonnet (Opus sites → Sonnet, Haiku stays Haiku); `--model opus` op
 a run up to Opus. Emit the session-model nudge once when a cap is active. On the Workflow path the same
 resolution is enforced by `capModel()` at the `agent()` seam.
 
+**Config-presence check (once, at Stage 1).** If `.claude/project.json` is **absent** while
+`.claude/project.json.example` is **present**, warn once — every `project.json`-gated setting in
+this repo, `models.cap` included, is silently inert and the run is about to report `cap: none`:
+
+```
+config: .claude/project.json.example exists but project.json does not — no project config is
+        being read (models.cap, pipeline.*, test commands). Copy the example to activate it.
+```
+
+## Output verbosity (default: quiet)
+
+**Default `quiet`.** Stage narration is re-read by every later turn in the same session, so it
+compounds — an audited run averaged 468k context across 5,321 orchestrator turns, and narration is
+the cheapest part of that to give up. Detail is not lost: every stage already writes its sidecar
+under `.claude/pipeline/<slug>/stage-outputs/`, which is the durable record.
+
+Under `quiet`, each stage prints **one** line and nothing else:
+
+```
+<stage> · <verdict> · model: <tier> (cap: <cap|none>)
+```
+
+and the run closes with a single summary table at Stage 7. Do not narrate intermediate reasoning,
+restate file contents, echo sub-agent output, or recap what a stage is about to do.
+
+**Always printed, even under `quiet`** — these are the run's contract, not narration:
+
+- the per-dispatch `model: <tier> (cap: <cap|none>)` line (the cap is only as real as this
+  line — `validate_skills.py` soft-warns that a fan-out skill *references* `model-cap.md`, it does
+  NOT check that the line is printed, so nothing but this instruction enforces it),
+- every gate verdict and any PAUSE/soft-stop block,
+- the `Next:` seam line,
+- warnings: the config-presence check above, the reviewer-axis cost note, the session-model nudge.
+
+Set `pipeline.output.verbosity: "normal"` in `.claude/project.json` to restore full narration.
+Read with graceful-skip — a missing `project.json` means `quiet`, which is the point: the savings
+must not depend on a config file that the audited repo never had.
+
 ## Stage 1.5: Plan Sanity Check
 
 Before spending implementation tokens, verify the plan is actually
@@ -739,8 +777,37 @@ activated, two auto-off gates still apply: the diff is docs-only/touches no code
 the code surface there and would otherwise silently disable the stage in the repo that dogfoods it).
 
 Runs after Stage 5.6 flowsim, before Stage 6, once enabled and not auto-off'd. Fans out
-**4 reviewer passes on distinct lenses** (parallel sub-agents on Claude; sequential inline passes
-on Copilot/Codex), each at the reviewer model resolved above:
+**one reviewer pass per resolved lens** (parallel sub-agents on Claude; sequential inline passes
+on Copilot/Codex), each at the reviewer model resolved above.
+
+**Resolve the lens set before dispatching** — in this order:
+
+1. `pipeline.review_fix.lenses` selects **which** lenses; absent → the four defaults below.
+2. Drop any lens the circuit breaker marks demoted (see below).
+3. `pipeline.review_fix.max_lenses` truncates **how many** survive, in list order; absent or
+   malformed → `4`. Set `1` for a single-reviewer run — list order keeps `correctness`.
+
+Then print, once, before dispatch:
+
+```
+review: <n> lens(es) at <reviewer-model> — <lens names>
+```
+
+**Cost note — say this out loud when it applies.** Each lens is one call at the *reviewer* model
+(default `opus`), plus one verify pass and one fix-planner at the same model. `models.cap` does
+**not** govern this axis, deliberately. The interaction is easy to misread: `cap: sonnet` puts the
+implementer on sonnet, which *satisfies* the independence check below, so the reviewer stays at
+full `opus` and no bump/degrade warning fires. When a cap is set and the reviewer outranks it, emit:
+
+```
+review: reviewer runs <model> on <n> lens(es) + verify + fix-planner. models.cap (<cap>) does
+        NOT govern this axis — lower it with pipeline.review_fix.model, or cut the fan-out with
+        pipeline.review_fix.max_lenses. See templates/review-model.md.
+```
+
+Never "fix" this by routing the reviewer model through `capModel()` — it silently no-ops.
+
+The four default lenses:
 
 | Lens | What it looks for |
 |---|---|

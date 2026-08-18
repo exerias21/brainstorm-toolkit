@@ -72,6 +72,19 @@ source of truth the Workflow mirrors.
   branch). `/sdlc-lite` never switches branches and never commits.
 - `.claude/project.json` optional; every key optional. Eval, validate, and
   flowsim stages skip silently when their config or a plan target is absent.
+  **But** if `project.json` is absent while `project.json.example` is present,
+  warn once at Stage 0 — every gated setting (`models.cap`, `pipeline.*`, test
+  commands) is silently inert and the run will report `cap: none`.
+
+## Output verbosity (default: quiet)
+
+Run `/sdlc`'s "Output verbosity" section verbatim. **Default `quiet`** — one line
+per stage (`<stage> · <verdict> · model: <tier> (cap: <cap|none>)`), one summary
+table at Stage 7, no intermediate narration or echoed sub-agent output. Detail
+already lives in the `stage-outputs/` sidecars. Always print regardless of
+verbosity: the per-dispatch `model:` line, gate verdicts, PAUSE blocks, the
+`Next:` seam line, and warnings. `pipeline.output.verbosity: "normal"` restores
+narration; a missing `project.json` means `quiet`, by design.
 
 ## State envelope
 
@@ -326,9 +339,13 @@ Never governed by `models.cap` / `--model`.
 Run `/sdlc` Stage 5.7/5.8 verbatim — same opt-in-only enablement (`--review-model <name>` flag or
 `pipeline.review_fix.enabled: true`; `--no-review` always wins OFF; omitted/absent means
 permanently OFF, no default-on flip), same auto-off gates (docs-only/no-surface diff self-skips
-except in skill-repo mode, which adapts rather than skips), same 4-lens fan-out
-(`correctness`/`plan-alignment`/`config-env-docs`/`security`), same verify pass, optional second pass, and
-false-positive circuit breaker. Runs after Stage 5.6 flowsim, before Stage 6 hand-off. Writes
+except in skill-repo mode, which adapts rather than skips), same lens fan-out — `lenses` selects
+which (default `correctness`/`plan-alignment`/`config-env-docs`/`security`), circuit-breaker demotion
+drops any demoted lens, then `pipeline.review_fix.max_lenses` (default `4`; set `1` for a
+single-reviewer run) truncates in list order — same verify pass, optional second pass, and
+false-positive circuit breaker. Same cost note: each lens is one call at the **reviewer** model
+(default `opus`), which `models.cap` does not govern — warn when a cap is set and the reviewer
+outranks it. Runs after Stage 5.6 flowsim, before Stage 6 hand-off. Writes
 `stage-outputs/review.json`; self-skips append `review` to `run.json.stages_skipped`.
 
 ## Stage 5.8 — Fix loop

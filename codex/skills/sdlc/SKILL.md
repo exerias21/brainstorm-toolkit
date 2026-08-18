@@ -27,6 +27,27 @@ Codex CLI's 2026 Agent Skills spec, like Copilot's, doesn't yet support parallel
 - Git working tree is clean.
 - `.claude/project.json` exists with at least `main_branch`; `test.*`, `logs.*`, and `eval.*` recommended so Stages 4–5 work.
 
+## Output verbosity (default: quiet)
+
+**Default `quiet`.** Stage narration is re-read by every later turn in the same
+session, so it compounds. Print **one** line per stage —
+`<stage> · <verdict> · model: <tier> (cap: <cap|none>)` — and one summary table at
+the final report. No intermediate narration, no restating file contents, no
+echoing a review pass's full output. Detail already lives in the
+`stage-outputs/` sidecars, which are the durable record.
+
+**Always printed regardless of verbosity:** the per-dispatch `model:` line, every
+gate verdict, any PAUSE block, the `Next:` seam line, and warnings (config-presence,
+reviewer-axis cost note, session-model nudge).
+
+`pipeline.output.verbosity: "normal"` in `.claude/project.json` restores full
+narration. A missing `project.json` means `quiet` — by design: the saving must not
+depend on a file the repo may never have created.
+
+**Config-presence check (once, at the first stage).** If `.claude/project.json` is
+absent while `.claude/project.json.example` is present, warn once — every gated
+setting (`models.cap`, `pipeline.*`, test commands) is silently inert.
+
 ## Stage 1 — Parse the plan
 
 **`--resume`:** if `--resume` was passed, do NOT re-init a fresh envelope — read the
@@ -180,7 +201,15 @@ env/compose checks. (This mirrors D6 / plan §5.3 gate 1's exemption on the cano
 this overlay runtime has no other skill-repo detection of its own, so the marketplace-manifest
 check above IS its skill-repo signal.)
 
-**No parallel sub-agents on this runtime.** Run each of the four lenses — correctness,
+**Resolve the lens set first:** `pipeline.review_fix.lenses` selects which (absent → the four
+defaults below); drop any circuit-breaker-demoted lens; then `pipeline.review_fix.max_lenses`
+(absent/malformed → `4`) truncates in list order — set `1` for a single-reviewer run, which keeps
+`correctness`. Print `review: <n> lens(es) at <reviewer-model> — <names>` before starting. Each
+lens is a full pass at the **reviewer** model (default `opus`), which `models.cap` does not govern;
+when a cap is set and the reviewer outranks it, say so and point at
+`pipeline.review_fix.model` / `max_lenses`.
+
+**No parallel sub-agents on this runtime.** Run each resolved lens — by default correctness,
 plan⇌code alignment, config/env/docs consistency, security (checklists:
 `.agents/skills/sdlc/templates/review-correctness-checklist.md` + `.agents/skills/sdlc/templates/review-security-checklist.md` (canonical: `skills/sdlc/templates/review-{correctness,security}-checklist.md`)) — as one sequential inline pass over the
 diff, re-reading it fresh for each lens. If a genuinely separate reviewer integration is

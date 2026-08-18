@@ -279,6 +279,14 @@ every ultracode Workflow run Sonnet — `--model opus` is the deliberate opt-up.
 - **`scripts/eval-runner.py`** — runs pytest + fixture-based pipeline evals. Auto-discovers features from `evals/*/`. See `skills/eval-harness/SKILL.md`.
 - **`scripts/check_docker_logs.py`** — audits logs for errors/tracebacks. Accepts `--log-command` and `--services`. Works with Docker, kubectl, journalctl, or any log source.
 - **`scripts/validate_skills.py`** — validates skill metadata, name-to-directory alignment, and Copilot-targeted skills against Claude-only capability leakage.
+- **`scripts/token-audit.py`** — audits where a Claude Code session's tokens actually went. Reads the local transcript store (`~/.claude/projects/**`, read-only, stdlib only, no network) and reports the main-thread vs sub-agent split, per-model-tier cost, a context-drag verdict, and the most expensive sub-agents. `--check-cap sonnet` asserts no sub-agent exceeded a tier and names the reviewer axis when it is the cause.
+
+  ```bash
+  python scripts/token-audit.py --list                                  # find the session
+  python scripts/token-audit.py --session <uuid> --check-cap sonnet     # full breakdown
+  ```
+
+  Use it before tuning cost: an audited run spent **81% of its tokens on the orchestrator's own context**, not the sub-agent fan-out, so lowering model tiers addressed only the remaining 19%.
 
 ## Maintaining this repo
 
