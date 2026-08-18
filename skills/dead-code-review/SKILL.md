@@ -1,11 +1,16 @@
 ---
 name: dead-code-review
 description: >
-  Comprehensive dead code detection and removal. Launches parallel review agents (tiered by load, Sonnet-first — capped per project.json models.cap / --model) to scan
-  backend Python, frontend TypeScript, database/migrations, documentation, and scripts for unused
-  imports, dead functions, orphaned components, stale plans, redundant migrations, and more. Also runs
-  test suite before and after to verify zero regressions. Invoke with /dead-code-review or trigger
-  proactively after major feature completions, refactors, or before releases.
+  Launches a parallel fan-out of review agents (tiered by load, Sonnet-first — capped per
+  project.json models.cap / --model) to find dead code, dead docs, and dead plans, then removes
+  them and runs the test suite before and after to verify zero regressions. THIS IS THE SKILL FOR
+  "launch a few agents to review everything for dead code / anything no longer needed" — use it
+  instead of hand-composing an ad-hoc agent fan-out. Scans backend Python, frontend TypeScript,
+  database/migrations, documentation, and scripts for unused imports, dead functions, orphaned
+  components, stale plans, and redundant migrations. Use when the user says /dead-code-review,
+  "what can be deleted", "what's no longer needed", "what docs are worth keeping vs getting rid
+  of", "clean this up", "look for dead code", or asks to sweep the repo after a feature lands, a
+  refactor, or before a release.
 argument-hint: "[scope] - optional: 'backend', 'frontend', 'database', 'docs', 'full' (default: full)"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
@@ -40,7 +45,7 @@ Launch up to 6 agents in parallel. Each agent does **research only** — no edit
 findings with confidence levels. Models are tiered by reasoning load: Haiku for grep-heavy hygiene
 work, Sonnet for code-pattern reasoning across one language, and an Opus tier for cross-module
 dependency reasoning where wrong calls have high blast radius. **Model cap:** these are *defaults* —
-resolve each per `skills/sdlc/templates/model-cap.md` (`--model <tier>` > `project.json` `models.cap` >
+resolve each per `skills/sdlc/templates/models.md` (`--model <tier>` > `project.json` `models.cap` >
 the tier here). The fan-out is **Sonnet-first**, so the Opus tier runs Sonnet unless you opt up with
 `--model opus`; print `model: <tier> (cap: <cap|none>)` before each dispatch. NO subagents.
 

@@ -77,6 +77,12 @@ Build a draft `project.json` from what you found. Fill in:
 - `test.e2e` — if Playwright/Cypress/etc. was detected
 - `logs.command` — from detected orchestration (docker / kubectl / file tail)
 - `logs.services` — from compose services or k8s deployments
+- `stack.up` / `stack.down` / `stack.rebuild` — how to bring the runnable stack up and
+  down for **manual verification**; propose only from a detected orchestrator, never
+  invent one (see the detection table). `rebuild` is the force-recreate variant used
+  when a dependency manifest changed.
+- `stack.url` — the local URL to open once it is up, if a port is discoverable from
+  compose/Procfile/framework config
 - `eval.runner` — only if `scripts/eval-runner.py` exists (from the toolkit)
 - `eval.features_dir` — `evals/` if dir exists, otherwise blank
 - `gotchas_file` — `GOTCHAS.md` (default)
@@ -89,7 +95,7 @@ Build a draft `project.json` from what you found. Fill in:
   Haiku/Sonnet sites are untouched. Governs **sub-agent dispatch only**, never the
   session orchestrator. Valid values: exactly `haiku`, `sonnet`, `opus`; absent =
   no cap (skills still default Sonnet-first, but a written cap makes it enforced
-  policy). Full contract: `skills/sdlc/templates/model-cap.md`. **Default the
+  policy). Full contract: `skills/sdlc/templates/models.md`. **Default the
   proposal to `{ "cap": "sonnet" }`** — it's the right ceiling for almost every
   repo (keeps quality on review/verify stages while cutting Opus cost); propose
   `haiku` only if the user wants to squeeze the cheap mechanical sweeps, or omit
@@ -99,25 +105,35 @@ Build a draft `project.json` from what you found. Fill in:
 gracefully — that's better than a wrong command. (Exception: `models.cap` — prefer
 proposing `sonnet` over omitting, per above.)
 
-### Step 3 — Show the user the proposal
+### Step 3 — Show the proposal, then walk the model choices
 
-Present the proposed `project.json` to the user with a brief rationale for each
-section:
+First print the proposed `project.json` with a one-line rationale per detected key
+(`Detected Python + pytest → test.unit`; `docker-compose services [api, web] → logs.* + stack.*`;
+`no eval runner → eval.* left blank`; `main branch from origin HEAD`; …).
 
-```
-Proposed .claude/project.json:
-{ ... }
+**Then ask the model questions explicitly — do not bury them in "does this look right?".**
+Detection can't decide these, they are the main cost/quality levers, and a user who is
+never asked never discovers the key exists. Ask all four at once — prefer the host's **built-in
+interactive question UI** (the multiple-choice picker it already uses to ask you to choose an
+approach): one question per key, options as choices, recommended default first. Where the host has
+no such UI, print a numbered list and take the answers in a single reply. Default first so "just
+accept" is one
+keystroke, and state the cost direction in each option:
 
-Detection notes:
-- Detected Python + pytest → test.unit
-- Detected docker-compose with services [api, web] → logs.*
-- Didn't find an eval runner → left eval.* blank
-- Main branch: main (from origin HEAD)
-- Modules inferred from top-level dirs: [api, web]
-- Sub-agent model cap → models.cap: "sonnet" (standing Sonnet-first ceiling)
+| Ask | Key | Options (default first) |
+|---|---|---|
+| **Ceiling for every sub-agent fan-out — implementers, fix agents, sanity + review lenses.** The single biggest cost lever. | `models.cap` | `sonnet` (Sonnet-first standing default) · `haiku` (cheapest; fine for sweeps/monitoring) · `opus` (**no ceiling** — every stage runs at its own full default tier) · omit |
+| **Which model reads your plan and judges whether the implementation fulfilled it** (Stage 5.5, runs in `/sdlc` + `/sdlc-lite`). | `models.plan_review` | omit → built-in per-validator defaults (api/ui Sonnet, data/cross-module Haiku) · `sonnet` · `opus` (strongest plan reader; `cross-module` runs every time, so this costs on every run) |
+| **Which model pre-flights your plan before any code is written** (Stage 1.5, never gated — it runs on *every* `/sdlc` and `/sdlc-lite` run). Say plainly that the built-in is Haiku and that **`models.cap` cannot raise it** — this key is the only lever. | `models.sanity` / `.focuses` | omit → 3 Haiku agents (`paths`, `completeness`, `gotchas`) · `sonnet` (better judgment on `completeness`, which asks whether the plan hangs together) · fewer focuses to cut cost (`paths` is mechanical; drop `gotchas` when there's no `GOTCHAS.md`) |
+| **Enable the adversarial Review→Fix stage?** Off unless you say yes — it never runs by accident. | `pipeline.review_fix.enabled` / `.model` | `false` (default) · `true` + reviewer `opus` · `true` + reviewer `fable` (usage-billed, explicit opt-in) |
+| **How many review lenses?** Ask only if the stage was just enabled. One reviewer call per lens at the reviewer model, so this scales the stage's cost roughly linearly. | `agents.code_review_lenses` | omit → all four (`correctness`, `plan-alignment`, `config-env-docs`, `security`) · `["correctness", "security"]` (half cost; good default for app code) · `["correctness"]` (quarter cost; highest-yield single lens) |
+| **How do you bring this app up for manual verification?** Confirm or correct what was detected. | `stack.up` / `stack.rebuild` / `stack.url` | the detected compose/dev commands · corrected by the user · omit (skills then say which key is missing instead of guessing) |
 
-Does this look right? Any keys to add, remove, or correct?
-```
+Explain the interaction once, because it surprises people: **`models.cap` is a ceiling, not a
+target** — it can only *lower* a stage's default tier, never raise it. So `plan_validate.model:
+"opus"` under `models.cap: "sonnet"` still dispatches Sonnet. If a per-stage tier is meant to
+actually take effect, the cap must be at or above it. Close with the open catch-all: *"Anything
+else to add, remove, or correct?"*
 
 ### Step 4 — Write AGENTS.md (architecture summary)
 
@@ -205,8 +221,9 @@ Report what was written and suggest next steps:
 | `package.json` with `"test"` script | `test.unit` or `test.frontend` = `npm test` (or pnpm/yarn equivalent) |
 | `pyproject.toml` with `[tool.pytest]` | `test.unit` = `pytest` |
 | `playwright.config.*` at root | `test.e2e` = `npx playwright test` |
-| `docker-compose.yml` | `logs.command` = `docker compose logs {service} --tail={tail}`, `logs.services` from compose services |
-| Kubernetes manifests | `logs.command` = `kubectl logs deploy/{service} --tail={tail}` |
+| `docker-compose.yml` | `logs.command` = `docker compose logs {service} --tail={tail}`, `logs.services` from compose services; `stack.up` = `docker compose up -d --build`, `stack.down` = `docker compose down`, `stack.rebuild` = `docker compose up -d --build --force-recreate`; `stack.url` from the first published host port |
+| Kubernetes manifests | `logs.command` = `kubectl logs deploy/{service} --tail={tail}`; leave `stack.*` unset — a cluster is not a local up/down |
+| `package.json` with a `dev`/`start` script and no compose file | `stack.up` = that script (`npm run dev`); no `stack.rebuild` unless a build step is separate |
 | `go.mod` | `test.unit` = `go test ./...` |
 | `Cargo.toml` | `test.unit` = `cargo test` |
 | Top-level dirs like `api/`, `web/`, `worker/` | `modules` list |

@@ -6,8 +6,11 @@ description: >
   three ingestion patterns (discovery pipeline, seed script, direct API), plus
   how to author a per-source web-discovery skill: WebSearch vs headless
   browser, the session-cookie pattern for authenticated sites, source trust
-  tiers, and dedup-upsert. Use when adding a new scraper, import script, or
-  automated data-collection job — or "how do I scrape X into the DB?".
+  tiers, and dedup-upsert. Use when adding a new scraper, import script, feed
+  poller, or automated data-collection job; when wiring a third-party API or a
+  vendor export into local storage; or when the user asks "how do I scrape X into
+  the DB?", "how should I import this data?", "how do I pull from <vendor/API>
+  on a schedule?", or "where should this ingest code live?".
 metadata:
    brainstorm-toolkit-applies-to: claude copilot codex
 ---

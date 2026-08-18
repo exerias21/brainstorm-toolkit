@@ -7,9 +7,12 @@ description: >
   (inversion, pre-mortem, steelman, adjacent-reuse) before plan freeze.
   Output ends with an explicit expectation contract block. Invoke when
   the user says /brainstorm-deep, "I'm not sure what I want", "this is
-  vague", "high stakes", "really important to get right", or asks for
-  more rigor than /brainstorm provides. Use /brainstorm for fast cases
-  and /brainstorm-team for autonomous multi-persona product strategy.
+  vague", "high stakes", "really important to get right", "drill me on
+  this", "ask me questions until it's clear", "poke holes in this",
+  "what am I missing?", or otherwise asks for more rigor than
+  /brainstorm provides — especially before a decision that is expensive
+  to reverse. Use /brainstorm for fast cases and /brainstorm-team for
+  autonomous multi-persona product strategy.
 argument-hint: "[topic] [--fast] [--frames <list>] [--ambition conservative|default|ambitious]"
 metadata:
    brainstorm-toolkit-applies-to: claude copilot codex
@@ -132,7 +135,7 @@ Goal: stress-test the agreed framing from multiple angles, then produce a plan t
 
 1. **Read `templates/perspective-frames.md`** for the 8 available frames.
 2. **Pick frames.** Defaults: `inversion`, `pre-mortem`, `steelman`, `adjacent-reuse`. `--frames <comma-list>` overrides.
-3. **Dispatch in parallel.** In a **single message**, fire one Agent tool call per frame with `subagent_type: "general-purpose"`, **Sonnet** model (honors the model cap — a `haiku` cap lowers it further; see `skills/sdlc/templates/model-cap.md`, `--model <tier>` > `project.json models.cap` > default). Each agent gets the agreed framing, the user's clarified answers, and the frame's prompt from the template. Each returns ≤300 words.
+3. **Dispatch in parallel.** In a **single message**, fire one Agent tool call per frame with `subagent_type: "general-purpose"`, **Sonnet** model (honors the model cap — a `haiku` cap lowers it further; see `skills/sdlc/templates/models.md`, `--model <tier>` > `project.json models.cap` > default). Each agent gets the agreed framing, the user's clarified answers, and the frame's prompt from the template. Each returns ≤300 words.
 4. **Synthesize.** Frames go in their own labeled section in the plan (`## Perspective passes`); they inform the design but do not override user intent. If a frame's output contradicts a user clarification, surface the conflict for the user to resolve, don't silently side with the agent.
 5. **Produce three plan variants** at different ambition levels:
    - **Conservative** — minimum viable, narrowest scope, smallest blast radius.

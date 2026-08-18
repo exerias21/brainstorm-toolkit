@@ -7,7 +7,9 @@ description: >
   (inversion, pre-mortem, steelman, adjacent-reuse) sequentially before
   plan freeze. Output ends with an explicit expectation contract block.
   Invoke when the user says /brainstorm-deep, "I'm not sure what I
-  want", "this is vague", "high stakes", or asks for more rigor than
+  want", "this is vague", "high stakes", "drill me on this", "ask me
+  questions until it's clear", "poke holes in this", "what am I
+  missing?", or asks for more rigor than
   /brainstorm provides. Copilot overlay — sequential where Claude runs
   parallel, no plan-approval primitive (the user steers each pass via
   normal chat).
@@ -143,4 +145,4 @@ Write to `plans/brainstorm-deep-<topic-slug>.md`. Same naming convention as `/br
 
 Sequential frame stress-tests cost similar tokens to the Claude parallel version: `N` frames × (~5k input + a 300-word output), where `N` is the number of selected frames (default 4, set by `--frames`) — so ≈ 20–25k tokens at the default. Latency is higher because they're serialized — that's the Copilot tradeoff until parallel sub-agent primitives ship.
 
-The **model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; see `skills/sdlc/templates/model-cap.md`) is honored wherever sub-agents are dispatched. Here the frame passes run inline in the session model, so the cap is advisory — set your session model to the cap tier for the savings.
+The **model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; see `skills/sdlc/templates/models.md`) is honored wherever sub-agents are dispatched. Here the frame passes run inline in the session model, so the cap is advisory — set your session model to the cap tier for the savings.

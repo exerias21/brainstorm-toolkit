@@ -15,20 +15,35 @@
 > `CLAUDE.md`/`README.md` pointers (§7.6–7.7) resolve. Where §7.7's acceptance criterion says
 > "`docs/REVIEW-FIX-STAGE.md` exists containing the reviewer-axis contract, the precedence chains,
 > the `auto_fixable` rubric, D1–D17, and the regression-corpus table," it refers to **this file** —
-> that content is already present below (§5, §8, §4.3, §11). Implementation has not started; this is
-> the design of record, not a delivered feature.
+> that content is already present below (§5, §8, §4.3, §11).
+>
+> **SHIPPED as of 2026-07-26 — this is now the design of record for a DELIVERED feature.**
+> (An earlier revision of this header said "implementation has not started"; that is no longer
+> true.) Live surfaces: `skills/sdlc/SKILL.md` Stages 5.7/5.8, `skills/sdlc-lite/SKILL.md`
+> Stages 5.7/5.8, `sdlc-pipeline.workflow.js` (`phase('Review')` + the `review-fix` loop with its
+> oscillation guard and post-fix-validate regression gate), and the
+> `review-correctness-checklist.md` / `review-security-checklist.md` lens templates. The stage
+> remains **opt-in, permanently** — it never runs unless explicitly enabled.
+>
+> **Two enumerated gaps are still open** (§7's TODO list, mirrored as a comment in
+> `sdlc-pipeline.workflow.js`): the `max_diff_lines`/`max_files` cost-bound diff partition, and
+> `auto_approve_after`/`confidence_threshold`-driven auto-approval throttling in `auto` mode.
+> Those keys parse but do not yet gate. Shipped ≠ feature-complete.
+>
+> Where this document and the live files disagree on a *config key name*, the live files win:
+> see the superseded-config banner at §6.1.
 >
 > **Revised 2026-07-05 for Claude Fable 5's sunset** (promotional access ends 2026-07-07 →
 > usage-credit-billed): reviewer default is now Opus; the stage is opt-in (no default-on flip);
 > Fable demoted to a usage-billed opt-in.
 >
-> **Added 2026-07-05 — optional second review pass.** `pipeline.review_fix.passes` (default `1`,
+> **Added 2026-07-05 — optional second review pass.** `agents.code_review_passes` (default `1`,
 > the existing single fan-out, unchanged) gains an opt-in `2`: one additional completeness-critic
-> reviewer call at a separate, cheaper `second_pass_model` (default `sonnet`), run after pass 1's
+> reviewer call at a separate, cheaper `models.code_review_second_pass` (default `sonnet`), run after pass 1's
 > lenses return and unioned (never voted) into pass 1's findings before the single verify pass
-> runs (§4.1, §6.1, §7.2, D17). Purely additive — does not change the `passes: 1` default path, the
-> Opus-default reviewer, the stage's opt-in posture, or the `pipeline.review_fix.*` config
-> namespace above.
+> runs (§4.1, §6.1, §7.2, D17). Purely additive — does not change the single-pass default path, the
+> Opus-default reviewer, or the stage's opt-in posture. (The config *namespace* has since moved to
+> the top-level `models` / `agents` blocks — §6.1 banner.)
 
 ---
 
@@ -95,7 +110,7 @@ this feature's actual, honest scope.
 `docs/CONVENTIONS.md` "Migration policy" (line 232) states: *"`/sdlc`, `/task`, and `/sdlc-lite`
 are zero-flag by design and recognize no aliases."* That sentence is **already false today**,
 independent of this plan: `skills/sdlc/SKILL.md`'s own "Model cap" section (line 211) and
-`skills/sdlc/templates/model-cap.md` document a live, working `--model <tier>` flag, wired into
+`skills/sdlc/templates/models.md` document a live, working `--model <tier>` flag, wired into
 `sdlc-pipeline.workflow.js` (`args?.model_cap`, `capModel()`). `skills/sdlc/SKILL.md`'s own
 "## Arguments" section (line 60) still reads "Pass the plan file path. No flags." — also stale,
 also already inconsistent with the Model-cap section 150 lines below it in the same file.
@@ -153,11 +168,11 @@ claimed side-effect. A finding the verify pass cannot ground this way is refuted
 true." This is stronger than same-model re-judgment (which risks the reviewer rubber-stamping its
 own hallucination) and costs nothing extra to specify.
 
-**Optional second pass (recall, `review_fix.passes: 2`).** `pipeline.review_fix.passes` defaults to
+**Optional second pass (recall, `review_fix.passes: 2`).** `agents.code_review_passes` defaults to
 `1` — the single fan-out across the lenses above plus the one verify pass just described,
 byte-for-byte unchanged. Setting it to `2` adds exactly **one** additional reviewer call after pass
 1's lenses return: a **completeness critic**, dispatched at a separate, cheaper model
-(`second_pass_model`, default `sonnet` — §6.1). It is explicitly prompted **not** to re-review from
+(`models.code_review_second_pass`, default `sonnet` — §6.1). It is explicitly prompted **not** to re-review from
 scratch — it is given pass 1's findings as context and told to find what pass 1 **missed** (an
 un-flagged side-effect, a config/env/docs drift, an off-by-one/boundary condition, an unverified
 claim), never to re-judge or restate them. Its findings are **unioned** into pass 1's, fingerprint-
@@ -172,7 +187,7 @@ same verify gate, a cheaper second pass can only add confirmed findings — it c
 result, since the verify pass still gates everything before anything is confirmed or acted on.
 **Independence caveat:** the *primary* reviewer (Opus by default) is what satisfies §5.4's
 independence-from-the-implementer requirement; the second pass is a bonus recall layer on top of
-that, not a substitute for it. If `second_pass_model` happens to equal the model the implementer
+that, not a substitute for it. If `models.code_review_second_pass` happens to equal the model the implementer
 used this run (e.g. a Sonnet second pass alongside the default Sonnet implementer), that pass
 shares the implementer's blind spots — it still adds fresh-context/completeness value (a second
 look, later, with pass 1's findings in hand), but **not** model-diversity. Setting
@@ -225,7 +240,7 @@ model) drafts a structured fix spec per confirmed finding, applying the `auto_fi
   route through the *pattern* used by Stage 4's fix loop — reuse the `runGatedFix()` helper and
   fix-budget shape, but Stage 5.7/5.8 is a **new gate function**, not literally "Stage 4" (Stage 4
   is hard-wired to the eval runner; see §7.2 for exactly why a custom gate is required). Loop until
-  clean or `review.max_fix_loops` (own budget, §4.4).
+  clean or `agents.code_review_max_fix_loops` (own budget, §4.4).
   - **Workflow-tool limitation (state this plainly, don't gloss over it):** the Workflow tool has
     no mid-run human-prompt primitive — every existing pause point (Stage 1.5 critical findings,
     every `pauseOnBudget` call) is a hard stop-and-return, never an interactive question. Under
@@ -334,7 +349,7 @@ Stage 5.8 uses **its own** `reviewBudget = makeBudget(pipeline.review_fix.max_fi
 ### 5.1 What it is
 
 A **model selection for the adversarial reviewer**, wholly independent of the implement/fan-out
-ceiling (`--model` / `models.cap` / `model-cap.md`). `model-cap.md`'s entire contract is
+ceiling (`--model` / `models.cap` / `models.md`). `models.md`'s entire contract is
 `effective_tier = min(default_tier, cap)` over the closed rank `haiku(1) < sonnet(2) < opus(3)`
 (confirmed live: `sdlc-pipeline.workflow.js` lines 22–27, `MODEL_TIER_RANK` +
 `capModel(defaultTier, cap)`, which returns `defaultTier` unchanged for any `cap` not in that map).
@@ -352,7 +367,7 @@ default reviewer model is `opus` (§5.2).
 
 ```
 --review-model <value>            (explicit, wins outright)
-  > project.json  pipeline.review_fix.model
+  > project.json  models.code_review
   > skill default: "opus"
 ```
 
@@ -361,8 +376,8 @@ reviewer to a fan-out tier (`opus` is the default — see the Fable demotion not
 for why). `fable` opts into a model outside the tier ladder entirely — a deliberate, cost-aware
 choice (Claude Fable 5's promotional/plan-included access ends 2026-07-07; it is now billed via
 paid usage credits outside plan weekly limits), not a stand-in for the default. Invalid input
-follows `model-cap.md`'s own rule verbatim: an unknown `--review-model` value, or a malformed
-`pipeline.review_fix.model`, is **ignored with one warning**, falling through to the next
+follows `models.md`'s own rule verbatim: an unknown `--review-model` value, or a malformed
+`models.code_review`, is **ignored with one warning**, falling through to the next
 precedence level — never a hard failure, never a guess.
 
 **Runtime-availability fallback — resolved model can't be dispatched → highest available of
@@ -394,7 +409,7 @@ code shows why this is a real hazard, not a hypothetical: `MODEL_CAP = args?.mod
 *absent/nullish*, and `capModel(defaultTier, cap)` (line 25) returns `defaultTier` unchanged for
 any `cap` not in `MODEL_TIER_RANK` — so a truthy junk string doesn't get "ignored," it makes
 `capModel()` a no-op at every call site, running every Opus dispatch (implement, every fix agent)
-at full Opus with zero warning. The prose MUST apply `model-cap.md`'s own "unknown value → ignore,
+at full Opus with zero warning. The prose MUST apply `models.md`'s own "unknown value → ignore,
 warn once, fall through" rule to `--model`'s raw value **before** it ever becomes
 `args.model_cap` — never forward an unrecognized string through to the Workflow.
 
@@ -478,7 +493,7 @@ dispatch seam, not a second review mechanism.) Stage 5.7/5.8
 dispatch the reviewer/verify/fix-planner agents with `model: REVIEW_MODEL` directly, never through
 `capModel()`, exactly as `agent()` calls elsewhere in the Workflow already do for
 `haiku`/`sonnet`/`opus` (§7.2). Record the model id `claude-fable-5` in
-`skills/sdlc/templates/review-model.md` §Dispatch (§5.6) for the implementer, alongside the
+`skills/sdlc/templates/models.md` §Dispatch (§5.6) for the implementer, alongside the
 demotion note below.
 
 This is independent of §5.4's capModel-bypass rule: `fable` still must never be passed to
@@ -502,13 +517,13 @@ runtime, since there is no seam to ask.
 
 ### 5.6 Canonical contract file
 
-All of the above is codified once in a **new sibling file to `model-cap.md`**:
-`skills/sdlc/templates/review-model.md` (spec in §6.1's companion note). `skills/sdlc/SKILL.md`'s
+All of the above is codified once in a **new sibling file to `models.md`**:
+`skills/sdlc/templates/models.md` (spec in §6.1's companion note). `skills/sdlc/SKILL.md`'s
 Stage 5.7 section gets a one-line pointer to it — the resolution rules, the invalid-input rule,
 the runtime-availability fallback to the highest available of `opus`/`sonnet`/`haiku` (§5.2 / D16),
 the Fable demotion note (§5.1/§5.5: usage-billed opt-in, not the default), and the dispatch note
 (§Dispatch: `claude-fable-5`, confirmed live per §5.5) are never inlined in
-the skill prose (same "reference `templates/*`, don't inline" discipline `model-cap.md` itself
+the skill prose (same "reference `templates/*`, don't inline" discipline `models.md` itself
 follows).
 
 ---
@@ -516,6 +531,28 @@ follows).
 ## 6. Config & state schema
 
 ### 6.1 `templates/project.json.example` — new `pipeline.review_fix` block
+
+> **⚠ SUPERSEDED 2026-07-26 — read `skills/sdlc/templates/models.md` for the live config
+> shape.** This section (and the JSON block below) records the *original* nested layout. The
+> model-tier and count keys have since been consolidated into top-level `models` / `agents`
+> blocks, and the old names are **no longer read** — a repo still using one silently gets the
+> built-in default. The *behavior* keys stayed put. Mapping:
+>
+> | This document says | Live key |
+> |---|---|
+> | `pipeline.review_fix.model` | `models.code_review` |
+> | `pipeline.review_fix.second_pass_model` | `models.code_review_second_pass` |
+> | `pipeline.review_fix.lenses` | `agents.code_review_lenses` |
+> | `pipeline.review_fix.passes` | `agents.code_review_passes` |
+> | `pipeline.review_fix.max_fix_loops` | `agents.code_review_max_fix_loops` |
+> | `pipeline.decompose_min_tasks` | `agents.decompose_min_tasks` |
+> | `pipeline.review_fix.enabled` / `.mode` / `.blocking` / `.confidence_threshold` / `.auto_approve_after` / `.max_diff_lines` / `.max_files` | **unchanged** — stage behavior, not model or count selection |
+>
+> The same rename applies to every `cfg.review_fix?.*` code excerpt later in this document
+> (§7 onward) and to the `pipeline.review_fix.*` key names in the §11 design-decision table,
+> which is preserved as a historical record of what was decided, not as current API.
+> The *sidecar* field names (`review.json`'s `reviewer_model`, `second_pass_model`,
+> `lenses`, `passes_run`) are **unchanged** — those are run outputs, not config.
 
 Renamed away from the original draft's `pipeline.review.*` to avoid colliding with the
 **already-existing, different** `pipeline.skip_review` key (`templates/project.json.example` line
@@ -537,10 +574,10 @@ the existing `poka_yoke` key:
     "poka_yoke": false,
 
     "review_fix": {
-      "_comment": "Optional, OFF by default. Adversarial Review->Fix stage (Stage 5.7 review / Stage 5.8 fix loop) for /sdlc and /sdlc-lite -- runs after Stage 5.6 flowsim, before Stage 6. DIFFERENT feature from 'skip_review' above: skip_review silences the single-pass built-in /review diff check at Stage 6 (post-PR, same model); review_fix is a separate pre-PR N-lens adversarial review + fix loop, default reviewer model 'opus' (see skills/sdlc/templates/review-model.md). Both toggle independently. Omit this whole block to accept the defaults below (stage stays OFF). OPT-IN, PERMANENTLY (plan D8): there is no default-on flip, planned or shipped. An explicit --review-model <name> flag or an explicit enabled:true here is required to activate the stage; omitted, absent, or enabled:false all mean OFF.",
+      "_comment": "Optional, OFF by default. Adversarial Review->Fix stage (Stage 5.7 review / Stage 5.8 fix loop) for /sdlc and /sdlc-lite -- runs after Stage 5.6 flowsim, before Stage 6. DIFFERENT feature from 'skip_review' above: skip_review silences the single-pass built-in /review diff check at Stage 6 (post-PR, same model); review_fix is a separate pre-PR N-lens adversarial review + fix loop, default reviewer model 'opus' (see skills/sdlc/templates/models.md). Both toggle independently. Omit this whole block to accept the defaults below (stage stays OFF). OPT-IN, PERMANENTLY (plan D8): there is no default-on flip, planned or shipped. An explicit --review-model <name> flag or an explicit enabled:true here is required to activate the stage; omitted, absent, or enabled:false all mean OFF.",
       "enabled": false,
       "model": "opus",
-      "_model_comment": "Reviewer-model name. Default 'opus' -- a SEPARATE axis from models.cap / --model (see skills/sdlc/templates/review-model.md, 'Reviewer model is a separate axis'). Valid values: opus, sonnet, haiku, fable -- none of the four is ever passed to capModel(). Override per-run with --review-model <name> (e.g. --review-model fable for an explicit, cost-aware opt-in into Claude Fable 5 -- its promotional/plan-included access ends 2026-07-07; it remains dispatchable but is now billed via paid usage credits outside plan limits, which is why it is no longer the default). RUNTIME-AVAILABILITY FALLBACK (plan D16): if the resolved model can't be dispatched at all, the stage falls back to the highest available of opus/sonnet/haiku, opus preferred (logged) rather than no-op'ing; review.json.data.reviewer_model records the effective model actually used.",
+      "_model_comment": "Reviewer-model name. Default 'opus' -- a SEPARATE axis from models.cap / --model (see skills/sdlc/templates/models.md, 'Reviewer model is a separate axis'). Valid values: opus, sonnet, haiku, fable -- none of the four is ever passed to capModel(). Override per-run with --review-model <name> (e.g. --review-model fable for an explicit, cost-aware opt-in into Claude Fable 5 -- its promotional/plan-included access ends 2026-07-07; it remains dispatchable but is now billed via paid usage credits outside plan limits, which is why it is no longer the default). RUNTIME-AVAILABILITY FALLBACK (plan D16): if the resolved model can't be dispatched at all, the stage falls back to the highest available of opus/sonnet/haiku, opus preferred (logged) rather than no-op'ing; review.json.data.reviewer_model records the effective model actually used.",
       "mode": "interactive",
       "_mode_comment": "One of 'interactive' (default: each confirmed finding's fix spec is presented for approve/edit/skip -- degrades to auto-fix-then-pause under the Claude Workflow tool, which has no mid-run prompt primitive), 'auto' (auto-approve after auto_approve_after consecutive approvals OR confidence >= confidence_threshold -- design-decision findings, auto_fixable:false, are NEVER auto-approved regardless of mode), 'off' (report only, Stage 5.8 does not run).",
       "max_fix_loops": 3,
@@ -593,7 +630,7 @@ const REVIEW_FINDING_SCHEMA = {
 }
 // Merge-time-only fields -- added by the JS merge step in section 7.2's reviewGate(), never
 // emitted by the reviewing lens (or second-pass critic) agent itself, so neither is listed in
-// the properties above: `finding_id` (existing) and, only on a `pipeline.review_fix.passes: 2`
+// the properties above: `finding_id` (existing) and, only on a `agents.code_review_passes: 2`
 // run, `pass` (1 | 2) -- which review pass surfaced this finding, section 4.1 / D17. A pass:1 run
 // (the default) never sets `pass` at all; its absence means pass 1. NOTE ON A NAME COLLISION: this
 // `pass` field (the lens-fan-out vs. completeness-critic axis added by review_fix.passes) is a
@@ -606,7 +643,7 @@ const REVIEW_SCHEMA = {
   type: 'object',
   required: ['lens', 'findings'],
   properties: {
-    // NOT a hardcoded enum: pipeline.review_fix.lenses (§6.1) is project-configurable, and
+    // NOT a hardcoded enum: agents.code_review_lenses (§6.1) is project-configurable, and
     // the circuit breaker (below) can demote a default lens at runtime -- a fixed
     // ['correctness','plan-alignment','config-env-docs','security'] enum would reject a customized or
     // demotion-adjusted lens set. Validate lens membership in JS against the run's OWN
@@ -707,7 +744,7 @@ under the `pbi-001`/`task-001` convention.
 ```
 ```
 `findings` is the raw merged fan-out output across all lenses (each tagged with its producing
-lens and a `finding_id`). `passes_run` (1 or 2) and `second_pass_model` (the effective model
+lens and a `finding_id`). `passes_run` (1 or 2) and `models.code_review_second_pass` (the effective model
 dispatched for the completeness critic, or `null` when `passes_run` is 1) record the section
 4.1/D17 second-pass knobs actually used this run. When `passes_run` is 2, each item in `findings`
 additionally carries `pass: 1` or `pass: 2` (set at the same merge point, never by the reviewing or
@@ -859,8 +896,8 @@ pr-create          # Stage 6 step 3
 
 **Migration policy, line 232** — replace: *"`/sdlc`, `/task`, and `/sdlc-lite` are zero-flag by
 design and recognize no aliases."* → *"`/task` is zero-flag by design. `/sdlc` and `/sdlc-lite`
-already ship `--model <tier>` (see `model-cap.md`) and now also `--review-model <name>` /
-`--no-review` (see `review-model.md`) — both follow the `--no-X`/`--X <value>` forms below."* (See
+already ship `--model <tier>` (see `models.md`) and now also `--review-model <name>` /
+`--no-review` (see `models.md`) — both follow the `--no-X`/`--X <value>` forms below."* (See
 §3 — this corrects a pre-existing self-contradiction this plan's own additions would otherwise
 compound.)
 
@@ -872,13 +909,13 @@ compound.)
 - `plan_file` (required): Path to the plan (e.g., `plans/my-feature.md`)
 - `--model <tier>` (optional): per-run fan-out cap override; see **Model cap**. `tier` ∈
   `haiku|sonnet|opus`. **Not an alias for `--review-model`** — `--model fable` is an unrecognized
-  value for this flag (per `model-cap.md`'s invalid-input rule: ignore, warn once, fall through to
+  value for this flag (per `models.md`'s invalid-input rule: ignore, warn once, fall through to
   `models.cap`/default) and must resolve to `'sonnet'`/the configured cap *before* it is ever
   passed as `args.model_cap`, never forwarded as the raw string — forwarding it un-caps every
   Opus dispatch in the Workflow (see §5.2's implication note).
 - `--review-model <name>` (optional): per-run reviewer-model override; see **Reviewer model**.
   `name` ∈ `fable|opus|sonnet|haiku`. Default `opus`. Passing `fable` (or setting
-  `pipeline.review_fix.model: "fable"`) is a valid, explicit, cost-aware opt-in — usage-billed
+  `models.code_review: "fable"`) is a valid, explicit, cost-aware opt-in — usage-billed
   since Claude Fable 5's 2026-07-07 promotional-access sunset — never the default.
 - `--no-review` (optional): fully skip Stage 5.7/5.8 for this run. **Note:** Stage 5.7/5.8 is
   opt-in, permanently (D8) — it does not run at all unless `--review-model` is passed or
@@ -914,7 +951,7 @@ See §7.4 for the Phase 1 opt-in text (permanent) and the Phase 4 circuit-breake
 
 Insert a "## Stage 5.7 — Adversarial review" and "## Stage 5.8 — Fix loop" section between the
 existing Stage 5.6 (flowsim) and Stage 6 (deliver) sections, containing the content of §4.1–4.4
-above in skill-prose form (pointer to `templates/review-model.md` for the axis, pointer to
+above in skill-prose form (pointer to `templates/models.md` for the axis, pointer to
 `templates/review-correctness-checklist.md` for the correctness lens content — do not inline
 either). Add a "## Reviewer model" section mirroring the existing "## Model cap" section's
 one-line-pointer style:
@@ -923,8 +960,8 @@ one-line-pointer style:
 ## Reviewer model (Stage 5.7/5.8 only)
 
 Independent from **Model cap** above. See
-[`templates/review-model.md`](templates/review-model.md): `--review-model <name>` flag >
-`pipeline.review_fix.model` (project.json) > skill default `opus`. Never governed by
+[`templates/models.md`](templates/models.md): `--review-model <name>` flag >
+`models.code_review` (project.json) > skill default `opus`. Never governed by
 `models.cap` / `--model`; none of `fable`/`opus`/`sonnet`/`haiku` on this axis is a member of the
 `haiku < sonnet < opus` cap rank. `fable` remains a valid, explicit opt-in (`--review-model
 fable`) — usage-billed since Claude Fable 5's 2026-07-07 promotional-access sunset, which is why it
@@ -953,7 +990,7 @@ Workflow({
   scriptPath: ".claude/skills/sdlc/workflows/sdlc-pipeline.workflow.js",
   args: { mode: "sdlc", plan_file: "<plan path>",
           model_cap: "<resolved cap: --model flag > project.json models.cap > null>",
-          review_model: "<resolved: --review-model flag > pipeline.review_fix.model > 'opus'>",
+          review_model: "<resolved: --review-model flag > models.code_review > 'opus'>",
           no_review: "<true iff --no-review was passed, else false>" }
 })
 ```
@@ -987,12 +1024,12 @@ made in the same pass as the schema insertion below, both required:
    review_fix: { type: ['object', 'null'] },
    ```
 (b) **The parse+bootstrap agent's step-1 resolution list** (line 348) — add one clause after the
-    existing `decompose_min_tasks (pipeline.decompose_min_tasks)` precedent, same form:
+    existing `decompose_min_tasks (agents.decompose_min_tasks)` precedent, same form:
    ```
    review_fix (pipeline.review_fix — the whole object, or null if the key is absent).
    ```
    The step-1 prompt text becomes: "...`test_e2e` (test.e2e), `decompose_min_tasks`
-   (pipeline.decompose_min_tasks), `review_fix` (pipeline.review_fix — the whole object, or
+   (agents.decompose_min_tasks), `review_fix` (pipeline.review_fix — the whole object, or
    null), `discipline{}` (surface-glob overrides). Missing -> null."
 
 Without (a)+(b), `cfg.review_fix` is always `undefined` on the Workflow path and every knob in
@@ -1504,7 +1541,7 @@ section and "## Stage 6 — Create PR":
 **Opt-in, permanently — never runs by default.** Runs after Stage 5.6 flowsim, before Stage 6,
 only when explicitly turned on this run (`--review-model <name>`, or an explicit
 `pipeline.review_fix.enabled: true`; default reviewer `opus` once enabled — see
-`skills/sdlc/templates/review-model.md`). An omitted `pipeline.review_fix` block, or
+`skills/sdlc/templates/models.md`). An omitted `pipeline.review_fix` block, or
 `enabled` left unset, means OFF — there is no default-on flip. Skipped when not opted in,
 `--no-review` was passed, `pipeline.review_fix.enabled: false`, or the changed-files-gate reports a
 docs-only diff — **unless a `.claude-plugin/marketplace.json` exists at the repo root**, in which
@@ -1533,7 +1570,7 @@ findings → skip Stage 5.8.
 
 For confirmed findings, draft a structured fix spec per finding, applying the auto_fixable rubric
 (a bug fixing an explicit contract vs. a product/design decision — see
-`skills/sdlc/templates/review-model.md`). Per `pipeline.review_fix.mode` (default `interactive`):
+`skills/sdlc/templates/models.md`). Per `pipeline.review_fix.mode` (default `interactive`):
 - **`interactive`**: present each fix spec for approve / edit / skip. Approved specs run through
   the existing Stage 2/4 implement+fix machinery inline, then a fresh adversarial re-review of the
   touched files (this loop iteration's own pass) decides whether another iteration is needed. Loop
@@ -1565,8 +1602,8 @@ secret scan) but does not prevent handoff — you decide whether to fix before c
 
 **`codex/skills/sdlc/SKILL.md`, `codex/skills/sdlc-lite/SKILL.md`** — byte-identical to the two
 Copilot insertions above, with the same path-substitution pattern these files already use
-elsewhere (e.g. `.agents/skills/sdlc/templates/review-model.md (canonical:
-skills/sdlc/templates/review-model.md)`, and `.agents/skills/sdlc/SKILL.md` cross-references in
+elsewhere (e.g. `.agents/skills/sdlc/templates/models.md (canonical:
+skills/sdlc/templates/models.md)`, and `.agents/skills/sdlc/SKILL.md` cross-references in
 place of `.github/skills/sdlc/SKILL.md`).
 
 **Design note — why the marketplace-manifest check, not a shared `skill_repo_mode` flag:**
@@ -1592,16 +1629,16 @@ each check verifies):
 ```python
 # D: the review-fix skills -- sdlc and sdlc-lite ship an adversarial Review->Fix
 # stage governed by the reviewer-model axis contract at
-# skills/sdlc/templates/review-model.md. Deliberately separate from
+# skills/sdlc/templates/models.md. Deliberately separate from
 # MODEL_CAP_FAN_OUT_SKILLS: different axis, and brainstorm*/dead-code-review
 # have no review stage.
 REVIEW_STAGE_SKILLS = {"sdlc", "sdlc-lite"}
-REVIEW_MODEL_REF = "review-model.md"
+REVIEW_MODEL_REF = "models.md"
 
 
 def review_model_pointer_warnings(skills_root: Path) -> list[str]:
     """D: soft-warn when sdlc/sdlc-lite's canonical SKILL.md doesn't reference
-    the shared reviewer-model contract (`review-model.md`)."""
+    the shared reviewer-model contract (`models.md`)."""
     warnings: list[str] = []
     for name in sorted(REVIEW_STAGE_SKILLS):
         skill_file = skills_root / name / "SKILL.md"
@@ -1649,8 +1686,8 @@ path, never `plans/...`.
 **"Model cap" paragraph** — append:
 
 > A second, independent axis exists for `/sdlc` and `/sdlc-lite` only: the **reviewer-model axis**
-> (`pipeline.review_fix.model` / `--review-model`, default `opus`, canonical contract at
-> `skills/sdlc/templates/review-model.md`), which selects the adversarial Review→Fix stage's
+> (`models.code_review` / `--review-model`, default `opus`, canonical contract at
+> `skills/sdlc/templates/models.md`), which selects the adversarial Review→Fix stage's
 > reviewer. The stage is opt-in, permanently — it never runs unless explicitly enabled. `fable`
 > remains a valid, explicit opt-in value (usage-billed since Claude Fable 5's 2026-07-07
 > promotional-access sunset), never the default. This axis is NOT a value on the
@@ -1697,8 +1734,8 @@ Every open question raised across the seven grounding passes, resolved here — 
 
 | # | Question | Decision | One-line rationale |
 |---|---|---|---|
-| D1 | Does `--model fable` double as shorthand for enabling review? | **No.** Dropped entirely. | `model-cap.md`'s own "unknown value → ignore, warn once, fall through" rule already defines `--model fable`'s behavior today; overloading it would either silently no-op the cap or require a breaking change to a file 5 other skills read. `--review-model fable` is the only entry point. |
-| D2 | Does the reviewer axis belong as a row in `model-cap.md`'s cap table? | **No.** New sibling file `templates/review-model.md`. | Fable isn't rank-comparable to haiku/sonnet/opus; folding it into the `min(default,cap)` table invites a future author to add `fable` to `MODEL_TIER_RANK`, silently reactivating the exact bug this plan exists to prevent. |
+| D1 | Does `--model fable` double as shorthand for enabling review? | **No.** Dropped entirely. | `models.md`'s own "unknown value → ignore, warn once, fall through" rule already defines `--model fable`'s behavior today; overloading it would either silently no-op the cap or require a breaking change to a file 5 other skills read. `--review-model fable` is the only entry point. |
+| D2 | Does the reviewer axis belong as a row in `models.md`'s cap table? | **No.** New sibling file `templates/models.md`. | Fable isn't rank-comparable to haiku/sonnet/opus; folding it into the `min(default,cap)` table invites a future author to add `fable` to `MODEL_TIER_RANK`, silently reactivating the exact bug this plan exists to prevent. |
 | D3 | Naming collision with `pipeline.skip_review`? | **Renamed to `pipeline.review_fix.*`.** | `skip_review` already gates a different, existing feature (Stage 6's post-PR `/review` diff pass); a same-word new key one line away in `project.json` is a guaranteed future misread. |
 | D4 | Is `interactive` mode achievable inside the Workflow tool? | **No — documented Workflow limitation, not a prose downgrade.** Degrades to auto-fix-then-pause. | The Workflow has no mid-run human-prompt primitive; every existing pause point is a hard stop-and-return. True per-finding conversation stays prose-path-only (Claude/Copilot/Codex sessions can literally ask). |
 | D5 | Shared fix budget or separate? | **Separate** `pipeline.review_fix.max_fix_loops` (default 3). | Review findings are a categorically different failure surface discovered after all four Verify-phase gates already passed; sharing the counter makes pause attribution ambiguous and creates accidental cross-stage starvation. |
@@ -1737,7 +1774,7 @@ Every open question raised across the seven grounding passes, resolved here — 
 breaker), each with a dogfood gate
 
 **Phase 0 (resolved, not a ship):** confirmed live — `agent({model:'fable'})` dispatches
-`claude-fable-5` natively (§5.5); recorded in `templates/review-model.md` §Dispatch. No spike
+`claude-fable-5` natively (§5.5); recorded in `templates/models.md` §Dispatch. No spike
 needed before Phase 1.
 
 **Phase 1 — Stage 5.7 review only, opt-in.** Ships: `--review-model <name>` and `--no-review`
@@ -1747,7 +1784,7 @@ evidence-required verify pass, `stage-outputs/review.json` — **including its `
 field and the Appendix B `TASKS.md` dedup-append algorithm** (it is part of `review.json`'s shape,
 not a separate surface; the `persist:review` agent/step, §7.2, executes Appendix B's steps 1–5 as
 part of the same persist call that writes the rest of `review.json`) — `review` in
-`run.json.stages_completed`, the args string-guard (§7.3), `templates/review-model.md` and
+`run.json.stages_completed`, the args string-guard (§7.3), `templates/models.md` and
 `templates/review-correctness-checklist.md` (new files), and the companion `test.baseline_failures`
 config key (§12, item #3 — a small, non-blocking addition; Stage 5's validate gate already
 separates new-vs-preexisting failures via prompt judgment today, so Phase 1 does not gate on this
@@ -1816,7 +1853,7 @@ opt-in runs**, not a default-on burn-in (there is none — see above).
       `stages_skipped` on this path — see the caveat above.)
 - [ ] **Flag outranks config (§5.3):** `--review-model sonnet` with
       `pipeline.review_fix.enabled: false` in `project.json` still runs Stage 5.7 — the explicit
-      opt-in flag wins over the standing config, mirroring `model-cap.md`'s `--model` vs
+      opt-in flag wins over the standing config, mirroring `models.md`'s `--model` vs
       `models.cap` precedence.
 - [ ] **Independence resolution (§5.4):** `--review-model sonnet` on a default (Sonnet-capped) run
       dispatches the reviewer at `opus` and records `review.json.data.independence: "ok"`; when the
@@ -1832,16 +1869,16 @@ opt-in runs**, not a default-on burn-in (there is none — see above).
       dispatched, never the unreachable resolved name. When `opus` itself is the unavailable
       resolved value, it steps down to the highest available of `sonnet`/`haiku` rather than
       skipping the stage.
-- [ ] **Explicit Opus review (§5.2):** `--review-model opus` (or `pipeline.review_fix.model:
+- [ ] **Explicit Opus review (§5.2):** `--review-model opus` (or `models.code_review:
       "opus"`) dispatches the review/verify/fix-planner agents at `opus` and records
       `data.reviewer_model: "opus"` — a first-class choice, resolved the same way as `fable`, never
       lowered by `models.cap` (D10).
 - [ ] **`--model fable` does not un-cap the fan-out:** `--model fable` with no `--review-model`
       resolves the fan-out cap to `sonnet` (or the configured `models.cap`) with one warning, per
-      `model-cap.md`'s invalid-input rule, and does NOT enable review — `review.json` is
+      `models.md`'s invalid-input rule, and does NOT enable review — `review.json` is
       absent/skipped and no agent in the run dispatches at `opus` as a side effect of the typo.
-- [ ] **Flag `--review-model <name>`**: overrides `pipeline.review_fix.model` for this run only
-      (flag > project.json > default, mirroring `model-cap.md`'s shape). Unknown value → one
+- [ ] **Flag `--review-model <name>`**: overrides `models.code_review` for this run only
+      (flag > project.json > default, mirroring `models.md`'s shape). Unknown value → one
       warning, falls through.
 - [ ] **Flag reaches the Workflow path**: `--review-model X` on the ultracode/Workflow path
       produces `reviewer_model: "X"` in `review.json` — i.e. `skills/sdlc/SKILL.md`'s and
@@ -1877,8 +1914,8 @@ opt-in runs**, not a default-on burn-in (there is none — see above).
       (§7.2), the same mechanism the existing `rebuildNote` uses.
 - [ ] **Cost bound**: a synthetic >1500-line diff triggers partitioned review (`data.partitioned:
       true`), not one call over the full diff.
-- [ ] **Optional second review pass (`pipeline.review_fix.passes: 2`, D17)**: with `passes: 2`,
-      exactly one completeness-critic call runs — dispatched at `second_pass_model` (default
+- [ ] **Optional second review pass (`agents.code_review_passes: 2`, D17)**: with `passes: 2`,
+      exactly one completeness-critic call runs — dispatched at `models.code_review_second_pass` (default
       `sonnet`, resolved like the reviewer axis, never through `capModel()`) — after the pass-1
       lens fan-out returns; its findings are unioned into pass 1's (fingerprint-deduped via the
       same `fingerprint()` as §4.2's oscillation guard) *before* the single default-refute verify
@@ -1923,7 +1960,7 @@ opt-in runs**, not a default-on burn-in (there is none — see above).
       is deferred behind its matching canonical-prose change; only one of its sentences is added on
       the same later schedule the canonical prose's own circuit-breaker mention follows.
 - [ ] **`validate_skills.py`**: passes with the new `review_model_pointer_warnings()` check wired
-      in; both canonical `SKILL.md` files reference `review-model.md`.
+      in; both canonical `SKILL.md` files reference `models.md`.
 - [ ] **Naming collision resolved**: `pipeline.review_fix` and the pre-existing
       `pipeline.skip_review` are documented, in the same file, as two independent toggles.
 - [ ] **`docs/CONVENTIONS.md` / `skills/sdlc/SKILL.md` drift fix**: the stale "zero-flag by design"
@@ -1992,7 +2029,7 @@ Per this repo's "no inline templates or long checklists" rule (`CLAUDE.md` skill
 this content is a **new template file**, not inlined into `SKILL.md`. Canonical `SKILL.md`
 references it as `` `templates/review-correctness-checklist.md` `` (lint-checked by
 `validate_skills.py`'s template-reference resolution check); the four overlays reference it via
-the full-path, human-reviewed pointer form already used for `model-cap.md` elsewhere in those
+the full-path, human-reviewed pointer form already used for `models.md` elsewhere in those
 files (e.g. `` `skills/sdlc/templates/review-correctness-checklist.md` ``).
 
 Distilled from the bug-classes this session's fixes touched — the concrete content for Stage 5.7's

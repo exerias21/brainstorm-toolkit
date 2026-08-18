@@ -1,12 +1,16 @@
 ---
 name: review-pr
 description: >
-  Run a structured code review on an open PR or arbitrary branch — wraps the
-  built-in /review slash command and writes findings to plans/review-<id>.md
-  so they survive the chat session. Invoke via /review-pr [pr#|branch], or
-  when the user asks "review this PR", "vet the diff", "review branch X
-  before merge". Use this instead of waiting on Copilot's auto-comment bot
-  when you want one canonical review on demand.
+  Run a structured code review on an open PR, a branch, or the working tree — wraps the
+  built-in /review slash command and writes findings to plans/review-<id>.md so they
+  survive the chat session. THIS IS THE SKILL FOR "do a code review / validate this with a
+  few agents before I push" — use it instead of hand-composing an ad-hoc review fan-out.
+  Invoke via /review-pr [pr#|branch], or when the user says "review this PR", "vet the
+  diff", "review branch X before merge", "check this over before I commit", "do a code
+  review", or "make sure this is solid". Use this instead of waiting on Copilot's
+  auto-comment bot when you want one canonical review on demand. For dead code
+  specifically use /dead-code-review; to react to review comments already left on a PR use
+  /pr-followup.
 argument-hint: "[pr-number | branch-name] [--post-comment]"
 metadata:
    brainstorm-toolkit-applies-to: claude copilot codex

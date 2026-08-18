@@ -501,14 +501,32 @@ fi
 echo
 echo "Done."
 echo
+# The epilogue is what the user actually acts on, so it must name only the runtimes
+# they installed. It used to be hard-coded and always named Claude + Copilot — a
+# `--tools codex` install was told to reload the VS Code window (irrelevant) and was
+# never told to trust the .codex/ dir, without which its Stop hook silently never
+# fires. `step` renumbers automatically so omitting a line can't leave a gap.
+step=1
 echo "Next steps:"
-echo "  1. Review AGENTS.md and fill in the {{PLACEHOLDER}} sections (or run /repo-onboarding)."
-echo "  2. Customize .claude/project.json (copy from .claude/project.json.example)."
-echo "  3. Add project-specific gotchas to GOTCHAS.md as they come up."
-echo "  4. In Claude Code: skills are available under /<skill-name>."
-echo "  5. In GitHub Copilot: skills are available under /<skill-name> in .github/skills/."
+echo "  $((step++)). Review AGENTS.md and fill in the {{PLACEHOLDER}} sections (or run /repo-onboarding)."
+echo "  $((step++)). Customize .claude/project.json (copy from .claude/project.json.example)."
+# /repo-onboarding owns GOTCHAS.md creation (from examples/GOTCHAS.md.example) —
+# setup.sh never creates it, so don't imply the file is already there.
+echo "  $((step++)). Add project-specific gotchas to GOTCHAS.md (/repo-onboarding creates it) as they come up."
+if [[ "$want_claude" -eq 1 ]]; then
+  echo "  $((step++)). In Claude Code: skills are available under /<skill-name>."
+fi
+if [[ "$want_copilot" -eq 1 ]]; then
+  echo "  $((step++)). In GitHub Copilot: skills are available under /<skill-name> in .github/skills/."
+fi
+if [[ "$want_codex" -eq 1 ]]; then
+  echo "  $((step++)). In Codex: skills are available under /<skill-name> from .agents/skills/."
+fi
 if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
-  echo "  6. Stop hooks were installed but may need one-time activation:"
-  echo "       Claude Code: open /hooks once to register .claude/settings.json"
-  echo "       Copilot:     reload the VS Code window"
+  echo "  $((step++)). Stop hooks were installed but may need one-time activation:"
+  [[ "$want_claude"  -eq 1 ]] && echo "       Claude Code: open /hooks once to register .claude/settings.json"
+  [[ "$want_copilot" -eq 1 ]] && echo "       Copilot:     reload the VS Code window"
+  # The trust gate is the non-obvious one: project-local .codex/ hooks do not fire
+  # until the directory is trusted, and nothing else in the output says so.
+  [[ "$want_codex"   -eq 1 ]] && echo "       Codex:       trust the .codex/ dir via /hooks (hooks do NOT fire until you do)"
 fi

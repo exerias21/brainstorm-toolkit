@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -35,7 +36,7 @@ VALID_TARGETS = {"claude", "copilot", "codex"}
 
 # C: the fan-out skills — these dispatch sub-agents (the Agent tool / Workflow
 # agent() seam) and are therefore governed by the shared model-tier cap
-# contract at skills/sdlc/templates/model-cap.md. Each must carry a one-line
+# contract at skills/sdlc/templates/models.md. Each must carry a one-line
 # pointer to that file so the cap rule is checkable, not just documented.
 MODEL_CAP_FAN_OUT_SKILLS = {
     "sdlc",
@@ -45,15 +46,15 @@ MODEL_CAP_FAN_OUT_SKILLS = {
     "brainstorm-team",
     "dead-code-review",
 }
-MODEL_CAP_REF = "model-cap.md"
+MODEL_CAP_REF = "models.md"
 
 # D: the review-fix skills -- sdlc and sdlc-lite ship an adversarial Review->Fix
 # stage governed by the reviewer-model axis contract at
-# skills/sdlc/templates/review-model.md. Deliberately separate from
+# skills/sdlc/templates/models.md. Deliberately separate from
 # MODEL_CAP_FAN_OUT_SKILLS: different axis, and brainstorm*/dead-code-review
 # have no review stage.
 REVIEW_STAGE_SKILLS = {"sdlc", "sdlc-lite"}
-REVIEW_MODEL_REF = "review-model.md"
+REVIEW_MODEL_REF = "models.md"
 
 
 def parse_targets(raw_value: str) -> list[str]:
@@ -300,7 +301,7 @@ def overlay_parity_warnings(
 
 def model_cap_pointer_warnings(skills_root: Path) -> list[str]:
     """C: soft-warn when a fan-out skill's canonical SKILL.md doesn't
-    reference the shared model-tier cap contract (`model-cap.md`).
+    reference the shared model-tier cap contract (`models.md`).
 
     Conservative by design: only checks the five skills named in
     MODEL_CAP_FAN_OUT_SKILLS (the sub-agent-dispatching skills governed by
@@ -324,7 +325,7 @@ def model_cap_pointer_warnings(skills_root: Path) -> list[str]:
 
 def review_model_pointer_warnings(skills_root: Path) -> list[str]:
     """D: soft-warn when sdlc/sdlc-lite's canonical SKILL.md doesn't reference
-    the shared reviewer-model contract (`review-model.md`)."""
+    the shared reviewer-model contract (`models.md`)."""
     warnings: list[str] = []
     for name in sorted(REVIEW_STAGE_SKILLS):
         skill_file = skills_root / name / "SKILL.md"
@@ -337,6 +338,133 @@ def review_model_pointer_warnings(skills_root: Path) -> list[str]:
                 f"reviewer-model contract (`{REVIEW_MODEL_REF}`)"
             )
     return warnings
+
+
+# E: sub-agent definitions in agents/. These are a separate artifact from skills --
+# a `.md` with YAML frontmatter that Claude Code loads into its agent registry (and
+# that setup.sh copies into a consumer's .claude/agents/). Two fields are load-bearing
+# and were historically absent on every agent in this repo:
+#   `model:`  omitted => the agent INHERITS the parent session's model. An agent whose
+#             prose says "you are a Haiku agent" therefore runs at Opus in an Opus
+#             session, silently, forever.
+#   `tools:`  omitted => the agent inherits every tool. A prose promise of "you do not
+#             write any file" is then advisory, not enforced.
+# Both are enforced when present (verified empirically 2026-07-26). The checks below
+# make a prose claim that frontmatter does not back a WARNING, not a silent lie.
+AGENT_MODEL_TIERS = {"haiku", "sonnet", "opus", "fable", "inherit"}
+AGENT_WRITE_TOOLS = {"Write", "Edit", "NotebookEdit"}
+# "You are a read-only Haiku state-join agent" -- a tier word inside a self-description.
+AGENT_SELF_DESC_RE = re.compile(
+    r"You are[^.\n]{0,160}?\b(Haiku|Sonnet|Opus|Fable)\b", re.IGNORECASE
+)
+AGENT_READONLY_CLAIM_RE = re.compile(
+    r"read-only|do\s+\*{0,2}not\*{0,2}\s+(?:execute anything,\s*)?write any file",
+    re.IGNORECASE,
+)
+
+
+def validate_agents(repo_root: Path) -> tuple[list[str], list[str], int]:
+    """E: validate agents/*.md frontmatter. Returns (problems, warnings, count)."""
+    problems: list[str] = []
+    warnings: list[str] = []
+    agents_root = repo_root / "agents"
+    if not agents_root.is_dir():
+        return problems, warnings, 0
+
+    # Cross-check against the plugin manifest so an agent can't be added or removed
+    # without its registration moving too.
+    registered: set[str] = set()
+    manifest = repo_root / ".claude-plugin" / "marketplace.json"
+    if manifest.exists():
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            for plugin in data.get("plugins", []):
+                for ref in plugin.get("agents", []) or []:
+                    registered.add(Path(ref).name)
+        except (json.JSONDecodeError, OSError) as exc:
+            warnings.append(f"{manifest}: could not read agent registrations ({exc})")
+
+    count = 0
+    for agent_file in sorted(agents_root.glob("*.md")):
+        count += 1
+        content = agent_file.read_text(encoding="utf-8")
+        match = FRONTMATTER_RE.match(content)
+        if not match:
+            problems.append(
+                f"{agent_file}: missing YAML frontmatter. `name:` and `description:` are "
+                f"required; without them the agent loads with a generated fallback "
+                f"description and is invisible to auto-delegation"
+            )
+            continue
+        frontmatter, body = match.groups()
+
+        name_match = NAME_RE.search(frontmatter)
+        if not name_match:
+            problems.append(f"{agent_file}: missing or malformed `name:` in frontmatter")
+        elif name_match.group(1) != agent_file.stem:
+            problems.append(
+                f"{agent_file}: `name: {name_match.group(1)}` does not match the filename "
+                f"stem `{agent_file.stem}` -- the registry surfaces the filename, so these "
+                f"must agree"
+            )
+        if not DESCRIPTION_RE.search(frontmatter):
+            problems.append(
+                f"{agent_file}: missing `description:` -- this is what drives delegation; "
+                f"without it the registry shows a generated placeholder"
+            )
+
+        model_match = re.search(r"^model:\s*(\S+)\s*$", frontmatter, re.MULTILINE)
+        model = model_match.group(1) if model_match else None
+        if model and model not in AGENT_MODEL_TIERS and not model.startswith("claude-"):
+            problems.append(
+                f"{agent_file}: `model: {model}` is not a recognized tier "
+                f"({'|'.join(sorted(AGENT_MODEL_TIERS))}) or a claude-* model id"
+            )
+
+        tools_match = re.search(r"^tools:\s*(.+)$", frontmatter, re.MULTILINE)
+        tools = (
+            {t.strip() for t in tools_match.group(1).split(",") if t.strip()}
+            if tools_match
+            else None
+        )
+
+        # The defect this check exists for: prose asserts a tier the frontmatter
+        # doesn't pin, so the agent silently inherits the parent session's model.
+        if model is None and AGENT_SELF_DESC_RE.search(body):
+            warnings.append(
+                f"{agent_file}: prose describes this agent's own model tier but no "
+                f"`model:` field pins it -- it will INHERIT the parent session's model. "
+                f"Either add `model:` or drop the claim from the prose"
+            )
+
+        # Same shape, for the read-only promise.
+        if AGENT_READONLY_CLAIM_RE.search(body):
+            if tools is None:
+                warnings.append(
+                    f"{agent_file}: prose claims read-only behavior but no `tools:` field "
+                    f"restricts it -- the agent inherits every tool, so the promise is "
+                    f"advisory. Add a `tools:` allowlist without Write/Edit"
+                )
+            elif tools & AGENT_WRITE_TOOLS:
+                writers = ", ".join(sorted(tools & AGENT_WRITE_TOOLS))
+                problems.append(
+                    f"{agent_file}: prose claims read-only behavior but `tools:` grants "
+                    f"{writers}"
+                )
+
+        if registered and agent_file.name not in registered:
+            problems.append(
+                f"{agent_file}: not registered in .claude-plugin/marketplace.json "
+                f"`plugins[].agents[]` -- it will not ship with the plugin"
+            )
+
+    for ref in sorted(registered):
+        if not (agents_root / ref).exists():
+            problems.append(
+                f".claude-plugin/marketplace.json registers agents/{ref}, which does not exist"
+            )
+
+    return problems, warnings, count
 
 
 def main() -> int:
@@ -416,6 +544,11 @@ def main() -> int:
                     overlay_parity_warnings(canonical, override_dir, repo_root)
                 )
 
+    # E: sub-agent definitions in agents/ (separate artifact, same discipline).
+    agent_problems, agent_warnings, agent_count = validate_agents(repo_root)
+    all_problems.extend(agent_problems)
+    all_warnings.extend(agent_warnings)
+
     if all_warnings:
         print("Skill validation warnings:", file=sys.stderr)
         for warning in all_warnings:
@@ -427,7 +560,8 @@ def main() -> int:
             print(f"- {problem}", file=sys.stderr)
         return 1
 
-    print(f"Validated {count} skills.")
+    agent_note = f", {agent_count} agents" if agent_count else ""
+    print(f"Validated {count} skills{agent_note}.")
     return 0
 
 

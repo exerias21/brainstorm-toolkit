@@ -29,7 +29,7 @@
     validate.json
     plan-validate.json
     flowsim.json
-    review.json             # Stage 5.7 -- only when a reviewer resolves (see the reviewer-model enablement chain, review-model.md)
+    review.json             # Stage 5.7 -- only when a reviewer resolves (see the reviewer-model enablement chain, models.md)
     review-fix.json         # Stage 5.8 -- only when review.json.data.confirmed is non-empty; single cumulative file, data.loops[] holds one entry per iteration (NOT numbered review-fix-<n>.json files)
     secret-scan.json
     pr-create.json
@@ -313,9 +313,9 @@ lists any name defined by more than one lane. A non-empty `unresolved` or
 }
 ```
 `findings` is the raw merged fan-out output across all lenses (each tagged with its producing
-lens and a `finding_id`). `passes_run` (1 or 2) and `second_pass_model` (the effective model
+lens and a `finding_id`). `passes_run` (1 or 2) and `models.code_review_second_pass` (the effective model
 dispatched for the completeness critic, or `null` when `passes_run` is 1) record whether
-`pipeline.review_fix.passes` was 2 for this run. When `passes_run` is 2, each item in `findings`
+`agents.code_review_passes` was 2 for this run. When `passes_run` is 2, each item in `findings`
 additionally carries `pass: 1` or `pass: 2` (set at merge time, never by the reviewing or critic
 agent itself); a `passes_run: 1` run never adds this field, so its absence means pass 1. This
 `pass` tag is unrelated to the loop-scoped `finding_id` numbering described next -- two independent

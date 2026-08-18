@@ -23,7 +23,7 @@ export const meta = {
 // ---------------------------------------------------------------------------
 
 // MODEL-TIER CAP — a ceiling on sub-agent model tier (never a swap/upgrade).
-// See skills/sdlc/templates/model-cap.md: haiku(1) < sonnet(2) < opus(3);
+// See skills/sdlc/templates/models.md: haiku(1) < sonnet(2) < opus(3);
 // effective = min(default, cap). A null/invalid cap falls through to the stage
 // default. Applied at every agent() model site below so a `haiku` cap bites.
 const MODEL_TIER_RANK = { haiku: 1, sonnet: 2, opus: 3 }

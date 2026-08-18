@@ -82,17 +82,17 @@ into line (and re-run `node --check`-style validation on the script) — see
   `status: "pass"` and picks up at the first non-passing stage, reusing the
   evidence the prior run wrote. See **Resumption** below. Forces the prose path.
 - `--model <tier>` (optional): per-run fan-out cap override; see **Model cap**
-  and [`templates/model-cap.md`](templates/model-cap.md). `tier` ∈
+  and [`templates/models.md`](templates/models.md). `tier` ∈
   `haiku|sonnet|opus`. **Not an alias for `--review-model`** — `--model fable`
-  is an unrecognized value for this flag (per `model-cap.md`'s invalid-input
+  is an unrecognized value for this flag (per `models.md`'s invalid-input
   rule: ignore, warn once, fall through to `models.cap`/default) and must
   resolve to the configured cap *before* it is ever passed as `args.model_cap`
   — never forward the raw typo'd string, since forwarding it un-caps every
   Opus dispatch in the Workflow.
 - `--review-model <name>` (optional): per-run reviewer-model override; see
-  **Reviewer model** and [`templates/review-model.md`](templates/review-model.md).
+  **Reviewer model** and [`templates/models.md`](templates/models.md).
   `name` ∈ `fable|opus|sonnet|haiku`. Default `opus`. Passing `fable` (or
-  setting `pipeline.review_fix.model: "fable"`) is a valid, explicit,
+  setting `models.code_review: "fable"`) is a valid, explicit,
   cost-aware opt-in — usage-billed since Claude Fable 5's 2026-07-07
   promotional-access sunset — never the default.
 - `--no-review` (optional): fully skip Stage 5.7/5.8 for this run. **Note:**
@@ -265,7 +265,7 @@ mismatch, and resume at the first stage whose sidecar isn't `status: "pass"`
 Read the plan file and extract structured information:
 
 1. **Read** the plan file fully. The plan source can be:
-   - A standard brainstorm plan (e.g., `plans/brainstorm-<slug>.md` with Direction / Implementation Steps / Acceptance Criteria sections), OR
+   - A standard brainstorm plan (e.g., `plans/brainstorm-<slug>.md` with Direction / Implementation Steps sections), OR
    - A `TASKS.md`-style checkbox list at repo root — in which case treat every `[ ]` or `[~]` row in the `Active / Pending` section as an implementation step, and follow the `plans/tasks/task-N-<slug>.md` links for detail.
 2. **Extract**:
    - Feature name/slug (from filename or first heading; for TASKS.md input, derive from the row text or first linked task file)
@@ -297,7 +297,7 @@ Read the plan file and extract structured information:
 Every agent this pipeline dispatches — the sanity Haikus, the Opus-tier
 implementer (Sonnet by default once the cap applies), the decompose lanes, the
 fix agent, the validators — honors the **model-tier cap**. Resolve each dispatch's tier per
-[`templates/model-cap.md`](templates/model-cap.md): `--model <tier>` flag >
+[`templates/models.md`](templates/models.md): `--model <tier>` flag >
 `project.json` `models.cap` > the tier named at the site. **Before each
 dispatch, print `model: <tier> (cap: <cap|none>)`** and dispatch at that tier.
 **The default is Sonnet-first**: with no `--model`/`models.cap` set the fan-out
@@ -308,13 +308,39 @@ resolution is enforced by `capModel()` at the `agent()` seam.
 ## Stage 1.5: Plan Sanity Check
 
 Before spending implementation tokens, verify the plan is actually
-correct. Launch 3 Haiku agents **in parallel** (single message) to check
-different dimensions. This is cheap insurance — catches wrong file paths,
+correct. Launch the configured focus agents **in parallel** (single message) to
+check different dimensions. This is cheap insurance — catches wrong file paths,
 missing steps, and known gotchas before they become bugs.
 
 Read the prompts from `templates/stage-1.5-sanity-check.md` (sections: `paths`,
 `completeness`, `gotchas`). Substitute `{plan_file}` and `{feature_name}`, then
-dispatch all three Haiku agents in a single message — one Agent call per section.
+dispatch the selected agents in a single message — one Agent call per section.
+
+**Which focuses run — `agents.sanity_focuses`.** Read the array from
+`.claude/project.json`; absent means all three defaults. Setting fewer cuts this stage's
+cost roughly linearly (one agent per focus). `paths` is the cheapest and most mechanical
+(file existence); `completeness` is the judgment-heavy one; `gotchas` is only useful when
+a `GOTCHAS.md` exists. An unrecognized focus name is ignored with one warning.
+
+**Which tier — `models.sanity`.** Built-in default is `haiku` for every
+focus. `.claude/project.json` `models.sanity` (`haiku|sonnet|opus`)
+**replaces that default for all focuses** when set. Reach for it when this stage is
+reviewing *plans* rather than checking paths: `paths` is genuinely mechanical, but
+`completeness` is asking "does this plan hang together?", which is the kind of judgment a
+stronger reader does better. Raising it costs on **every** run that reaches Stage 1.5 —
+which is every run, since the stage is never gated.
+
+The resolved tier still passes through the **model cap** (`models.cap` / `--model`, see
+`templates/models.md`), which is a *ceiling*: `capModel(effective_default, cap)`. Note
+the consequence, because it is the whole reason this key exists — **the cap can only
+lower, so while the site default is `haiku` there is no way to raise this stage at all.**
+`models.cap: "opus"` does not raise it; `--model opus` does not raise it. Setting
+`sanity_check.model` is the only lever. Once set above `haiku`, the cap applies normally
+(a Sonnet-first cap pulls `opus` back to `sonnet` unless you also pass `--model opus`).
+
+This is **not** a new model axis — it sets a default *within* the fan-out axis and is
+still capped by it. Print `model: <tier> (cap: <cap|none>)` and the resolved focus list —
+`sanity focuses: <a, b, …> (N of 3 defaults)` — before dispatching.
 
 ### Processing results
 
@@ -359,7 +385,7 @@ Read `stage-outputs/parse.json`. Compute:
    exists, so apply the surface globs to intended files, not to a diff.
 2. `task_count` = `parse.json.data.implementation_step_count`.
 3. `DECOMPOSE_MIN_TASKS` — a named constant, **default `6`**, overridable via
-   `.claude/project.json` `pipeline.decompose_min_tasks`.
+   `.claude/project.json` `agents.decompose_min_tasks`.
 4. **Disjointness:** classify each planned file by surface; if any file matches
    more than one surface, or every file lands in a single surface, the surfaces
    are not cleanly separable.
@@ -518,8 +544,7 @@ drafts the fix for a code defect, and hands back the `--resume` re-entry. Or tri
   **code-defect** (a consistent assertion failure) · **plan-wrong** (the failure
   contradicts a plan step) · **config-missing** (a command/env/dep the runner needs).
 - **Recommended next command** (matches the class — all work today; `--resume` reuses the
-  green stages, so prefer it over a fresh re-run; do NOT suggest `/triage`, which doesn't
-  exist yet):
+  green stages, so prefer it over a fresh re-run):
   - flaky → re-run just the gate to confirm: `/eval-harness` (or `/test-check`); if green, `/sdlc {plan_file} --resume`.
   - code-defect → `/task fix: {one-line failure}` (bounded TDD), then `/sdlc {plan_file} --resume` (code changed, plan didn't — resume skips the green stages).
   - plan-wrong → `/brainstorm` the failing step to revise `{plan_file}`, then re-run `/sdlc {plan_file}` **fresh** (NOT `--resume` — editing the plan changes its hash, which resume rejects by design).
@@ -627,8 +652,21 @@ the agent's system prompt rather than a file path that may not exist (naming per
 
 Read the prompts from `templates/stage-5.5-validation.md` (sections: `api`, `ui`,
 `data`, `cross-module`). Substitute `{plan_file}`, `{feature_name}`, and
-`{feature_slug}`, then dispatch the **selected** agents in a single message. Models per
-section: `api` and `ui` use Sonnet; `data` and `cross-module` use Haiku.
+`{feature_slug}`, then dispatch the **selected** agents in a single message.
+
+**Validator model tier.** Built-in defaults: `api` and `ui` use Sonnet; `data` and
+`cross-module` use Haiku. `.claude/project.json` `models.plan_review`
+(`haiku|sonnet|opus`) **replaces the built-in default for all four validators** when set —
+use it when you want a stronger reader judging the plan, since `cross-module` always runs
+and is the catch-all for integration gaps. The resolved tier still passes through the
+**model cap** (`models.cap` / `--model`, see `templates/models.md`), which is a
+*ceiling*: `capModel(effective_default, cap)`. Two consequences worth stating plainly —
+the cap can only lower the tier, never raise it, so with the Sonnet-first default cap
+`plan_validate.model: "opus"` still dispatches Sonnet unless you also pass `--model opus`;
+and raising the tier costs on **every** run that reaches this stage, because
+`cross-module` is unconditional. This is **not** a third model axis — it sets a default
+*within* the fan-out axis and is still capped by it. Print the resolved tier with the
+usual `model: <tier> (cap: <cap|none>)` line before dispatching.
 
 ### Process results
 
@@ -721,8 +759,8 @@ the canonical structured output remains in `plans/flowsim-<slug>.json`.
 ## Reviewer model (Stage 5.7/5.8 only)
 
 Independent from **Model cap** above. See
-[`templates/review-model.md`](templates/review-model.md): `--review-model <name>` flag >
-`pipeline.review_fix.model` (project.json) > skill default `opus`. Never governed by
+[`templates/models.md`](templates/models.md): `--review-model <name>` flag >
+`models.code_review` (project.json) > skill default `opus`. Never governed by
 `models.cap` / `--model`; none of `fable`/`opus`/`sonnet`/`haiku` on this axis is a member of the
 `haiku < sonnet < opus` cap rank. `fable` remains a valid, explicit opt-in (`--review-model
 fable`) — usage-billed since Claude Fable 5's 2026-07-07 promotional-access sunset, which is why it
@@ -739,8 +777,20 @@ activated, two auto-off gates still apply: the diff is docs-only/touches no code
 the code surface there and would otherwise silently disable the stage in the repo that dogfoods it).
 
 Runs after Stage 5.6 flowsim, before Stage 6, once enabled and not auto-off'd. Fans out
-**4 reviewer passes on distinct lenses** (parallel sub-agents on Claude; sequential inline passes
-on Copilot/Codex), each at the reviewer model resolved above:
+**one reviewer pass per configured lens** (parallel sub-agents on Claude; sequential inline passes
+on Copilot/Codex), each at the reviewer model resolved above.
+
+**Which lenses run — `agents.code_review_lenses`.** Read the array from `.claude/project.json`;
+when the key is absent, use all four defaults below. **Set fewer to cut the stage's cost roughly
+linearly** — the fan-out is one reviewer call per lens at the reviewer model (Opus by default), so
+`["correctness", "plan-alignment"]` is about half the cost of the full set, and `["correctness"]`
+about a quarter. Pick by what the change actually risks: `correctness` is the highest-yield single
+lens; add `security` for anything touching auth, endpoints, or user input; add `plan-alignment`
+when the plan has acceptance criteria you care about; `config-env-docs` matters most when the diff
+touches env vars, compose, or docs. An unrecognized lens name is ignored with one warning (the
+config-schema enum is deliberately open so a repo can add its own). Print the resolved list —
+`review lenses: <a, b, …> (N of 4 defaults)` — before dispatching, so a reduced fan-out is never
+silent. The circuit breaker below may drop a lens from this resolved list at dispatch time.
 
 | Lens | What it looks for |
 |---|---|
@@ -760,8 +810,8 @@ model, that must attach a fresh falsifiable artifact to each finding it confirms
 file:line quote, a grep result, or one call-graph hop. A finding it can't ground this way is
 refuted, not "probably true."
 
-**Optional second pass** (`pipeline.review_fix.passes: 2`, default `1`): one additional
-completeness-critic call at a cheaper `second_pass_model` (default `sonnet`), given pass 1's
+**Optional second pass** (`agents.code_review_passes: 2`, default `1`): one additional
+completeness-critic call at a cheaper `models.code_review_second_pass` (default `sonnet`), given pass 1's
 findings and told to find what pass 1 missed — never to re-judge or restate them. Findings are
 unioned and fingerprint-deduped into pass 1's set, then the single verify pass runs once over the
 combined set. This is a recall mechanism, never a vote.
@@ -804,7 +854,7 @@ exclusively from `auto_fixable:true` findings.
 Per `pipeline.review_fix.mode`:
 - **`interactive`** (default): present each fix spec for approve/edit/skip. Approved specs route
   through the same `runGatedFix()` pattern Stage 4 uses, but as a **new gate function** — Stage 4
-  is hard-wired to the eval runner. Loop until clean or `review.max_fix_loops`. **Workflow-tool
+  is hard-wired to the eval runner. Loop until clean or `agents.code_review_max_fix_loops`. **Workflow-tool
   limitation:** the Workflow has no mid-run human-prompt primitive, so under the Workflow
   `interactive` means auto-apply confirmed `auto_fixable:true` findings (bounded by budget), then
   always pause-and-return before Stage 6 with every remaining finding surfaced. True per-finding
@@ -843,7 +893,7 @@ gate exactly once before Stage 6 (a single confirmation pass, not a fresh budget
 there pauses the run — an objective break, not an adversarial opinion, so this always stops rather
 than proceeding.
 
-**Fix-loop budget:** its own `review.max_fix_loops` (default `3`, `pipeline.review_fix.*`) —
+**Fix-loop budget:** its own `agents.code_review_max_fix_loops` (default `3`, `pipeline.review_fix.*`) —
 **separate** from the shared 3-iteration budget pooled across Stages 4/5/5.5/5.6. Review findings
 are a categorically different surface (defects a green suite structurally cannot catch, discovered
 after all four of those gates already passed), so they get their own dial rather than racing a
@@ -1104,7 +1154,7 @@ repo root, this mode activates automatically. No flag required.
 | Standard stage | Skill-repo behavior |
 |---|---|
 | Stage 1 — Parse plan | unchanged |
-| Stage 1.5 — Sanity check | unchanged (3 Haiku agents — they generalize fine) |
+| Stage 1.5 — Sanity check | unchanged (the configured focus agents generalize fine; defaults are the 3 Haiku ones) |
 | Stage 2 — Implement | unchanged (gated as standard; a skill repo's single docs surface normally keeps it single-agent) |
 | Stage 3 — Generate evals | **skip** (no test surface) |
 | Stage 4 — Eval + fix loop | **skip** |

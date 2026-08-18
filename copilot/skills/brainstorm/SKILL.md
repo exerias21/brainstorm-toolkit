@@ -198,7 +198,7 @@ one validator misses. Copilot runs them **sequentially in the main context**
 (no parallel sub-agents), so the cost is wall-clock-time-linear with mode.
 
 A **model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; see
-`skills/sdlc/templates/model-cap.md`) would govern each pass's sub-agent tier
+`skills/sdlc/templates/models.md`) would govern each pass's sub-agent tier
 on Claude — here the passes run inline in the session model, so the cap is
 advisory: set your session model to the cap tier for the savings.
 

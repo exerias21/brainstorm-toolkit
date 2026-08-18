@@ -73,7 +73,7 @@ into `references/` — that ships it (installed once per tool — up to three id
 - **`GOTCHAS.md`** — project-specific pitfalls; consulted by `/gotcha` and the sanity-check stage of `/sdlc`.
 - **`.claude/project.json`** — optional per-project config (test commands, eval runner, modules list); every key is optional, missing keys are skipped.
 - **Gotcha flywheel** — the loop-exit capture protocol is centralized in `skills/gotcha/SKILL.md` ("Capture at loop-exit"). `/task`, `/sdlc-lite`, `/sdlc` reference it and auto-draft a gotcha **only on an objective trigger** (a fix-loop that failed-then-recovered, or the user voicing surprise), routed through gotcha's dedup — never a vibe-gate. `/task` + `/sdlc-lite` also drop a `/gotcha <text>` `.next-action` sentinel when capture is declined; the seam is Stop-hook-backed on **all three** runtimes (Claude `.claude/settings.json`, Copilot `.github/hooks/`, Codex `.codex/hooks.json` — Codex has a Stop hook with the same `decision:block` contract, shipped by the plugin/`setup.sh`); writers also print an inline `Next:` fallback for when no hook is wired/trusted yet. `/brainstorm` injects area-scoped gotchas at Step 2 (entry), not only at validation.
-- **Model cap** — `.claude/project.json` `models.cap` (or the per-run `--model <tier>` flag) is a **ceiling** on sub-agent model tier for the fan-out skills (`/sdlc`, `/sdlc-lite`, `/brainstorm*`). The fan-out is **Sonnet-first by default** — the Workflows default `model_cap` to `'sonnet'` and the prose dispatch sites say "Sonnet by default"; Opus is an explicit opt-up via `--model opus`. Keep it that way when adding a fan-out dispatch (default Sonnet, not Opus). Canonical contract: `skills/sdlc/templates/model-cap.md`. Prose is the enforcement surface — each fan-out dispatch resolves the tier (`--model` > `models.cap` > default) and prints `model: <tier> (cap: <cap|none>)` before dispatching; `validate_skills.py` soft-warns if a fan-out skill drops the `model-cap.md` pointer. The Workflow path enforces the same via `capModel()` at the `agent()` seam. Adding/rewording a fan-out dispatch means updating all three legs (prose, workflow, overlays). A second, independent axis exists for `/sdlc` and `/sdlc-lite` only: the **reviewer-model axis** (`pipeline.review_fix.model` / `--review-model`, default `opus`, canonical contract at `skills/sdlc/templates/review-model.md`), which selects the adversarial Review→Fix stage's reviewer. The stage is opt-in, permanently — it never runs unless explicitly enabled. `fable` remains a valid, explicit opt-in value (usage-billed since Claude Fable 5's 2026-07-07 promotional-access sunset), never the default. This axis is NOT a value on the `haiku < sonnet < opus` ladder, is NOT subject to the Sonnet-first default, and must NEVER be passed through `capModel()`. Keep the two axes mechanically separate in any future edit.
+- **Model cap** — `.claude/project.json` `models.cap` (or the per-run `--model <tier>` flag) is a **ceiling** on sub-agent model tier for the fan-out skills (`/sdlc`, `/sdlc-lite`, `/brainstorm*`). The fan-out is **Sonnet-first by default** — the Workflows default `model_cap` to `'sonnet'` and the prose dispatch sites say "Sonnet by default"; Opus is an explicit opt-up via `--model opus`. Keep it that way when adding a fan-out dispatch (default Sonnet, not Opus). Canonical contract: `skills/sdlc/templates/models.md`. Prose is the enforcement surface — each fan-out dispatch resolves the tier (`--model` > `models.cap` > default) and prints `model: <tier> (cap: <cap|none>)` before dispatching; `validate_skills.py` soft-warns if a fan-out skill drops the `models.md` pointer. The Workflow path enforces the same via `capModel()` at the `agent()` seam. Adding/rewording a fan-out dispatch means updating all three legs (prose, workflow, overlays). A second, independent axis exists for `/sdlc` and `/sdlc-lite` only: the **reviewer-model axis** (`models.code_review` / `--review-model`, default `opus`, canonical contract at `skills/sdlc/templates/models.md`), which selects the adversarial Review→Fix stage's reviewer. The stage is opt-in, permanently — it never runs unless explicitly enabled. `fable` remains a valid, explicit opt-in value (usage-billed since Claude Fable 5's 2026-07-07 promotional-access sunset), never the default. This axis is NOT a value on the `haiku < sonnet < opus` ladder, is NOT subject to the Sonnet-first default, and must NEVER be passed through `capModel()`. Keep the two axes mechanically separate in any future edit.
 
 ## When modifying skills
 
@@ -108,10 +108,52 @@ The Workflow tool is a **Claude Code-specific primitive** — Codex and Copilot 
 - Set `metadata.brainstorm-toolkit-applies-to` honestly.
 - Update the skills table in `README.md`.
 
+## When adding a sub-agent (`agents/`) — usually: don't
+
+Sub-agent definitions are a **different artifact from skills**, with their own failure mode:
+this repo shipped four of them and **three had never been dispatched once**, because every
+dispatch site names `subagent_type: general-purpose` and pastes the role in from a
+`templates/*.md` file. The Workflow's `agent()` seam takes only `{label, phase, schema, model}`
+— it has **no identity parameter at all**, so the programmatic path cannot name an agent even
+in principle.
+
+**The rule:**
+
+> Create an agent definition **when and only when** you need an enforced `tools:` restriction,
+> on a Claude-only agent whose prose has explicitly exempted it from the model-cap axis.
+> Otherwise: a role prompt in `templates/` + `subagent_type: general-purpose` + an explicit
+> `model:` at the dispatch site.
+
+Frontmatter buys exactly three things nothing else can, and two of them are usually dead here:
+
+| Field | Unique capability | Usually |
+|---|---|---|
+| `description:` | auto-delegation — Claude picks the agent unprompted | **Dead** — every skill names its agent explicitly, and auto-delegation is unreliable in practice |
+| `tools:` | an **enforced** boundary; prose saying "you are read-only" is advisory | **The real win** — verified enforced: a declared allowlist omits Bash/Write entirely |
+| `model:` | pins a tier | **Usually hostile** — it bypasses `capModel()` and the `--model` > `models.cap` ladder. Pin at the dispatch site instead, except where a skill has explicitly exempted the site (`/next`'s conductor) |
+
+Also weigh, before adding one:
+
+- **Cross-tool blindness.** `setup.sh` copies `agents/` for **Claude only**. Copilot and Codex
+  have no agent-definition concept, so anything encoded in frontmatter is invisible to two of
+  three runtimes.
+- **A restart tax.** The agent registry loads at session start, so a new or edited agent file
+  does nothing until the session restarts. An inline role prompt takes effect immediately.
+- **`tools:` is an allowlist the harness tops up.** Treat it as "no Write/Edit", not as an
+  exact set. Command-scoped forms like `Bash(git log:*)` are **not** a documented value here —
+  if the agent needs git, it needs plain `Bash`.
+
+If you do add or edit one: `name` must match the filename stem, register it in
+`.claude-plugin/marketplace.json` under `plugins[].agents`, and never let the prose claim a
+tier or a read-only posture that the frontmatter doesn't enforce. `scripts/validate_skills.py`
+checks all of this.
+
 ## Testing changes
 
 There is no automated test suite for the skills themselves (they are prompts, not code). Verify manually by:
-1. Running `python scripts/validate_skills.py` from the repo root.
+1. Running `python scripts/validate_skills.py` from the repo root — this covers skills
+   **and** `agents/` frontmatter (missing `name`/`description`, a prose model-tier or
+   read-only claim the frontmatter doesn't enforce, marketplace registration drift).
 2. Running `bash setup.sh --target /tmp/test-repo --tools both` against a scratch repo.
 3. Invoking the changed skill in both Claude Code and Copilot when the skill targets both tools.
 4. Confirming the skill runs without referencing removed files or broken paths.

@@ -19,7 +19,7 @@ Sequential version of the SDLC pipeline. Unlike the Claude Code canonical (which
 
 When Copilot's VS Code agent mode gains parallel worker support (Copilot CLI already has `/fleet`), this overlay can be upgraded. Today it ships as a useful degraded version — slower but complete.
 
-**Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/model-cap.md`) is honored wherever sub-agents are dispatched. On this runtime every stage runs inline in the session model, so the cap is advisory here — set your session model to the cap tier for the savings.
+**Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/models.md`) is honored wherever sub-agents are dispatched. On this runtime every stage runs inline in the session model, so the cap is advisory here — set your session model to the cap tier for the savings.
 
 ## Prerequisites
 
@@ -36,7 +36,7 @@ shows `status: "pass"`, and resume at the first non-passing stage (follows `/sdl
 canonical Resumption rules). If no prior run exists, error rather than starting fresh.
 
 Read the plan file fully. Valid sources:
-- `plans/brainstorm-<slug>.md` with Direction / Implementation Steps / Acceptance Criteria.
+- `plans/brainstorm-<slug>.md` with Direction / Implementation Steps.
 - `plans/tasks/task-N-<slug>.md` (a task file written by `/task`).
 - `TASKS.md` at repo root — treat each `[ ]` or `[~]` row in Active / Pending as one step, follow linked task files for detail.
 
@@ -60,7 +60,10 @@ Report scope:
 
 ## Stage 1.5 — Sanity-check the plan (inline, sequential)
 
-Before committing time to implementation, run three checks yourself — one pass for each:
+Before committing time to implementation, run the configured checks yourself — one pass
+for each. `agents.sanity_focuses` in `.claude/project.json` selects which of the
+three run (default: all). `models.sanity` is advisory on this runtime —
+stages run inline in the session model, so set that instead.
 
 **Check A — File path reality.** For every file path mentioned in the plan:
 1. Verify the file exists (Glob or `ls`).
@@ -96,7 +99,7 @@ Stage 2 is **auto-gated** (no flag). Small / single-surface plans you implement 
 From the parsed plan, compute:
 - `surfaces_touched` = distinct surfaces the planned files match (frontend: `*.tsx/jsx/vue/svelte/css/scss`; backend: `*.py/go/rb/java/ts` in server dirs; data: `migrations/`, `schema/`, `models/`, `*.sql`; docs: `*.md`, `docs/`).
 - `task_count` = number of implementation steps.
-- `DECOMPOSE_MIN_TASKS` = `6` by default (override via `pipeline.decompose_min_tasks` in `.claude/project.json`).
+- `DECOMPOSE_MIN_TASKS` = `6` by default (override via `agents.decompose_min_tasks` in `.claude/project.json`).
 
 **Decompose iff** `surfaces_touched >= 2` AND `task_count >= DECOMPOSE_MIN_TASKS` AND the per-surface file sets are disjoint (no file in two surfaces, not all in one). Otherwise implement single-pass. Note the decision and its inputs in your scope report — never decide silently.
 
@@ -168,7 +171,7 @@ Run when a parent plan is available (i.e. you passed a plan file rather than a b
 **Opt-in, permanently — never runs by default.** Runs after Stage 5.6 flowsim, before Stage 6,
 only when explicitly turned on this run (`--review-model <name>`, or an explicit
 `pipeline.review_fix.enabled: true`; default reviewer `opus` once enabled — see
-`skills/sdlc/templates/review-model.md`). An omitted `pipeline.review_fix` block, or
+`skills/sdlc/templates/models.md`). An omitted `pipeline.review_fix` block, or
 `enabled` left unset, means OFF — there is no default-on flip. Skipped when not opted in,
 `--no-review` was passed, `pipeline.review_fix.enabled: false`, or the changed-files-gate reports a
 docs-only diff — **unless a `.claude-plugin/marketplace.json` exists at the repo root**, in which
@@ -180,7 +183,11 @@ env/compose checks. (This mirrors D6 / plan §5.3 gate 1's exemption on the cano
 this overlay runtime has no other skill-repo detection of its own, so the marketplace-manifest
 check above IS its skill-repo signal.)
 
-**No parallel sub-agents on this runtime.** Run each of the four lenses — correctness,
+**No parallel sub-agents on this runtime.** Run each **configured** lens
+(`agents.code_review_lenses` in `.claude/project.json`; when the key is absent, all four
+defaults below. Setting fewer cuts this stage's cost roughly linearly — it is one pass per
+lens — so pick by what the diff risks; `correctness` is the highest-yield single lens. Print
+the resolved list before starting.) The defaults: correctness,
 plan⇌code alignment, config/env/docs consistency, security (checklists:
 `skills/sdlc/templates/review-correctness-checklist.md`, `skills/sdlc/templates/review-security-checklist.md`) — as one sequential inline pass over the
 diff, re-reading it fresh for each lens. If a genuinely separate reviewer integration is
@@ -203,7 +210,7 @@ unconfirmable findings is auto-demoted from dispatch (skipped, and recorded in
 
 For confirmed findings, draft a structured fix spec per finding, applying the auto_fixable rubric
 (a bug fixing an explicit contract vs. a product/design decision — see
-`skills/sdlc/templates/review-model.md`). Per `pipeline.review_fix.mode` (default `interactive`):
+`skills/sdlc/templates/models.md`). Per `pipeline.review_fix.mode` (default `interactive`):
 - **`interactive`**: present each fix spec for approve / edit / skip. Approved specs run through
   the existing Stage 2/4 implement+fix machinery inline, then a fresh adversarial re-review of the
   touched files (this loop iteration's own pass) decides whether another iteration is needed. Loop

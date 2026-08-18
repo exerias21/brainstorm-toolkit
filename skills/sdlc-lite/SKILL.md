@@ -238,8 +238,11 @@ fresh-process-per-item escalation are in `docs/LOOP-HYGIENE.md` (plugin repo).
 
 ## Stage 1.5 — Sanity check
 
-Run `/sdlc` Stage 1.5 verbatim (the 3-agent pre-flight on Claude; sequential on
-the overlays). This is full SDLC discipline — it is **not** gated or optional.
+Run `/sdlc` Stage 1.5 verbatim (parallel focus agents on Claude; sequential on the
+overlays). This is full SDLC discipline — it is **not** gated or optional. Honors
+`models.sanity` and `agents.sanity_focuses` exactly as `/sdlc`
+Stage 1.5 documents them — the default is 3 Haiku agents, and because the cap only
+*lowers*, `sanity_check.model` is the only way to raise this stage.
 For a task range, run it once over the combined set before the implement loop.
 
 If the sanity check surfaces a blocker (plan references nonexistent files,
@@ -254,15 +257,15 @@ in the plan) and its **auto-gate**. Compute
 `surfaces_touched` (from `skills/sdlc/templates/changed-files-gate.md` globs over
 the planned files) and `task_count` (parse step count); **decompose iff**
 `surfaces_touched >= 2` AND `task_count >= DECOMPOSE_MIN_TASKS` (default `6`,
-overridable via `.claude/project.json` `pipeline.decompose_min_tasks`) AND the
+overridable via `.claude/project.json` `agents.decompose_min_tasks`) AND the
 per-surface file sets are disjoint.
 
 - **Single-agent (default):** reuse `skills/sdlc/templates/stage-2-implement.md`,
   substitute `{feature_name}` and `{plan_content}`; **Sonnet by default** (Opus
-  only on `--model opus`, per `skills/sdlc/templates/model-cap.md`) on Claude,
+  only on `--model opus`, per `skills/sdlc/templates/models.md`) on Claude,
   inline on Copilot/Codex. Writes `implement.json`, no decompose/converge sidecars.
   **Model cap applies** (inherited from `/sdlc` Stage 2): the implement/fix/lane
-  tiers are lowered per `skills/sdlc/templates/model-cap.md` — `--model <tier>`
+  tiers are lowered per `skills/sdlc/templates/models.md` — `--model <tier>`
   flag > `project.json models.cap` > default.
 - **Decompose (large multi-surface plan):** run 2a/2b/2c per `/sdlc` Stage 2 —
   `skills/sdlc/templates/stage-2a-decompose.md` (Sonnet decomposer →
@@ -308,6 +311,10 @@ If there is **no plan target** (ad-hoc description, or a task with no
 This is a "nothing to validate against" skip, not an arbitrary gate — give it a
 plan and it always runs.
 
+Validator tier honors `models.plan_review` exactly as `/sdlc` Stage 5.5
+documents it (replaces the per-validator default; still capped by `models.cap` /
+`--model`, which can only lower it).
+
 ## Stage 5.6 — Flowsim
 
 Same gating as 5.5: run `/flowsim <plan-target>` whenever a plan target exists;
@@ -317,8 +324,8 @@ toward the budget). Process results per `/sdlc` Stage 5.6.
 ## Reviewer model (Stage 5.7/5.8 only)
 
 Same independent axis as `/sdlc` — see
-[`skills/sdlc/templates/review-model.md`](../sdlc/templates/review-model.md):
-`--review-model <name>` flag > `pipeline.review_fix.model` (project.json) > skill default `opus`.
+[`skills/sdlc/templates/models.md`](../sdlc/templates/models.md):
+`--review-model <name>` flag > `models.code_review` (project.json) > skill default `opus`.
 Never governed by `models.cap` / `--model`.
 
 ## Stage 5.7 — Adversarial review
@@ -326,9 +333,11 @@ Never governed by `models.cap` / `--model`.
 Run `/sdlc` Stage 5.7/5.8 verbatim — same opt-in-only enablement (`--review-model <name>` flag or
 `pipeline.review_fix.enabled: true`; `--no-review` always wins OFF; omitted/absent means
 permanently OFF, no default-on flip), same auto-off gates (docs-only/no-surface diff self-skips
-except in skill-repo mode, which adapts rather than skips), same 4-lens fan-out
-(`correctness`/`plan-alignment`/`config-env-docs`/`security`), same verify pass, optional second pass, and
-false-positive circuit breaker. Runs after Stage 5.6 flowsim, before Stage 6 hand-off. Writes
+except in skill-repo mode, which adapts rather than skips), same **configurable** lens fan-out
+(`agents.code_review_lenses`; defaults to all four —
+`correctness`/`plan-alignment`/`config-env-docs`/`security` — and setting fewer cuts the stage's
+cost roughly linearly, one reviewer call per lens), same verify pass, optional second pass, and
+false-positive circuit breaker. Print the resolved list before dispatching, per `/sdlc` Stage 5.7. Runs after Stage 5.6 flowsim, before Stage 6 hand-off. Writes
 `stage-outputs/review.json`; self-skips append `review` to `run.json.stages_skipped`.
 
 ## Stage 5.8 — Fix loop
@@ -336,7 +345,7 @@ false-positive circuit breaker. Runs after Stage 5.6 flowsim, before Stage 6 han
 Run `/sdlc` Stage 5.8 verbatim — same `auto_fixable` rubric, same `pipeline.review_fix.mode`
 (interactive/auto/off) machinery, same independence enforcement and oscillation guard, same
 cumulative `stage-outputs/review-fix.json`, and the same separate fix-loop budget
-(`review.max_fix_loops`, independent of the shared Stages 4/5/5.5/5.6 budget). One divergence,
+(`agents.code_review_max_fix_loops`, independent of the shared Stages 4/5/5.5/5.6 budget). One divergence,
 matching `/sdlc-lite`'s existing warn-vs-block posture at Stage 6: a surviving HIGH-severity
 confirmed finding does **not** block here — it is listed prominently in the Stage 7 handoff report
 and the human decides whether to fix before committing, consistent with `/sdlc-lite`'s existing
@@ -394,6 +403,17 @@ themselves. (Want the commit + PR done for you? That's `/sdlc`.)
    `- [ ] (P1) rebuild <env> for <slug> (dependency change — rebuild, not restart) — plans/<slug>.md`;
    and a `- [ ] (P2) verify <slug> deployed — /post-deploy-verify plans/<slug>.md`
    row closes the loop the same way `/sdlc` Stage 6 does.
+   **Then print the manual-verification line** from `.claude/project.json` `stack.*`
+   (all keys optional): the deploy-delta case prints `stack.rebuild` (a dependency
+   changed, so a plain restart would run stale code), otherwise `stack.up`; append
+   `stack.url` when set. This is a **printed suggestion, never auto-run** — the user
+   asked for a validated tree, not a running one. When a needed key is absent, say
+   which key would supply it rather than guessing a command:
+
+   ```
+   Verify: docker compose up -d --build --force-recreate   # stack.rebuild (dependency change)
+   Open:   http://localhost:3000                            # stack.url
+   ```
 
 **State write**: `stage-outputs/handoff.json` =
 `{branch, files_changed[], committed: false, suggested_commit_msg}`. **Always

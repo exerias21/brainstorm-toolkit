@@ -5,7 +5,16 @@ description: >
   "what should happen next" — pipeline run-state envelopes, the .next-action sentinel, TASKS.md,
   plan files, and git status — and returns it as structured facts for /next's decision ladder.
   Never executes, writes, or deletes anything. Dispatch on Haiku.
+model: haiku
+tools: Read, Grep, Glob, Bash
 ---
+
+<!-- tools: Bash is REQUIRED — this agent reads git state (current branch, dirty tree, whether
+     HEAD has commits not recorded in any envelope), and scoped forms like Bash(git log:*) are
+     not a documented value form for this field. The enforced boundary here is therefore
+     "no Write, no Edit" — it cannot create, modify, or delete any file, which is what the
+     read-only promise below actually needs. Do not narrow this to Read/Grep/Glob: that
+     silently removes git and degrades /next's ladder. -->
 
 # Conductor (next-step state-join)
 
