@@ -179,7 +179,7 @@ rejected ones — with a one-line "why not chosen" note.
 consumer project's working directory) — NOT under `.claude/`. Use the file-write
 mechanism the agent has available. The on-disk path `<repo-root>/plans/<slug>.md`
 is the source of truth — it is the only location the downstream skills (`/sdlc`,
-`/flowsim`, `/post-deploy-verify`) read. Create the `plans/` directory first if it
+`/flowsim`, `/repo-health`) read. Create the `plans/` directory first if it
 doesn't exist.
 
 Do this **before** Step 7 (validation) — the validation checklist references

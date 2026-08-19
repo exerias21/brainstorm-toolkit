@@ -134,7 +134,7 @@ Catches the "migration file merged but never applied to the live DB" class
   the configured DB (repo @ NNN, applied @ MMM)."
 - If `applied_check` is absent, report informationally: "repo has N migrations;
   applied state unknown — set `migrations.applied_check` or run
-  `/post-deploy-verify`." Never fail; never connect to a DB without an
+  `/repo-health`." Never fail; never connect to a DB without an
   explicit configured command.
 
 ### Check 7 — Pipeline-state freshness (procedural)
@@ -222,9 +222,9 @@ Run again with --no-deps if dep audit is too slow on this repo.
 The "Suggested next" is the highest-impact actionable command (priority:
 unapplied migration > dep HIGH > stale pipeline run > test failure > stale
 gotcha > orphan file > skipped test > stale memory). This hygiene-priority
-ladder is the health-sweep specialization of `/next`'s **canonical decision
-ladder** (it feeds `/next` rung 7 — hygiene when nothing else is queued; `/next`
-is the source-of-truth conductor, see `skills/next/SKILL.md`). Only
+ladder is the health-sweep specialization of `/status`'s **canonical decision
+ladder** (it feeds `/status` rung 7 — hygiene when nothing else is queued; `/status`
+is the source-of-truth conductor, see `skills/status/SKILL.md`). Only
 append this command to `.claude/.next-action` if the repo is already set up
 for that integration (for example, the file already exists or `.gitignore`
 already covers `.claude/.next-action` or `.claude/`). Append ONE structured line,

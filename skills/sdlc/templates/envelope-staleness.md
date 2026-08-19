@@ -1,7 +1,7 @@
 # Envelope staleness — shared scan
 
 Canonical procedure for "find non-terminal pipeline envelopes and decide which are stale."
-Loaded by `/status`, `/repo-health` (Check 7), `/next`, `/sdlc` and `/sdlc-lite`.
+Loaded by `/status`, `/repo-health` (Check 7), `/sdlc` and `/sdlc-lite`.
 
 It lives in one file because it was written out five times and **had already drifted**:
 `/sdlc`'s main-branch false-positive fix never reached `/status`. Five copies of a rule with
@@ -50,7 +50,6 @@ The scan is identical everywhere; only the verb changes.
 
 | Caller | Uses it for |
 |---|---|
-| `/status` | one line per non-terminal run, so a stalled pipeline can't hide |
+| `/status` | one line per non-terminal run + the next-step ladder's rung 1 |
 | `/repo-health` Check 7 | a scored finding + the reconcile hint |
-| `/next` | rung input — a paused run outranks a fresh task |
 | `/sdlc`, `/sdlc-lite` | continuity detection at Stage 0/1 — **prompt, never auto-act** |

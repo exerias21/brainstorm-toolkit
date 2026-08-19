@@ -127,7 +127,7 @@ most, or none.
 ## Queue mode (`--queue`) — attended backlog loop
 
 `--queue` runs the pipeline over the pending backlog and **re-scans between items**,
-so work appended *during* the run (a `/triage`-drafted fix, a brainstorm follow-up)
+so work appended *during* the run (a `/status`-drafted fix, a brainstorm follow-up)
 joins the loop — that re-scan is what makes it a loop rather than a fixed batch.
 **No git writes** (it's `/sdlc-lite`): the whole loop leaves validated changes in
 your tree for you to commit; it never runs `/sdlc` or opens a PR. The loop itself is
@@ -161,7 +161,7 @@ Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
 3. **Stop conditions** (checked after each item — *every stop is a parked
    next-action, never a dead end*):
    - `stop_on: pause` (**always on**) — item ends `paused`/`failed` → write its
-     `/triage <slug>` hint to the seam and **park**. Never plow past a red run.
+     `/status` hint to the seam and **park**. Never plow past a red run.
    - `stop_on: confirm` (**always on**) — the item's next action is `confirm: true`
      (would write git history) → park.
    - `max_items` (default `5`, or the `[N]` arg) — items consumed this invocation.
@@ -173,7 +173,7 @@ Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
 - **An item's own pipeline paused/failed** (`stop_on: pause`) → that **item's** envelope gets
   the full Stage 6 close-out: `status = "paused"` (**never leave it `in_progress`** — a parked
   run left `in_progress` is flagged stale by `/status`/`/repo-health` after ~24h) +
-  `next_action = {cmd, confirm}` (the `/triage <slug>` or `--resume`, L8). Then write the
+  `next_action = {cmd, confirm}` (the `/status` or `--resume`, L8). Then write the
   queue-resume sentinel below.
 - **A queue-level stop** (`max_items` / `max_consecutive_failures` / a `confirm:true` action
   reached, with the current item already **complete**) → there is **no in-flight envelope to
@@ -183,7 +183,7 @@ Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
 **Then — ALWAYS, on every park — WRITE THE SENTINEL.** This is the step that keeps getting
 skipped (agents write only `run.json.next_action` and stop, which leaves the loop dead). Be
 exact about *why*: the `.claude/.next-action` **sentinel is the ONLY thing the Stop hook reads
-and auto-surfaces**; `run.json.next_action` is a durable *fallback* that `/next` reads **on
+and auto-surfaces**; `run.json.next_action` is a durable *fallback* that `/status` reads **on
 demand** — it is **NOT** auto-surfaced. A park that sets only the envelope field is invisible
 and cannot self-continue. Run these exact appends (dedup + multi-slot, `docs/SEAM.md`):
 
@@ -359,7 +359,7 @@ themselves. (Want the commit + PR done for you? That's `/sdlc`.)
    opens no PR, so these are conditioned on delivery, not a PR number): when the
    changed-files gate flagged the **deploy-delta** surface, append
    `- [ ] (P1) rebuild <env> for <slug> (dependency change — rebuild, not restart) — plans/<slug>.md`;
-   and a `- [ ] (P2) verify <slug> deployed — /post-deploy-verify plans/<slug>.md`
+   and a `- [ ] (P2) verify <slug> deployed — /repo-health`
    row closes the loop the same way `/sdlc` Stage 6 does.
    **Then print the manual-verification line** from `.claude/project.json` `stack.*`
    (all keys optional): the deploy-delta case prints `stack.rebuild` (a dependency
@@ -379,8 +379,8 @@ set `run.json.status` to a terminal value** (`complete`, or `paused` if you
 stopped mid-pipeline) before exiting — never leave it `in_progress`, or
 `/repo-health` and `/status` will (correctly) flag it as a stale run. **Also set
 `run.json.next_action = {cmd, confirm}` (L8)** when the run proposes a follow-up —
-on pause the `/triage <slug>` / `--resume` command, on complete the primary
-re-entry (e.g. `/post-deploy-verify plans/<slug>.md`) — so `/next` recovers the
+on pause the `/status` / `--resume` command, on complete the primary
+re-entry (e.g. `/repo-health`) — so `/status` recovers the
 handoff after the fire-once sentinel; omit when there's none. This holds
 for **retro / validation-only runs** too (Stage 2 skipped because the code
 already landed): advance `run.json.stage`/`stages_completed` as each validation

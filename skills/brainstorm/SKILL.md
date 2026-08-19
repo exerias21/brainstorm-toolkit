@@ -24,7 +24,7 @@ on ideas together with the user before producing an implementation plan.
 `plans/brainstorm-<topic-slug>.md` in the repo. Plan mode's approve-and-proceed gate adds a
 second, redundant approval on top of the conversational convergence this skill already does
 with the user, and its sandbox blocks the repo-root write that every downstream skill
-(`/sdlc`, `/sdlc-lite`, `/flowsim`, `/post-deploy-verify`) depends on. The plan file on disk
+(`/sdlc`, `/sdlc-lite`, `/flowsim`, `/repo-health`) depends on. The plan file on disk
 is the artifact — not a plan-mode proposal.
 
 ## When This Skill Triggers
@@ -209,7 +209,7 @@ revisiting later) often pick these back up.
 
 The persistent plan **must** live at `<repo-root>/plans/<slug>.md` — that is the
 only location downstream skills (`/sdlc`, `/sdlc-lite`, `/flowsim`,
-`/post-deploy-verify`, validators) read. If the `plans/` directory doesn't exist,
+`/repo-health`, validators) read. If the `plans/` directory doesn't exist,
 create it first (use a Bash `mkdir -p plans` or include the directory in the Write
 target — Write creates parent dirs automatically).
 
@@ -350,10 +350,10 @@ re-choose a flow they've already established this session:
   with **no git writes**, so it's the safe default — it can't surprise the user
   with a PR.
 
-> These continuity rules are a slice of `/next`'s **canonical decision ladder**
-> (rung 4 — a plan with no run; see `skills/next/SKILL.md`). `/next` is the source
+> These continuity rules are a slice of `/status`'s **canonical decision ladder**
+> (rung 4 — a plan with no run; see `skills/status/SKILL.md`). `/status` is the source
 > of truth for "what's the next step"; this inline copy keeps `/brainstorm`
-> self-contained when the user hasn't got `/next` in mind.
+> self-contained when the user hasn't got `/status` in mind.
 
 Drop a **next-action sentinel** naming that command so the Stop hook surfaces
 it. The plan file MUST already exist at `plans/brainstorm-<topic-slug>.md`

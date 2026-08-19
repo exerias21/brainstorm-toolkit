@@ -156,7 +156,7 @@ that test fires on every historical run (a false-positive storm). Instead:
    ancestor and its commit is behind HEAD, so the check is pure noise there.
    Continuation is a *feature-branch* concern. This guard and the two below are
    the shared scan in `skills/sdlc/templates/envelope-staleness.md` — the same
-   procedure `/status`, `/repo-health` and `/next` run. Keep them in sync there,
+   procedure `/status`, `/repo-health` and `/status` run. Keep them in sync there,
    not here; they drifted once already.
 1. Otherwise (a feature branch): glob `.claude/pipeline/*/run.json`; keep only
    runs whose `base_commit` is an ancestor of HEAD (`git merge-base --is-ancestor`).
@@ -532,7 +532,7 @@ Remaining failures:
 
 ### Diagnosis
 
-**Fastest path: run `/triage <slug>`** — it reads this sidecar, classifies the failure,
+**Fastest path: run `/status`** — it reads this sidecar, classifies the failure,
 drafts the fix for a code defect, and hands back the `--resume` re-entry. Or triage inline:
 - **Class** (inferred from the failing stage's sidecar `data.remaining_failures[]`): one of
   **flaky** (a test flips pass/fail across loops) · **code-defect** (a consistent assertion
@@ -619,7 +619,7 @@ class — pause and say so; do not "fix" code to match a stale plan.
 
 **Writes** `stage-outputs/validate.json` with `data.layers{logs,frontend,backend,e2e,eval}`,
 `data.new_failures[]`, `data.preexisting_failures[]`, `data.requirements[]`, `data.flow[]`.
-The former `plan-validate.json` and `flowsim-<slug>.json` sidecars are gone; `/triage` and
+The former `plan-validate.json` and `flowsim-<slug>.json` sidecars are gone; `/status` and
 `/status` read `validate.json` for all of it.
 
 
@@ -901,7 +901,7 @@ matching rows closes none — report that, don't force one.
 **Leave re-entry rows.** Closing the delivered rows is not the end of the loop —
 append the follow-up work so the queue knows about it (the back-edge the pipeline
 otherwise lacks: a finished run seeds its own next step instead of dead-ending):
-- Always (PR path): `- [ ] (P2) verify PR #<n> of <slug> merged & deployed — /post-deploy-verify plans/<slug>.md`
+- Always (PR path): `- [ ] (P2) verify PR #<n> of <slug> merged & deployed — /repo-health`
 - When the changed-files gate flagged the **deploy-delta** surface (a
   manifest/lockfile/Dockerfile changed): `- [ ] (P1) rebuild <env> for <slug> (dependency change — rebuild, not restart) — plans/<slug>.md`
 - When a soft-stop was overridden: the debt row per **Soft-stop** below.
@@ -916,9 +916,9 @@ manufacture one.
 **Record the durable next action (L8).** At that same close point, also set
 `run.json.next_action = {"cmd": <the proposed next command>, "confirm": <true iff it
 writes git history>}` whenever the run proposes a follow-up — on **pause**, the
-`/triage <slug>` or `/sdlc <plan> --resume` from the Diagnosis; on **complete**, the
-primary re-entry row's command (e.g. `/post-deploy-verify plans/<slug>.md`). This mirrors
-the `.next-action` sentinel into the envelope so `/next` recovers the handoff *after* the
+`/status` or `/sdlc <plan> --resume` from the Diagnosis; on **complete**, the
+primary re-entry row's command (e.g. `/repo-health`). This mirrors
+the `.next-action` sentinel into the envelope so `/status` recovers the handoff *after* the
 fire-once sentinel was consumed (best-effort, additive — see `templates/state-schema.md`).
 Omit it when there's no follow-up.
 

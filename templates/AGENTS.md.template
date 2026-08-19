@@ -93,7 +93,6 @@ Copilot for production-bound work.
 
 This repo uses the **brainstorm-toolkit** plugin. Available slash commands (see `.claude/skills/` or `.github/skills/` depending on your agent):
 
-- `/cheatsheet [skill]` — print every installed skill, grouped by category, with the typical chains
 - `/brainstorm [topic]` — conversational ideation *(Plan mode on Claude, linear on Copilot)*
 - `/task "description"` — create a task and execute it with TDD
 - `/status` — show current task counts from TASKS.md
@@ -106,4 +105,4 @@ This repo uses the **brainstorm-toolkit** plugin. Available slash commands (see 
 - `/flowsim {plan}` — trace claimed flows through code and flag mismatches
 - `/dead-code-review` — multi-agent dead code scan *(Claude only)*
 
-For the always-current view, run `/cheatsheet` — it reads the SKILL.md frontmatter directly. The list above is a starting map; `CHEATSHEET.md` at repo root is a printable one-pager.
+For the always-current view, run `README.md` — it reads the SKILL.md frontmatter directly. The list above is a starting map; `CHEATSHEET.md` at repo root is a printable one-pager.

@@ -174,7 +174,7 @@ If no `eval.runner` is configured in `.claude/project.json`, skip Stages 3 and 4
 
 On a gate failure: parse the results, dispatch a fix for **only** those failures (no
 refactor), re-run the gate. Max **3 iterations, shared across Stages 5/5.5/5.6**. On
-exhaustion, pause with the Diagnosis block from `/sdlc` (fastest path `/triage <slug>`;
+exhaustion, pause with the Diagnosis block from `/sdlc` (fastest path `/status`;
 or name the class — flaky · code-defect · plan-wrong · config-missing — and one command),
 then `--resume` reuses the green stages.
 
@@ -295,7 +295,7 @@ blocking Stage 6; stop and report rather than opening the PR.
 6. Trigger a code review pass over the diff. On Copilot, invoke `/review` if available; otherwise summarize the diff yourself in the chat (severity-tagged: blocker / nit / question). Skip if `pipeline.skip_review: true` in `.claude/project.json`. The review stays in chat — post it as a PR comment via the GitHub MCP only if the user asked for team-visible review.
 7. **Capture at loop-exit** — run the shared protocol in `skills/gotcha/SKILL.md` (canonical: `skills/gotcha/SKILL.md`). Auto-draft a gotcha entry **only** on an objective trigger — a fix-loop (eval/test/flowsim) that **failed-then-recovered**, or the user voicing surprise — route it through gotcha's dedup check, and ask a single confirm. A clean run stays silent (no vibe-gating). `/sdlc` commits the capture with the run; it does not use the `.next-action` seam.
 
-8. **Leave re-entry rows** so the queue keeps the follow-up (a finished run seeds its own next step): always append `- [ ] (P2) verify PR #<n> of {feature-slug} merged & deployed — /post-deploy-verify plans/{feature-slug}.md`; when a manifest/lockfile/Dockerfile changed (deploy-delta), also `- [ ] (P1) rebuild <env> for {feature-slug} (dependency change — rebuild, not restart) — plans/{feature-slug}.md`. Also set `run.json.next_action = {"cmd": "/post-deploy-verify plans/{feature-slug}.md", "confirm": false}` (L8) so `/next` recovers the handoff after the sentinel fires.
+8. **Leave re-entry rows** so the queue keeps the follow-up (a finished run seeds its own next step): always append `- [ ] (P2) verify PR #<n> of {feature-slug} merged & deployed — /post-deploy-verify plans/{feature-slug}.md`; when a manifest/lockfile/Dockerfile changed (deploy-delta), also `- [ ] (P1) rebuild <env> for {feature-slug} (dependency change — rebuild, not restart) — plans/{feature-slug}.md`. Also set `run.json.next_action = {"cmd": "/post-deploy-verify plans/{feature-slug}.md", "confirm": false}` (L8) so `/status` recovers the handoff after the sentinel fires.
 
 Do NOT switch back to `main` after the PR — leave the branch checked out so the user can inspect.
 

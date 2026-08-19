@@ -82,7 +82,7 @@ if sentinel_file:
         lines.append("- next action (.claude/.next-action):\n" + s)
 lines.append(f"- queue: TASKS.md ({open_n} open / {done_n} done)")
 lines.append("Resume from the envelope/sentinel on disk, not from memory. Do not re-run stages already "
-             "marked passed. If unsure where you are, run /next.")
+             "marked passed. If unsure where you are, run /status.")
 print(json.dumps({"hookSpecificOutput": {
     "hookEventName": event or "SessionStart", "reloadSkills": True, "additionalContext": "\n".join(lines)}}))
 PY

@@ -115,7 +115,7 @@ while [ "$(pending)" -gt 0 ]; do
   after="$(pending)"
   if [ "$after" -ge "$before" ]; then
     echo "[loop-runner] no progress ($before -> $after pending) — stopping to avoid a spin." >&2
-    echo "[loop-runner] remaining items may be parked/blocked; check /status or /next." >&2
+    echo "[loop-runner] remaining items may be parked/blocked; check /status." >&2
     exit 1
   fi
 done

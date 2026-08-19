@@ -4,6 +4,7 @@ description: >
   Run all relevant tests and log audits after code changes. Reads `.claude/project.json`
   for project-specific commands. Gracefully skips any steps whose commands are not
   configured. Use after implementing features, fixing bugs, or before marking work done.
+argument-hint: "[--loop]"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
 ---
@@ -72,6 +73,17 @@ Skip if the key is missing.
 ```
 
 Skip if the key is missing.
+
+**`--loop` — fix e2e failures instead of only reporting them** (absorbed from the former
+`/test-check --loop`). With `--loop`, dispatch the `e2e-test-runner` agent (by type:
+`brainstorm-toolkit:e2e-test-runner`, or bare `e2e-test-runner` when vendored) rather than
+running the command inline. It separates flaky failures from real ones, re-runs each failure
+once before believing it, dispatches fixes, and re-runs until green or `test.e2e_max_fix_loops`
+(default 3) is hit. It also reads `test.e2e_patterns_file` and `test.e2e_rerun_failed_only`
+when set. Without `--loop`, this step stays one-shot: run, report, don't fix.
+
+The agent was always the thing doing the work — `/test-check --loop` was a second entry point to it,
+and `/sdlc` Stage 5 a third. One skill, one flag.
 
 ### 5. Post-test log re-check (if `logs.command` defined)
 

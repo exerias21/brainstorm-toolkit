@@ -56,6 +56,29 @@ metadata:
    A non-terminal pipeline run is the one thing worth making loud — it's how a
    skipped/abandoned pipeline becomes visible instead of lingering in JSON.
 
+## Next step (absorbed from the former `/status`)
+
+After the summary, print **one** recommended next command with a one-line reason. Highest
+match wins; stop at the first hit:
+
+1. **Paused/failed run on this branch** → `/sdlc-lite <input> --resume`. Read the failing
+   stage's sidecar and name the class in the reason — **flaky** (a test flips across loops) ·
+   **code-defect** (a consistent assertion failure) · **plan-wrong** (the failure contradicts
+   a plan step) · **config-missing** (a command/env the runner needs). For a code defect,
+   recommend `/task fix: <one-line failure>` first, then the resume.
+2. **Non-terminal run whose work looks landed** (`base_commit` is an ancestor of HEAD) →
+   `/status --prune-stale` to reconcile.
+3. **Pending sentinel** (`.claude/.next-action` non-empty) → surface each line's `cmd`
+   verbatim. Never consume the sentinel here; this skill is read-only.
+4. **A plan file with no pipeline run** → `/sdlc-lite <plan>`.
+5. **`[~]` in-progress TASKS.md row** → `/sdlc-lite task-<N>`.
+6. **`[ ]` pending rows** → the top one: `/task` if small and bounded, `/sdlc-lite` if it
+   needs the full pipeline.
+7. **Nothing queued** → `/brainstorm` for ideation, or `/repo-health` for a hygiene sweep.
+
+Print it as `Next: <command>  — <reason>`. **Recommend only; never execute.** The classes in
+rung 1 are what the former `/status` did — the diagnosis is a paragraph, not a skill.
+
 ## `--prune-stale` (opt-in cleanup — the one write exception)
 
 Detection alone leaves stale envelopes flagged forever. `/status --prune-stale`
@@ -77,9 +100,9 @@ documented, confirm-gated exception — it's the only path that writes.
 
 ## Rules
 
-- **`/status` is the readout; `/next` is the recommendation.** For "which command
+- **`/status` is the readout; `/status` is the recommendation.** For "which command
   should I run next" — joining pipeline runs, the `.next-action` sentinel, plans,
-  and git, not just the queue — point the user to `/next` (its decision ladder is
+  and git, not just the queue — point the user to `/status` (its decision ladder is
   the canonical next-step procedure this skill's "next up" line mirrors a slice of).
 - Pure read by default, no file writes. The sole exception is `--prune-stale`
   above, which is explicit and confirm-gated.

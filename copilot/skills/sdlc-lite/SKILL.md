@@ -82,7 +82,7 @@ setting (`models.cap`, `pipeline.*`, test commands) is silently inert.
   priority (top `N` or `pipeline.loop.max_items`, default 5; `P1>P2>P3`, `[~]`
   first) and loop the pipeline over them, **re-scanning `TASKS.md` between items**
   so rows added mid-run join the loop. Stop conditions (`pipeline.loop.*`): a
-  `paused`/`failed` item **parks** the loop (write its `/triage <slug>` hint to
+  `paused`/`failed` item **parks** the loop (write its `/status` hint to
   `.claude/.next-action`), a `confirm:true` next action parks it, and
   `max_items` / `max_consecutive_failures` (default 2) bound it. **No git writes;
   every park is a written next-action, never a dead end.** Each item's envelope
@@ -186,7 +186,7 @@ Same procedure as `/sdlc` Stage 3 (see `.github/skills/sdlc/SKILL.md`):
 
 On a gate failure: parse the results, dispatch a fix for **only** those failures (no
 refactor), re-run the gate. Max **3 iterations, shared across Stages 5/5.5/5.6**. On
-exhaustion, pause with the Diagnosis block from `/sdlc` (fastest path `/triage <slug>`;
+exhaustion, pause with the Diagnosis block from `/sdlc` (fastest path `/status`;
 or name the class — flaky · code-defect · plan-wrong · config-missing — and one command),
 then `--resume` reuses the green stages.
 
@@ -331,8 +331,8 @@ push, PR, or `/review`. You review and commit.
 Write `stage-outputs/handoff.json` =
 `{branch, files_changed[], committed: false, suggested_commit_msg}`.
 Set `run.json.status = "complete"`. Also set `run.json.next_action = {cmd, confirm}`
-(L8) to the proposed follow-up (`/post-deploy-verify plans/<slug>.md` on complete;
-`/triage <slug>` on pause) so `/next` recovers the handoff after the sentinel fires;
+(L8) to the proposed follow-up (`/repo-health` on complete;
+`/status` on pause) so `/status` recovers the handoff after the sentinel fires;
 omit when there's none.
 
 ## Stage 7 — Report

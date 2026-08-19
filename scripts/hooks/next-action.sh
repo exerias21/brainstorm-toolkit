@@ -11,7 +11,7 @@
 #   - Always exits 0; this hook is informational and must never block.
 #
 # Peek-vs-consume rule: this hook is the ONLY consumer — it alone deletes the
-# file. Any other reader (e.g. a future /next or /status that inspects the
+# file. Any other reader (e.g. a future reader that inspects the
 # pending next-action) must PEEK: read without deleting. A second consumer would
 # eat the hint before the user sees it.
 #
@@ -136,7 +136,7 @@ if [ -d "$PLANS_DIR" ]; then
     pending=$((pending+1))
   done
   if [ "$pending" -gt 0 ]; then
-    msgs+=("◆ ${pending} recent plan(s) awaiting a pipeline run. Run /next for the recommended next step.")
+    msgs+=("◆ ${pending} recent plan(s) awaiting a pipeline run. Run /status for the recommended next step.")
   fi
 fi
 
