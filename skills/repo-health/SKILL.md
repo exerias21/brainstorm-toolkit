@@ -253,4 +253,4 @@ best-effort — failing to write the cache never fails the run.
   changing things. Run after merges land.
 - For a deep dead-code investigation — `/dead-code-review` is the
   multi-agent thorough variant.
-- For PR-scoped review — use `/review` or `/sdlc`'s Stage 5.5 instead.
+- For PR-scoped review — use `/review` or `/sdlc`'s Stage 5 instead.

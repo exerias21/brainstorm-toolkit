@@ -17,63 +17,6 @@ Autonomous feature delivery: plan file in, PR out.
 /brainstorm → plan → /sdlc → sanity-check → implement → eval → fix → validate → flowsim → PR → human review
 ```
 
-## Execution mode — prose by default, deterministic Workflow when ultracode is on
-
-This skill has **two** equivalent expressions of the same pipeline. **The prose
-Stages 1–7 below are the default and the source of truth.** Use the Workflow
-only when explicitly opted in.
-
-**Use the deterministic Workflow IFF ALL of these hold:**
-- you are on **Claude Code with the Workflow tool available**, AND
-- **ultracode is explicitly enabled** — the user typed `ultracode`, the session
-  has ultracode on, or the user asked for the Workflow / multi-agent
-  orchestration by name, AND
-- `pipeline.skip_workflow` is **not** `true` in `.claude/project.json`, AND
-- **`--resume` was not passed** — resuming a paused envelope is a prose-path
-  feature. The Workflow's script sandbox has no filesystem access (it can't read
-  prior `stage-outputs/*.json` to know which stages already passed), so a
-  `--resume` run always takes the prose Stages below. (The Workflow's own
-  `resumeFromRunId` is a *same-session* script-cache resume — a different thing
-  from resuming a paused pipeline across sessions.)
-
-When all three hold, invoke:
-
-**Resolve `scriptPath` first** — the script lives in a different place under each
-install mode, and the wrong one throws:
-- **Plugin install** → `${CLAUDE_PLUGIN_ROOT}/skills/sdlc/workflows/sdlc-pipeline.workflow.js`
-  (there is no `.claude/skills/` at all in this mode).
-- **Vendored install** (`setup.sh`) → `.claude/skills/sdlc/workflows/sdlc-pipeline.workflow.js`.
-
-Use whichever exists; if neither resolves, **fall back to the prose Stages 1–7** rather
-than failing the run.
-
-```
-Workflow({
-  scriptPath: "<resolved per above>",
-  args: { mode: "sdlc", plan_file: "<plan path>",
-          model_cap: "<resolved cap: --model flag > project.json models.cap > null>",
-          review_model: <the --review-model value, or null if the flag was not passed>,
-          no_review: <true iff --no-review was passed, else false> }
-})
-```
-
-The Workflow (`workflows/sdlc-pipeline.workflow.js`) encodes the control flow the
-prose only describes — the Stage 2 decompose gate arithmetic, the *single*
-3-iteration fix budget shared across Stages 4/5/5.5/5.6, dependency-ordered lane
-dispatch, and the parallel barriers — as code, so they can't be miscounted,
-silently serialized, or mis-gated. The script orchestrates; each stage's **agent**
-does the work and writes the state envelope (the script sandbox has no filesystem
-access). Resumable via `resumeFromRunId`.
-
-**Otherwise — the default — follow the prose Stages 1–7 below.** That default
-path covers: any Claude run where ultracode wasn't requested, Copilot and Codex
-(no Workflow tool — Codex has its own plan mode, but not this JS orchestration
-primitive), older Claude Code without the tool, and `skip_workflow: true`. **The
-prose stages are the source of truth; the Workflow mirrors them.** If you change
-a stage's contract, change the prose first, then bring the Workflow + overlays
-into line (and re-run `node --check`-style validation on the script) — see
-`CLAUDE.md` → "Workflow-backed skills … the three-way sync contract".
-
 ## Arguments
 
 - `plan_file` (required): Path to the plan (e.g., `plans/my-feature.md`)
@@ -88,7 +31,6 @@ into line (and re-run `node --check`-style validation on the script) — see
   rule: ignore, warn once, fall through to `models.cap`/default) and must
   resolve to the configured cap *before* it is ever passed as `args.model_cap`
   — never forward the raw typo'd string, since forwarding it un-caps every
-  Opus dispatch in the Workflow.
 - `--review-model <name>` (optional): per-run reviewer-model override; see
   **Reviewer model** and [`templates/models.md`](templates/models.md).
   `name` ∈ `fable|opus|sonnet|haiku`. Default `opus`. Passing `fable` (or
@@ -150,7 +92,7 @@ sidecar writes).
   `sanity-check.json`, not `stage-1.5.json`) and append the stage to
   `run.json.stages_completed`.
 - When skill-repo mode is auto-detected, skipped stages (`generate-evals`,
-  `plan-validate`, `flowsim`) write **no sidecar**; add their
+  `flowsim`) write **no sidecar**; add their
   names to `run.json.stages_skipped` instead.
 - On terminal state, set `run.json.status` to `complete`, `failed`, or `paused`
   per the schema doc.
@@ -197,7 +139,7 @@ failure evidence you're resuming to fix**. Behavior:
    resumed stages), same envelope updates; set `run.json.status = "in_progress"`
    on pickup.
 
-Resume is **prose-path only** — the Workflow sandbox can't read prior sidecars
+Resume reads the prior sidecars off disk
 (see the execution-mode note above), so `--resume` always runs these prose stages.
 
 ### Continuity detection (prompt, never auto)
@@ -304,8 +246,8 @@ fix agent, the validators — honors the **model-tier cap**. Resolve each dispat
 dispatch, print `model: <tier> (cap: <cap|none>)`** and dispatch at that tier.
 **The default is Sonnet-first**: with no `--model`/`models.cap` set the fan-out
 resolves to Sonnet (Opus sites → Sonnet, Haiku stays Haiku); `--model opus` opts
-a run up to Opus. Emit the session-model nudge once when a cap is active. On the Workflow path the same
-resolution is enforced by `capModel()` at the `agent()` seam.
+a run up to Opus. Emit the session-model nudge once when a cap is active. Prose is the only enforcement
+surface — print the line, then dispatch at that tier.
 
 **Config-presence check (once, at Stage 1).** If `.claude/project.json` is **absent** while
 `.claude/project.json.example` is **present**, warn once — every `project.json`-gated setting in
@@ -541,7 +483,7 @@ Instead, when the testable functions live in the app package:
 2. They run in **Stage 5** via the configured `test.unit` command, not via
    `eval.runner`.
 3. Record `data.coverage_route: "test.unit"` in the generate-evals sidecar so
-   Stage 5.6 (flowsim) knows unit results are the corroborating evidence.
+   Stage 5's flow axis knows unit results are the corroborating evidence.
 
 ### For features without testable pure functions:
 
@@ -579,7 +521,7 @@ consulted — a weak oracle pre-empting the strong one. Stage 3 still authors th
 runs them. See `plans/brainstorm-post-merge-cleanup.md` (D2).
 
 **The pause.** On budget exhaustion, emit this block, inferring the class from *the failing
-stage's own* sidecar (`validate.json`, `plan-validate.json`, `flowsim-<slug>.json`, `review.json`):
+stage's own* sidecar (`validate.json`, `review.json`):
 
 ```markdown
 ## SDLC Pipeline — PAUSED
@@ -612,205 +554,74 @@ Set `run.json.status = "paused"` alongside the failing stage's sidecar `status: 
 ---
 
 
-## Stage 5: Full Validation
+## Stage 5: Validate
 
-Run the complete test suite to ensure no regressions.
+One stage, one gate, one sidecar. It answers the two questions that matter after implement:
+**does it run, and is it what the plan asked for?**
 
-**First, compute the changed-files gate** (see `templates/changed-files-gate.md`):
-read `stage-outputs/implement.json` `data.files_changed[]` and mark which
-surfaces (frontend / backend / data / docs) were touched. The substitutions
-below are *driven by that gate*, not by the user's prompt — "frontend changed"
-is a fact about the diff, so the visual/e2e check fires automatically rather
-than waiting to be asked.
+This replaces the former Stages 5, 5.5 and 5.6. They asked the same question three ways — "do
+the tests pass", "does the code fulfill the plan" (four checklist agents), "does the flow match
+the plan" (a narrative trace) — each with its own dispatch, sidecar, gate and pause, and each
+paying its own round of orchestrator chatter. A current model does not need the plan-vs-diff
+check partitioned into api/ui/data/cross-module lanes to do it well.
 
-1. Run `/test-check` via the test-check skill procedure, BUT with one substitution:
-   - Log audit (if `logs.command` configured)
-   - Frontend unit tests (if `test.frontend` configured and **frontend surface touched**)
-   - Backend unit tests (if `test.unit` configured and **backend surface touched**)
-   - **E2E / visual check — dispatch the `e2e-test-runner` agent** (by type:
-     `brainstorm-toolkit:e2e-test-runner`, or bare `e2e-test-runner` when vendored) (if `test.e2e`
-     configured and **frontend surface touched** per the gate). The agent runs a
-     fix loop for e2e failures with a flaky-test guard; its iterations count
-     toward the shared 3-iteration fix budget. If `test.e2e` is not configured but
-     the frontend surface was touched, surface that as a **soft-stop candidate**
-     ("frontend changed but no visual check ran" — see "Soft-stop tier"), don't
-     pass silently.
-   - Eval regression (if `eval.runner` configured)
+### 1. Run the suite
 
-2. **If NEW failures** in the non-e2e layers:
-   - Go back to shared fix loop with the test-check failures
-   - The fix agent receives the test output, not eval output
+Run the `/test-check` procedure, driven by the diff's surfaces (see
+`templates/changed-files-gate.md`), with one substitution: report only **new** failures as
+failures and note pre-existing ones separately.
 
-3. **If the e2e agent returns `failed_after_max_iterations`**:
-   - Its report lists the persistent failures. Include them in the PAUSE message
-     (the shared pause shape above). Do NOT proceed to Stage 5.5.
+- Log audit (if `logs.command` configured)
+- Frontend unit tests (if `test.frontend` configured **and** the frontend surface was touched)
+- Backend unit tests (if `test.unit` configured **and** the backend surface was touched)
+- **E2E / visual check** — dispatch the `e2e-test-runner` agent (by type:
+  `brainstorm-toolkit:e2e-test-runner`, or bare `e2e-test-runner` when vendored) if `test.e2e`
+  is configured **and** the frontend surface was touched. It runs its own bounded fix loop with
+  a flaky-test guard; its iterations count toward the shared budget. If the frontend surface was
+  touched and no `test.e2e` is configured, raise a **soft-stop candidate** ("frontend changed
+  but no visual check ran") — never pass silently.
+- Eval regression (if `eval.runner` configured) — this is the only place evals run.
 
-4. **If only pre-existing failures**:
-   - Note them in the PR body but proceed — don't fix what was already broken
+### 2. Check the delivery against the plan
 
-5. **If all green**: Proceed to Stage 5.5
+**Skip when there is no plan target** (an ad-hoc `/sdlc-lite` description) — there is nothing
+to check against, and say so rather than passing silently.
 
-**State write**: write `stage-outputs/validate.json` with `data.layers`
-(per-layer status: logs, frontend, backend, e2e, eval), `data.new_failures[]`,
-`data.preexisting_failures[]`. In skill-repo mode (auto-detected) this stage
-is replaced by the skill-repo validation procedure (see "Skill-repo mode"
-below); the sidecar then carries `data.mode = "skill-repo"` with the
-structural-check results documented in `templates/state-schema.md`.
+Dispatch **one agent** — Sonnet by default, per the **Model cap** section — with the plan and
+the diff, and this brief:
 
----
+> Verify the delivered change against the plan on two axes, and report them separately.
+> **(a) Requirements:** walk every acceptance criterion and implementation step in the plan and
+> mark it met / partially met / missing, with a `file:line` for each judgement. Feature
+> completeness and behavioural correctness — not code style, which the tests and the review
+> stage cover.
+> **(b) Flow:** trace each flow the plan claims through the actual source, in order, and flag
+> `MISMATCH` (code does something different), `UNCLEAR` (can't follow it), or `MISSING` (the
+> step isn't there). This catches the case where every individual criterion passes but the
+> end-to-end path silently deviates — wrong ordering, a skipped step, a different module doing
+> the work.
+> Return `{requirements: [...], flow: [...], green: bool}`. `green` is false if any requirement
+> is missing or any flow step is `MISMATCH`/`MISSING`.
 
-## Stage 5.5: Plan Requirements Validation
+Give it the test results from step 1 as corroborating evidence. Without any test evidence
+(neither `eval.runner` nor `test.unit` produced results) the flow axis degrades to mostly-grep —
+still run it, but say in the report that it was unwitnessed.
 
-Re-read the plan file and validate that the implementation actually fulfills every
-requirement. This catches "code works but feature is incomplete" — the gap between
-passing tests and a working product.
+For a deeper interactive trace, `/flowsim` remains available as a standalone skill; this stage
+is its inline, bounded form.
 
-**Skip this stage if no `eval.runner` is configured** (no test surface to
-validate against). Skip-on-skill-repo is handled by the skill-repo mode
-substitutions below.
+### 3. Gate
 
-### Decide which validators to launch
+Green iff no new test failures **and** `green` from step 2. On failure, route into the
+**Shared fix loop + pause shape** above (3 iterations, shared with Stage 5.7's separate budget
+excluded). A `MISMATCH` where the *code* is right and the *plan* is stale is a `plan-wrong`
+class — pause and say so; do not "fix" code to match a stale plan.
 
-Don't fan out to all four agents unconditionally — gate each one on whether the plan
-actually touches that surface area. Use the `files_changed` and `Implementation Steps`
-sections of the plan to decide:
+**Writes** `stage-outputs/validate.json` with `data.layers{logs,frontend,backend,e2e,eval}`,
+`data.new_failures[]`, `data.preexisting_failures[]`, `data.requirements[]`, `data.flow[]`.
+The former `plan-validate.json` and `flowsim-<slug>.json` sidecars are gone; `/triage` and
+`/status` read `validate.json` for all of it.
 
-| Validator | Launch when the plan… | Skip when… |
-|-----------|-----------------------|------------|
-| `api` | mentions any HTTP endpoint, route, controller, or `/api/*` path; or touches files in routes/, controllers/, api/, handlers/, endpoints/ | the plan touches no server-side request handlers |
-| `ui` | mentions any frontend component, page, layout, or touches `.tsx`/`.jsx`/`.vue`/`.svelte` files, or paths under components/, pages/, app/, src/ui/ | the plan is backend- or script-only |
-| `data` | mentions a migration, schema change, new table/column/index, or touches files under migrations/, schema/, models/ | the plan does not change DB structure |
-| `cross-module` | **always** — this is the catch-all for integration gaps and is cheap (Haiku) | never |
-
-Record the decision in the validation report header so the user can see which checks
-ran. If all surfaces were touched, all four agents run — the gating is a savings on
-narrow plans (single-file fixes, SonarQube targets, docs-only changes), not a default
-restriction.
-
-### Launch validation agents in parallel
-
-Spawn the selected agents in a **single message** (parallel launch). Each agent gets the
-plan file path and a specific validation focus. Dispatch them **by agent type** —
-`brainstorm-toolkit:ux-plan-validator` under a plugin install, or the bare
-`ux-plan-validator` under a vendored (`setup.sh`) install — so the definition arrives as
-the agent's system prompt rather than a file path that may not exist (naming per
-`docs/CONVENTIONS.md` → "Agent dispatch").
-
-Read the prompts from `templates/stage-5.5-validation.md` (sections: `api`, `ui`,
-`data`, `cross-module`). Substitute `{plan_file}`, `{feature_name}`, and
-`{feature_slug}`, then dispatch the **selected** agents in a single message.
-
-**Validator model tier.** Built-in defaults: `api` and `ui` use Sonnet; `data` and
-`cross-module` use Haiku. `.claude/project.json` `models.plan_review`
-(`haiku|sonnet|opus`) **replaces the built-in default for all four validators** when set —
-use it when you want a stronger reader judging the plan, since `cross-module` always runs
-and is the catch-all for integration gaps. The resolved tier still passes through the
-**model cap** (`models.cap` / `--model`, see `templates/models.md`), which is a
-*ceiling*: `capModel(effective_default, cap)`. Two consequences worth stating plainly —
-the cap can only lower the tier, never raise it, so with the Sonnet-first default cap
-`plan_validate.model: "opus"` still dispatches Sonnet unless you also pass `--model opus`;
-and raising the tier costs on **every** run that reaches this stage, because
-`cross-module` is unconditional. This is **not** a third model axis — it sets a default
-*within* the fan-out axis and is still capped by it. Print the resolved tier with the
-usual `model: <tier> (cap: <cap|none>)` line before dispatching.
-
-### Process results
-
-1. Collect results from all agents
-2. Merge into a single validation report
-3. **If all checks pass**: proceed to Stage 5.6
-4. **If failures found**:
-   - Feed the failure list back into the shared fix loop
-   - The fix agent receives the validation report, not eval output
-   - Re-run validation after fixes (counts toward the 3-iteration budget)
-5. **If failures persist after 3 iterations**: report to user and stop
-
-```markdown
-## Plan Validation Report
-
-| Focus | Checks | Passed | Failed |
-|-------|--------|--------|--------|
-| API   | N      | X      | Y      |
-| UI    | N      | X      | Y      |
-| Data  | N      | X      | Y      |
-| Cross | N      | X      | Y      |
-
-### Failures
-{list of specific failures with suggested fixes}
-```
-
-**State write**: write `stage-outputs/plan-validate.json` with
-`data.validators_launched[]`, `data.validators_skipped[]` (which gating
-decisions skipped), `data.totals`, `data.failures[]`.
-
----
-
-## Stage 5.6: Flow Simulation (plan vs. implementation)
-
-After Stage 5.5's checklist validation passes, run **`/flowsim`** as a narrative
-cross-check: trace each claimed flow through the actual source and flag MISMATCH,
-UNCLEAR, or MISSING steps. This catches the class of gap where every individual
-checklist item passes but the end-to-end flow silently deviates from the plan's
-intent (wrong ordering, skipped step, different module doing the work).
-
-**Skip this stage only if there is NEITHER eval results NOR `test.unit`
-results to corroborate** — i.e. no test evidence of any kind. flowsim accepts
-**`test.unit` results as corroborating evidence**, not just
-`eval.features_dir/.../results.json`; this is what makes it meaningful for an
-app-package feature that routed coverage to `test.unit` (Stage 3 above). Only
-when both are absent does flowsim degrade to mostly-grep, and then it's best
-run interactively via `/flowsim`. Skill-repo mode skips this stage via the
-substitution table below.
-
-### Invoke
-
-Invoke the `/flowsim` skill with the plan file and feature slug:
-
-```
-/flowsim {plan_file} --max-hops 3
-```
-
-`/flowsim` writes two artifacts:
-- A markdown report (shown to the user).
-- A structured JSON at `plans/flowsim-{feature_slug}.json` that this stage consumes.
-
-### Process results
-
-1. **Read** `plans/flowsim-{feature_slug}.json`.
-2. **Count** flows by status. Any flow with `status: "MISMATCH"` is a finding.
-3. **If no mismatches**: record "flowsim: all flows aligned" in the commit trailer and proceed to Stage 6.
-4. **If mismatches found**:
-   - Feed the `mismatches` array into the shared fix loop.
-   - The fix agent receives the structured JSON, not the markdown.
-   - Re-run `/flowsim` after fixes (counts toward the 3-iteration budget).
-5. **If mismatches persist after 3 iterations**:
-   - Report to user with the specific file:line anchors that keep failing.
-   - Do NOT proceed to PR — the plan and implementation disagree and a human should adjudicate (sometimes the plan was wrong, not the code).
-
-### When to trust vs. question the flowsim output
-
-- **A MISMATCH with a concrete `file:line` anchor** is high-signal: the code at that location actually differs from the plan. Fix or update the plan.
-- **A MISSING marker** means flowsim couldn't find the claimed code at all. Could mean: not implemented, implemented elsewhere with a different name, or the plan was aspirational. Worth a human look.
-- **An UNCLEAR** means the plan's language was too fuzzy to trace. Usually indicates a plan quality issue, not a code issue — re-run after clarifying the plan.
-- **Corroborating eval evidence** (a passing or failing eval aligned with a flow step) is your highest-confidence signal; prioritize fixing those first.
-
-**State write**: write `stage-outputs/flowsim.json` summary sidecar with
-`data.report_path`, `data.json_path` (pointer to the canonical
-`plans/flowsim-<slug>.json`), `data.flow_count`, `data.mismatches`,
-`data.unclear`, `data.missing`. The sidecar is a *summary*, not a duplicate —
-the canonical structured output remains in `plans/flowsim-<slug>.json`.
-
----
-
-## Reviewer model (Stage 5.7/5.8 only)
-
-Independent from **Model cap** above. See
-[`templates/models.md`](templates/models.md): `--review-model <name>` flag >
-`models.code_review` (project.json) > skill default `opus`. Never governed by
-`models.cap` / `--model`; none of `fable`/`opus`/`sonnet`/`haiku` on this axis is a member of the
-`haiku < sonnet < opus` cap rank. `fable` remains a valid, explicit opt-in (`--review-model
-fable`) — usage-billed since Claude Fable 5's 2026-07-07 promotional-access sunset, which is why it
-is no longer the default.
 
 ## Stage 5.7 — Adversarial review
 
@@ -822,7 +633,7 @@ activated, two auto-off gates still apply: the diff is docs-only/touches no code
 — **except in skill-repo mode, which never self-skips this gate**, since `.md` skill files *are*
 the code surface there and would otherwise silently disable the stage in the repo that dogfoods it).
 
-Runs after Stage 5.6 flowsim, before Stage 6, once enabled and not auto-off'd. Fans out
+Runs after Stage 5, before Stage 6, once enabled and not auto-off'd. Fans out
 **one reviewer pass per configured lens** (parallel sub-agents on Claude; sequential inline passes
 on Copilot/Codex), each at the reviewer model resolved above.
 
@@ -921,8 +732,7 @@ exclusively from `auto_fixable:true` findings.
 Per `pipeline.review_fix.mode`:
 - **`interactive`** (default): present each fix spec for approve/edit/skip. Approved specs route
   through the same `runGatedFix()` pattern Stage 5 uses, but as a **new gate function** — Stage 5
-  is hard-wired to the eval runner. Loop until clean or `agents.code_review_max_fix_loops`. **Workflow-tool
-  limitation:** the Workflow has no mid-run human-prompt primitive, so under the Workflow
+  is hard-wired to the eval runner. Loop until clean or `agents.code_review_max_fix_loops`.
   `interactive` means auto-apply confirmed `auto_fixable:true` findings (bounded by budget), then
   always pause-and-return before Stage 6 with every remaining finding surfaced. True per-finding
   approve/edit/skip is prose-path-only (Claude session, Copilot, Codex can literally ask).
@@ -945,7 +755,7 @@ in `review.json` and every finding that run is surfaced only, never auto-fixed.
 Before approving a finding in loop `n+1`, check it against the union of all prior loops'
 `fixed_fingerprints` — a match means oscillation (a later fix reintroduced an earlier one), not a
 fresh bug: don't spawn another fix attempt, pause with `run.json.status = "paused"` and report the
-original fix + regression side by side (same shape as Stage 5.6's persistent-mismatch pause).
+original fix + regression side by side (same shape as Stage 5's persistent-mismatch pause).
 
 **Writes a single cumulative** `stage-outputs/review-fix.json` (not per-iteration files), with a
 `loops[]` array carrying one entry per iteration. `review-fix` is recorded once in
@@ -1119,7 +929,7 @@ stages"). Such a run must still **advance `run.json.stage` and append to
 `stages_completed` as each validation sidecar is written**, add `implement` to
 `run.json.stages_skipped`, and finish on a terminal `status`. The failure mode
 to avoid: a retro run initialized at `stage: "parse"` whose validation sidecars
-(`sanity-check`, `generate-evals`, `validate`, `plan-validate`,
+(`sanity-check`, `generate-evals`, `validate`,
 `flowsim`) all exist on disk while `run.json` still reads
 `status: "in_progress"` with `stages_completed: []` — sidecars present but the
 run never closed. That orphan is the single most common stale-pipeline false
@@ -1225,8 +1035,6 @@ repo root, this mode activates automatically. No flag required.
 | Stage 2 — Implement | unchanged (gated as standard; a skill repo's single docs surface normally keeps it single-agent) |
 | Stage 3 — Generate evals | **skip** (no test surface) |
 | Stage 5 — Full validation | **substitute** with the procedure in `templates/stage-5-skill-repo.md` |
-| Stage 5.5 — Plan validators | **skip** (no api/ui/data surfaces) |
-| Stage 5.6 — Flowsim | **skip** (skills aren't "flows") |
 | Stage 5.7 — Adversarial review | **adapt** — still runs; correctness + plan-alignment lenses apply equally to prose/JS, and the `security` lens applies its skill-repo shell-injection check (item 10 — quoting/eval in skill prose + hook scripts). The `config-env-docs` lens repoints to the skill-authoring checks in `templates/stage-5-skill-repo.md` (frontmatter/metadata, marketplace registration, template-reference resolution) since there is no `.env`/compose surface in a skill repo. |
 | Stage 5.8 — Fix loop | unchanged (same approve/auto/off machinery) |
 | Stage 6 — Create PR | unchanged |
@@ -1244,7 +1052,7 @@ while swapping in the right validation surface for the artifact type.
 
 ### State envelope in skill-repo mode (auto-detected)
 
-Skipped stages (`generate-evals`, `plan-validate`, `flowsim`)
+Skipped stages (`generate-evals`, `validate`)
 write **no sidecar**; their names are appended to `run.json.stages_skipped`
 instead. The substituted Stage 5 writes `stage-outputs/validate.json` with
 `data.mode = "skill-repo"` and the structural-check results — see

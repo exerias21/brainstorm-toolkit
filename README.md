@@ -349,7 +349,7 @@ There are **two independent axes**, and conflating them is the classic mistake:
 without upgrading the cheap ones. Per-run override `--model <tier>` (precedence: flag >
 `models.cap` > default) wins both directions. **The fan-out is Sonnet-first by default:**
 out of the box `/sdlc`, `/sdlc-lite`, `/brainstorm --vet ultra`, and every ultracode
-Workflow run Sonnet; `--model opus` is the deliberate opt-up.
+fan-out runs Sonnet; `--model opus` is the deliberate opt-up.
 
 **The consequence worth knowing:** because the cap only *lowers*, a stage whose built-in
 tier is `haiku` cannot be raised by `models.cap` or `--model` at all. The per-stage key is

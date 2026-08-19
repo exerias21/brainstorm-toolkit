@@ -3,7 +3,7 @@ name: sdlc-lite
 description: >
   Sequential full-pipeline-minus-git skill for Copilot. Takes a plan file, a
   task id, a task range (e.g. "1-5"), or an ad-hoc description; runs
-  implement → evals → validate → plan-validate → flowsim; then hands off the
+  implement → evals → validate; then hands off the
   validated changes for you to commit. No commit, no branch, no push, no PR.
   Copilot-optimized overlay of canonical /sdlc-lite — every stage runs inline
   (no parallel sub-agents, no Plan mode). Same stages as /sdlc; only /sdlc
@@ -17,7 +17,7 @@ disable-model-invocation: true
 # sdlc-lite (Copilot Edition — Sequential)
 
 Sequential version of `/sdlc-lite`. Canonical `/sdlc-lite` uses parallel agent
-dispatch for the sanity-check and Stage 5.5 validators on Claude; this overlay
+dispatch for the sanity-check on Claude; this overlay
 runs every stage inline, one at a time. Same stages as `/sdlc`; the only
 difference is Stage 6 — `/sdlc-lite` does **no git writes** (it hands you a
 validated tree to commit), while `/sdlc` commits + opens a PR.
@@ -74,7 +74,7 @@ setting (`models.cap`, `pipeline.*`, test commands) is silently inert.
 
 - **Plan file** (path ending `.md` that exists) → use as the plan, like `/sdlc`.
 - **Task id** (`task-NNN` or a row number) → read that row + linked task file;
-  its `parent_plan:` becomes the flowsim/plan-validate target.
+  its `parent_plan:` becomes the Stage 5 plan target.
 - **Task range** (`N-M`, `task-N..task-M`, `tasks N-M`) → resolve every
   `Active / Pending` row in range; execute as a batch (one commit per task).
 - **Ad-hoc description** → create a new row + task file via `/task`'s procedure.
@@ -195,30 +195,27 @@ its eval-regression layer — a strict prefix. Sharing this budget, its pause co
 run on self-authored evals before the real suite was ever consulted. Stage 3 still authors
 the tests; Stage 5 runs them.
 
-## Stage 5 — Validate
+## Stage 5 — Validate (one stage)
 
-Invoke `/test-check`. Route new failures through the shared fix loop (same
-3-iteration budget). Pre-existing failures: note and skip.
+Two parts, one gate, one `validate.json`:
 
-## Stage 5.5 — Plan requirements validation
+1. **Run the suite** — `/test-check` over the touched surfaces; report only NEW failures as
+   failures, note pre-existing ones separately. Includes eval regression when `eval.runner` is
+   configured (the only place evals run).
+2. **Check against the plan** — one pass over the plan + diff reporting **requirements**
+   (met / partial / missing, each with a `file:line`) and **flow** (`MISMATCH` / `UNCLEAR` /
+   `MISSING`) *separately*. Skip this part when there is no plan target, and say so.
 
-Run when a **plan target** exists (plan-file input, or task with `parent_plan`):
-re-read the plan, verify each requirement is fulfilled, flag failures, route
-findings through the shared fix loop. **Skip with a note when there is no plan
-target** — nothing to validate against, not an arbitrary gate.
+Green iff no new failures AND no missing requirement AND no MISMATCH/MISSING flow step.
+Failures route through the shared fix loop. A MISMATCH where the code is right and the plan is
+stale is `plan-wrong` — pause and say so; never edit code to match a stale plan.
 
-`models.plan_review` (`haiku|sonnet|opus`) sets how strong a reader judges
-the plan here; it is still bounded by the model cap, which can only lower it.
+This replaces the former Stages 5, 5.5 and 5.6, which asked the same question three ways.
 
-## Stage 5.6 — Flowsim
-
-Same condition as 5.5: when a plan target exists, invoke `/flowsim <plan-target>`
-and process results per `/sdlc` Stage 5.6; mismatches feed the shared fix loop.
-Skip with a note when none exists.
 
 ## Stage 5.7 — Adversarial review (inline, sequential)
 
-**Opt-in, permanently — never runs by default.** Runs after Stage 5.6 flowsim, before Stage 6,
+**Opt-in, permanently — never runs by default.** Runs after Stage 5, before Stage 6,
 only when explicitly turned on this run (`--review-model <name>`, or an explicit
 `pipeline.review_fix.enabled: true`; default reviewer `opus` once enabled — see
 `skills/sdlc/templates/models.md`). An omitted `pipeline.review_fix` block, or
@@ -349,7 +346,7 @@ committed** — the next move is yours.
 
 - **Does no git writes.** No commit, branch, push, PR, or `/review`. Hands you
   a validated tree; you commit. Only `/sdlc` touches git history.
-- **flowsim/plan-validate run whenever there's a plan to check.** They skip only
+- **Stage 5's plan check runs whenever there's a plan to check.**
   when there is no plan target — not behind a frontmatter knob.
 - **Don't fork `/sdlc`'s templates.** If a stage needs different copy, it's a
   `/sdlc` job — re-invoke as `/sdlc`.

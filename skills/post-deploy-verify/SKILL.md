@@ -32,7 +32,7 @@ deployed env configured → it reports "no probes available" rather than failing
 
 ## Framing
 
-`/flowsim` and `/sdlc` Stage 5.5 answer **code-vs-plan**: do the file:line
+`/flowsim` and `/sdlc` Stage 5 answer **code-vs-plan**: do the file:line
 anchors match what the plan claimed? They run pre-merge.
 
 This skill answers **deployed-vs-BRD**: does the running system actually

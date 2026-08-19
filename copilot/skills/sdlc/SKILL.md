@@ -181,25 +181,27 @@ its eval-regression layer — a strict prefix. Sharing this budget, its pause co
 run on self-authored evals before the real suite was ever consulted. Stage 3 still authors
 the tests; Stage 5 runs them.
 
-## Stage 5 — Run /test-check
+## Stage 5 — Validate (one stage)
 
-Invoke `/test-check` to run the project's configured test suite and log audit. It reads `.claude/project.json` for commands and skips gracefully on missing keys.
+Two parts, one gate, one `validate.json`:
 
-- If green: proceed to Stage 5.6.
-- If new failures (introduced by this change, not pre-existing): fix them and re-run. Same fix-loop budget.
-- Pre-existing failures: note and skip — not your problem in this PR.
+1. **Run the suite** — `/test-check` over the touched surfaces; report only NEW failures as
+   failures, note pre-existing ones separately. Includes eval regression when `eval.runner` is
+   configured (the only place evals run).
+2. **Check against the plan** — one pass over the plan + diff reporting **requirements**
+   (met / partial / missing, each with a `file:line`) and **flow** (`MISMATCH` / `UNCLEAR` /
+   `MISSING`) *separately*. Skip this part when there is no plan target, and say so.
 
-## Stage 5.6 — Flow simulation (/flowsim)
+Green iff no new failures AND no missing requirement AND no MISMATCH/MISSING flow step.
+Failures route through the shared fix loop. A MISMATCH where the code is right and the plan is
+stale is `plan-wrong` — pause and say so; never edit code to match a stale plan.
 
-Run when a parent plan is available (i.e. you passed a plan file rather than a bare task row). Invoke `/flowsim {plan_file}`. Flowsim reads the plan, traces each claimed flow through the source, and writes a structured report to `plans/flowsim-{feature_slug}.json`.
+This replaces the former Stages 5, 5.5 and 5.6, which asked the same question three ways.
 
-- No mismatches: record "flowsim: all flows aligned" in the commit trailer and proceed to Stage 6.
-- Mismatches: fix the code at each `file:line` anchor (or, if the plan was wrong, update the plan). Re-run `/flowsim`.
-- Persistent mismatches past 3 fix-loop iterations: stop before PR and report. A human should adjudicate whether the plan or the implementation is wrong.
 
 ## Stage 5.7 — Adversarial review (inline, sequential)
 
-**Opt-in, permanently — never runs by default.** Runs after Stage 5.6 flowsim, before Stage 6,
+**Opt-in, permanently — never runs by default.** Runs after Stage 5, before Stage 6,
 only when explicitly turned on this run (`--review-model <name>`, or an explicit
 `pipeline.review_fix.enabled: true`; default reviewer `opus` once enabled — see
 `skills/sdlc/templates/models.md`). An omitted `pipeline.review_fix` block, or

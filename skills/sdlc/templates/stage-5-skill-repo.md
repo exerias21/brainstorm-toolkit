@@ -2,7 +2,7 @@
 
 When skill-repo mode is auto-detected (`.claude-plugin/marketplace.json`
 exists at repo root), this replaces the standard Stage 5 (full test suite)
-and Stage 5.5 (api/ui/data validators). Markdown skills have no test surface;
+and Stage 5's plan-vs-diff check. Markdown skills have no test surface;
 the equivalent discipline is structural and contract-level.
 
 Run each check; collect findings. The pipeline pauses if any HARD check fails

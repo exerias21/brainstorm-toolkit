@@ -27,7 +27,7 @@ hands you a diagnosis + one command, instead of a prose apology. Read-only unles
   ("no paused/failed run on this branch — `/status` for the queue").
 
 Read `run.json` (`pipeline`, `stage`, `status`, `base_commit`, `plan_hash`) and the failing
-stage's sidecar (`validate.json`, `plan-validate.json`, `plans/flowsim-<slug>.json`,
+stage's sidecar (`validate.json`,
 `implement-<lane>.json`, …). This is a single **Sonnet/session-tier read job** — not a
 fan-out, no `capModel` plumbing.
 

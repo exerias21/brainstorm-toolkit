@@ -26,7 +26,7 @@ is the *map*; `/cheatsheet` is the *menu*.
               │                             │
               ▼                             ▼
    sanity → implement → evals → fix         inline TDD
-   → validate → plan-validate → flowsim
+   → validate
    → [review → review-fix]  (opt-in)
               │                             │
         ┌─────┴─────┐                       │

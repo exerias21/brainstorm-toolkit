@@ -2,7 +2,7 @@
 name: sdlc-lite
 description: >
   The full /sdlc pipeline with a different ending: implement → evals → fix →
-  validate → plan-validate → flowsim, then HAND OFF the validated changes in
+  validate, then HAND OFF the validated changes in
   your working tree for you to commit — it never commits, branches, pushes, or
   opens a PR. Use to run full SDLC discipline on work you want to review and
   commit yourself (e.g. onto an open PR's branch). Takes a plan file (like
@@ -20,7 +20,7 @@ metadata:
 | Skill | Input | Pipeline | Terminal action |
 |---|---|---|---|
 | `/task <description>` | ad-hoc ask | TDD red→green only | commit only if you ask |
-| `/sdlc-lite <plan \| task-id \| range \| desc>` | plan, task(s), or ask | **full** (sanity→implement→evals→fix→validate→plan-validate→flowsim) | **validated changes left in your working tree — you commit** |
+| `/sdlc-lite <plan \| task-id \| range \| desc>` | plan, task(s), or ask | **full** (sanity→implement→evals→validate) | **validated changes left in your working tree — you commit** |
 | `/sdlc <plan-file>` | plan file | full | new branch → push → **PR** → `/review` |
 
 `/sdlc-lite` and `/sdlc` run the **same stages** and reuse `/sdlc`'s templates
@@ -28,43 +28,6 @@ and state envelope verbatim. They differ in exactly one place: Stage 6. `/sdlc`
 commits, pushes, and opens a PR; **`/sdlc-lite` does no git writes at all** — it
 hands you a validated, ready-to-commit working tree. Only `/sdlc` touches git
 history.
-
-## Execution mode — prose by default, same Workflow as `/sdlc` when ultracode is on
-
-**The prose stages below are the default and the source of truth.** Use the
-deterministic Workflow only when explicitly opted in — and it's the *same* script
-`/sdlc` uses (`skills/sdlc/workflows/sdlc-pipeline.workflow.js`), parameterized to
-hand off instead of opening a PR. The two skills diverge in exactly one place
-(Stage 6) — one `args.mode` branch — so it's zero template *and* zero workflow
-duplication.
-
-**Use the Workflow IFF ALL of:** Claude Code with the Workflow tool available,
-**ultracode explicitly enabled** (keyword, session flag, or asked-for by name),
-`pipeline.skip_workflow` not `true`, **and neither `--resume` nor `--queue` was
-passed** — resuming a paused envelope is prose-path only (the Workflow sandbox
-can't read prior sidecars; see **Resumption**), and `--queue` runs the backlog
-**loop** in prose (selection + re-scan + stop conditions live in **Queue mode**;
-each *selected item* then dispatches per these same rules). Then invoke:
-
-Resolve `scriptPath` per install mode — `${CLAUDE_PLUGIN_ROOT}/skills/sdlc/workflows/sdlc-pipeline.workflow.js`
-under a plugin install, `.claude/skills/sdlc/workflows/sdlc-pipeline.workflow.js` when
-vendored by `setup.sh`. If neither resolves, run the prose stages instead of failing.
-
-```
-Workflow({
-  scriptPath: "<resolved per above>",
-  args: { mode: "sdlc-lite", input: "<plan-file | task-id | task-range | description>",
-          model_cap: "<resolved cap: --model flag > project.json models.cap > null>",
-          review_model: <the --review-model value, or null if the flag was not passed>,
-          no_review: <true iff --no-review was passed, else false> }
-})
-```
-
-It does **no git writes** in `sdlc-lite` mode — runs the full pipeline, stops at
-the edge of git, leaves a validated working tree + a `handoff.json` sidecar.
-**Otherwise — the default — follow the prose stages below** (any non-ultracode
-Claude run, Copilot/Codex, no tool, or `skip_workflow: true`). The prose is the
-source of truth the Workflow mirrors.
 
 ## Prerequisites
 
@@ -117,7 +80,7 @@ Detect the argument shape:
 1. **Plan file** — arg is a path ending `.md` that exists (e.g.
    `plans/my-feature.md`). Use it as the plan, exactly like `/sdlc` Stage 1.
    This is the primary path and the one that exercises the full pipeline
-   (flowsim/plan-validate have a plan to check against). **Also scan `TASKS.md`
+   (Stage 5's plan check has a plan to check against). **Also scan `TASKS.md`
    for `Active / Pending` rows that reference this plan** (by path or slug —
    e.g. `— plans/<slug>.md`, the form `/brainstorm` appends) and mark them
    `[~]`; Stage 6 closes them. A plan-file run that matches no such rows updates
@@ -126,7 +89,7 @@ Detect the argument shape:
 2. **Task id** — arg matches `task-NNN` or a bare row number. Read that
    `TASKS.md` row and its linked `plans/tasks/task-N-<slug>.md`. The task
    file's `parent_plan:` frontmatter (if present) becomes the flowsim /
-   plan-validate target.
+   Stage 5 plan target.
 
 3. **Task range** — arg is `N-M`, `task-N..task-M`, or `tasks N-M`. Resolve
    every `Active / Pending` row in that inclusive range to its task file.
@@ -135,7 +98,7 @@ Detect the argument shape:
 
 4. **Ad-hoc description** — anything else. Create a new `TASKS.md` row + task
    file using `/task`'s procedure (`skills/task/SKILL.md` Sections 1–2), then
-   proceed. There's no plan, so plan-validate/flowsim self-skip (Stage 5.5/5.6).
+   proceed. There's no plan, so Stage 5's plan check self-skips.
 
 5. **Queue mode** — arg is `--queue [N]`. Select the work set from `TASKS.md` **by
    state + priority** (not a hand-typed range): the `Active / Pending` rows, top
@@ -169,7 +132,7 @@ joins the loop — that re-scan is what makes it a loop rather than a fixed batc
 **No git writes** (it's `/sdlc-lite`): the whole loop leaves validated changes in
 your tree for you to commit; it never runs `/sdlc` or opens a PR. The loop itself is
 **prose-orchestrated** — each item runs the normal sdlc-lite pipeline (prose or, under
-ultracode, the Workflow per item); the selection, re-scan, and stop conditions are here.
+one pipeline run per item); the selection, re-scan, and stop conditions are here.
 
 Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
 
@@ -313,36 +276,11 @@ degenerates cleanly into edit + commit.
 
 ## Stage 5 — Validate
 
-Run `/sdlc` Stage 5 — invoke `/test-check`; route new failures
-through the shared fix loop (counts toward the 3-iteration budget).
-
-## Stage 5.5 — Plan requirements validation
-
-Run `/sdlc` Stage 5.5 against the **plan target**:
-- plan-file input → the plan file itself,
-- task input with `parent_plan` → that parent plan.
-
-If there is **no plan target** (ad-hoc description, or a task with no
-`parent_plan`), skip and append `plan-validate` to `run.json.stages_skipped`.
-This is a "nothing to validate against" skip, not an arbitrary gate — give it a
-plan and it always runs.
-
-Validator tier honors `models.plan_review` exactly as `/sdlc` Stage 5.5
-documents it (replaces the per-validator default; still capped by `models.cap` /
-`--model`, which can only lower it).
-
-## Stage 5.6 — Flowsim
-
-Same gating as 5.5: run `/flowsim <plan-target>` whenever a plan target exists;
-skip with a note when none does. Mismatches feed the shared fix loop (counts
-toward the budget). Process results per `/sdlc` Stage 5.6.
-
-## Reviewer model (Stage 5.7/5.8 only)
-
-Same independent axis as `/sdlc` — see
-[`skills/sdlc/templates/models.md`](../sdlc/templates/models.md):
-`--review-model <name>` flag > `models.code_review` (project.json) > skill default `opus`.
-Never governed by `models.cap` / `--model`.
+Run `/sdlc` Stage 5 — now **one** stage: (1) `/test-check` over the
+touched surfaces, then (2) **one agent** given the plan + diff that reports requirements
+(met/partial/missing, each with a `file:line`) and flow (`MISMATCH`/`UNCLEAR`/`MISSING`)
+separately. Skip axis (2) when there is no plan target, and say so. Route failures through the
+shared fix loop (3-iteration budget). Writes one `validate.json`.
 
 ## Stage 5.7 — Adversarial review
 
@@ -357,7 +295,7 @@ cost roughly linearly, one reviewer call per lens), capped by `agents.code_revie
 demotion), same verify pass, optional second pass, and false-positive circuit breaker. Print the
 resolved list before dispatching, per `/sdlc` Stage 5.7. Same cap caveat: every lens runs at the
 **reviewer** model, which `models.cap` does not govern — warn when a cap is set and the reviewer
-outranks it. Runs after Stage 5.6 flowsim, before Stage 6 hand-off. Writes
+outranks it. Runs after Stage 5, before Stage 6 hand-off. Writes
 `stage-outputs/review.json`; self-skips append `review` to `run.json.stages_skipped`.
 
 ## Stage 5.8 — Fix loop
@@ -396,7 +334,7 @@ themselves. (Want the commit + PR done for you? That's `/sdlc`.)
    ```
    **Range semantics**: process tasks in order; the changes from all tasks
    accumulate in the working tree. You decide how to slice commits (per task,
-   or one bundle). Sanity-check (1.5) ran once up front; plan-validate and
+   or one bundle). Sanity-check (1.5) ran once up front; Stage 5's plan check and
    flowsim ran once at the end over the shared parent plan.
 
 3. **Capture at loop-exit + seam** — run the shared protocol in
@@ -463,7 +401,7 @@ yours.
 - **It does no git writes — ever.** No commit, no branch, no push, no PR, no
   `/review`. It hands you a validated working tree; you commit. Only `/sdlc`
   touches git history.
-- **flowsim/plan-validate run whenever there's a plan to check** — pass a plan
+- **Stage 5's plan check runs whenever there's a plan to check** — pass a plan
   file (or a task with `parent_plan`) and they run unconditionally. They skip
   only when there is literally no plan target to validate against — never
   behind a separate opt-in flag or frontmatter knob.

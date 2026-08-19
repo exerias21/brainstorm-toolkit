@@ -26,7 +26,6 @@
     converge.json           # Stage 2c — only when decomposed
     generate-evals.json
     validate.json
-    plan-validate.json
     flowsim.json
     review.json             # Stage 5.7 -- only when a reviewer resolves (see the reviewer-model enablement chain, models.md)
     review-fix.json         # Stage 5.8 -- only when review.json.data.confirmed is non-empty; single cumulative file, data.loops[] holds one entry per iteration (NOT numbered review-fix-<n>.json files)
@@ -34,13 +33,13 @@
     pr-create.json
 ```
 
-Stage filenames use the **canonical kebab names** from `docs/CONVENTIONS.md` "Stage names" — `parse`, `sanity-check`, `decompose`, `implement`, `implement-<lane>`, `converge`, `generate-evals`, `validate`, `plan-validate`, `flowsim`, `review`, `review-fix`, `secret-scan`, `pr-create`. Never decimal-versioned (no `stage-1.5.json`).
+Stage filenames use the **canonical kebab names** from `docs/CONVENTIONS.md` "Stage names" — `parse`, `sanity-check`, `decompose`, `implement`, `implement-<lane>`, `converge`, `generate-evals`, `validate`,  `review`, `review-fix`, `secret-scan`, `pr-create`. Never decimal-versioned (no `stage-1.5.json`).
 
 Note: `review-fix`'s internal `loops[]` index is a bounded loop counter (`max_fix_loops`, default 3), **not** an artifact ID — it is not zero-padded and does not fall under the `pbi-001`/`task-001` convention.
 
 The Stage 2 sidecars are **mutually exclusive by path**: the single-agent path writes only `implement.json`; the decomposed path (Stage 2 gate fans out) writes `decompose.json`, one `implement-<lane>.json` per lane, and `converge.json`, and never writes `implement.json`. A run that never decomposes is byte-for-byte unchanged from the pre-decomposition envelope.
 
-In skill-repo mode (auto-detected from `.claude-plugin/marketplace.json` at repo root), the skipped stages (`generate-evals`, `plan-validate`, `flowsim`) write **no sidecar**. `stage-outputs/validate.json` is still written in skill-repo mode, but as a skill-repo-shaped sidecar that records the structural-check results from `templates/stage-5-skill-repo.md`; in that case `data.mode = "skill-repo"`.
+In skill-repo mode (auto-detected from `.claude-plugin/marketplace.json` at repo root), the skipped stages (`generate-evals`, `flowsim`) write **no sidecar**. `stage-outputs/validate.json` is still written in skill-repo mode, but as a skill-repo-shaped sidecar that records the structural-check results from `templates/stage-5-skill-repo.md`; in that case `data.mode = "skill-repo"`.
 
 ---
 
@@ -61,7 +60,7 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
   "base_commit": "abc1234",
   "started_at": "2026-04-26T10:00:00Z",
   "updated_at": "2026-04-26T10:08:23Z",
-  "stage": "plan-validate",
+  "stage": "validate",
   "status": "in_progress",
   "stages_completed": ["parse", "sanity-check", "implement", "generate-evals", "validate"],
   "stages_skipped": []
@@ -93,7 +92,7 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
 {
   "stages_completed": [
     "parse", "sanity-check", "implement", "generate-evals",
-    "validate", "plan-validate", "flowsim", "review", "review-fix",
+    "validate", "review", "review-fix",
     "secret-scan", "pr-create"
   ]
 }
@@ -101,7 +100,7 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
 
 When `pipeline.review_fix.enabled` is `false`, `--no-review` was passed, or `review.json`'s
 `confirmed[]` ends up empty, `review` and/or `review-fix` move to `stages_skipped` instead on the
-prose/overlay paths — same documented convention as `generate-evals`/`plan-validate`/
+prose/overlay paths — same documented convention as `generate-evals`/
 `flowsim`'s own skill-repo-mode skips. On the Workflow path this is logged, not array-appended (a
 pre-existing gap, not new here).
 
@@ -408,15 +407,6 @@ prose-path, human-interactive-approval case.
 }
 ```
 
-#### `plan-validate`
-```json
-{
-  "validators_launched": ["api", "ui", "data", "cross-module"],
-  "validators_skipped":  [],
-  "totals": { "checks": 12, "passed": 12, "failed": 0 },
-  "failures": []
-}
-```
 
 #### `flowsim`
 ```json
@@ -513,7 +503,7 @@ file per repo, keyed by lens. It backs the Review→Fix stage's false-positive c
 4. **Terminal states**:
    - All stages pass → `run.json.status = "complete"`.
    - Unrecoverable failure → `run.json.status = "failed"`; the failing stage's sidecar has `status: "fail"`.
-   - Pause for human review (eval max-loops, plan-validate failure persists) → `run.json.status = "paused"`.
+   - Pause for human review (validate failure persists) → `run.json.status = "paused"`.
 5. **Re-running `/sdlc <plan>`** (without `--resume`): overwrites the prior `run.json` and `stage-outputs/` for the same slug. Slug-collision policy (different plan files deriving the same slug) is deferred to a later phase per `docs/CONVENTIONS.md` open questions; current behavior is overwrite.
 
 ## Best-effort failure mode
