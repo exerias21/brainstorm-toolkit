@@ -143,7 +143,6 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 | `/eval-harness` | Claude + Copilot + Codex | Run pytest + fixture evals with optional fix loop |
 | `/flowsim` | Claude + Copilot + Codex | Trace claimed plan flows through source code and flag mismatches |
 | `/dead-code-review` | Claude + Copilot + Codex † | Parallel dead-code / dead-doc / stale-plan scan with before-and-after test verification (sequential on Copilot). This is the built-in answer to "launch a few agents and clean up everything no longer needed". |
-| `/review` | Claude + Copilot + Codex | On-demand code review for any PR or branch — wraps `/review`, persists to `plans/review-<id>.md`, optional `--post-comment`. Standalone counterpart to the post-PR review `/sdlc` already runs. |
 | `/plan-html` | Claude + Copilot + Codex | Render any markdown plan as a self-contained, shareable HTML page (embedded CSS, zero JS, native `<details>` collapsibles, light/dark mode). Opt-in: pass the plan file as the argument — no auto-emit. Use to share plans with stakeholders or scroll-engage long plans in a browser. |
 | `/repo-health` | Claude + Copilot + Codex | Stub — post-deploy BRD/PBI-vs-deployed-system verification matrix (depends on Phase 2 BRD/PBI artifacts; see `BRAINSTORM-PIPELINE.md`) |
 
@@ -166,7 +165,6 @@ Haiku $1 / $5 per M tokens (input / output).
 | `/plan-html` | host model | none — markdown read → HTML write | 3k–10k | ~$0.01–$0.05 |
 | `/task` | host model | none — inline TDD | 5k–15k | $0.02–$0.10 |
 | `/repo-health` | host model | 2 × Haiku (dead-code + gotchas-currency); 3 procedural checks | 5k–20k | $0.02–$0.10 |
-| `/review` | host model | none — wraps the built-in `/review` primitive on the captured diff | 5k–30k | $0.02–$0.30 |
 | `/eval-harness` | host model | 0–1 × Sonnet (optional fix loop) | 5k–30k | $0.02–$0.30 |
 | `/flowsim` | host model | none — plan-vs-code grep | 10k–40k | $0.05–$0.40 |
 | `/test-check --loop` | host model | 1 × Sonnet per fix iteration | 10k–30k / iter | $0.05–$0.30 / iter |
@@ -179,7 +177,7 @@ Haiku $1 / $5 per M tokens (input / output).
 | `/dead-code-review` | host (Opus) | 3 × Haiku + 2 × Sonnet + 1 × Opus (parallel) | 80k–200k | $0.80–$2.50 |
 | `/repo-health` | host model | 2 × Haiku + 1 × Sonnet **per PBI batch** | scales with batch | $0.10–$1.00 / batch |
 | `/sdlc-lite` | host (Opus) | same fan-out as `/sdlc` minus the PR/review tail | 90k–280k | $2.50–$9.00 |
-| `/sdlc` | host (Opus) | 3 × Haiku (sanity) + 1 × Opus (impl) + 2–4 × Haiku/Sonnet (validate) + optional Opus/Sonnet (eval-fix) + Sonnet (e2e) | 100k–300k | $3.00–$10.00 |
+| `/sdlc` | host (Opus) | 3 × Haiku (sanity) + 1 × Opus (impl) + 1 × Haiku (test-runner) + 1 × Sonnet (plan check) + optional Opus/Sonnet (eval-fix) + Sonnet (e2e) | 100k–300k | $3.00–$10.00 |
 
 **Notes / caveats**:
 
@@ -299,7 +297,6 @@ Or in plain text:
   "models": {
     "cap": "sonnet",
     "sanity": null,
-    "plan_review": null,
     "implement": null,
     "code_review": "opus",
     "code_review_second_pass": "sonnet"
@@ -329,7 +326,7 @@ There are **two independent axes**, and conflating them is the classic mistake:
 
 | | Axis 1 — the fan-out ladder | Axis 2 — the adversarial reviewer |
 |---|---|---|
-| Keys | `models.cap`, `.sanity`, `.plan_review`, `.implement`¹ | `models.code_review`, `.code_review_second_pass` |
+| Keys | `models.cap`, `.sanity`, `.implement`¹ | `models.code_review`, `.code_review_second_pass` |
 | Values | `haiku` \| `sonnet` \| `opus` | `haiku` \| `sonnet` \| `opus` \| `fable` |
 | Capped? | yes — everything passes through the cap | **never** |
 
@@ -345,7 +342,7 @@ fan-out runs Sonnet; `--model opus` is the deliberate opt-up.
 
 **The consequence worth knowing:** because the cap only *lowers*, a stage whose built-in
 tier is `haiku` cannot be raised by `models.cap` or `--model` at all. The per-stage key is
-the only lever — which is why `models.sanity` and `models.plan_review` exist. Stage 1.5 is
+the only lever — which is why `models.sanity` exists. Stage 1.5 is
 never gated, so it runs on every single run.
 
 `agents.*` sets **how many** agents each fan-out stage dispatches. Cost scales roughly
@@ -375,7 +372,6 @@ printing it, so the loop self-advances. It never chains a `confirm: true` action
 | `/brainstorm` | `modules`, `models.cap` |
 | `/sdlc`, `/sdlc-lite`, `/brainstorm-deep`, `/brainstorm-team`, `/dead-code-review` | `models.cap` (sub-agent tier ceiling) |
 | `/sdlc`, `/sdlc-lite` | `models.sanity` + `agents.sanity_focuses` (Stage 1.5 pre-flight — never gated, so it runs every time) |
-| `/sdlc`, `/sdlc-lite` | `models.plan_review` (Stage 5.5 validator tier — a default *within* axis 1, still capped) |
 | `/sdlc`, `/sdlc-lite` | `models.code_review`, `models.code_review_second_pass`, `agents.code_review_*` (axis 2 — never capped) |
 | `/sdlc`, `/sdlc-lite` | `pipeline.review_fix.*` — stage *behavior* only (`enabled`, `mode`, `blocking`, thresholds). Opt-in, permanently off by default |
 | `/sdlc`, `/sdlc-lite` | `agents.decompose_min_tasks` (Stage 2 decompose gate) |

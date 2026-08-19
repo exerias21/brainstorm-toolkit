@@ -4,7 +4,7 @@ description: >
   Runs end-to-end / browser tests in a bounded fix loop — the loop counterpart to /test-check's
   one-shot e2e run. Stack-agnostic (Playwright, Cypress, Puppeteer, Selenium, pytest-playwright):
   runs whatever .claude/project.json `test.e2e` defines, separates flaky failures from real ones,
-  dispatches fixes, and re-runs until green or max_fix_loops is hit. Used by /e2e-loop and the
+  dispatches fixes, and re-runs until green or max_fix_loops is hit. Used by `/test-check --loop` and the
   /sdlc Stage 5 e2e check.
 ---
 
