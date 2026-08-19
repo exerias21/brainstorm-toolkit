@@ -173,27 +173,29 @@ Same procedure as `/sdlc` Stage 3 (see `.github/skills/sdlc/SKILL.md`):
 
 **Skip silently if no `eval.runner` is configured.**
 
-## Stage 4 — Eval + sequential fix loop
+## Shared fix loop (Stages 5 / 5.5 / 5.6)
 
-Run `<eval.runner> --feature {slug} --output json`. Fix failures inline.
-3-iteration budget. On persistent failure: pause with a **Diagnosis** — name the
-failure class (flaky / code-defect / plan-wrong / config-missing) and ONE
-recommended command (flaky → re-run the gate; code-defect → `/task fix: <failure>`;
-plan-wrong → `/brainstorm` the failing step; config-missing → set it in
-`.claude/project.json`) — fastest path is `/triage <slug>` (classifies + drafts the
-fix); or fix manually and re-run `/sdlc-lite <input> --resume` (reuses the green
-stages; fresh run if you edited the plan). Skip when Stage 3 was skipped.
+On a gate failure: parse the results, dispatch a fix for **only** those failures (no
+refactor), re-run the gate. Max **3 iterations, shared across Stages 5/5.5/5.6**. On
+exhaustion, pause with the Diagnosis block from `/sdlc` (fastest path `/triage <slug>`;
+or name the class — flaky · code-defect · plan-wrong · config-missing — and one command),
+then `--resume` reuses the green stages.
+
+**Stage 4 was deleted.** It ran `eval.runner`, then Stage 5 ran the same command again as
+its eval-regression layer — a strict prefix. Sharing this budget, its pause could halt a
+run on self-authored evals before the real suite was ever consulted. Stage 3 still authors
+the tests; Stage 5 runs them.
 
 ## Stage 5 — Validate
 
-Invoke `/test-check`. Route new failures through the Stage 4 fix loop (same
+Invoke `/test-check`. Route new failures through the shared fix loop (same
 3-iteration budget). Pre-existing failures: note and skip.
 
 ## Stage 5.5 — Plan requirements validation
 
 Run when a **plan target** exists (plan-file input, or task with `parent_plan`):
 re-read the plan, verify each requirement is fulfilled, flag failures, route
-findings through the Stage 4 fix loop. **Skip with a note when there is no plan
+findings through the shared fix loop. **Skip with a note when there is no plan
 target** — nothing to validate against, not an arbitrary gate.
 
 `models.plan_review` (`haiku|sonnet|opus`) sets how strong a reader judges
@@ -202,7 +204,7 @@ the plan here; it is still bounded by the model cap, which can only lower it.
 ## Stage 5.6 — Flowsim
 
 Same condition as 5.5: when a plan target exists, invoke `/flowsim <plan-target>`
-and process results per `/sdlc` Stage 5.6; mismatches feed the Stage 4 fix loop.
+and process results per `/sdlc` Stage 5.6; mismatches feed the shared fix loop.
 Skip with a note when none exists.
 
 ## Stage 5.7 — Adversarial review (inline, sequential)
@@ -261,7 +263,7 @@ For confirmed findings, draft a structured fix spec per finding, applying the au
 - **`interactive`**: present each fix spec for approve / edit / skip. Approved specs run through
   the existing Stage 2/4 implement+fix machinery inline, then a fresh adversarial re-review of the
   touched files (this loop iteration's own pass) decides whether another iteration is needed. Loop
-  until clean or `max_fix_loops` (own budget, separate from the Stage 4 fix budget).
+  until clean or `max_fix_loops` (own budget, separate from the shared fix budget).
 - **`auto`**: after `auto_approve_after` consecutive approvals, or confidence ≥
   `confidence_threshold`, apply and continue — EXCEPT `auto_fixable: false` findings (design
   decisions), which are always surfaced, never auto-applied.

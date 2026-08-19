@@ -161,17 +161,18 @@ The runner discovers new features by scanning `<eval.features_dir>/*/` — no re
 
 If no `eval.runner` is configured in `.claude/project.json`, skip Stages 3 and 4 (no eval surface to drive a fix loop) and proceed to Stage 5.
 
-## Stage 4 — Eval + sequential fix loop
+## Shared fix loop (Stages 5 / 5.5 / 5.6)
 
-Run the configured eval runner:
-```
-<eval.runner> --feature {feature_slug} --output json
-```
+On a gate failure: parse the results, dispatch a fix for **only** those failures (no
+refactor), re-run the gate. Max **3 iterations, shared across Stages 5/5.5/5.6**. On
+exhaustion, pause with the Diagnosis block from `/sdlc` (fastest path `/triage <slug>`;
+or name the class — flaky · code-defect · plan-wrong · config-missing — and one command),
+then `--resume` reuses the green stages.
 
-Parse JSON results.
-- If all pass: proceed to Stage 5.
-- If failures: fix them yourself inline — one failure at a time, or batched by file, whatever is clearer. Re-run the eval after each batch. Count each pass as one fix loop.
-- If you've burned 3 fix-loop iterations and failures remain: report and pause with a **Diagnosis** — name the failure class (flaky / code-defect / plan-wrong / config-missing, inferred from the remaining failures) and ONE recommended next command (flaky → re-run the gate; code-defect → `/task fix: <failure>`; plan-wrong → `/brainstorm` the failing step; config-missing → set it in `.claude/project.json`), then ask the user to fix manually and re-run `/sdlc {plan_file} --resume` (resumes the paused run, reusing the green stages; use a fresh `/sdlc {plan_file}` if you edited the plan — that changes the plan hash, which `--resume` rejects). Fastest path: `/triage {slug}` does this classification and drafts the fix for you.
+**Stage 4 was deleted.** It ran `eval.runner`, then Stage 5 ran the same command again as
+its eval-regression layer — a strict prefix. Sharing this budget, its pause could halt a
+run on self-authored evals before the real suite was ever consulted. Stage 3 still authors
+the tests; Stage 5 runs them.
 
 ## Stage 5 — Run /test-check
 
@@ -245,7 +246,7 @@ For confirmed findings, draft a structured fix spec per finding, applying the au
 - **`interactive`**: present each fix spec for approve / edit / skip. Approved specs run through
   the existing Stage 2/4 implement+fix machinery inline, then a fresh adversarial re-review of the
   touched files (this loop iteration's own pass) decides whether another iteration is needed. Loop
-  until clean or `max_fix_loops` (own budget, separate from the Stage 4 fix budget).
+  until clean or `max_fix_loops` (own budget, separate from the shared fix budget).
 - **`auto`**: after `auto_approve_after` consecutive approvals, or confidence ≥
   `confidence_threshold`, apply and continue — EXCEPT `auto_fixable: false` findings (design
   decisions), which are always surfaced, never auto-applied.

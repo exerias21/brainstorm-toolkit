@@ -71,7 +71,6 @@ implement          # Stage 2 (single-agent path)
 implement-<lane>   # Stage 2b sidecar, one per lane (decomposed path)
 converge           # Stage 2c (only when decomposed)
 generate-evals     # Stage 3
-eval-fix           # Stage 4
 validate           # Stage 5 (test suite)
 plan-validate      # Stage 5.5 (api/ui/data validators)
 flowsim            # Stage 5.6

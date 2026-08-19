@@ -298,20 +298,10 @@ Reuse `/sdlc` Stage 3 verbatim. **Skip silently if no `eval.runner` is
 configured** — record `data.skipped_reason: "no eval.runner"`. Pure-docs work
 degenerates cleanly into edit + commit.
 
-## Stage 4 — Eval + fix loop
-
-Reuse `/sdlc` Stage 4 verbatim. Max 3 iterations (hardcoded). Skip when Stage 3
-was skipped. If failures persist after 3 iterations, pause with `/sdlc`'s
-message shape — **including its Diagnosis block** (fastest path `/triage <slug>`,
-which classifies the failure + drafts the fix; or name the class + one command
-from `eval-fix.json` inline) — and ask the user to fix manually, then
-`/sdlc-lite <input> --resume` (reuses the green stages; use a fresh run if you
-edited the plan).
-
 ## Stage 5 — Validate
 
 Reuse `/sdlc` Stage 5 verbatim — invoke `/test-check`; route new failures
-through the Stage 4 fix loop (counts toward the 3-iteration budget).
+through the shared fix loop (counts toward the 3-iteration budget).
 
 ## Stage 5.5 — Plan requirements validation
 
@@ -331,7 +321,7 @@ documents it (replaces the per-validator default; still capped by `models.cap` /
 ## Stage 5.6 — Flowsim
 
 Same gating as 5.5: run `/flowsim <plan-target>` whenever a plan target exists;
-skip with a note when none does. Mismatches feed the Stage 4 fix loop (counts
+skip with a note when none does. Mismatches feed the shared fix loop (counts
 toward the budget). Process results per `/sdlc` Stage 5.6.
 
 ## Reviewer model (Stage 5.7/5.8 only)

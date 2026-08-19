@@ -25,7 +25,6 @@
     implement-<lane>.json   # one per lane — only when decomposed
     converge.json           # Stage 2c — only when decomposed
     generate-evals.json
-    eval-fix.json
     validate.json
     plan-validate.json
     flowsim.json
@@ -35,13 +34,13 @@
     pr-create.json
 ```
 
-Stage filenames use the **canonical kebab names** from `docs/CONVENTIONS.md` "Stage names" — `parse`, `sanity-check`, `decompose`, `implement`, `implement-<lane>`, `converge`, `generate-evals`, `eval-fix`, `validate`, `plan-validate`, `flowsim`, `review`, `review-fix`, `secret-scan`, `pr-create`. Never decimal-versioned (no `stage-1.5.json`).
+Stage filenames use the **canonical kebab names** from `docs/CONVENTIONS.md` "Stage names" — `parse`, `sanity-check`, `decompose`, `implement`, `implement-<lane>`, `converge`, `generate-evals`, `validate`, `plan-validate`, `flowsim`, `review`, `review-fix`, `secret-scan`, `pr-create`. Never decimal-versioned (no `stage-1.5.json`).
 
 Note: `review-fix`'s internal `loops[]` index is a bounded loop counter (`max_fix_loops`, default 3), **not** an artifact ID — it is not zero-padded and does not fall under the `pbi-001`/`task-001` convention.
 
 The Stage 2 sidecars are **mutually exclusive by path**: the single-agent path writes only `implement.json`; the decomposed path (Stage 2 gate fans out) writes `decompose.json`, one `implement-<lane>.json` per lane, and `converge.json`, and never writes `implement.json`. A run that never decomposes is byte-for-byte unchanged from the pre-decomposition envelope.
 
-In skill-repo mode (auto-detected from `.claude-plugin/marketplace.json` at repo root), the skipped stages (`generate-evals`, `eval-fix`, `plan-validate`, `flowsim`) write **no sidecar**. `stage-outputs/validate.json` is still written in skill-repo mode, but as a skill-repo-shaped sidecar that records the structural-check results from `templates/stage-5-skill-repo.md`; in that case `data.mode = "skill-repo"`.
+In skill-repo mode (auto-detected from `.claude-plugin/marketplace.json` at repo root), the skipped stages (`generate-evals`, `plan-validate`, `flowsim`) write **no sidecar**. `stage-outputs/validate.json` is still written in skill-repo mode, but as a skill-repo-shaped sidecar that records the structural-check results from `templates/stage-5-skill-repo.md`; in that case `data.mode = "skill-repo"`.
 
 ---
 
@@ -64,7 +63,7 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
   "updated_at": "2026-04-26T10:08:23Z",
   "stage": "plan-validate",
   "status": "in_progress",
-  "stages_completed": ["parse", "sanity-check", "implement", "generate-evals", "eval-fix", "validate"],
+  "stages_completed": ["parse", "sanity-check", "implement", "generate-evals", "validate"],
   "stages_skipped": []
 }
 ```
@@ -93,7 +92,7 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
 ```json
 {
   "stages_completed": [
-    "parse", "sanity-check", "implement", "generate-evals", "eval-fix",
+    "parse", "sanity-check", "implement", "generate-evals",
     "validate", "plan-validate", "flowsim", "review", "review-fix",
     "secret-scan", "pr-create"
   ]
@@ -102,7 +101,7 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
 
 When `pipeline.review_fix.enabled` is `false`, `--no-review` was passed, or `review.json`'s
 `confirmed[]` ends up empty, `review` and/or `review-fix` move to `stages_skipped` instead on the
-prose/overlay paths — same documented convention as `generate-evals`/`eval-fix`/`plan-validate`/
+prose/overlay paths — same documented convention as `generate-evals`/`plan-validate`/
 `flowsim`'s own skill-repo-mode skips. On the Workflow path this is logged, not array-appended (a
 pre-existing gap, not new here).
 
@@ -272,16 +271,6 @@ lists any name defined by more than one lane. A non-empty `unresolved` or
 }
 ```
 
-#### `eval-fix`
-```json
-{
-  "fix_loops_run": 2,
-  "max_fix_loops": 3,
-  "final_pass_count": 8,
-  "final_fail_count": 0,
-  "remaining_failures": []
-}
-```
 
 #### `review` (Stage 5.7 -- only when the reviewer-model axis resolves ON)
 ```json
@@ -358,7 +347,7 @@ array-appended (a pre-existing gap, not new here).
   ]
 }
 ```
-Mirrors `eval-fix.json`'s top-level shape (`fix_loops_run`/`max_fix_loops`/`final_pass_count`/
+Mirrors the shared fix-loop sidecar shape (`fix_loops_run`/`max_fix_loops`/`final_pass_count`/
 `final_fail_count`/`remaining_failures`) with a `loops[]` array added for per-iteration detail.
 `decisions[].action` is one of `approved`, `edited`, `skipped`; in `auto` mode `action` is still
 `approved` but `reason` is populated (e.g. `"auto: confidence 0.93 >= threshold 0.85"`). A finding

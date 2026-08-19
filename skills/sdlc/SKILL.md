@@ -150,7 +150,7 @@ sidecar writes).
   `sanity-check.json`, not `stage-1.5.json`) and append the stage to
   `run.json.stages_completed`.
 - When skill-repo mode is auto-detected, skipped stages (`generate-evals`,
-  `eval-fix`, `plan-validate`, `flowsim`) write **no sidecar**; add their
+  `plan-validate`, `flowsim`) write **no sidecar**; add their
   names to `run.json.stages_skipped` instead.
 - On terminal state, set `run.json.status` to `complete`, `failed`, or `paused`
   per the schema doc.
@@ -478,7 +478,7 @@ Read `templates/stage-2c-converge.md`. After all lanes complete, the
 orchestrator resolves cross-lane integration (imports, call sites, shared
 types), runs an import / symbol-collision sweep over the union of changed files,
 and reconciles any contract violations (small seam fixes here; real logic gaps
-go to the Stage 4 fix loop). Write `stage-outputs/converge.json` with
+go to the shared fix loop). Write `stage-outputs/converge.json` with
 `data.merged_files`, `data.integration_fixes`, `data.import_check`,
 `data.symbol_collisions`. Append `implement` to `run.json.stages_completed`
 **once** (after converge), not per lane. Then proceed to Stage 3.
@@ -541,35 +541,30 @@ reason in `summary` and `data.skipped_reason`.
 
 ---
 
-## Stage 4: Eval + Fix Loop
+## Shared fix loop + pause shape
 
-Run the evals and auto-fix failures.
+Stages 5, 5.5, 5.6 (and 5.7's own separate budget) all fix the same way, so the loop and its
+pause are specified once, here.
 
-```bash
-<eval.runner> --feature {feature_slug} --output json
-```
+**The loop.** On a gate failure: parse the structured results; for each failure extract test
+name, expected-vs-actual, file path, function; dispatch **one fix agent** — **Sonnet by default**
+(Opus only on `--model opus`), per the **Model cap** section — told to fix *only* those failures
+with no refactor; re-run the gate. Repeat to a maximum of **3 iterations, shared across Stages
+5/5.5/5.6** (Stage 5.7 has its own separate budget — see there for why sharing it is wrong).
 
-(`eval.runner` from `.claude/project.json`. If not configured, skip Stage 3-4 with
-a note: "No `eval.runner` configured — skipping eval generation and fix loop.")
+**Stage 4 no longer exists.** It ran `eval.runner` and then Stage 5 ran the same command again as
+its eval-regression layer, so its gate was a strict prefix of Stage 5's. Sharing this budget, its
+pause could halt a run on **self-authored** evals before the project's real suite was ever
+consulted — a weak oracle pre-empting the strong one. Stage 3 still authors the tests; Stage 5
+runs them. See `plans/brainstorm-post-merge-cleanup.md` (D2).
 
-### If all green:
-Proceed to Stage 5.
-
-### If failures:
-1. Parse the structured JSON results
-2. For each failure, extract: test name, expected vs actual, file path, function
-3. Spawn a fix agent — **Sonnet by default** (Opus only on `--model opus`
-   opt-up), per the **Model cap** section — using
-   the prompt at `templates/stage-4-fix-eval.md`. Substitute `{feature_name}`,
-   `{results_json}`, and `{file_paths}` before dispatch.
-4. After fix agent completes, re-run evals
-5. Repeat up to 3 iterations
-6. If still failing after 3 iterations:
+**The pause.** On budget exhaustion, emit this block, inferring the class from *the failing
+stage's own* sidecar (`validate.json`, `plan-validate.json`, `flowsim-<slug>.json`, `review.json`):
 
 ```markdown
 ## SDLC Pipeline — PAUSED
 
-Eval failures persist after {N} fix attempts.
+{stage} failures persist after {N} fix attempts.
 Remaining failures:
 {failures_summary}
 
@@ -577,14 +572,14 @@ Remaining failures:
 
 **Fastest path: run `/triage <slug>`** — it reads this sidecar, classifies the failure,
 drafts the fix for a code defect, and hands back the `--resume` re-entry. Or triage inline:
-- **Class** (inferred from this stage's sidecar, here `stage-outputs/eval-fix.json`
-  `data.remaining_failures[]`): one of **flaky** (a test flips pass/fail across loops) ·
-  **code-defect** (a consistent assertion failure) · **plan-wrong** (the failure
-  contradicts a plan step) · **config-missing** (a command/env/dep the runner needs).
-- **Recommended next command** (matches the class — all work today; `--resume` reuses the
-  green stages, so prefer it over a fresh re-run):
-  - flaky → re-run just the gate to confirm: `/eval-harness` (or `/test-check`); if green, `/sdlc {plan_file} --resume`.
-  - code-defect → `/task fix: {one-line failure}` (bounded TDD), then `/sdlc {plan_file} --resume` (code changed, plan didn't — resume skips the green stages).
+- **Class** (inferred from the failing stage's sidecar `data.remaining_failures[]`): one of
+  **flaky** (a test flips pass/fail across loops) · **code-defect** (a consistent assertion
+  failure) · **plan-wrong** (the failure contradicts a plan step) · **config-missing** (a
+  command/env/dep the runner needs).
+- **Recommended next command** (matches the class — `--resume` reuses the green stages, so
+  prefer it over a fresh re-run):
+  - flaky → re-run just the gate to confirm: `/test-check` (or `/eval-harness`); if green, `/sdlc {plan_file} --resume`.
+  - code-defect → `/task fix: {one-line failure}` (bounded TDD), then `/sdlc {plan_file} --resume` (code changed, plan didn't).
   - plan-wrong → `/brainstorm` the failing step to revise `{plan_file}`, then re-run `/sdlc {plan_file}` **fresh** (NOT `--resume` — editing the plan changes its hash, which resume rejects by design).
   - config-missing → set the missing command/env in `.claude/project.json`, then `/sdlc {plan_file} --resume`.
 
@@ -592,17 +587,10 @@ Fix manually (per the diagnosis above), then `/sdlc {plan_file} --resume` (or a
 fresh `/sdlc {plan_file}` if you edited the plan) — resume reuses the green stages.
 ```
 
-This **Diagnosis block is the shared pause shape** — every other pause site below
-("same shape as Stage 4's pause") includes it, inferring the class from *its own*
-stage sidecar (`plan-validate.json`, `flowsim-<slug>.json`, `review.json`, …).
-
-**State write**: write `stage-outputs/eval-fix.json` with `data.fix_loops_run`,
-`data.max_fix_loops` (always `3`), `data.final_pass_count`,
-`data.final_fail_count`, `data.remaining_failures[]`. Status is `pass` if all
-green, `paused` on max loops with persistent failures (set
-`run.json.status = "paused"` too).
+Set `run.json.status = "paused"` alongside the failing stage's sidecar `status: "paused"`.
 
 ---
+
 
 ## Stage 5: Full Validation
 
@@ -623,19 +611,19 @@ than waiting to be asked.
      `brainstorm-toolkit:e2e-test-runner`, or bare `e2e-test-runner` when vendored) (if `test.e2e`
      configured and **frontend surface touched** per the gate). The agent runs a
      fix loop for e2e failures with a flaky-test guard; its iterations count
-     toward the 3-iteration eval-fix budget. If `test.e2e` is not configured but
+     toward the shared 3-iteration fix budget. If `test.e2e` is not configured but
      the frontend surface was touched, surface that as a **soft-stop candidate**
      ("frontend changed but no visual check ran" — see "Soft-stop tier"), don't
      pass silently.
    - Eval regression (if `eval.runner` configured)
 
 2. **If NEW failures** in the non-e2e layers:
-   - Go back to Stage 4 fix loop with the test-check failures
+   - Go back to shared fix loop with the test-check failures
    - The fix agent receives the test output, not eval output
 
 3. **If the e2e agent returns `failed_after_max_iterations`**:
    - Its report lists the persistent failures. Include them in the PAUSE message
-     (same shape as Stage 4's max-loops pause). Do NOT proceed to Stage 5.5.
+     (the shared pause shape above). Do NOT proceed to Stage 5.5.
 
 4. **If only pre-existing failures**:
    - Note them in the PR body but proceed — don't fix what was already broken
@@ -712,7 +700,7 @@ usual `model: <tier> (cap: <cap|none>)` line before dispatching.
 2. Merge into a single validation report
 3. **If all checks pass**: proceed to Stage 5.6
 4. **If failures found**:
-   - Feed the failure list back into the Stage 4 fix loop
+   - Feed the failure list back into the shared fix loop
    - The fix agent receives the validation report, not eval output
    - Re-run validation after fixes (counts toward the 3-iteration budget)
 5. **If failures persist after 3 iterations**: report to user and stop
@@ -772,7 +760,7 @@ Invoke the `/flowsim` skill with the plan file and feature slug:
 2. **Count** flows by status. Any flow with `status: "MISMATCH"` is a finding.
 3. **If no mismatches**: record "flowsim: all flows aligned" in the commit trailer and proceed to Stage 6.
 4. **If mismatches found**:
-   - Feed the `mismatches` array into the Stage 4 fix loop.
+   - Feed the `mismatches` array into the shared fix loop.
    - The fix agent receives the structured JSON, not the markdown.
    - Re-run `/flowsim` after fixes (counts toward the 3-iteration budget).
 5. **If mismatches persist after 3 iterations**:
@@ -912,7 +900,7 @@ exclusively from `auto_fixable:true` findings.
 
 Per `pipeline.review_fix.mode`:
 - **`interactive`** (default): present each fix spec for approve/edit/skip. Approved specs route
-  through the same `runGatedFix()` pattern Stage 4 uses, but as a **new gate function** — Stage 4
+  through the same `runGatedFix()` pattern Stage 5 uses, but as a **new gate function** — Stage 5
   is hard-wired to the eval runner. Loop until clean or `agents.code_review_max_fix_loops`. **Workflow-tool
   limitation:** the Workflow has no mid-run human-prompt primitive, so under the Workflow
   `interactive` means auto-apply confirmed `auto_fixable:true` findings (bounded by budget), then
@@ -1089,7 +1077,7 @@ otherwise lacks: a finished run seeds its own next step instead of dead-ending):
 - When a soft-stop was overridden: the debt row per **Soft-stop** below.
 
 **Always close the run.** Whatever exit path you take — success, a pause at
-Stage 4/5.5/5.6, or bailing because you committed something by hand — set
+Stage 5/5.5/5.6, or bailing because you committed something by hand — set
 `run.json.status` to a terminal value (`complete` / `paused` / `failed`)
 before you stop. An envelope left `in_progress` after the work moved on is the
 "stale pipeline" smell `/repo-health` Check 7 and `/status` will flag; don't
@@ -1111,7 +1099,7 @@ stages"). Such a run must still **advance `run.json.stage` and append to
 `stages_completed` as each validation sidecar is written**, add `implement` to
 `run.json.stages_skipped`, and finish on a terminal `status`. The failure mode
 to avoid: a retro run initialized at `stage: "parse"` whose validation sidecars
-(`sanity-check`, `generate-evals`, `eval-fix`, `validate`, `plan-validate`,
+(`sanity-check`, `generate-evals`, `validate`, `plan-validate`,
 `flowsim`) all exist on disk while `run.json` still reads
 `status: "in_progress"` with `stages_completed: []` — sidecars present but the
 run never closed. That orphan is the single most common stale-pipeline false
@@ -1216,7 +1204,6 @@ repo root, this mode activates automatically. No flag required.
 | Stage 1.5 — Sanity check | unchanged (the configured focus agents generalize fine; defaults are the 3 Haiku ones) |
 | Stage 2 — Implement | unchanged (gated as standard; a skill repo's single docs surface normally keeps it single-agent) |
 | Stage 3 — Generate evals | **skip** (no test surface) |
-| Stage 4 — Eval + fix loop | **skip** |
 | Stage 5 — Full validation | **substitute** with the procedure in `templates/stage-5-skill-repo.md` |
 | Stage 5.5 — Plan validators | **skip** (no api/ui/data surfaces) |
 | Stage 5.6 — Flowsim | **skip** (skills aren't "flows") |
@@ -1237,7 +1224,7 @@ while swapping in the right validation surface for the artifact type.
 
 ### State envelope in skill-repo mode (auto-detected)
 
-Skipped stages (`generate-evals`, `eval-fix`, `plan-validate`, `flowsim`)
+Skipped stages (`generate-evals`, `plan-validate`, `flowsim`)
 write **no sidecar**; their names are appended to `run.json.stages_skipped`
 instead. The substituted Stage 5 writes `stage-outputs/validate.json` with
 `data.mode = "skill-repo"` and the structural-check results — see

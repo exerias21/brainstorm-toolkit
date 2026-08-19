@@ -6,7 +6,7 @@ export const meta = {
     { title: 'Sanity', detail: '3 Haiku pre-flight agents in parallel' },
     { title: 'Implement', detail: 'auto-gate -> single-agent OR decompose/dispatch/converge' },
     { title: 'Evals', detail: 'generate evals (skipped in skill-repo / no eval.runner)' },
-    { title: 'Verify', detail: 'eval-fix + validate + plan-validate + flowsim share one 3-iteration budget' },
+    { title: 'Verify', detail: 'validate + plan-validate + flowsim share one 3-iteration budget' },
     { title: 'Review', detail: '5.7 adversarial review (reviewer axis, default opus, opt-in) + 5.8 fix loop; own budget; never blocks sdlc-lite' },
     { title: 'Deliver', detail: 'mode branch: /sdlc -> PR, /sdlc-lite -> handoff' },
   ],
@@ -501,7 +501,7 @@ const cfg = parse.config || {}
 const discipline = cfg.discipline || {}
 const skillRepo = !!parse.skill_repo_mode
 const minTasks = cfg.agents?.decompose_min_tasks ?? 6
-const fixBudget = makeBudget(3) // shared across Stages 4/5/5.5/5.6
+const fixBudget = makeBudget(3) // shared across Stages 5/5.5/5.6
 
 // ----- Stage 1.5 — Sanity check: configured focus agents in parallel (true barrier) ---
 phase('Sanity')
@@ -715,24 +715,18 @@ ${envelopeNote(slug, 'generate-evals', 'Write data.evals_created[], data.skipped
   )
 }
 
-// ----- Stage 4/5/5.5/5.6 — Verification under ONE shared fix budget ---------
+// ----- Stage 5/5.5/5.6 — Verification under ONE shared fix budget -----------
 phase('Verify')
 
-// Stage 4 — eval + fix loop.
-if (!evalsSkipped) {
-  const evalGate = () => agent(
-    `Run the evals: ${'`'}${evalRunner} --feature ${slug} --output json${'`'}. Parse the JSON.
-Return green=true iff all pass; else list each failure (name, expected-vs-actual detail, file).
-${envelopeNote(slug, 'eval-fix', `Write data.fix_loops_run, data.max_fix_loops=3, data.final_pass_count, data.final_fail_count, data.remaining_failures[]. (This gate may be re-run by the fix loop; persist the latest counts.)`)}`,
-    { label: 'eval-run', phase: 'Verify', schema: GATE_RESULT_SCHEMA, model: capModel('sonnet', MODEL_CAP) }
-  )
-  const evalFix = await runGatedFix(
-    'eval', evalGate,
-    (failures) => `Fix ONLY these eval failures for "${parse.feature_name}" (no refactor). Tests re-run after.\nEVAL RESULTS: ${JSON.stringify(failures)}`,
-    fixBudget, 'Verify'
-  )
-  if (evalFix.paused) return await pauseOnBudget('eval-fix', evalFix.failures)
-}
+// Stage 4 (the eval gate + its own fix loop) was DELETED. It ran `eval.runner`, and Stage 5
+// below runs the SAME command again as its eval-regression layer -- Stage 4's gate was a
+// strict prefix of Stage 5's. Because the fix budget is shared and its pause was an early
+// return, three failures against SELF-AUTHORED evals could halt the run before the project's
+// real test suite was ever consulted: a weak oracle pre-empting the strong one. Across 30 runs
+// in two consumer repos it executed 3 times and caught zero product defects (one needed no
+// iterations, one fixed the eval harness itself). Stage 3 still authors the tests; Stage 5
+// still runs them and still routes failures into a fix loop on this same budget, so nothing is
+// lost but the duplicate first run. See plans/brainstorm-post-merge-cleanup.md (D2).
 
 // Stage 5 — full validation (test-check). Gated by the changed-files surfaces.
 const validateGate = () => agent(
@@ -917,7 +911,7 @@ never fail). Otherwise return demoted_lenses = every lens name whose entry has d
         ? `; truncated to ${MAX_LENSES} by agents.code_review_max_lenses` : '') +
       `)`
   )
-  // SEPARATE budget from fixBudget (shared by Stages 4/5/5.5/5.6) -- see §4.4 for why sharing
+  // SEPARATE budget from fixBudget (shared by Stages 5/5.5/5.6) -- see §4.4 for why sharing
   // it is wrong.
   const reviewBudget = makeBudget(cfg.agents?.code_review_max_fix_loops ?? 3)
   // 'off': Stage 5.7 (review) still runs -- findings still get written to review.json --
@@ -1393,7 +1387,6 @@ async function pauseOnBudget(stage, failures) {
   // Diagnosis block — mirrors SKILL.md Stage 4 PAUSED: name a failure class + ONE command that works today
   // (fastest path is /triage <slug>, which classifies + drafts the fix; then prefer --resume over a fresh re-run). Class is inferred from this stage's own sidecar.
   const rec = {
-    'eval-fix': 'code-defect → `/task fix: <failure>`; flaky → re-run `/eval-harness` (or `/test-check`)',
     'validate': 'config-missing → fix the failing check/command in `.claude/project.json`',
     'plan-validate': 'plan-wrong → `/brainstorm` the failing step to revise the plan',
     'flowsim': 'plan-wrong (plan↔code mismatch) → fix the code at the flagged anchor, or revise the plan',

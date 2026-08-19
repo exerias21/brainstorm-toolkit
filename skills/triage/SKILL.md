@@ -27,7 +27,7 @@ hands you a diagnosis + one command, instead of a prose apology. Read-only unles
   ("no paused/failed run on this branch — `/status` for the queue").
 
 Read `run.json` (`pipeline`, `stage`, `status`, `base_commit`, `plan_hash`) and the failing
-stage's sidecar (`eval-fix.json`, `plan-validate.json`, `plans/flowsim-<slug>.json`,
+stage's sidecar (`validate.json`, `plan-validate.json`, `plans/flowsim-<slug>.json`,
 `implement-<lane>.json`, …). This is a single **Sonnet/session-tier read job** — not a
 fan-out, no `capModel` plumbing.
 
@@ -64,8 +64,8 @@ a **design decision**: surface it, never auto-fix — the human decides. Triage 
 Every recommendation ends in a command that *works today* — never `re-run from scratch`:
 
 ```
-Next: /task fix: eval test_radius_refetch expects 200 but Stage 4 got 500 on empty-body POST
-Why:  eval-fix.json → stable code-defect (expected 200, actual 500) in api/radius.py:88; auto_fixable.
+Next: /task fix: test_radius_refetch expects 200 but got 500 on empty-body POST
+Why:  validate.json → stable code-defect (expected 200, actual 500) in api/radius.py:88; auto_fixable.
 Also: after the fix, /sdlc plans/brainstorm-radius-refetch.md --resume (reuses the 3 green stages)
 ```
 
