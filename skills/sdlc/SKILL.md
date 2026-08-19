@@ -401,6 +401,24 @@ issues, `pass` with `auto_patched: true` if issues were auto-corrected,
 
 ## Stage 2: Implement
 
+**Delegation is mandatory — during this stage the orchestrator does not call Write or Edit.**
+Dispatch the implement agent(s) and take back `git diff --numstat`; file bodies stay in the
+agent's context, never yours. This is the pipeline's most expensive rule to break. On an
+audited three-day run the orchestrator made **183 Write/Edit calls against 8 dispatches**,
+parking ~131k tokens of file content in its own context — the primary driver of the 999k
+peak that forced five context resets, and of the finding that 81% of the run's tokens were
+orchestrator context rather than the sub-agent fan-out. Sub-agents exist to keep the
+exploring out of the joining context; implementing inline throws that away.
+
+Two corollaries:
+- If a change is too small to be worth dispatching, it is too small for `/sdlc` — use `/task`.
+- Reading a file to *decide* is fine. Writing one is not.
+
+**Open the templates named below rather than recalling them.** A "reuse `<template>`" pointer
+that nobody opens resolves to nothing, and that is measurably what happened: across the
+audited session, **0 of 135 Read/Glob/Grep calls touched `templates/`**, so this stage's
+dispatch instruction never reached the model at all.
+
 **Ground in the live code first.** Whichever path runs below, the implementation
 must follow `templates/convention-grounding.md`: the existing code is the source
 of truth (not `AGENTS.md` / `CLAUDE.md` — those are hints that may be stale),

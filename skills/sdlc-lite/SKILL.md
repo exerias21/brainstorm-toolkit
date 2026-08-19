@@ -251,7 +251,8 @@ fresh-process-per-item escalation are in `docs/LOOP-HYGIENE.md` (plugin repo).
 
 ## Stage 1.5 — Sanity check
 
-Run `/sdlc` Stage 1.5 verbatim (parallel focus agents on Claude; sequential on the
+**Read `skills/sdlc/templates/stage-1.5-sanity-check.md` now**, then run `/sdlc` Stage 1.5
+(parallel focus agents on Claude; sequential on the
 overlays). This is full SDLC discipline — it is **not** gated or optional. Honors
 `models.sanity` and `agents.sanity_focuses` exactly as `/sdlc`
 Stage 1.5 documents them — the default is 3 Haiku agents, and because the cap only
@@ -263,7 +264,19 @@ contradictory steps), stop and report rather than implementing on a bad premise.
 
 ## Stage 2 — Implement
 
-Run `/sdlc` Stage 2 verbatim, including its **live-code grounding** (follow
+**Delegation is mandatory. During this stage you do not call Write or Edit.** Dispatch the
+implement agent(s) below and receive `git diff --numstat` back; the file bodies stay in the
+agent's context, not yours. This is the single most expensive rule in the pipeline to break:
+on an audited run the orchestrator made 183 Write/Edit calls against 8 dispatches, parking
+~131k tokens of file content in its own context and driving the peak that forced five
+context resets. If a change is too small to be worth an agent, it is too small for
+`/sdlc-lite` — use `/task`.
+
+**Read `skills/sdlc/templates/stage-2-implement.md` now**, before dispatching — not "reuse"
+it, open it. A pointer that is never opened silently resolves to nothing, which is exactly
+how the delegation rule above stopped reaching the model in the first place.
+
+Then run `/sdlc` Stage 2, including its **live-code grounding** (follow
 `skills/sdlc/templates/convention-grounding.md` — reuse existing patterns, treat
 AGENTS.md/CLAUDE.md as stale-able hints, honor any `## Conventions & reuse` block
 in the plan) and its **auto-gate**. Compute
@@ -273,7 +286,7 @@ the planned files) and `task_count` (parse step count); **decompose iff**
 overridable via `.claude/project.json` `agents.decompose_min_tasks`) AND the
 per-surface file sets are disjoint.
 
-- **Single-agent (default):** reuse `skills/sdlc/templates/stage-2-implement.md`,
+- **Single-agent (default):** dispatch one agent with `skills/sdlc/templates/stage-2-implement.md`,
   substitute `{feature_name}` and `{plan_content}`; **Sonnet by default** (Opus
   only on `--model opus`, per `skills/sdlc/templates/models.md`) on Claude,
   inline on Copilot/Codex. Writes `implement.json`, no decompose/converge sidecars.
@@ -300,7 +313,7 @@ degenerates cleanly into edit + commit.
 
 ## Stage 5 — Validate
 
-Reuse `/sdlc` Stage 5 verbatim — invoke `/test-check`; route new failures
+Run `/sdlc` Stage 5 — invoke `/test-check`; route new failures
 through the shared fix loop (counts toward the 3-iteration budget).
 
 ## Stage 5.5 — Plan requirements validation

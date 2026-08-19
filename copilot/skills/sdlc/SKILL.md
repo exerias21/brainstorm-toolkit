@@ -111,6 +111,15 @@ Infer the project's patterns from its README, CLAUDE.md, AGENTS.md, and existing
 
 ## Stage 2 — Implement
 
+**Runtime note — why there is no delegation rule here.** The canonical `/sdlc` forbids the
+orchestrator from calling Write/Edit during Stage 2, because on Claude the implement work
+belongs in a sub-agent whose context is discarded. **This runtime has no sub-agent seam**, so
+that rule cannot apply: you *are* the implementer and you must write the files. The cost it
+guards against is real here too, though, and the mitigation is different — keep the session
+short and hand off at stage boundaries (`docs/LOOP-HYGIENE.md`), because every file you write
+stays in your context for the rest of the run.
+
+
 **Ground in the live code first.** Before writing anything, follow `skills/sdlc/templates/convention-grounding.md`: the existing code is the source of truth (not `AGENTS.md` / `CLAUDE.md` — read those as hints, verify against code, follow the code when they disagree). Find the 2–3 closest existing implementations and reuse their patterns (layout, naming, error handling, the data-access seam, shared utilities) instead of inventing parallel ones. If the plan has a `## Conventions & reuse` block, honor it and re-verify it against current code.
 
 Stage 2 is **auto-gated** (no flag). Small / single-surface plans you implement in one pass; large multi-surface plans you implement **lane by lane in order**, then reconcile. You are always the implementation layer — there is no worker handoff — but the gate decides whether to split the work into focused lanes.

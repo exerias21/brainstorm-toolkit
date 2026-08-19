@@ -138,6 +138,15 @@ model instead.
 
 ## Stage 2 — Implement
 
+**Runtime note — why there is no delegation rule here.** The canonical `/sdlc` forbids the
+orchestrator from calling Write/Edit during Stage 2, because on Claude the implement work
+belongs in a sub-agent whose context is discarded. **This runtime has no sub-agent seam**, so
+that rule cannot apply: you *are* the implementer and you must write the files. The cost it
+guards against is real here too, though, and the mitigation is different — keep the session
+short and hand off at stage boundaries (`docs/LOOP-HYGIENE.md`), because every file you write
+stays in your context for the rest of the run.
+
+
 Run `/sdlc` Stage 2 inline, including its **auto-gate** (see
 `.agents/skills/sdlc/SKILL.md`), preceded by **live-code grounding**.
 
