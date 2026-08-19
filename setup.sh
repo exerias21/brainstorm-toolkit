@@ -181,6 +181,66 @@ for skill_dir in "$PLUGIN_ROOT"/skills/*/; do
   fi
 done
 
+# 1b. Shared skill templates — reachability fix.
+#
+# An overlay is installed *instead of* the canonical skill tree, and no overlay ships a
+# templates/ dir, so the shared skills/sdlc/templates/ tree never reached Copilot or Codex:
+# 26 citations per tool resolved to nothing. 16 of them are CROSS-skill (non-sdlc skills
+# citing the sdlc templates), so giving each overlay its own copy would mean the same files
+# duplicated into eight skill dirs per tool. Instead: install the shared tree once per tool,
+# then rewrite the citation prefix to a path that resolves from the consumer's repo root.
+#
+# The repo keeps exactly ONE citation form (`skills/sdlc/templates/<file>`), which is what a
+# maintainer reads and what validate_skills.py checks. The rewrite below is what a consumer gets.
+#
+# Idempotent by construction: the backtick anchors the match, so a already-rewritten citation
+# (`.github/skills/...`) no longer starts with `skills/ and is skipped on re-run.
+install_shared_templates() {
+  local root="$1"          # .claude | .github | .agents
+  local dest="$TARGET/$root/skills"
+  [[ -d "$dest" ]] || return 0
+
+  # Ship the shared sdlc tree wherever a skill was installed for this tool.
+  local src="$PLUGIN_ROOT/skills/sdlc/templates"
+  if [[ -d "$src" && ! -d "$dest/sdlc/templates" ]]; then
+    mkdir -p "$dest/sdlc/templates"
+    cp -R "$src/." "$dest/sdlc/templates/" 2>/dev/null || true
+  fi
+
+  # Ship the repo-root SEED templates (*.template). /task, /brainstorm, /repo-onboarding and
+  # /post-deploy-verify read these to CREATE a missing TASKS.md / AGENTS.md, so the source has
+  # to travel even though setup.sh also materializes those files at the target root.
+  if compgen -G "$PLUGIN_ROOT/templates/*.template" >/dev/null 2>&1; then
+    mkdir -p "$TARGET/$root/templates"
+    cp -R "$PLUGIN_ROOT"/templates/*.template "$TARGET/$root/templates/" 2>/dev/null || true
+  fi
+
+  # Retarget citations to a repo-root-relative path the agent can actually open.
+  local n=0 f
+  while IFS= read -r f; do
+    local hit=0
+    if grep -q '`skills/[a-z0-9-]*/templates/' "$f" 2>/dev/null; then
+      sed -i.bak "s|\`skills/|\`$root/skills/|g" "$f" && rm -f "$f.bak"
+      hit=1
+    fi
+    # Seed templates only (*.template). A skill-local `templates/<x>.md` resolves relative to
+    # the skill dir already and MUST NOT be rewritten -- doing so would break brainstorm-deep
+    # and cheatsheet, which ship their own templates/ dirs.
+    if grep -q '`templates/[A-Za-z0-9._-]*\.template`' "$f" 2>/dev/null; then
+      sed -i.bak "s|\`templates/\([A-Za-z0-9._-]*\.template\)\`|\`$root/templates/\1\`|g" "$f" && rm -f "$f.bak"
+      hit=1
+    fi
+    [[ "$hit" -eq 1 ]] && n=$((n+1))
+  done < <(find "$dest" -name 'SKILL.md' 2>/dev/null)
+  [[ "$n" -gt 0 ]] && echo "  retargeted template citations in $n skill file(s) under $root/"
+  return 0
+}
+
+echo "[1b/7] Shared skill templates"
+[[ "$want_claude"  -eq 1 ]] && install_shared_templates ".claude"
+[[ "$want_copilot" -eq 1 ]] && install_shared_templates ".github"
+[[ "$want_codex"   -eq 1 ]] && install_shared_templates ".agents"
+
 # 2. Agents (Claude-only)
 if [[ "$want_claude" -eq 1 && -d "$PLUGIN_ROOT/agents" ]]; then
   echo "[2/7] Agents (Claude-only)"

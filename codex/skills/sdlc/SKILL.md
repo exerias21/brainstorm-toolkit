@@ -113,7 +113,7 @@ Infer the project's patterns from its README, CLAUDE.md, AGENTS.md, and existing
 
 ## Stage 2 — Implement
 
-**Ground in the live code first.** Before writing anything, follow `.agents/skills/sdlc/templates/convention-grounding.md` (canonical: `skills/sdlc/templates/convention-grounding.md`): the existing code is the source of truth (not `AGENTS.md` / `CLAUDE.md` — read those as hints, verify against code, follow the code when they disagree). Find the 2–3 closest existing implementations and reuse their patterns (layout, naming, error handling, the data-access seam, shared utilities) instead of inventing parallel ones. If the plan has a `## Conventions & reuse` block, honor it and re-verify it against current code.
+**Ground in the live code first.** Before writing anything, follow `skills/sdlc/templates/convention-grounding.md`: the existing code is the source of truth (not `AGENTS.md` / `CLAUDE.md` — read those as hints, verify against code, follow the code when they disagree). Find the 2–3 closest existing implementations and reuse their patterns (layout, naming, error handling, the data-access seam, shared utilities) instead of inventing parallel ones. If the plan has a `## Conventions & reuse` block, honor it and re-verify it against current code.
 
 Stage 2 is **auto-gated** (no flag). Small / single-surface plans you implement in one pass; large multi-surface plans you implement **lane by lane in order**, then reconcile. You are always the implementation layer — there is no worker handoff — but the gate decides whether to split the work into focused lanes.
 
@@ -194,14 +194,14 @@ Run when a parent plan is available (i.e. you passed a plan file rather than a b
 **Opt-in, permanently — never runs by default.** Runs after Stage 5.6 flowsim, before Stage 6,
 only when explicitly turned on this run (`--review-model <name>`, or an explicit
 `pipeline.review_fix.enabled: true`; default reviewer `opus` once enabled — see
-`.agents/skills/sdlc/templates/models.md` (canonical: `skills/sdlc/templates/models.md`)). An omitted `pipeline.review_fix` block, or
+`skills/sdlc/templates/models.md`). An omitted `pipeline.review_fix` block, or
 `enabled` left unset, means OFF — there is no default-on flip. Skipped when not opted in,
 `--no-review` was passed, `pipeline.review_fix.enabled: false`, or the changed-files-gate reports a
 docs-only diff — **unless a `.claude-plugin/marketplace.json` exists at the repo root**, in which
 case this is a
 skill repo, `.md` skill files ARE the code surface (there is no separate `.env`/compose surface to
 gate on here), and this docs-only self-skip does not apply — Stage 5.7 runs, with the
-config/env/docs lens repointed to `.agents/skills/sdlc/templates/stage-5-skill-repo.md`'s (canonical: `skills/sdlc/templates/stage-5-skill-repo.md`) structural checks in place of
+config/env/docs lens repointed to `skills/sdlc/templates/stage-5-skill-repo.md`'s structural checks in place of
 env/compose checks. (This mirrors D6 / plan §5.3 gate 1's exemption on the canonical/Workflow side;
 this overlay runtime has no other skill-repo detection of its own, so the marketplace-manifest
 check above IS its skill-repo signal.)
@@ -220,7 +220,7 @@ defaults below. Setting fewer cuts this stage's cost roughly linearly — it is 
 lens — so pick by what the diff risks; `correctness` is the highest-yield single lens. Print
 the resolved list before starting.) The defaults: correctness,
 plan⇌code alignment, config/env/docs consistency, security (checklists:
-`.agents/skills/sdlc/templates/review-correctness-checklist.md` + `.agents/skills/sdlc/templates/review-security-checklist.md` (canonical: `skills/sdlc/templates/review-{correctness,security}-checklist.md`)) — as one sequential inline pass over the
+`skills/sdlc/templates/review-correctness-checklist.md` + `skills/sdlc/templates/review-security-checklist.md`) — as one sequential inline pass over the
 diff, re-reading it fresh for each lens. If a genuinely separate reviewer integration is
 configured and reachable (e.g. an MCP tool exposing Fable), call it once per lens instead of
 self-reviewing; otherwise review under an adversarial persona in the session model itself and say
@@ -241,7 +241,7 @@ unconfirmable findings is auto-demoted from dispatch (skipped, and recorded in
 
 For confirmed findings, draft a structured fix spec per finding, applying the auto_fixable rubric
 (a bug fixing an explicit contract vs. a product/design decision — see
-`.agents/skills/sdlc/templates/models.md` (canonical: `skills/sdlc/templates/models.md`)). Per `pipeline.review_fix.mode` (default `interactive`):
+`skills/sdlc/templates/models.md`). Per `pipeline.review_fix.mode` (default `interactive`):
 - **`interactive`**: present each fix spec for approve / edit / skip. Approved specs run through
   the existing Stage 2/4 implement+fix machinery inline, then a fresh adversarial re-review of the
   touched files (this loop iteration's own pass) decides whether another iteration is needed. Loop
@@ -281,7 +281,7 @@ blocking Stage 6; stop and report rather than opening the PR.
 4. Push: `git push -u origin sdlc/{feature-slug}`.
 5. Create PR via `gh pr create` with a body that includes: plan file link, eval results, test results, flowsim summary, files changed.
 6. Trigger a code review pass over the diff. On Copilot, invoke `/review` if available; otherwise summarize the diff yourself in the chat (severity-tagged: blocker / nit / question). Skip if `pipeline.skip_review: true` in `.claude/project.json`. The review stays in chat — post it as a PR comment via the GitHub MCP only if the user asked for team-visible review.
-7. **Capture at loop-exit** — run the shared protocol in `.agents/skills/gotcha/SKILL.md` (canonical: `skills/gotcha/SKILL.md`). Auto-draft a gotcha entry **only** on an objective trigger — a fix-loop (eval/test/flowsim) that **failed-then-recovered**, or the user voicing surprise — route it through gotcha's dedup check, and ask a single confirm. A clean run stays silent (no vibe-gating). `/sdlc` commits the capture with the run; it does not use the `.next-action` seam.
+7. **Capture at loop-exit** — run the shared protocol in `skills/gotcha/SKILL.md` (canonical: `skills/gotcha/SKILL.md`). Auto-draft a gotcha entry **only** on an objective trigger — a fix-loop (eval/test/flowsim) that **failed-then-recovered**, or the user voicing surprise — route it through gotcha's dedup check, and ask a single confirm. A clean run stays silent (no vibe-gating). `/sdlc` commits the capture with the run; it does not use the `.next-action` seam.
 
 8. **Leave re-entry rows** so the queue keeps the follow-up (a finished run seeds its own next step): always append `- [ ] (P2) verify PR #<n> of {feature-slug} merged & deployed — /post-deploy-verify plans/{feature-slug}.md`; when a manifest/lockfile/Dockerfile changed (deploy-delta), also `- [ ] (P1) rebuild <env> for {feature-slug} (dependency change — rebuild, not restart) — plans/{feature-slug}.md`. Also set `run.json.next_action = {"cmd": "/post-deploy-verify plans/{feature-slug}.md", "confirm": false}` (L8) so `/next` recovers the handoff after the sentinel fires.
 

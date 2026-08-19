@@ -121,6 +121,28 @@ repeat — so a cheaper, different model is the point.
 back to the highest available of `opus`/`sonnet`/`haiku`, preferring `opus`, logged once.
 `fable` being billed is **not** an unavailability case.
 
+### The cap interaction users misread — say it out loud
+
+`models.cap` does **not** govern Axis 2. That is deliberate (a capped reviewer collapses onto
+the implementer and defeats independence), but from outside it reads as a bug, and the
+independence check *hides* it: `cap: sonnet` puts the implementer on sonnet, which **satisfies**
+the same-tier check, so the reviewer stays at full `opus` and no bump/degrade line ever fires.
+The user sees `cap: sonnet` next to N Opus agents with nothing connecting the two.
+
+So when a cap is set **and** the reviewer outranks it, emit once:
+
+```
+review: reviewer runs <model> on <n> lens(es) + verify + fix-planner. models.cap (<cap>) does
+        NOT govern this axis — lower it with models.code_review, or cut the fan-out with
+        agents.code_review_max_lenses.
+```
+
+A **log line only.** Never "fix" the interaction by routing the reviewer through `capModel()` —
+it silently no-ops back to the call site's default tier, with zero error and zero log line.
+
+Axis 2's cost is `(lenses + verify + fix-planner) x reviewer model`, and every one of those
+calls is at the reviewer model — so **fan-out width, not `models.cap`, is what bounds it.**
+
 ## Agent counts (`agents.*`)
 
 Cost on the fan-out stages scales roughly linearly with these, since each is one agent or
@@ -130,6 +152,7 @@ one reviewer call.
 |---|---|---|
 | `agents.sanity_focuses` | all 3 | Which Stage 1.5 checks run. `paths` is mechanical file-existence; `completeness` is the judgment-heavy one; `gotchas` only helps when `GOTCHAS.md` exists |
 | `agents.code_review_lenses` | all 4 | Which Stage 5.7 reviewer lenses fan out. `correctness` is the highest-yield single lens; add `security` for auth/endpoints/user input |
+| `agents.code_review_max_lenses` | `4` | Caps HOW MANY lenses dispatch (the row above picks WHICH). Applied AFTER circuit-breaker demotion, truncating in list order — so `1` keeps `correctness`. Set it to cut review cost without having to know the lens names, and without re-editing the list if the defaults change. Any non-integer or non-positive value falls through to `4`; never let it resolve to `0`, which silently disables the stage instead of failing it |
 | `agents.code_review_passes` | `1` | `2` adds one completeness-critic call at `code_review_second_pass` |
 | `agents.code_review_max_fix_loops` | `3` | Stage 5.8's own budget, separate from the shared Stages 4/5/5.5/5.6 budget |
 | `agents.decompose_min_tasks` | `6` | Stage 2 decompose gate threshold |

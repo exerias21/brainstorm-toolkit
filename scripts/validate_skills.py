@@ -21,6 +21,13 @@ TARGETS_RE = re.compile(
 # B2': capture references like `templates/<name>` (e.g. templates/AGENTS.md.template,
 # templates/stage-2-implement.md). Allows sub-paths and most filename chars.
 TEMPLATE_REF_RE = re.compile(r"`templates/([A-Za-z0-9_./-]+)`")
+# B2'': the CROSS-SKILL citation form, `skills/<skill>/templates/<file>`. The narrow regex above
+# matched only a backtick immediately followed by `templates/`, so 26 cross-skill citations per
+# tool could dangle in an installed consumer with the linter reporting nothing. Captured
+# separately because it resolves against another skill's dir, not this one's.
+CROSS_TEMPLATE_REF_RE = re.compile(
+    r"`(?:\.(?:claude|github|agents)/)?skills/([A-Za-z0-9._-]+)/templates/([A-Za-z0-9_./-]+)`"
+)
 
 STRICT_AUTO_COPILOT_PATTERNS = [
     (re.compile(r"\bPlan mode\b", re.IGNORECASE), "mentions Plan mode"),
@@ -111,6 +118,16 @@ def extract_metadata_block(frontmatter: str) -> dict[str, str]:
 def find_template_refs(body: str) -> list[str]:
     """B2': find backtick-quoted `templates/<path>` references in skill body."""
     return sorted(set(TEMPLATE_REF_RE.findall(body)))
+
+
+def find_cross_template_refs(body: str) -> list[tuple[str, str]]:
+    """B2'': find `skills/<skill>/templates/<file>` references. Returns (skill, file) pairs."""
+    return sorted(set(CROSS_TEMPLATE_REF_RE.findall(body)))
+
+
+def cross_template_ref_resolves(skill: str, ref: str, repo_root: Path) -> bool:
+    """A cross-skill citation resolves against the OWNING skill's templates dir."""
+    return (repo_root / "skills" / skill / "templates" / ref).exists()
 
 
 def template_ref_resolves(ref: str, skill_dir: Path, repo_root: Path) -> bool:
@@ -221,6 +238,17 @@ def validate_skill(
                     f"{skill_file}: references missing template `templates/{ref}` "
                     f"(checked {skill_dir}/templates/{ref} and "
                     f"{repo_root}/templates/{ref})"
+                )
+
+        # B2'': cross-skill citations (`skills/<skill>/templates/<file>`). These are the
+        # shared sdlc templates cited from eight other skills. setup.sh ships them per tool
+        # and retargets the prefix at install; this check guards the repo-side source.
+        for owner, ref in find_cross_template_refs(body):
+            if not cross_template_ref_resolves(owner, ref, repo_root):
+                problems.append(
+                    f"{skill_file}: references missing cross-skill template "
+                    f"`skills/{owner}/templates/{ref}` "
+                    f"(checked {repo_root}/skills/{owner}/templates/{ref})"
                 )
 
     return problems
