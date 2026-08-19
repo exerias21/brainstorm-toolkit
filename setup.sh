@@ -636,3 +636,9 @@ if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
   # until the directory is trusted, and nothing else in the output says so.
   [[ "$want_codex"   -eq 1 ]] && echo "       Codex:       trust the .codex/ dir via /hooks (hooks do NOT fire until you do)"
 fi
+
+# The last statement above is a conditional `[[ ... ]] && echo`, whose false branch would
+# otherwise become the script's exit status -- so a fully successful install returned 1
+# unless codex happened to be selected. Every smoke test used --tools all, which set the
+# flag and masked it. Be explicit.
+exit 0

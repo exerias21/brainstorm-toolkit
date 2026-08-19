@@ -303,7 +303,7 @@ outranks it. Runs after Stage 5, before Stage 6 hand-off. Writes
 Run `/sdlc` Stage 5.8 verbatim — same `auto_fixable` rubric, same `pipeline.review_fix.mode`
 (interactive/auto/off) machinery, same independence enforcement and oscillation guard, same
 cumulative `stage-outputs/review-fix.json`, and the same separate fix-loop budget
-(`agents.code_review_max_fix_loops`, independent of the shared Stages 4/5/5.5/5.6 budget). One divergence,
+(`agents.code_review_max_fix_loops`, independent of Stage 5's shared budget). One divergence,
 matching `/sdlc-lite`'s existing warn-vs-block posture at Stage 6: a surviving HIGH-severity
 confirmed finding does **not** block here — it is listed prominently in the Stage 7 handoff report
 and the human decides whether to fix before committing, consistent with `/sdlc-lite`'s existing

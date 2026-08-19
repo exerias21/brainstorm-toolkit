@@ -22,7 +22,7 @@ This is NOT a program simulator. It's a **structured code review** formatted as 
 ## When to use
 
 - User invokes `/flowsim <plan-file>` or `/flowsim task-3-add-orders`
-- Called automatically by `/sdlc` Stage 5.6 when a parent plan is available
+- Called automatically by `/sdlc` Stage 5 when a parent plan is available
 - User asks "does the plan actually match what we built?", "trace this flow", "walk through what happens when a user X"
 
 ## Inputs
@@ -54,7 +54,7 @@ If it exists and `--force` was NOT passed:
 
 This trims re-runs after a fix loop — flows whose code paths were not touched
 by the fix do not need to be re-walked. Typical savings: 40–60% of trace work
-on subsequent runs of `/sdlc` Stage 5.6 against the same feature.
+on subsequent runs of `/sdlc` Stage 5 against the same feature.
 
 If `plans/flowsim-<feature-slug>.json` does not exist, proceed normally — no
 cache, every flow is traced fresh.
@@ -135,7 +135,7 @@ If invoked by `/sdlc`, also write a machine-readable summary to `plans/flowsim-<
 }
 ```
 
-This lets `/sdlc` feed findings into the Stage 4 fix loop without re-parsing the markdown.
+This lets `/sdlc` feed findings into Stage 5's shared fix loop without re-parsing the markdown.
 
 ## Rules
 

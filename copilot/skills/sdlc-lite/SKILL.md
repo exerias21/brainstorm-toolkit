@@ -25,7 +25,8 @@ validated tree to commit), while `/sdlc` commits + opens a PR.
 **Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/models.md`) is honored wherever sub-agents are dispatched. On this runtime every stage runs inline in the session model, so the cap is advisory here — set your session model to the cap tier for the savings.
 
 > **`skills/sdlc/templates/*` paths below are citations into the brainstorm-toolkit
-> plugin repo — they are NOT installed on this runtime.** Overlays replace the canonical
+The shared `skills/sdlc/templates/*` tree IS installed on this runtime (setup.sh ships it
+and rewrites the citation prefix). Open the templates the stages name.
 > skill tree wholesale, so `.github/skills/sdlc/` ships `SKILL.md` only. Do not try to
 > open them; everything this overlay needs to execute is inlined here. Read them in the
 > plugin repo only if you are changing the contract itself.
@@ -185,7 +186,7 @@ Same procedure as `/sdlc` Stage 3 (see `.github/skills/sdlc/SKILL.md`):
 ## Shared fix loop (Stages 5 / 5.5 / 5.6)
 
 On a gate failure: parse the results, dispatch a fix for **only** those failures (no
-refactor), re-run the gate. Max **3 iterations, shared across Stages 5/5.5/5.6**. On
+refactor), re-run the gate. Max **3 iterations, used by Stage 5**. On
 exhaustion, pause with the Diagnosis block from `/sdlc` (fastest path `/status`;
 or name the class — flaky · code-defect · plan-wrong · config-missing — and one command),
 then `--resume` reuses the green stages.
@@ -320,7 +321,7 @@ push, PR, or `/review`. You review and commit.
 5. **Leave re-entry rows** so the queue keeps the follow-up: when a
    manifest/lockfile/Dockerfile changed (deploy-delta), append
    `- [ ] (P1) rebuild <env> for {feature-slug} (dependency change — rebuild, not restart) — plans/{feature-slug}.md`;
-   and a `- [ ] (P2) verify {feature-slug} deployed — /post-deploy-verify plans/{feature-slug}.md`
+   and a `- [ ] (P2) verify {feature-slug} deployed — `/repo-health` plans/{feature-slug}.md`
    row closes the loop the same way `/sdlc` Stage 6 does.
    **Then print the manual-verification line** from `.claude/project.json` `stack.*` (all
    keys optional): `stack.rebuild` on the deploy-delta case (a dependency changed, so a

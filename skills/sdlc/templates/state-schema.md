@@ -257,7 +257,7 @@ name in `run.json.stages_completed` is still `implement` (recorded once after
 `import_check.status` is `pass` or `fail`; `unresolved` lists imports/symbols
 that could not be resolved across the union of lane edits. `symbol_collisions`
 lists any name defined by more than one lane. A non-empty `unresolved` or
-`symbol_collisions` that 2c cannot fix is fed into the Stage 4 fix loop.
+`symbol_collisions` that 2c cannot fix is fed into Stage 5's shared fix loop.
 
 #### `generate-evals`
 ```json

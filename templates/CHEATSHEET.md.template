@@ -74,7 +74,7 @@ Cost control — two INDEPENDENT model axes. Keep them straight:
                    (precedence: flag > config > built-in default)
 
     The cap only ever LOWERS: Opus dispatches drop to it; Haiku is NOT
-    upgraded. Per-stage defaults live in models.sanity / .plan_review /
+    upgraded. Per-stage defaults live in models.sanity /
     .implement — those are the ONLY way to RAISE a Haiku stage.
     Governs sub-agents only — for full savings also set your session model.
 
@@ -230,7 +230,7 @@ where the skill ran. There's no cross-tool dispatch.
   keys are no longer read and fall back to the built-in default.
 - **`--model opus` didn't speed up / strengthen a stage** → the cap is a
   ceiling and can only lower. A stage whose built-in tier is Haiku is raised
-  only by its per-stage key (`models.sanity`, `models.plan_review`).
+  only by its per-stage key (`models.sanity`).
 - **A new skill isn't in this map** → it landed after this template was
   generated. `README.md` will show it; edit this file to keep the map
   current.

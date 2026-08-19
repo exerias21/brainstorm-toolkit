@@ -82,7 +82,7 @@ once before believing it, dispatches fixes, and re-runs until green or `test.e2e
 (default 3) is hit. It also reads `test.e2e_patterns_file` and `test.e2e_rerun_failed_only`
 when set. Without `--loop`, this step stays one-shot: run, report, don't fix.
 
-The agent was always the thing doing the work — `/test-check --loop` was a second entry point to it,
+The agent was always the thing doing the work — `/e2e-loop` was a second entry point to it,
 and `/sdlc` Stage 5 a third. One skill, one flag.
 
 ### 5. Post-test log re-check (if `logs.command` defined)

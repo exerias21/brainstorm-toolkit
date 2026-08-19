@@ -15,7 +15,6 @@ two files and left the per-stage tiers scattered under `pipeline.*`.
 "models": {
   "cap": "sonnet",
   "sanity": null,
-  "plan_review": null,
   "implement": null,
   "code_review": "opus",
   "code_review_second_pass": "sonnet"
@@ -39,7 +38,7 @@ This is the one rule a future edit must not break.
 
 | | **Axis 1 — the fan-out ladder** | **Axis 2 — the adversarial reviewer** |
 |---|---|---|
-| Keys | `models.cap`, `models.sanity`, `models.plan_review`, `models.implement` | `models.code_review`, `models.code_review_second_pass` |
+| Keys | `models.cap`, `models.sanity`, `models.implement` | `models.code_review`, `models.code_review_second_pass` |
 | Values | `haiku` \| `sonnet` \| `opus` | `haiku` \| `sonnet` \| `opus` \| `fable` |
 | Capped? | **Yes** — everything passes through `capModel()` | **Never** — must not touch `capModel()` |
 | Stages | 1.5, 2, 5.5, and every other fan-out | 5.7 / 5.8 only |
@@ -61,7 +60,7 @@ on the expensive calls without upgrading the cheap ones.
 **The consequence that surprises everyone:** a stage whose built-in tier is `haiku` cannot
 be raised by the cap. `models.cap: "opus"` does not raise it; `--model opus` does not raise
 it — both only lower. **The per-stage key is the only lever.** That is precisely why
-`models.sanity` and `models.plan_review` exist: Stage 1.5 defaults to Haiku and is never
+`models.sanity` exist: Stage 1.5 defaults to Haiku and is never
 gated, so before these keys existed it ran at Haiku on every run with no escape hatch.
 
 **Sonnet-first default:** the effective cap defaults to `sonnet`
@@ -76,15 +75,13 @@ skill. See *Session nudge*.
 | Key | Stage | Built-in default | Raise it when |
 |---|---|---|---|
 | `models.sanity` | 1.5 plan pre-flight | `haiku` (all focuses) | `completeness` is judging whether a plan hangs together — judgment work. Never gated, so this costs on **every** run |
-| `models.plan_review` | 5.5 plan-vs-delivered | `sonnet` (api/ui), `haiku` (data/cross-module) | You want a stronger reader judging delivery. `cross-module` always runs |
 | `models.implement` | 2 implement / lanes | `sonnet` (effective) | **⚠ RESERVED — not yet wired.** Both Stage 2 dispatch sites hard-code `capModel('opus', cap)`, so this key is read by nothing today. Steer the implementer with `--model` / `models.cap` instead. The name is reserved so it stays stable when wired |
 
 Each replaces the built-in default for that stage, **then still passes through the cap**:
-`capModel(effective_default, cap)`. So `models.plan_review: "opus"` under the Sonnet-first
 default still dispatches Sonnet unless you also pass `--model opus`. These are defaults
 *within* Axis 1, never a new axis.
 
-**Wired today: `models.sanity` and `models.plan_review` only.** `models.implement` is reserved
+**Wired today: `models.sanity` only.** `models.implement` is reserved
 (see the table). A key that parses but gates nothing is the exact failure this contract exists to
 prevent, so it is labelled rather than quietly listed alongside the working two.
 
@@ -154,7 +151,7 @@ one reviewer call.
 | `agents.code_review_lenses` | all 4 | Which Stage 5.7 reviewer lenses fan out. `correctness` is the highest-yield single lens; add `security` for auth/endpoints/user input |
 | `agents.code_review_max_lenses` | `4` | Caps HOW MANY lenses dispatch (the row above picks WHICH). Applied AFTER circuit-breaker demotion, truncating in list order — so `1` keeps `correctness`. Set it to cut review cost without having to know the lens names, and without re-editing the list if the defaults change. Any non-integer or non-positive value falls through to `4`; never let it resolve to `0`, which silently disables the stage instead of failing it |
 | `agents.code_review_passes` | `1` | `2` adds one completeness-critic call at `code_review_second_pass` |
-| `agents.code_review_max_fix_loops` | `3` | Stage 5.8's own budget, separate from the shared Stages 4/5/5.5/5.6 budget |
+| `agents.code_review_max_fix_loops` | `3` | Stage 5.8's own budget, separate from Stage 5's shared budget |
 | `agents.decompose_min_tasks` | `6` | Stage 2 decompose gate threshold |
 
 An unrecognized entry in any list is ignored with one warning — the lists are deliberately
@@ -236,7 +233,6 @@ The old keys are **no longer read** (clean break, 2026-07-26):
 |---|---|
 | `pipeline.sanity_check.model` | `models.sanity` |
 | `pipeline.sanity_check.focuses` | `agents.sanity_focuses` |
-| `pipeline.plan_validate.model` | `models.plan_review` |
 | `pipeline.review_fix.model` | `models.code_review` |
 | `pipeline.review_fix.second_pass_model` | `models.code_review_second_pass` |
 | `pipeline.review_fix.lenses` | `agents.code_review_lenses` |

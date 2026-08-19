@@ -30,7 +30,8 @@ the Copilot one closely; tune independently if Codex behavior diverges. Same sta
 > **Why advisory here is a Codex-specific story.** Codex *does* have native subagents (`.codex/agents/*.toml`, parallel, `max_threads`) — it is not structurally inline-only the way Copilot is. What blocks tiering is that **per-subagent model override is reported regressed upstream** (subagents inherit the parent model), so the Haiku/Sonnet fan-out runs single-model: functional, but with none of the per-stage cost savings. Reported 2026-07-13 from research, **not verified against a real Codex install**, and it may already be fixed — see the Codex entry under *Runtime regimes* in `models.md` before relying on it either way.
 
 > **`skills/sdlc/templates/*` paths below are citations into the brainstorm-toolkit
-> plugin repo — they are NOT installed on this runtime.** Overlays replace the canonical
+The shared `skills/sdlc/templates/*` tree IS installed on this runtime (setup.sh ships it
+and rewrites the citation prefix). Open the templates the stages name.
 > skill tree wholesale, so `.agents/skills/sdlc/` ships `SKILL.md` only. Do not try to
 > open them; everything this overlay needs to execute is inlined here. Read them in the
 > plugin repo only if you are changing the contract itself.
@@ -202,7 +203,7 @@ Same procedure as `/sdlc` Stage 3 (see `.agents/skills/sdlc/SKILL.md`):
 ## Shared fix loop (Stages 5 / 5.5 / 5.6)
 
 On a gate failure: parse the results, dispatch a fix for **only** those failures (no
-refactor), re-run the gate. Max **3 iterations, shared across Stages 5/5.5/5.6**. On
+refactor), re-run the gate. Max **3 iterations, used by Stage 5**. On
 exhaustion, pause with the Diagnosis block from `/sdlc` (fastest path `/status`;
 or name the class — flaky · code-defect · plan-wrong · config-missing — and one command),
 then `--resume` reuses the green stages.
@@ -340,7 +341,7 @@ push, PR, or `/review`. You review and commit.
 5. **Leave re-entry rows** so the queue keeps the follow-up: when a
    manifest/lockfile/Dockerfile changed (deploy-delta), append
    `- [ ] (P1) rebuild <env> for {feature-slug} (dependency change — rebuild, not restart) — plans/{feature-slug}.md`;
-   and a `- [ ] (P2) verify {feature-slug} deployed — /post-deploy-verify plans/{feature-slug}.md`
+   and a `- [ ] (P2) verify {feature-slug} deployed — `/repo-health` plans/{feature-slug}.md`
    row closes the loop the same way `/sdlc` Stage 6 does.
    **Then print the manual-verification line** from `.claude/project.json` `stack.*` (all
    keys optional): `stack.rebuild` on the deploy-delta case (a dependency changed, so a

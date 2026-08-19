@@ -56,7 +56,7 @@ metadata:
    A non-terminal pipeline run is the one thing worth making loud — it's how a
    skipped/abandoned pipeline becomes visible instead of lingering in JSON.
 
-## Next step (absorbed from the former `/status`)
+## Next step (absorbed from the former `/next`)
 
 After the summary, print **one** recommended next command with a one-line reason. Highest
 match wins; stop at the first hit:
@@ -77,7 +77,7 @@ match wins; stop at the first hit:
 7. **Nothing queued** → `/brainstorm` for ideation, or `/repo-health` for a hygiene sweep.
 
 Print it as `Next: <command>  — <reason>`. **Recommend only; never execute.** The classes in
-rung 1 are what the former `/status` did — the diagnosis is a paragraph, not a skill.
+rung 1 are what the former `/triage` did — the diagnosis is a paragraph, not a skill.
 
 ## `--prune-stale` (opt-in cleanup — the one write exception)
 
@@ -100,10 +100,10 @@ documented, confirm-gated exception — it's the only path that writes.
 
 ## Rules
 
-- **`/status` is the readout; `/status` is the recommendation.** For "which command
-  should I run next" — joining pipeline runs, the `.next-action` sentinel, plans,
-  and git, not just the queue — point the user to `/status` (its decision ladder is
-  the canonical next-step procedure this skill's "next up" line mirrors a slice of).
+- **`/status` is both the readout and the recommendation.** It absorbed the former
+  `/next` ladder and `/triage` classes, so there is one command for "where am I" and
+  "what next". It never executes — it recommends.
+
 - Pure read by default, no file writes. The sole exception is `--prune-stale`
   above, which is explicit and confirm-gated.
 - No subagent calls, no multi-step workflows.

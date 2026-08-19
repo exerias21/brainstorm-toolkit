@@ -54,7 +54,6 @@
   "models": {
     "cap": "sonnet",
     "sanity": null,
-    "plan_review": null,
     "_implement_comment": "RESERVED -- not yet wired. Both Stage 2 dispatch sites hard-code capModel('opus', cap), so this key is currently read by nothing; use --model / models.cap to steer the implementer instead. Kept in the schema so the name is stable when it is wired.",
     "implement": null,
     "code_review": "opus",

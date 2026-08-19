@@ -129,7 +129,7 @@ Frontmatter buys exactly three things nothing else can, and two of them are usua
 |---|---|---|
 | `description:` | auto-delegation — Claude picks the agent unprompted | **Dead** — every skill names its agent explicitly, and auto-delegation is unreliable in practice |
 | `tools:` | an **enforced** boundary; prose saying "you are read-only" is advisory | **The real win** — verified enforced: a declared allowlist omits Bash/Write entirely |
-| `model:` | pins a tier | **Usually hostile** — it bypasses `capModel()` and the `--model` > `models.cap` ladder. Pin at the dispatch site instead, except where a skill has explicitly exempted the site (`/status`'s conductor) |
+| `model:` | pins a tier | **Usually hostile** — it bypasses `capModel()` and the `--model` > `models.cap` ladder. Pin at the dispatch site instead, except where a skill has explicitly exempted the site (`/status`'s inline reads) |
 
 Also weigh, before adding one:
 

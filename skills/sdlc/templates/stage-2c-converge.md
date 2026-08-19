@@ -38,7 +38,7 @@ DO, in order:
    import smoke); otherwise grep the imports against the definitions.
 3. If a lane's output CONTRADICTS the contract it was given, fix the integration
    directly when it's a small seam mismatch; if it's a real logic gap, leave it
-   for the Stage 4 fix loop rather than rewriting the lane here.
+   for Stage 5's shared fix loop rather than rewriting the lane here.
 
 OUTPUT a JSON object EXACTLY in this shape (this becomes converge.json data):
 {
@@ -50,5 +50,5 @@ OUTPUT a JSON object EXACTLY in this shape (this becomes converge.json data):
 
 Set import_check.status to "fail" with the offending entries in `unresolved`
 if anything does not resolve and you could not fix it here — that feeds the
-Stage 4 fix loop. Do NOT expand scope beyond reconciling the lanes' edits.
+Stage 5's shared fix loop. Do NOT expand scope beyond reconciling the lanes' edits.
 ```

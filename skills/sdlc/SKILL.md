@@ -587,8 +587,9 @@ failures and note pre-existing ones separately.
 **Skip when there is no plan target** (an ad-hoc `/sdlc-lite` description) — there is nothing
 to check against, and say so rather than passing silently.
 
-Dispatch **one agent** — Sonnet by default, per the **Model cap** section — with the plan and
-the diff, and this brief:
+Dispatch **one agent** — the `ux-plan-validator` (by type: `brainstorm-toolkit:ux-plan-validator`,
+or bare `ux-plan-validator` when vendored), Sonnet by default per the **Model cap** section — with
+the plan and the diff, and this brief:
 
 > Verify the delivered change against the plan on two axes, and report them separately.
 > **(a) Requirements:** walk every acceptance criterion and implementation step in the plan and
@@ -677,8 +678,7 @@ Never "fix" this by routing the reviewer model through `capModel()` — it silen
 | `config-env-docs` | Env-var names match across code/`.env.example`/compose; docs not stale; no new secrets. In skill-repo mode this lens repoints to `templates/stage-5-skill-repo.md`'s frontmatter/marketplace/template-reference checks instead — there's no `.env`/compose surface in a skill repo. |
 | `security` | Injection (SQL/shell/template), missing authn/authz on new endpoints (incl. IDOR), secrets in code/logs, unsafe deserialization, SSRF/path-traversal, dependency/supply-chain risk, crypto misuse, sensitive-data exposure, XSS. Prompt from `templates/review-security-checklist.md`. Rides the reviewer-model axis like every lens — never `models.cap`. |
 
-Each lens returns structured findings (`REVIEW_FINDING_SCHEMA`, defined in
-`sdlc-pipeline.workflow.js`; `templates/state-schema.md` documents the resulting `review.json`
+Each lens returns structured findings (`REVIEW_FINDING_SCHEMA`, defined below; `templates/state-schema.md` documents the resulting `review.json`
 sidecar shape, not the schema itself): `{severity, file, line, defect, failure_scenario, fix}`.
 `auto_fixable` is set later by the fix-planner (Stage 5.8) and merged in at that point — the lens
 itself never returns or claims it.
@@ -706,7 +706,7 @@ from `stage-outputs/implement.json`'s `data.files_changed[]` (or, on a decompose
 either: partition files across the Stage 2 decompose lanes (if decomposed) or by the changed-files
 gate surfaces; each lens reviews one partition, findings merge before verify, and the run records
 `data.diff_lines_reviewed`, `data.partitioned`, `data.partition_count`. **This partition logic is
-not yet implemented in `sdlc-pipeline.workflow.js`** — it is carried as an explicit TODO, not
+not yet implemented** — it is carried as an explicit TODO, not
 silently dropped; until it lands, treat the ceilings as advisory and don't expect those three
 sidecar fields to appear in `review.json`.
 
@@ -738,7 +738,7 @@ Per `pipeline.review_fix.mode`:
   approve/edit/skip is prose-path-only (Claude session, Copilot, Codex can literally ask).
 - **`auto`**: intended to auto-approve after `auto_approve_after` consecutive approvals (default 2),
   or when a finding's verify-confidence ≥ `confidence_threshold` (default 0.85). **This throttle is
-  a documented follow-up, not yet enforced** in `sdlc-pipeline.workflow.js` — the fix-planner sets
+  a documented follow-up, not yet enforced** in the prose stages above — the fix-planner sets
   `auto_fixable` per the rubric, but nothing in the workflow today gates *how many* auto-fixable
   findings get auto-approved per run against these two knobs; treat them as advisory until that gap
   closes. Design-decision findings (`auto_fixable: false`) are never auto-approved in any mode —
@@ -771,7 +771,7 @@ there pauses the run — an objective break, not an adversarial opinion, so this
 than proceeding.
 
 **Fix-loop budget:** its own `agents.code_review_max_fix_loops` (default `3`, `pipeline.review_fix.*`) —
-**separate** from the shared 3-iteration budget pooled across Stages 4/5/5.5/5.6. Review findings
+**separate** from the shared 3-iteration budget used by Stage 5. Review findings
 are a categorically different surface (defects a green suite structurally cannot catch, discovered
 after all four of those gates already passed), so they get their own dial rather than racing a
 shared counter.
@@ -907,7 +907,7 @@ otherwise lacks: a finished run seeds its own next step instead of dead-ending):
 - When a soft-stop was overridden: the debt row per **Soft-stop** below.
 
 **Always close the run.** Whatever exit path you take — success, a pause at
-Stage 5/5.5/5.6, or bailing because you committed something by hand — set
+Stage 5, or bailing because you committed something by hand — set
 `run.json.status` to a terminal value (`complete` / `paused` / `failed`)
 before you stop. An envelope left `in_progress` after the work moved on is the
 "stale pipeline" smell `/repo-health` Check 7 and `/status` will flag; don't
