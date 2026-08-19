@@ -153,8 +153,8 @@ queued item derives a **distinct per-item slug** (`<plan-slug>-<row-id>`, or the
 linked task-file slug) — see **Queue mode** — otherwise all its items collide on one
 `.claude/pipeline/<slug>/` envelope.
 
-**Continuity detection** (prompt, never auto) — same tightened logic as
-`/sdlc`: **skip entirely when on the `main_branch`** (merges make every run an
+**Continuity detection** (prompt, never auto) — the shared scan in
+`skills/sdlc/templates/envelope-staleness.md`, same as `/sdlc`: **skip entirely when on the `main_branch`** (merges make every run an
 ancestor there — pure noise). On a feature branch, take only the **single
 most-recently-updated** run whose `base_commit` is an ancestor of HEAD, and
 prompt **only** if it's non-terminal OR complete with HEAD advanced past its

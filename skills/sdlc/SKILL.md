@@ -212,8 +212,10 @@ that test fires on every historical run (a false-positive storm). Instead:
    `.claude/project.json`, default `main`) → **skip continuity detection
    entirely.** Main accumulates merges; every merged run's `base_commit` is an
    ancestor and its commit is behind HEAD, so the check is pure noise there.
-   Continuation is a *feature-branch* concern. This is the fix for the
-   "every merged feature flags on long-lived main" false positive.
+   Continuation is a *feature-branch* concern. This guard and the two below are
+   the shared scan in `skills/sdlc/templates/envelope-staleness.md` — the same
+   procedure `/status`, `/repo-health` and `/next` run. Keep them in sync there,
+   not here; they drifted once already.
 1. Otherwise (a feature branch): glob `.claude/pipeline/*/run.json`; keep only
    runs whose `base_commit` is an ancestor of HEAD (`git merge-base --is-ancestor`).
 2. Of those, take the **single most-recently-updated** run (`updated_at`). One

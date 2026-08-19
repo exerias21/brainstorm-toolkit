@@ -36,16 +36,11 @@ metadata:
      rows where either field is unknown.
    - Blocked-reason rollup: count distinct `_blocked_reason: …_` values under
      the `Blocked` section.
-7. **Scan pipeline run-state** (the discipline signal). Glob
-   `.claude/pipeline/*/run.json`. If the dir is absent, skip this block
-   silently (it's gitignored/local-only; many repos won't have it). For each
-   run, read `pipeline`, `stage`, `status`, `updated_at`, `base_commit`. List
-   any **non-terminal** run (`status` is `in_progress` or `paused`), and flag
-   it **stale** when `updated_at` is older than ~24h (or
-   `.claude/project.json::discipline.staleness_hours`). If a stale run's
-   `base_commit` is already an ancestor of HEAD
-   (`git merge-base --is-ancestor`), append "(looks committed outside the
-   pipeline — reconcile)". This is read-only: surface it, don't rewrite it.
+7. **Scan pipeline run-state** (the discipline signal). Follow
+   `skills/sdlc/templates/envelope-staleness.md` — the shared scan, including its
+   false-positive guards (skip on `main_branch`, at most one report, silence when
+   nothing changed). Read-only here: surface non-terminal and stale runs, don't
+   rewrite them. `--prune-stale` below is the only mutating path.
 8. **Print a 3–7 line summary**:
 
    ```

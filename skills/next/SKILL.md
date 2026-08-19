@@ -58,6 +58,10 @@ Agent(
       main_branch: {project.json main_branch, default 'main'}
       staleness_hours: {project.json discipline.staleness_hours, default 24}
 
+    Apply the shared scan in skills/sdlc/templates/envelope-staleness.md
+    (non-terminal + stale definitions, reconcile hint, and the false-positive
+    guards: skip on main_branch, at most one report, silence when unchanged).
+
     Read-only: do not delete the sentinel, do not write any file.
   """
 )

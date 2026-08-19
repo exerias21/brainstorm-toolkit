@@ -139,18 +139,10 @@ Catches the "migration file merged but never applied to the live DB" class
 
 ### Check 7 — Pipeline-state freshness (procedural)
 
-Catches state envelopes that linger `in_progress` after work was committed
-outside the pipeline. Glob `.claude/pipeline/*/run.json`:
-
-- If the dir is absent → `skip` silently (it's gitignored/local-only; many
-  repos won't have it).
-- For each run, parse `status` and `updated_at`. Flag any `in_progress` /
-  `paused` run whose `updated_at` is older than
-  `.claude/project.json::discipline.staleness_hours` (default 24).
-- **Reconcile hint**: if a flagged run records `base_commit` and that commit is
-  an ancestor of `HEAD` (`git merge-base --is-ancestor <base_commit> HEAD`),
-  note "looks committed outside the pipeline — close with the run's owning
-  skill or delete the envelope." Read-only: report, don't rewrite the file.
+Catches state envelopes left `in_progress` after the work was committed outside the
+pipeline. Run the shared scan in `skills/sdlc/templates/envelope-staleness.md` — including
+its false-positive guards — and report each stale run plus the reconcile hint. Read-only:
+report, never rewrite the envelope. Absent `.claude/pipeline/` → `skip` silently.
 
 ### Check 8 — Memory-pointer staleness (procedural, repo-local only)
 
