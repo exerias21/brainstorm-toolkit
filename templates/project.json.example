@@ -106,13 +106,10 @@
     },
 
     "context": {
-      "_comment": "Optional. Context-drag controls. ADVISORY ONLY -- no tool permits a skill or hook to force /clear or /compact (see docs/LOOP-HYGIENE.md). These surface a nudge carrying a MEASURED number; they never reset anything. DEFAULT IS ON -- this block exists to tune or disable.",
-      "warn_above_tokens": 250000,
-      "_warn_above_tokens_comment": "Emit a handoff nudge at a stage boundary once live context exceeds this. Measured, not estimated: the Stop hook reads its own transcript_path and sums input_tokens + cache_read_input_tokens + cache_creation_input_tokens from the last usage row. Default 250000 -- tuned for 1M-context sessions (an audited run averaged 468k, peaked at 999k). Deliberately ABOVE a 200k window: those sessions auto-compact first and reseed-context.sh already makes that lossless. On a 200k window set ~120000. Set 0 to disable.",
-      "relay": "off",
-      "_relay_comment": "'off' (default) | 'suggest'. When 'suggest', the nudge also prints the exact fresh-process re-entry command (claude -p, NEVER --resume -- resume reloads the full transcript and defeats the point). Per-stage cousin of loop.batch_size, which already resets context on completed-item boundaries via scripts/loop-runner.sh. Config-gated because it changes process topology."
+      "_comment": "Optional. Run-cost reporting. There is deliberately NO mid-run context threshold: a warning fired partway through a run is a lagging indicator (the tokens are already spent) and arrives mid-plan, where clearing is explicitly unsafe (docs/LOOP-HYGIENE.md). The report below fires ONCE, at terminal state, as a LEADING indicator for the next plan you write.",
+      "cost_report": "on",
+      "_cost_report_comment": "'on' (default) | 'off'. When a run reaches complete/failed/paused, scripts/hooks/run-cost-report.sh prints turns, average context, peak context, cache-read total and a rough spend figure. COSTS ZERO MODEL TOKENS: it is emitted as `systemMessage`, which the hook contract shows to the human and never injects into the model's context. Never reimplement it via hookSpecificOutput.additionalContext -- a cost report that costs tokens defeats itself. Set 'off' to silence."
     },
-
 
     "review_fix": {
       "_comment": "Optional, OFF by default. Adversarial Review->Fix stage (Stage 5.7 review / Stage 5.8 fix loop) for /sdlc and /sdlc-lite -- runs after Stage 5.6 flowsim, before Stage 6. DIFFERENT feature from 'skip_review' above: skip_review silences the single-pass built-in /review diff check at Stage 6 (post-PR, same model); review_fix is a separate pre-PR N-lens adversarial review + fix loop, default reviewer model 'opus' (see skills/sdlc/templates/models.md; the reviewer model itself now lives at models.code_review). Both toggle independently. Omit this whole block to accept the defaults below (stage stays OFF). OPT-IN, PERMANENTLY: there is no default-on flip, planned or shipped. An explicit --review-model <name> flag or an explicit enabled:true here is required to activate the stage; omitted, absent, or enabled:false all mean OFF.",

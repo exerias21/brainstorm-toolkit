@@ -15,6 +15,7 @@
       "strict": true,
       "agents": [
         "./agents/e2e-test-runner.md",
+        "./agents/test-runner.md",
         "./agents/ux-plan-validator.md"
       ],
       "skills": [

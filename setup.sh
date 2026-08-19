@@ -453,7 +453,7 @@ JSON
   echo "  wrote: $hook_file (trust the .codex/ dir via /hooks to activate)"
 }
 
-# Install the Codex context-watch Stop hook by jq-MERGING a second entry into
+# Install the Codex run-cost-report Stop hook by jq-MERGING a second entry into
 # .codex/hooks.json's Stop array. Cannot reuse install_stop_hook_codex: that one writes the
 # whole file and skips-on-exist, so it would never add a second hook to an existing install.
 # Idempotent by command string.
@@ -461,14 +461,14 @@ install_context_watch_codex() {
   local hook_file="$TARGET/.codex/hooks.json"
   local cmd
   if [[ "$COPY_SCRIPTS" -eq 1 ]]; then
-    cmd='bash "$(git rev-parse --show-toplevel)/scripts/hooks/context-watch.sh"'
+    cmd='bash "$(git rev-parse --show-toplevel)/scripts/hooks/run-cost-report.sh"'
   else
     local cw_path_escaped
-    printf -v cw_path_escaped '%q' "$PLUGIN_ROOT/scripts/hooks/context-watch.sh"
+    printf -v cw_path_escaped '%q' "$PLUGIN_ROOT/scripts/hooks/run-cost-report.sh"
     cmd="bash $cw_path_escaped"
   fi
   if ! command -v jq >/dev/null 2>&1; then
-    echo "  skip: jq not installed — add a context-watch Stop hook manually to $hook_file:"
+    echo "  skip: jq not installed — add a run-cost-report Stop hook manually to $hook_file:"
     echo "        {\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\",\"timeout\":10}]}]}}"
     return
   fi
@@ -477,7 +477,7 @@ install_context_watch_codex() {
   if jq -e --arg cmd "$cmd" '
         any(.hooks.Stop[]?.hooks[]?; .command == $cmd)
       ' "$hook_file" >/dev/null 2>&1; then
-    echo "  skip: Codex context-watch hook already wired ($cmd)"
+    echo "  skip: Codex run-cost-report hook already wired ($cmd)"
     return
   fi
   local tmp; tmp="$(mktemp)"
@@ -486,10 +486,10 @@ install_context_watch_codex() {
     .hooks.Stop //= [] |
     .hooks.Stop += [{ "hooks": [{ "type": "command", "command": $cmd, "timeout": 10 }] }]
   ' "$hook_file" > "$tmp" && mv "$tmp" "$hook_file"; then
-    echo "  wrote: $hook_file (added context-watch Stop hook)"
+    echo "  wrote: $hook_file (added run-cost-report Stop hook)"
   else
     rm -f "$tmp"
-    echo "  error: failed to update $hook_file with Codex context-watch hook" >&2
+    echo "  error: failed to update $hook_file with Codex run-cost-report hook" >&2
     return 1
   fi
 }
@@ -587,7 +587,7 @@ if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
     install_stop_hook_claude
     echo "[hooks] Claude SessionStart reseed hook"
     install_reseed_hook_claude
-    install_stop_hook_claude context-watch.sh context-watch
+    install_stop_hook_claude run-cost-report.sh run-cost-report
   fi
   if [[ "$want_copilot" -eq 1 ]]; then
     echo "[hooks] Copilot Stop hook"

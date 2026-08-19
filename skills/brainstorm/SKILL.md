@@ -318,6 +318,39 @@ context and stress-test it against this checklist:
 
 Share the validation feedback with the user. If there are issues, revise the plan together.
 
+### Step 7.5: Size the plan against one execution session
+
+A plan is usually executed in a **fresh session** (`/sdlc-lite <plan>`), so the plan itself
+decides how big that session gets. Say so at authoring time, when splitting is cheap — not
+during execution, where it isn't.
+
+Estimate from the plan's own shape and state it in one line:
+
+- **files touched** and **implementation steps** (both already parsed above),
+- **surfaces** crossed (backend / frontend / data / docs),
+- whether the steps are **sequentially dependent** (they must share a session) or
+  **independent** (they need not).
+
+Then print, once:
+
+```
+plan size: <n> steps across <m> files, <k> surface(s) — <one execution session | splittable>
+```
+
+**"Splittable" is information, not an instruction.** A large run is not automatically waste:
+if the work genuinely needs that much state, let it cook — a 1M window holds it and cache
+reads are cheap per token. Recommend a split only when the steps are **independent**, because
+then a second session costs nothing but re-reading the plan, and each slice starts clean.
+Never split a sequentially-dependent chain to hit a number; that trades real working context
+for a metric.
+
+What *does* waste tokens at any plan size is junk in the orchestrator's context — shell
+output and file bodies a sub-agent should have held. That is Stage 2's delegation rule's job,
+not the plan's. Do not try to fix it here.
+
+If the user has run a pipeline before, `run-cost-report.sh` printed what the last one actually
+cost. That measured number beats this estimate — prefer it when sizing.
+
 ### Step 8: Continue the flow
 
 A brainstorm that ends at a file the user has to manually pick up is a

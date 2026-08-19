@@ -215,6 +215,14 @@ the tests; Stage 5 runs them.
 
 ## Stage 5 — Validate (one stage)
 
+**Tests: report structure, not output.** The canonical `/sdlc` dispatches a Haiku `test-runner`
+sub-agent so raw suite output never enters the orchestrator's context. This runtime has no
+sub-agent seam, so you run the suites yourself — but report only
+`{layer, name, file, expected, actual}` per failure plus totals. Do not paste runner output
+into your narration: it is the largest single source of context bloat, and it stays in your
+context for the rest of the run.
+
+
 Two parts, one gate, one `validate.json`:
 
 1. **Run the suite** — `/test-check` over the touched surfaces; report only NEW failures as

@@ -565,11 +565,21 @@ the plan" (a narrative trace) — each with its own dispatch, sidecar, gate and 
 paying its own round of orchestrator chatter. A current model does not need the plan-vs-diff
 check partitioned into api/ui/data/cross-module lanes to do it well.
 
-### 1. Run the suite
+### 1. Run the suite — in a sub-agent, never inline
 
-Run the `/test-check` procedure, driven by the diff's surfaces (see
-`templates/changed-files-gate.md`), with one substitution: report only **new** failures as
-failures and note pre-existing ones separately.
+**Dispatch the `test-runner` agent** (by type: `brainstorm-toolkit:test-runner`, or bare
+`test-runner` when vendored). It is pinned to **Haiku** and returns a structured pass/fail
+summary — never raw output. Pass it the surfaces the diff touched (see
+`templates/changed-files-gate.md`) so it skips suites for untouched surfaces.
+
+**Do not run the test commands yourself.** Test output is the single largest source of shell
+traffic, and shell traffic was ~53% of main-thread tokens on an audited run. Every line of
+runner output you take directly is context you carry for the rest of the session; taken by the
+agent, it dies with the agent. You need `{name, file, expected, actual}` to write a fix — you
+do not need 400 lines of pytest.
+
+You get back `{layers, failures[], preexisting[], green, totals}`. Report only **new** failures
+as failures; `preexisting[]` is noted separately and does not gate.
 
 - Log audit (if `logs.command` configured)
 - Frontend unit tests (if `test.frontend` configured **and** the frontend surface was touched)

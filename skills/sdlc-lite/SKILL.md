@@ -276,8 +276,9 @@ degenerates cleanly into edit + commit.
 
 ## Stage 5 — Validate
 
-Run `/sdlc` Stage 5 — now **one** stage: (1) `/test-check` over the
-touched surfaces, then (2) **one agent** given the plan + diff that reports requirements
+Run `/sdlc` Stage 5 — now **one** stage: (1) dispatch the **`test-runner`** agent (Haiku,
+structured pass/fail only — never run the suites inline; test output is the biggest single
+source of context bloat) over the touched surfaces, then (2) **one agent** given the plan + diff that reports requirements
 (met/partial/missing, each with a `file:line`) and flow (`MISMATCH`/`UNCLEAR`/`MISSING`)
 separately. Skip axis (2) when there is no plan target, and say so. Route failures through the
 shared fix loop (3-iteration budget). Writes one `validate.json`.

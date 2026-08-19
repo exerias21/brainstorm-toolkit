@@ -11,6 +11,28 @@ metadata:
 
 # Post-Change Validation
 
+## Run the suites in a sub-agent (default)
+
+**Dispatch the `test-runner` agent** — by type `brainstorm-toolkit:test-runner`, or bare
+`test-runner` when vendored — rather than running the commands in your own context. It is
+pinned to **Haiku** (running a command and classifying its exit status is mechanical) and
+returns `{layers, failures[], preexisting[], green, totals}` and nothing else.
+
+**Why this is the default, not an option.** Test output is the largest single source of shell
+traffic, and shell traffic was ~53% of main-thread tokens on an audited run. Raw runner output
+taken into the orchestrator's context stays there for the rest of the session and is re-read on
+every subsequent turn; taken by a sub-agent, it is discarded when the agent returns. You need
+`{name, file, expected, actual}` to write a fix — not 400 lines of pytest.
+
+Run a command inline only when you are **debugging the runner itself** (it won't start, the
+config is wrong) and need to see raw output. Say so when you do.
+
+On a runtime with no sub-agent seam (Copilot / Codex), you are the runner: run the commands
+yourself, but report the structure above and do not paste the raw output back into your own
+narration.
+
+
+
 Runs a deep post-change check. Reads commands from `.claude/project.json`. Any key that
 is missing causes the corresponding step to be skipped — that's intentional, it lets
 projects opt in to whichever layers apply.

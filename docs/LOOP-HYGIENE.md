@@ -42,47 +42,38 @@ a compaction/clear it re-injects a *pointer* to the durable on-disk state (activ
 + TASKS.md counts) as `additionalContext`, so the orchestrator resumes from files, not from a lossy
 summary. It's fail-soft and emits nothing in any repo not running a loop.
 
-### Correction: live context size *is* readable (detect, not enforce)
+### Correction: live context size *is* readable — but measure at the END, not mid-run
 
-An earlier revision of this doc claimed "no tool exposes live token usage to a script." That is too
-strong, and the distinction matters. No tool exposes an **API** for it — but a hook is handed
-`transcript_path`, and the **last `usage` row in that JSONL is the context that was on the wire**:
+An earlier revision claimed "no tool exposes live token usage to a script." Too strong: a hook
+is handed `transcript_path`, and the last `usage` row in that JSONL is the context that was on
+the wire (`input_tokens + cache_read_input_tokens + cache_creation_input_tokens`). Verified
+against a real transcript: `2 + 637769 + 378` -> **638,149 tokens**.
 
-```
-context = input_tokens + cache_read_input_tokens + cache_creation_input_tokens
-```
+A first attempt used that to warn mid-run at a threshold. **That was wrong**, for three
+reasons worth recording so nobody rebuilds it:
 
-Verified against a real transcript: `2 + 637769 + 378` → **638,149 tokens**.
+1. **Lagging indicator.** By the time the threshold trips, the tokens are spent. It reported
+   cost; it never reduced any.
+2. **It fired where acting is unsafe.** This very document says the safe reset point is a
+   completed-item boundary, never mid-plan. The nag arrived exactly when clearing was the
+   wrong move.
+3. **It was tuned on the wrong unit.** The audited session was three days and several
+   commands. The real unit is *one plan, executed in one fresh session* — the standard
+   workflow is to author a plan in one session and execute it in a brand-new one, so context
+   never accumulates across that boundary in the first place.
 
-So a threshold policy *is* buildable — as a **detector**, never an enforcer. That is what
-`scripts/hooks/context-watch.sh` ships: a `Stop` hook that measures context, and once it exceeds
-`pipeline.context.warn_above_tokens` (default `250000`) **during an active pipeline run**, emits one
-advisory nudge naming the measured size and the envelope path. It never blocks, never resets, and
-stays silent outside a run.
+What ships instead is `scripts/hooks/run-cost-report.sh`: at terminal state, once, it prints
+turns / average context / peak / cache-read / rough spend. That is a **leading** indicator for
+the *next* plan — the only place the number can still change a decision.
 
-Being advisory is what justifies the default. An *enforcer* firing early destroys the prompt cache
-and thrashes, so it would need a conservative (high) threshold; an advisory line firing early costs
-one ignorable message. `250000` therefore sits where carrying cost becomes material — roughly
-$0.375/turn in Opus cache reads — not where the window is endangered. It is deliberately **above a
-200k window entirely**: those sessions auto-compact first, and the reseed hook above already makes
-that lossless. On a 200k window, set ~`120000` explicitly.
+**It emits `systemMessage`, not `hookSpecificOutput.additionalContext`.** `systemMessage` is
+shown to the human and never enters the model's context, so the report is free. The paid
+channel would make a cost report cost tokens, which defeats it. Do not switch it.
 
-Diagnose after the fact with `scripts/token-audit.py`, which reads the same transcripts and reports
-the main-thread vs sub-agent split. An audited three-day run spent **81% of its tokens on the
-orchestrator's own context** (5,321 turns × ~468k average), not on the sub-agent fan-out — which is
-why context hygiene, not model-tier capping, is the lever that matters for long loops.
-
-Because tools fire the post-reset event differently, the same script is wired to a different event
-per tool:
-
-| Tool | Event wired | Trigger field | Notes |
-|---|---|---|---|
-| **Claude Code** | `SessionStart`, matcher `compact\|clear` | `.source` (`startup\|resume\|clear\|compact`) | Also sets `reloadSkills: true` (re-scans skill/command dirs — a harmless no-op here since this hook installs no skills; belt-and-suspenders). Shipped via `hooks/hooks.json` (plugin) and `setup.sh` → `.claude/settings.json`. |
-| **Codex** | `PostCompact` | `.trigger` (`manual\|auto`) | Codex splits the events — `SessionStart` fires only on start/resume, so the reseed point is the separate `PostCompact` event. Shipped via `setup.sh` → `.codex/hooks.json` (**trust the `.codex/` dir via `/hooks` to activate**). |
-
-| **Copilot** | — | — | No compaction/session hook event exists. Use the batch-handoff escalation below. |
-
-The reseed script reads `.hook_event_name` from stdin and echoes it back as `hookEventName`, and reads the trigger tolerantly (`.source // .trigger`), so one script serves both events/tools correctly.
+**Big runs are not automatically waste.** If the work needs the state, let it run — a 1M window
+holds it and cache reads are cheap per token. The waste is *junk* in the orchestrator's
+context, not its size: on the audited run, shell traffic (~53%) plus Write/Edit payloads
+(~18%) were roughly 71% of it. Delegation (the Stage 2 rule) attacks that; plan size does not.
 
 ## Can the loop compact the main session itself, mid-run? No.
 
