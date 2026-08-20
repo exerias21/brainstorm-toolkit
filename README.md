@@ -41,6 +41,14 @@ bash ~/brainstorm-toolkit/setup.sh --target . --tools both
 - Legacy `.github/prompts/*.prompt.md` files from older installs are removed during Copilot installs so the workspace stops advertising prompt-file shims.
 - `agents/*` → `<target>/.claude/agents/` (Claude-only helper agents; VS Code can also discover Claude-format agents from `.claude/agents/` when needed).
 - `scripts/*` → `<target>/scripts/`.
+- `.gitignore` gains the toolkit's **local working state**: `.claude/pipeline/`,
+  `.claude/.next-action`, `.claude/.auto-continue-hops`, `.claude/project.json`, `TASKS.md`,
+  and `plans/`. These churn every run and are personal to whoever is driving. Idempotent —
+  re-running never duplicates a line. `.claude/project.json.example` stays **tracked** as the
+  bootstrap template (the pattern matches the exact filename, not the `.example` sibling), as
+  do `.claude/settings.json`, `AGENTS.md` and `GOTCHAS.md`. Ignoring these does not break the
+  cross-tool contract: Copilot and Codex read them off disk, and `.gitignore` governs sharing,
+  not reading.
 - `templates/AGENTS.md.template` → `<target>/AGENTS.md` if missing. `CLAUDE.md` is written as a **copy** of `AGENTS.md` (setup.sh never symlinks — WSL/NTFS and Windows git handle symlinks poorly); keep the two in sync.
 - `templates/TASKS.md.template` → `<target>/TASKS.md` if missing.
 - `templates/CHEATSHEET.md.template` → `<target>/CHEATSHEET.md` if missing. This is the printable companion to `README.md`; once present, setup leaves user edits alone.

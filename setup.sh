@@ -577,9 +577,18 @@ install_reseed_hook_claude() {
 }
 
 echo "[gitignore]"
+# Local working state, not shared contract. project.json is machine-specific (test
+# commands, paths); the committed bootstrap template is .claude/project.json.example,
+# which is deliberately NOT ignored -- the pattern below matches the exact filename, so
+# the .example sibling stays tracked. Ignoring these does not break the cross-tool
+# contract: Copilot and Codex read them off disk, and .gitignore governs sharing, not
+# reading. Mirrors /repo-onboarding Step 5 -- keep the two lists in sync.
 ensure_gitignored ".claude/pipeline/"
 ensure_gitignored ".claude/.next-action"
 ensure_gitignored ".claude/.auto-continue-hops"
+ensure_gitignored ".claude/project.json"
+ensure_gitignored "TASKS.md"
+ensure_gitignored "plans/"
 
 if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
   if [[ "$want_claude" -eq 1 ]]; then

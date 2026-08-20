@@ -153,23 +153,42 @@ After the user confirms (or adjusts):
 2. Write `AGENTS.md` at repo root. If `CLAUDE.md` is also missing, symlink it to `AGENTS.md` on POSIX, else copy.
 3. If no `TASKS.md`, copy `templates/TASKS.md.template` to repo root.
 4. If no `GOTCHAS.md` at repo root, create one from `examples/GOTCHAS.md.example`.
-5. **Update `.gitignore`** so the toolkit's ephemeral run-state doesn't get
-   committed. Ensure these lines are present (create `.gitignore` if missing;
-   append under a `# brainstorm-toolkit` comment — don't duplicate lines that
-   already exist):
+5. **Update `.gitignore`.** The toolkit's working files are *local* working
+   files — they churn every run, they are personal to whoever is driving, and
+   they are a merge-conflict magnet in any repo with more than one contributor.
+   Ensure these lines are present (create `.gitignore` if missing; append under a
+   `# brainstorm-toolkit` comment — don't duplicate lines that already exist):
    ```gitignore
-   # brainstorm-toolkit
+   # brainstorm-toolkit — local working state, not shared contract
    .claude/pipeline/
    .claude/.next-action
+   .claude/.auto-continue-hops
+   .claude/project.json
+   TASKS.md
+   plans/
    ```
-   `.claude/pipeline/` holds per-run `/sdlc` + `/sdlc-lite` envelopes (transient
-   state, one dir per run — pure churn if tracked); `.claude/.next-action` is the
-   `/repo-health` suggestion drop. **Do NOT ignore `.claude/project.json`,
-   `.claude/settings.json`, or your committed agent/skill definitions — those are
-   shared config and SHOULD be committed** so the toolkit contract travels with
-   the repo. After
-   editing `.gitignore`, `git add .claude/project.json` (and any other freshly
-   written contract files) so they're staged for the user's first commit.
+
+   Why each:
+   - `.claude/pipeline/` — per-run `/sdlc` + `/sdlc-lite` envelopes; one dir per
+     run, pure churn if tracked.
+   - `.claude/.next-action` / `.auto-continue-hops` — the seam's scratch files.
+   - `.claude/project.json` — **machine-specific.** It holds test commands, paths
+     and runner invocations that differ per checkout. The committed template is
+     `.claude/project.json.example`; a fresh clone copies it and edits locally.
+   - `TASKS.md` — a personal work queue, rewritten constantly.
+   - `plans/` — personal planning artifacts.
+
+   **Ignoring these does not break the cross-tool contract.** Copilot and Codex
+   read these files off disk in the working copy; `.gitignore` governs what gets
+   *shared*, not what gets *read*. The contract is per-checkout, and it still holds.
+
+   **Keep tracked:** `.claude/project.json.example` (the bootstrap template),
+   `.claude/settings.json` (hook wiring the team does share), `AGENTS.md`,
+   `GOTCHAS.md`, and any committed agent/skill definitions.
+
+   Note the knock-on: with `project.json` ignored, a fresh clone has the example
+   but not the real file, so `/repo-health` Check 9 will flag "config inert" until
+   someone copies it. That is the intended nudge, not a false positive.
 
 ### Step 5.5 — Offer secret-blocking PreToolUse hook (Claude only)
 
@@ -228,4 +247,4 @@ Report what was written and suggest next steps:
 | Top-level dirs like `api/`, `web/`, `worker/` | `modules` list |
 | `.git/HEAD` or `origin` default | `main_branch` |
 | Always (standing policy) | `models.cap` = `"sonnet"` — Sonnet-first ceiling for sub-agent fan-out; propose `haiku` to squeeze cheap sweeps, omit for uncapped Opus |
-| Repo uses this toolkit (`.claude/pipeline/` will be written) | add `.claude/pipeline/` + `.claude/.next-action` to `.gitignore`; keep `.claude/project.json` tracked |
+| Repo uses this toolkit | gitignore the local working state: `.claude/pipeline/`, `.claude/.next-action`, `.claude/.auto-continue-hops`, `.claude/project.json`, `TASKS.md`, `plans/`. Keep `.claude/project.json.example` tracked as the bootstrap template |
