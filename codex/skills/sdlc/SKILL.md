@@ -312,9 +312,9 @@ blocking Stage 6; stop and report rather than opening the PR.
    Flowsim: {all-aligned | mismatches resolved}
    ```
 4. Push: `git push -u origin sdlc/{feature-slug}`.
-5. Create PR via `gh pr create` with a body that includes: plan file link, eval results, test results, flowsim summary, files changed.
+5. Create PR via `gh pr create` with a body that includes: plan file link, eval results, test results, Stage 5 plan-check summary, files changed.
 6. Trigger a code review pass over the diff. On Copilot, invoke `/review` if available; otherwise summarize the diff yourself in the chat (severity-tagged: blocker / nit / question). Skip if `pipeline.skip_review: true` in `.claude/project.json`. The review stays in chat — post it as a PR comment via the GitHub MCP only if the user asked for team-visible review.
-7. **Capture at loop-exit** — run the shared protocol in `skills/gotcha/SKILL.md` (canonical: `skills/gotcha/SKILL.md`). Auto-draft a gotcha entry **only** on an objective trigger — a fix-loop (eval/test/flowsim) that **failed-then-recovered**, or the user voicing surprise — route it through gotcha's dedup check, and ask a single confirm. A clean run stays silent (no vibe-gating). `/sdlc` commits the capture with the run; it does not use the `.next-action` seam.
+7. **Capture at loop-exit** — run the shared protocol in `skills/gotcha/SKILL.md` (canonical: `skills/gotcha/SKILL.md`). Auto-draft a gotcha entry **only** on an objective trigger — a fix-loop (eval/test/flow) that **failed-then-recovered**, or the user voicing surprise — route it through gotcha's dedup check, and ask a single confirm. A clean run stays silent (no vibe-gating). `/sdlc` commits the capture with the run; it does not use the `.next-action` seam.
 
 8. **Leave re-entry rows** so the queue keeps the follow-up (a finished run seeds its own next step): always append `- [ ] (P2) verify PR #<n> of {feature-slug} merged & deployed — `/repo-health` plans/{feature-slug}.md`; when a manifest/lockfile/Dockerfile changed (deploy-delta), also `- [ ] (P1) rebuild <env> for {feature-slug} (dependency change — rebuild, not restart) — plans/{feature-slug}.md`. Also set `run.json.next_action = {"cmd": "`/repo-health` plans/{feature-slug}.md", "confirm": false}` (L8) so `/status` recovers the handoff after the sentinel fires.
 

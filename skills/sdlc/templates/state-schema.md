@@ -26,7 +26,6 @@
     converge.json           # Stage 2c — only when decomposed
     generate-evals.json
     validate.json
-    flowsim.json
     review.json             # Stage 5.7 -- only when a reviewer resolves (see the reviewer-model enablement chain, models.md)
     review-fix.json         # Stage 5.8 -- only when review.json.data.confirmed is non-empty; single cumulative file, data.loops[] holds one entry per iteration (NOT numbered review-fix-<n>.json files)
     secret-scan.json
@@ -39,7 +38,7 @@ Note: `review-fix`'s internal `loops[]` index is a bounded loop counter (`max_fi
 
 The Stage 2 sidecars are **mutually exclusive by path**: the single-agent path writes only `implement.json`; the decomposed path (Stage 2 gate fans out) writes `decompose.json`, one `implement-<lane>.json` per lane, and `converge.json`, and never writes `implement.json`. A run that never decomposes is byte-for-byte unchanged from the pre-decomposition envelope.
 
-In skill-repo mode (auto-detected from `.claude-plugin/marketplace.json` at repo root), the skipped stages (`generate-evals`, `flowsim`) write **no sidecar**. `stage-outputs/validate.json` is still written in skill-repo mode, but as a skill-repo-shaped sidecar that records the structural-check results from `templates/stage-5-skill-repo.md`; in that case `data.mode = "skill-repo"`.
+In skill-repo mode (auto-detected from `.claude-plugin/marketplace.json` at repo root), the skipped stage (`generate-evals`) writes **no sidecar**. `stage-outputs/validate.json` is still written in skill-repo mode, but as a skill-repo-shaped sidecar that records the structural-check results from `templates/stage-5-skill-repo.md`; in that case `data.mode = "skill-repo"`.
 
 ---
 
@@ -100,8 +99,7 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
 
 When `pipeline.review_fix.enabled` is `false`, `--no-review` was passed, or `review.json`'s
 `confirmed[]` ends up empty, `review` and/or `review-fix` move to `stages_skipped` instead on the
-prose/overlay paths — same documented convention as `generate-evals`/
-`flowsim`'s own skill-repo-mode skips. On the Workflow path this is logged, not array-appended (a
+prose/overlay paths — same documented convention as `generate-evals`'s own skill-repo-mode skip. On the Workflow path this is logged, not array-appended (a
 pre-existing gap, not new here).
 
 **Queued / multi-item runs (`/sdlc-lite --queue`, L10).** A queue run stays on **this exact
@@ -422,18 +420,6 @@ axis gates either way. Both arrays are absent when there was no plan target to c
 ```
 
 
-#### `flowsim`
-```json
-{
-  "report_path": "plans/flowsim-add-orders.md",
-  "json_path":   "plans/flowsim-add-orders.json",
-  "flow_count": 4,
-  "mismatches": 0,
-  "unclear": 1,
-  "missing": 0
-}
-```
-
 #### `secret-scan`
 ```json
 {
@@ -527,6 +513,6 @@ If `mkdir -p`, `chmod`, or any state-write fails (disk full, read-only volume, p
 ## What does NOT live here
 
 - **Plan files**: stay in `plans/` (or wherever the user passes them); `run.json.plan_file` points to them.
-- **`/flowsim` JSON**: `plans/flowsim-<slug>.json` remains the canonical location for `/flowsim`'s structured output. `stage-outputs/flowsim.json` is a *summary* sidecar, not a duplicate.
+- **`/flowsim` JSON**: `plans/flowsim-<slug>.json` is the canonical (and only) location for the standalone `/flowsim` skill's structured output. The pipeline writes **no** flowsim sidecar — the former Stage 5.6 flow trace was merged into Stage 5, and its results live in `validate.json`'s `data.flow[]`.
 - **PBI / BRD artifacts**: `pbis/pbi-NNN.md`, `requirements/brd-NNN.md` (Phase 2/3). Run state may *reference* these by ID but never copies them.
 - **Delivery artifacts** (Phase 5+): `delivery/pbi-NNN.json` is for stakeholder-readable, persistent reports. `.claude/pipeline/` is ephemeral local state only.

@@ -14,7 +14,7 @@ metadata:
 Autonomous feature delivery: plan file in, PR out.
 
 ```
-/brainstorm → plan → /sdlc → sanity-check → implement → eval → fix → validate → flowsim → PR → human review
+/brainstorm → plan → /sdlc → sanity-check → implement → eval → fix → validate → PR → human review
 ```
 
 ## Arguments
@@ -91,9 +91,8 @@ sidecar writes).
   (canonical kebab name from `docs/CONVENTIONS.md`, never decimals — so
   `sanity-check.json`, not `stage-1.5.json`) and append the stage to
   `run.json.stages_completed`.
-- When skill-repo mode is auto-detected, skipped stages (`generate-evals`,
-  `flowsim`) write **no sidecar**; add their
-  names to `run.json.stages_skipped` instead.
+- When skill-repo mode is auto-detected, the skipped stage (`generate-evals`)
+  writes **no sidecar**; add its name to `run.json.stages_skipped` instead.
 - On terminal state, set `run.json.status` to `complete`, `failed`, or `paused`
   per the schema doc.
 
@@ -476,7 +475,7 @@ Create a pull request for human review.
 
 7. **Capture at loop-exit (knowledge sink)**: run the shared protocol in
    `skills/gotcha/SKILL.md`. Auto-draft a gotcha **only** on an objective
-   trigger — a fix-loop that **failed-then-recovered** (eval/test/flowsim), or
+   trigger — a fix-loop that **failed-then-recovered** (eval/test/flow), or
    the user voicing surprise — route it through gotcha's dedup, and one-tap
    confirm. The **durable project file is the sink, not model memory**. A clean
    run stays silent (no vibe-gating "was anything non-obvious?"). `/sdlc` commits
@@ -523,8 +522,7 @@ stages"). Such a run must still **advance `run.json.stage` and append to
 `stages_completed` as each validation sidecar is written**, add `implement` to
 `run.json.stages_skipped`, and finish on a terminal `status`. The failure mode
 to avoid: a retro run initialized at `stage: "parse"` whose validation sidecars
-(`sanity-check`, `generate-evals`, `validate`,
-`flowsim`) all exist on disk while `run.json` still reads
+(`sanity-check`, `generate-evals`, `validate`) all exist on disk while `run.json` still reads
 `status: "in_progress"` with `stages_completed: []` — sidecars present but the
 run never closed. That orphan is the single most common stale-pipeline false
 alarm; closing the run is the last action of *every* exit path, retro included.
