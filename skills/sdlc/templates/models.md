@@ -240,9 +240,10 @@ The old keys are **no longer read** (clean break, 2026-07-26):
 | `pipeline.review_fix.max_fix_loops` | `agents.code_review_max_fix_loops` |
 | `pipeline.decompose_min_tasks` | `agents.decompose_min_tasks` |
 
-`pipeline.review_fix.enabled` / `.mode` / `.blocking` / `.confidence_threshold` /
-`.auto_approve_after` / `.max_diff_lines` / `.max_files` stay under `pipeline.review_fix` —
-they are stage *behavior*, not model or count selection.
+`pipeline.review_fix.enabled` / `.mode` / `.blocking` stay under `pipeline.review_fix` — they
+are stage *behavior*, not model or count selection. (`.confidence_threshold`,
+`.auto_approve_after`, `.max_diff_lines` and `.max_files` were specified but never built; they
+have been removed rather than left standing as config that reads like behavior.)
 
 A repo still using an old key silently gets the built-in default. `/repo-onboarding`
 rewrites the block; `/repo-health` flags leftovers.

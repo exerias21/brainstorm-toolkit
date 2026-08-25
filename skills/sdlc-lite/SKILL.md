@@ -41,7 +41,7 @@ history.
 
 ## Output verbosity (default: quiet)
 
-Run `/sdlc`'s "Output verbosity" section verbatim. **Default `quiet`** — one line
+**Read `skills/sdlc/templates/output-verbosity.md` now.** **Default `quiet`** — one line
 per stage (`<stage> · <verdict> · model: <tier> (cap: <cap|none>)`), one summary
 table at Stage 7, no intermediate narration or echoed sub-agent output. Detail
 already lives in the `stage-outputs/` sidecars. Always print regardless of
@@ -59,15 +59,14 @@ Writes to `.claude/pipeline/<slug>/` — same path and sidecar shapes as `/sdlc`
   (`{branch, files_changed[], committed: false, suggested_commit_msg}`)
 
 **Resumption (`--resume`).** `/sdlc-lite <input> --resume` resumes a paused/failed
-prior run for the resolved slug instead of restarting from scratch — it follows
-`/sdlc`'s **Resumption** rules verbatim (read `run.json`; reject on a `plan_hash`
-mismatch; skip stages whose sidecar shows `status: "pass"`; resume at the first
-non-passing one; prose-path only). The only difference is the terminal stage
-(hand-off, not PR). Resume keys on the **resolved slug**, so an ad-hoc-description
-run must be resumed with the *same description text* (a reworded description
-derives a different slug → "no prior run"); task-id / range / plan-file inputs
-resolve to a stable slug and resume cleanly.
-  instead of `pr-create.json`. No schema bump — both additive.
+prior run for the resolved slug instead of restarting from scratch — **read
+`skills/sdlc/templates/resumption.md` now** and follow it (read `run.json`; reject on a
+`plan_hash` mismatch; skip stages whose sidecar shows `status: "pass"`; resume at the first
+non-passing one). The only differences are the terminal stage (hand-off, not PR) and the
+`handoff.json` sidecar in place of `pr-create.json` — both additive, no schema bump. Resume
+keys on the **resolved slug**, so an ad-hoc-description run must be resumed with the *same
+description text* (a reworded description derives a different slug → "no prior run"); task-id
+/ range / plan-file inputs resolve to a stable slug and resume cleanly.
 
 For a task **range**, `run.json.data.task_range` records the resolved ids.
 
@@ -214,12 +213,11 @@ fresh-process-per-item escalation are in `docs/LOOP-HYGIENE.md` (plugin repo).
 
 ## Stage 1.5 — Sanity check
 
-**Read `skills/sdlc/templates/stage-1.5-sanity-check.md` now**, then run `/sdlc` Stage 1.5
-(parallel focus agents on Claude; sequential on the
-overlays). This is full SDLC discipline — it is **not** gated or optional. Honors
-`models.sanity` and `agents.sanity_focuses` exactly as `/sdlc`
-Stage 1.5 documents them — the default is 3 Haiku agents, and because the cap only
-*lowers*, `sanity_check.model` is the only way to raise this stage.
+**Read `skills/sdlc/templates/stage-1.5-sanity-check.md` now** and run it (parallel focus
+agents on Claude; sequential on the overlays). It carries the orchestration and the per-focus
+prompts. This is full SDLC discipline — it is **not** gated or optional. The default is 3 Haiku
+agents; `models.sanity` and `agents.sanity_focuses` tune it, and because the cap only *lowers*,
+`sanity_check.model` is the only way to raise this stage.
 For a task range, run it once over the combined set before the implement loop.
 
 If the sanity check surfaces a blocker (plan references nonexistent files,
@@ -239,15 +237,14 @@ context resets. If a change is too small to be worth an agent, it is too small f
 it, open it. A pointer that is never opened silently resolves to nothing, which is exactly
 how the delegation rule above stopped reaching the model in the first place.
 
-Then run `/sdlc` Stage 2, including its **live-code grounding** (follow
-`skills/sdlc/templates/convention-grounding.md` — reuse existing patterns, treat
-AGENTS.md/CLAUDE.md as stale-able hints, honor any `## Conventions & reuse` block
-in the plan) and its **auto-gate**. Compute
-`surfaces_touched` (from `skills/sdlc/templates/changed-files-gate.md` globs over
-the planned files) and `task_count` (parse step count); **decompose iff**
-`surfaces_touched >= 2` AND `task_count >= DECOMPOSE_MIN_TASKS` (default `6`,
-overridable via `.claude/project.json` `agents.decompose_min_tasks`) AND the
-per-surface file sets are disjoint.
+Then apply the **live-code grounding** (follow `skills/sdlc/templates/convention-grounding.md`
+— reuse existing patterns, treat AGENTS.md/CLAUDE.md as stale-able hints, honor any
+`## Conventions & reuse` block in the plan) and the **auto-gate**: **read
+`skills/sdlc/templates/stage-2-gate.md` now** — it computes `surfaces_touched` (via
+`skills/sdlc/templates/changed-files-gate.md`) and `task_count`, and **decomposes iff**
+`surfaces_touched >= 2` AND `task_count >= DECOMPOSE_MIN_TASKS` (default `6`, overridable via
+`.claude/project.json` `agents.decompose_min_tasks`) AND the per-surface file sets are
+disjoint.
 
 - **Single-agent (default):** dispatch one agent with `skills/sdlc/templates/stage-2-implement.md`,
   substitute `{feature_name}` and `{plan_content}`; **Sonnet by default** (Opus
@@ -256,7 +253,7 @@ per-surface file sets are disjoint.
   **Model cap applies** (inherited from `/sdlc` Stage 2): the implement/fix/lane
   tiers are lowered per `skills/sdlc/templates/models.md` — `--model <tier>`
   flag > `project.json models.cap` > default.
-- **Decompose (large multi-surface plan):** run 2a/2b/2c per `/sdlc` Stage 2 —
+- **Decompose (large multi-surface plan):** run 2a/2b/2c —
   `skills/sdlc/templates/stage-2a-decompose.md` (Sonnet decomposer →
   `decompose.json`), `skills/sdlc/templates/stage-2b-dispatch.md` (one subagent
   per lane, sequential by `depends_on` → `implement-<lane>.json`), then
@@ -270,22 +267,31 @@ touched. Stop and report on any blocker.
 
 ## Stage 3 — Generate evals
 
-Reuse `/sdlc` Stage 3 verbatim. **Skip silently if no `eval.runner` is
+**Read `skills/sdlc/templates/stage-3-evals.md` now** and run it. **Skip silently if no `eval.runner` is
 configured** — record `data.skipped_reason: "no eval.runner"`. Pure-docs work
 degenerates cleanly into edit + commit.
 
 ## Stage 5 — Validate
 
-Run `/sdlc` Stage 5 — now **one** stage: (1) dispatch the **`test-runner`** agent (Haiku,
-structured pass/fail only — never run the suites inline; test output is the biggest single
-source of context bloat) over the touched surfaces, then (2) **one agent** given the plan + diff that reports requirements
-(met/partial/missing, each with a `file:line`) and flow (`MISMATCH`/`UNCLEAR`/`MISSING`)
-separately. Skip axis (2) when there is no plan target, and say so. Route failures through the
-shared fix loop (3-iteration budget). Writes one `validate.json`.
+**Read `skills/sdlc/templates/stage-5-validate.md` now** and run it — one stage: (1) dispatch
+the **`test-runner`** agent (Haiku, structured pass/fail only — never run the suites inline;
+test output is the biggest single source of context bloat) over the touched surfaces, then
+(2) **one agent** given the plan + diff that reports requirements (met/partial/missing, each
+with a `file:line`) and flow (`MISMATCH`/`UNCLEAR`/`MISSING`) separately. Skip axis (2) when
+there is no plan target, and say so.
+
+**The flow axis gates only when witnessed** (per the template): with no test evidence from step
+1, flow findings are reported as **advisory** — they cannot fail the stage or open the fix loop.
+The requirements axis gates unconditionally; it is the pipeline's only detector for a plan step
+that was silently never implemented.
+
+Route failures through the shared fix loop (**read `skills/sdlc/templates/fix-loop.md`** at the
+first failure; 3-iteration budget). Writes one `validate.json`.
 
 ## Stage 5.7 — Adversarial review
 
-Run `/sdlc` Stage 5.7/5.8 verbatim — same opt-in-only enablement (`--review-model <name>` flag or
+**Opt-in, permanently OFF by default — resolve the gate before loading anything.** Same
+opt-in-only enablement (`--review-model <name>` flag or
 `pipeline.review_fix.enabled: true`; `--no-review` always wins OFF; omitted/absent means
 permanently OFF, no default-on flip), same auto-off gates (docs-only/no-surface diff self-skips
 except in skill-repo mode, which adapts rather than skips), same **configurable** lens fan-out
@@ -294,14 +300,18 @@ except in skill-repo mode, which adapts rather than skips), same **configurable*
 cost roughly linearly, one reviewer call per lens), capped by `agents.code_review_max_lenses`
 (default `4`; set `1` for a single-reviewer run, truncating in list order after circuit-breaker
 demotion), same verify pass, optional second pass, and false-positive circuit breaker. Print the
-resolved list before dispatching, per `/sdlc` Stage 5.7. Same cap caveat: every lens runs at the
+resolved list before dispatching, per the template. Same cap caveat: every lens runs at the
 **reviewer** model, which `models.cap` does not govern — warn when a cap is set and the reviewer
 outranks it. Runs after Stage 5, before Stage 6 hand-off. Writes
 `stage-outputs/review.json`; self-skips append `review` to `run.json.stages_skipped`.
 
+When (and only when) the stage is enabled, **read
+`skills/sdlc/templates/stage-5.7-review-fix.md` now** and run it. When it is OFF, do not load
+that file — append `review` to `run.json.stages_skipped` and go to Stage 6.
+
 ## Stage 5.8 — Fix loop
 
-Run `/sdlc` Stage 5.8 verbatim — same `auto_fixable` rubric, same `pipeline.review_fix.mode`
+Specified in that same template — same `auto_fixable` rubric, same `pipeline.review_fix.mode`
 (interactive/auto/off) machinery, same independence enforcement and oscillation guard, same
 cumulative `stage-outputs/review-fix.json`, and the same separate fix-loop budget
 (`agents.code_review_max_fix_loops`, independent of Stage 5's shared budget). One divergence,
@@ -319,8 +329,8 @@ does not commit, stage-and-commit, branch, push, open a PR, or invoke
 `/review`. The user reviews the validated working tree and commits it
 themselves. (Want the commit + PR done for you? That's `/sdlc`.)
 
-1. **Secret scan** the changed files using `/sdlc` Stage 6's procedure.
-   **Warn-only**: surface findings (file:line) but never block. HIGH findings
+1. **Secret scan** the changed files — **read `skills/sdlc/templates/secret-scan.md` now**
+   and run it. **Warn-only**: surface findings (file:line) but never block. HIGH findings
    get a `⚠ HIGH:` prefix and a note that GitHub Push Protection on public
    remotes may reject a later push — worth scrubbing before you commit.
 

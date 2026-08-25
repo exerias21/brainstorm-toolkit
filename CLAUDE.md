@@ -101,6 +101,31 @@ cross-tool sync obligation.
 Copilot/Codex overlays (which have no Workflow and never did — the prose is all they run).
 `validate_skills.py` guards the prose↔overlay parity leg with a soft warning.
 
+### Where the canonical stage prose lives: `skills/sdlc/templates/`
+
+`/sdlc` and `/sdlc-lite` run the same stages, so each stage's body lives in **one template**
+under `skills/sdlc/templates/` and both `SKILL.md` files are thin: a short framing paragraph, the
+gate/skip rule that decides *whether* to run, and a `**Read skills/sdlc/templates/<x>.md now**`
+pointer. `output-verbosity`, `resumption`, `stage-1.5-sanity-check`, `stage-2-gate`,
+`stage-2-implement`, `stage-2a/2b/2c`, `stage-3-evals`, `fix-loop`, `stage-5-validate`,
+`stage-5.7-review-fix`, `secret-scan`, `changed-files-gate`, `convention-grounding`,
+`envelope-staleness`, `models`, `state-schema`.
+
+Two rules follow, and both are load-bearing:
+
+- **Edit the template, not the skill.** A stage-contract change is one edit in
+  `skills/sdlc/templates/` plus the overlays. Copying a stage body back into a `SKILL.md`
+  re-creates the `/sdlc`↔`/sdlc-lite` drift the split exists to prevent.
+- **A `SKILL.md` must never defer to the other skill's prose.** `/sdlc-lite` previously said
+  "run `/sdlc` Stage N verbatim" 15 times, which meant a *lite* run loaded all 1,069 lines of
+  `/sdlc` — ~16k tokens of instructions for a pipeline that shares only its stage bodies. Point
+  at the template instead. Whichever skill is invoked should load only its own file plus the
+  templates for stages it actually reaches.
+
+That second rule is why the gate goes **in the skill** and the body goes **in the template**: a
+stage that self-skips (no `eval.runner`, review not opted in, no plan target) must be able to
+decide that *without* opening the template it is skipping.
+
 
 ## When adding a new skill
 

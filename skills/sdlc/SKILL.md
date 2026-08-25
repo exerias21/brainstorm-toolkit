@@ -109,38 +109,11 @@ A fresh `/sdlc <plan>` invocation (no `--resume`) **overwrites** any prior
 
 ### Resumption (`--resume`)
 
-`/sdlc <plan> --resume` picks up a paused/failed prior run instead of restarting
-from Stage 1 — which would both re-spend every green stage and **overwrite the
-failure evidence you're resuming to fix**. Behavior:
+**Read `skills/sdlc/templates/resumption.md` now** when `--resume` is passed.
 
-1. Read `.claude/pipeline/<slug>/run.json` (slug derived from the plan file
-   exactly as Stage 1 does it). **If absent** → error: "no prior run for
-   `<slug>` — run `/sdlc <plan>` without `--resume` to start fresh." Do not
-   create a fresh run under `--resume`.
-2. **Staleness guard.** If `run.json.plan_hash` ≠ the current plan file's hash,
-   the plan changed since the paused run — **reject**: "plan `<slug>` changed
-   since the paused run; start fresh (`/sdlc <plan>`) or revert the plan." Don't
-   try to reconcile. (Optional/additive: a per-stage `prompt_hash` mismatch —
-   the *toolkit* changed a stage's prompt since the run — may *warn* rather than
-   reject; skip the check entirely when the field is absent.)
-3. Determine the resume point: every stage whose `stage-outputs/<stage>.json`
-   shows `status: "pass"` (equivalently, every name already in
-   `run.json.stages_completed`) is **skipped and its output reused**. Resume at
-   the first non-passing stage — normally the one `run.json.stage` names / the
-   one that paused.
-4. If a reused stage-output references a file that no longer exists (e.g. the
-   plan was edited to remove a step) → reject with a clear error; don't be
-   clever.
-5. If the paused stage no longer exists in the current pipeline (a toolkit
-   upgrade split it) → "stage `<old>` no longer in pipeline — start fresh." (A
-   `--resume-from <stage>` override is a possible future addition; not v1.)
-6. From the resume point onward, behave **identically to a fresh run** — same
-   gates, same **shared 3-iteration fix budget** (it starts fresh for the
-   resumed stages), same envelope updates; set `run.json.status = "in_progress"`
-   on pickup.
-
-Resume reads the prior sidecars off disk
-(see the execution-mode note above), so `--resume` always runs these prose stages.
+`/sdlc <plan> --resume` picks up a paused/failed prior run instead of restarting: read `run.json`,
+reject on a `plan_hash` mismatch, skip stages whose sidecar shows `status: "pass"`, resume at the
+first non-passing one. The template carries the full rule set and the rejection messages.
 
 ### Continuity detection (prompt, never auto)
 
@@ -260,87 +233,24 @@ config: .claude/project.json.example exists but project.json does not — no pro
 
 ## Output verbosity (default: quiet)
 
-**Default `quiet`.** Stage narration is re-read by every later turn in the same session, so it
-compounds — an audited run averaged 468k context across 5,321 orchestrator turns, and narration is
-the cheapest part of that to give up. Detail is not lost: every stage already writes its sidecar
-under `.claude/pipeline/<slug>/stage-outputs/`, which is the durable record.
+**Read `skills/sdlc/templates/output-verbosity.md` now**, before any stage prints.
 
-Under `quiet`, each stage prints **one** line and nothing else:
-
-```
-<stage> · <verdict> · model: <tier> (cap: <cap|none>)
-```
-
-and the run closes with a single summary table at Stage 7. Do not narrate intermediate reasoning,
-restate file contents, echo sub-agent output, or recap what a stage is about to do.
-
-**Always printed, even under `quiet`** — these are the run's contract, not narration:
-
-- the per-dispatch `model: <tier> (cap: <cap|none>)` line (the cap is only as real as this
-  line — `validate_skills.py` soft-warns that a fan-out skill *references* `model-cap.md`, it does
-  NOT check that the line is printed, so nothing but this instruction enforces it),
-- every gate verdict and any PAUSE/soft-stop block,
-- the `Next:` seam line,
-- warnings: the config-presence check above, the reviewer-axis cost note, the session-model nudge.
-
-Set `pipeline.output.verbosity: "normal"` in `.claude/project.json` to restore full narration.
-Read with graceful-skip — a missing `project.json` means `quiet`, which is the point: the savings
-must not depend on a config file that the audited repo never had.
+**Default `quiet`** — one line per stage (`<stage> · <verdict> · model: <tier> (cap: <cap|none>)`),
+one summary table at Stage 7, no intermediate narration or echoed sub-agent output. Always print
+regardless of verbosity: the per-dispatch `model:` line, gate verdicts, PAUSE blocks, the `Next:`
+seam line, and warnings. `pipeline.output.verbosity: "normal"` restores narration.
 
 ## Stage 1.5: Plan Sanity Check
 
-Before spending implementation tokens, verify the plan is actually
-correct. Launch the configured focus agents **in parallel** (single message) to
-check different dimensions. This is cheap insurance — catches wrong file paths,
-missing steps, and known gotchas before they become bugs.
+Before spending implementation tokens, verify the plan is actually correct.
 
-Read the prompts from `templates/stage-1.5-sanity-check.md` (sections: `paths`,
-`completeness`, `gotchas`). Substitute `{plan_file}` and `{feature_name}`, then
-dispatch the selected agents in a single message — one Agent call per section.
+**Read `skills/sdlc/templates/stage-1.5-sanity-check.md` now** — it carries the orchestration
+(focus selection via `agents.sanity_focuses`, the `models.sanity` tier, the parallel dispatch,
+processing results and the sidecar) followed by the per-focus agent prompts.
 
-**Which focuses run — `agents.sanity_focuses`.** Read the array from
-`.claude/project.json`; absent means all three defaults. Setting fewer cuts this stage's
-cost roughly linearly (one agent per focus). `paths` is the cheapest and most mechanical
-(file existence); `completeness` is the judgment-heavy one; `gotchas` is only useful when
-a `GOTCHAS.md` exists. An unrecognized focus name is ignored with one warning.
-
-**Which tier — `models.sanity`.** Built-in default is `haiku` for every
-focus. `.claude/project.json` `models.sanity` (`haiku|sonnet|opus`)
-**replaces that default for all focuses** when set. Reach for it when this stage is
-reviewing *plans* rather than checking paths: `paths` is genuinely mechanical, but
-`completeness` is asking "does this plan hang together?", which is the kind of judgment a
-stronger reader does better. Raising it costs on **every** run that reaches Stage 1.5 —
-which is every run, since the stage is never gated.
-
-The resolved tier still passes through the **model cap** (`models.cap` / `--model`, see
-`templates/models.md`), which is a *ceiling*: `capModel(effective_default, cap)`. Note
-the consequence, because it is the whole reason this key exists — **the cap can only
-lower, so while the site default is `haiku` there is no way to raise this stage at all.**
-`models.cap: "opus"` does not raise it; `--model opus` does not raise it. Setting
-`sanity_check.model` is the only lever. Once set above `haiku`, the cap applies normally
-(a Sonnet-first cap pulls `opus` back to `sonnet` unless you also pass `--model opus`).
-
-This is **not** a new model axis — it sets a default *within* the fan-out axis and is
-still capped by it. Print `model: <tier> (cap: <cap|none>)` and the resolved focus list —
-`sanity focuses: <a, b, …> (N of 3 defaults)` — before dispatching.
-
-### Processing results
-
-1. Collect all 3 agent reports
-2. **If issues found**: auto-patch the plan file with corrections. Log a short
-   summary of what was fixed, then proceed to Stage 2 with the corrected plan.
-3. **If critical issues** (plan references nonexistent files, entire approach
-   is misguided): report to user and **STOP** — the plan needs human revision.
-4. **If all clean**: proceed to Stage 2.
-
-**State write**: write `stage-outputs/sanity-check.json` with
-`data.agents` (focus, status, issue_count for each), `data.auto_patched`
-(bool), and `data.issues`. Status is `pass` if all three agents reported no
-issues, `pass` with `auto_patched: true` if issues were auto-corrected,
-`paused` if critical issues forced a stop.
-
----
-
+This is cheap insurance — it catches wrong file paths, missing steps and known gotchas before
+they become bugs. Critical issues (plan references nonexistent files, the approach is
+misguided) **STOP** the run for human revision; lesser issues auto-patch the plan and proceed.
 ## Stage 2: Implement
 
 **Delegation is mandatory — during this stage the orchestrator does not call Write or Edit.**
@@ -378,26 +288,11 @@ owner of global consistency throughout: the orchestrator.
 
 ### The gate (compute, then route)
 
-Read `stage-outputs/parse.json`. Compute:
-1. `surfaces_touched` = the distinct surfaces from `templates/changed-files-gate.md`
-   (frontend / backend / data / docs / deploy-delta) that the **planned** files
-   in `parse.json.data.files_to_change` match. The gate runs *before* any code
-   exists, so apply the surface globs to intended files, not to a diff.
-2. `task_count` = `parse.json.data.implementation_step_count`.
-3. `DECOMPOSE_MIN_TASKS` — a named constant, **default `6`**, overridable via
-   `.claude/project.json` `agents.decompose_min_tasks`.
-4. **Disjointness:** classify each planned file by surface; if any file matches
-   more than one surface, or every file lands in a single surface, the surfaces
-   are not cleanly separable.
-
-**Decompose iff** `surfaces_touched.count >= 2` **AND** `task_count >=
-DECOMPOSE_MIN_TASKS` **AND** the per-surface file sets are disjoint. Otherwise →
-single-agent fallback. Record the decision **and its inputs** so a reader sees
-exactly why it did or didn't fan out (decompose path: `decompose.json`;
-single-agent path: the gate summary in `implement.json`). Never a silent choice.
-
-On Stage 2a entry set `run.json.data.stage2_decomposed` (bool) and
-`run.json.data.lanes` (lane-name list, or `[]` when not decomposing).
+**Read `skills/sdlc/templates/stage-2-gate.md` now.** It computes `surfaces_touched`,
+`task_count` and disjointness from `stage-outputs/parse.json`, and routes: **decompose iff**
+`surfaces_touched >= 2` AND `task_count >= DECOMPOSE_MIN_TASKS` (default `6`) AND the
+per-surface file sets are disjoint — otherwise the single-agent fallback below. Record the
+decision and its inputs; never a silent choice.
 
 ### Single-agent fallback (the default — unchanged behavior)
 
@@ -449,70 +344,23 @@ go to the shared fix loop). Write `stage-outputs/converge.json` with
 
 ## Stage 3: Generate Evals
 
-Create test cases that verify the plan's INTENT, not just "does it compile."
+**Read `skills/sdlc/templates/stage-3-evals.md` now**, then run it.
 
-### For features with new Python functions:
+Create test cases that verify the plan's INTENT, not just "does it compile." The template covers
+the four surface shapes (new pure functions, JSON-emitting scripts, functions inside an
+application package, and no-testable-surface), the `data.coverage_route` record, and the sidecar.
 
-1. Identify all new pure functions (no I/O, no database, no browser)
-2. Create `tests/eval/test_{feature_slug}_eval.py` with parameterized test cases
-3. Import functions via `tests/eval/conftest.py::load_script_module()`
-4. Write binary assertions: expected input → expected output
-
-### For features with new scripts that output JSON:
-
-1. If the script accepts `--input` fixtures, create:
-   - `<eval.features_dir>/{feature_slug}/fixtures/{scenario}.json` — input data
-   - `<eval.features_dir>/{feature_slug}/expected/{scenario}.json` — expected output
-2. The runner auto-discovers new features by scanning `<eval.features_dir>/*/` —
-   no registration needed.
-
-### For pure functions that live in the application package (not loadable by the eval harness):
-
-The eval harness is **script-scoped**: `tests/eval/conftest.py::load_script_module()`
-only imports files under `scripts/`, and `eval-runner.py` only discovers features
-under `<eval.features_dir>/`. Pure functions inside an application package
-(`backend/app/...`, `src/...`, a FastAPI/Django/Rails service module) are
-**unreachable** by that harness. **Do not mark these "skipped — no testable
-surface"** — that's the trap where the most common feature type silently gets
-zero coverage.
-
-Instead, when the testable functions live in the app package:
-1. Generate tests into the **project's native unit-test suite** at the
-   project's convention (where `test.unit` points — e.g. `backend/tests/`,
-   `tests/`, `__tests__/`), not into `tests/eval/`.
-2. They run in **Stage 5** via the configured `test.unit` command, not via
-   `eval.runner`.
-3. Record `data.coverage_route: "test.unit"` in the generate-evals sidecar so
-   Stage 5's flow axis knows unit results are the corroborating evidence.
-
-### For features without testable pure functions:
-
-1. Create schema validation tests — does the output match the expected JSON structure?
-2. Create smoke tests — does the script/endpoint return a valid response?
-3. If no tests are possible, note "eval generation skipped — no testable surface" and proceed
-
-### Key principle:
-
-Evals must be created BEFORE running them. This is test-driven: define what
-"correct" looks like first, then verify the implementation matches.
-
-**State write**: write `stage-outputs/generate-evals.json` with
-`data.evals_created[]` and `data.skipped_reason` (or `null`). Status is
-`pass` even when evals are skipped (no testable surface) — record the
-reason in `summary` and `data.skipped_reason`.
+**Skip silently when no `eval.runner` is configured** — record `data.skipped_reason`.
 
 ---
 
 ## Shared fix loop + pause shape
 
-Stages 5, 5.5, 5.6 (and 5.7's own separate budget) all fix the same way, so the loop and its
-pause are specified once, here.
+**Read `skills/sdlc/templates/fix-loop.md` now**, at the first gate that fails.
 
-**The loop.** On a gate failure: parse the structured results; for each failure extract test
-name, expected-vs-actual, file path, function; dispatch **one fix agent** — **Sonnet by default**
-(Opus only on `--model opus`), per the **Model cap** section — told to fix *only* those failures
-with no refactor; re-run the gate. Repeat to a maximum of **3 iterations, shared across Stages
-5/5.5/5.6** (Stage 5.7 has its own separate budget — see there for why sharing it is wrong).
+Stages 5 and 5.7/5.8 all fix the same way, so the loop and its pause block are specified once,
+there: dispatch one fix agent per failure set (Sonnet by default), re-run the gate, 3 iterations
+max, then emit the PAUSE block with its class-based diagnosis and set `run.json.status = "paused"`.
 
 **Stage 4 no longer exists.** It ran `eval.runner` and then Stage 5 ran the same command again as
 its eval-regression layer, so its gate was a strict prefix of Stage 5's. Sharing this budget, its
@@ -520,44 +368,16 @@ pause could halt a run on **self-authored** evals before the project's real suit
 consulted — a weak oracle pre-empting the strong one. Stage 3 still authors the tests; Stage 5
 runs them. See `plans/brainstorm-post-merge-cleanup.md` (D2).
 
-**The pause.** On budget exhaustion, emit this block, inferring the class from *the failing
-stage's own* sidecar (`validate.json`, `review.json`):
-
-```markdown
-## SDLC Pipeline — PAUSED
-
-{stage} failures persist after {N} fix attempts.
-Remaining failures:
-{failures_summary}
-
-### Diagnosis
-
-**Fastest path: run `/status`** — it reads this sidecar, classifies the failure,
-drafts the fix for a code defect, and hands back the `--resume` re-entry. Or triage inline:
-- **Class** (inferred from the failing stage's sidecar `data.remaining_failures[]`): one of
-  **flaky** (a test flips pass/fail across loops) · **code-defect** (a consistent assertion
-  failure) · **plan-wrong** (the failure contradicts a plan step) · **config-missing** (a
-  command/env/dep the runner needs).
-- **Recommended next command** (matches the class — `--resume` reuses the green stages, so
-  prefer it over a fresh re-run):
-  - flaky → re-run just the gate to confirm: `/test-check` (or `/eval-harness`); if green, `/sdlc {plan_file} --resume`.
-  - code-defect → `/task fix: {one-line failure}` (bounded TDD), then `/sdlc {plan_file} --resume` (code changed, plan didn't).
-  - plan-wrong → `/brainstorm` the failing step to revise `{plan_file}`, then re-run `/sdlc {plan_file}` **fresh** (NOT `--resume` — editing the plan changes its hash, which resume rejects by design).
-  - config-missing → set the missing command/env in `.claude/project.json`, then `/sdlc {plan_file} --resume`.
-
-Fix manually (per the diagnosis above), then `/sdlc {plan_file} --resume` (or a
-fresh `/sdlc {plan_file}` if you edited the plan) — resume reuses the green stages.
-```
-
-Set `run.json.status = "paused"` alongside the failing stage's sidecar `status: "paused"`.
-
 ---
 
 
 ## Stage 5: Validate
 
+**Read `skills/sdlc/templates/stage-5-validate.md` now**, then run it.
+
 One stage, one gate, one sidecar. It answers the two questions that matter after implement:
-**does it run, and is it what the plan asked for?**
+**does it run, and is it what the plan asked for?** The template carries both steps (the
+`test-runner` dispatch and the plan check), the flow axis's evidence gate, and the gate rule.
 
 This replaces the former Stages 5, 5.5 and 5.6. They asked the same question three ways — "do
 the tests pass", "does the code fulfill the plan" (four checklist agents), "does the flow match
@@ -565,226 +385,21 @@ the plan" (a narrative trace) — each with its own dispatch, sidecar, gate and 
 paying its own round of orchestrator chatter. A current model does not need the plan-vs-diff
 check partitioned into api/ui/data/cross-module lanes to do it well.
 
-### 1. Run the suite — in a sub-agent, never inline
 
-**Dispatch the `test-runner` agent** (by type: `brainstorm-toolkit:test-runner`, or bare
-`test-runner` when vendored). It is pinned to **Haiku** and returns a structured pass/fail
-summary — never raw output. Pass it the surfaces the diff touched (see
-`templates/changed-files-gate.md`) so it skips suites for untouched surfaces.
+## Stages 5.7 / 5.8 — Adversarial review + fix loop
 
-**Do not run the test commands yourself.** Test output is the single largest source of shell
-traffic, and shell traffic was ~53% of main-thread tokens on an audited run. Every line of
-runner output you take directly is context you carry for the rest of the session; taken by the
-agent, it dies with the agent. You need `{name, file, expected, actual}` to write a fix — you
-do not need 400 lines of pytest.
+**Read `skills/sdlc/templates/stage-5.7-review-fix.md` now — but only if the stage is enabled.**
 
-You get back `{layers, failures[], preexisting[], green, totals}`. Report only **new** failures
-as failures; `preexisting[]` is noted separately and does not gate.
-
-- Log audit (if `logs.command` configured)
-- Frontend unit tests (if `test.frontend` configured **and** the frontend surface was touched)
-- Backend unit tests (if `test.unit` configured **and** the backend surface was touched)
-- **E2E / visual check** — dispatch the `e2e-test-runner` agent (by type:
-  `brainstorm-toolkit:e2e-test-runner`, or bare `e2e-test-runner` when vendored) if `test.e2e`
-  is configured **and** the frontend surface was touched. It runs its own bounded fix loop with
-  a flaky-test guard; its iterations count toward the shared budget. If the frontend surface was
-  touched and no `test.e2e` is configured, raise a **soft-stop candidate** ("frontend changed
-  but no visual check ran") — never pass silently.
-- Eval regression (if `eval.runner` configured) — this is the only place evals run.
-
-### 2. Check the delivery against the plan
-
-**Skip when there is no plan target** (an ad-hoc `/sdlc-lite` description) — there is nothing
-to check against, and say so rather than passing silently.
-
-Dispatch **one agent** — the `ux-plan-validator` (by type: `brainstorm-toolkit:ux-plan-validator`,
-or bare `ux-plan-validator` when vendored), Sonnet by default per the **Model cap** section — with
-the plan and the diff, and this brief:
-
-> Verify the delivered change against the plan on two axes, and report them separately.
-> **(a) Requirements:** walk every acceptance criterion and implementation step in the plan and
-> mark it met / partially met / missing, with a `file:line` for each judgement. Feature
-> completeness and behavioural correctness — not code style, which the tests and the review
-> stage cover.
-> **(b) Flow:** trace each flow the plan claims through the actual source, in order, and flag
-> `MISMATCH` (code does something different), `UNCLEAR` (can't follow it), or `MISSING` (the
-> step isn't there). This catches the case where every individual criterion passes but the
-> end-to-end path silently deviates — wrong ordering, a skipped step, a different module doing
-> the work.
-> Return `{requirements: [...], flow: [...], green: bool}`. `green` is false if any requirement
-> is missing or any flow step is `MISMATCH`/`MISSING`.
-
-Give it the test results from step 1 as corroborating evidence. Without any test evidence
-(neither `eval.runner` nor `test.unit` produced results) the flow axis degrades to mostly-grep —
-still run it, but say in the report that it was unwitnessed.
-
-For a deeper interactive trace, `/flowsim` remains available as a standalone skill; this stage
-is its inline, bounded form.
-
-### 3. Gate
-
-Green iff no new test failures **and** `green` from step 2. On failure, route into the
-**Shared fix loop + pause shape** above (3 iterations, shared with Stage 5.7's separate budget
-excluded). A `MISMATCH` where the *code* is right and the *plan* is stale is a `plan-wrong`
-class — pause and say so; do not "fix" code to match a stale plan.
-
-**Writes** `stage-outputs/validate.json` with `data.layers{logs,frontend,backend,e2e,eval}`,
-`data.new_failures[]`, `data.preexisting_failures[]`, `data.requirements[]`, `data.flow[]`.
-The former `plan-validate.json` and `flowsim-<slug>.json` sidecars are gone; `/status` and
-`/status` read `validate.json` for all of it.
-
-
-## Stage 5.7 — Adversarial review
-
-**Opt-in, permanently OFF by default.** This stage activates only on an explicit
+**Opt-in, permanently OFF by default.** The stage activates only on an explicit
 `--review-model <name>` flag or an explicit `pipeline.review_fix.enabled: true` in
 `.claude/project.json`; `--no-review` always wins OFF. An absent or `enabled: false`
-`pipeline.review_fix` block means OFF — there is no default-on flip, now or later. When
-activated, two auto-off gates still apply: the diff is docs-only/touches no code surface (self-skip
-— **except in skill-repo mode, which never self-skips this gate**, since `.md` skill files *are*
-the code surface there and would otherwise silently disable the stage in the repo that dogfoods it).
+`pipeline.review_fix` block means OFF — there is no default-on flip, now or later.
 
-Runs after Stage 5, before Stage 6, once enabled and not auto-off'd. Fans out
-**one reviewer pass per configured lens** (parallel sub-agents on Claude; sequential inline passes
-on Copilot/Codex), each at the reviewer model resolved above.
-
-**Which lenses run — `agents.code_review_lenses`.** Read the array from `.claude/project.json`;
-when the key is absent, use all four defaults below. **Set fewer to cut the stage's cost roughly
-linearly** — the fan-out is one reviewer call per lens at the reviewer model (Opus by default), so
-`["correctness", "plan-alignment"]` is about half the cost of the full set, and `["correctness"]`
-about a quarter. Pick by what the change actually risks: `correctness` is the highest-yield single
-lens; add `security` for anything touching auth, endpoints, or user input; add `plan-alignment`
-when the plan has acceptance criteria you care about; `config-env-docs` matters most when the diff
-touches env vars, compose, or docs. An unrecognized lens name is ignored with one warning (the
-config-schema enum is deliberately open so a repo can add its own). Print the resolved list —
-`review lenses: <a, b, …> (N of 4 defaults)` — before dispatching, so a reduced fan-out is never
-silent. The circuit breaker below may drop a lens from this resolved list at dispatch time.
-
-**How many run — `agents.code_review_max_lenses`** (default `4`, so it is inert until set).
-Applied **after** the circuit-breaker drop, truncating the resolved list **in order** — so
-`1` keeps `correctness`. Use it to cut cost without having to name lenses, and without
-re-editing the list if the defaults change. A non-integer or non-positive value falls through
-to `4`; it must never resolve to `0`, which would silently disable the stage rather than fail it.
-
-**The cap interaction — say it out loud when it applies.** Each lens is one call at the
-*reviewer* model, plus one verify pass and one fix-planner at the same model. `models.cap` does
-**not** govern this axis, deliberately. The interaction is easy to misread: `cap: sonnet` puts
-the implementer on sonnet, which *satisfies* the independence check below, so the reviewer stays
-at full `opus` and no bump/degrade warning ever fires. When a cap is set and the reviewer
-outranks it, emit:
-
-```
-review: reviewer runs <model> on <n> lens(es) + verify + fix-planner. models.cap (<cap>) does
-        NOT govern this axis — lower it with models.code_review, or cut the fan-out with
-        agents.code_review_max_lenses. See templates/models.md.
-```
-
-Never "fix" this by routing the reviewer model through `capModel()` — it silently no-ops.
-
-| Lens | What it looks for |
-|---|---|
-| `correctness` | Logic bugs, wrong SQL, races, param types, edge cases, side-effects. Prompt from `templates/review-correctness-checklist.md`. |
-| `plan-alignment` | Every acceptance criterion in the plan actually met; no contract drift between plan and diff. |
-| `config-env-docs` | Env-var names match across code/`.env.example`/compose; docs not stale; no new secrets. In skill-repo mode this lens repoints to `templates/stage-5-skill-repo.md`'s frontmatter/marketplace/template-reference checks instead — there's no `.env`/compose surface in a skill repo. |
-| `security` | Injection (SQL/shell/template), missing authn/authz on new endpoints (incl. IDOR), secrets in code/logs, unsafe deserialization, SSRF/path-traversal, dependency/supply-chain risk, crypto misuse, sensitive-data exposure, XSS. Prompt from `templates/review-security-checklist.md`. Rides the reviewer-model axis like every lens — never `models.cap`. |
-
-Each lens returns structured findings (`REVIEW_FINDING_SCHEMA`, defined below; `templates/state-schema.md` documents the resulting `review.json`
-sidecar shape, not the schema itself): `{severity, file, line, defect, failure_scenario, fix}`.
-`auto_fixable` is set later by the fix-planner (Stage 5.8) and merged in at that point — the lens
-itself never returns or claims it.
-
-**Verify pass (adversarial, evidence-required, default-refute):** one more call, same reviewer
-model, that must attach a fresh falsifiable artifact to each finding it confirms — a re-read
-file:line quote, a grep result, or one call-graph hop. A finding it can't ground this way is
-refuted, not "probably true."
-
-**Optional second pass** (`agents.code_review_passes: 2`, default `1`): one additional
-completeness-critic call at a cheaper `models.code_review_second_pass` (default `sonnet`), given pass 1's
-findings and told to find what pass 1 missed — never to re-judge or restate them. Findings are
-unioned and fingerprint-deduped into pass 1's set, then the single verify pass runs once over the
-combined set. This is a recall mechanism, never a vote.
-
-**False-positive circuit breaker (Phase 4):** a per-lens rolling confirmed/raw ratio, tracked
-across the last 20 runs in `.claude/pipeline/_review-stats.json`. A lens under 40% confirmed-rate
-is auto-demoted from the default fan-out (logged in `review.json.data.demoted_lenses`); re-promoted
-after 5 consecutive runs at ≥60%.
-
-**Cost bound (documented follow-up, not yet enforced):** before dispatch, sum `added + removed`
-from `stage-outputs/implement.json`'s `data.files_changed[]` (or, on a decomposed run, the union of
-`stage-outputs/implement-<lane>.json` sidecars — no new git call). Defaults: `review.max_diff_lines`
-= 1500, `review.max_files` = 25 (`pipeline.review_fix.*`). Under both: review the full diff. Over
-either: partition files across the Stage 2 decompose lanes (if decomposed) or by the changed-files
-gate surfaces; each lens reviews one partition, findings merge before verify, and the run records
-`data.diff_lines_reviewed`, `data.partitioned`, `data.partition_count`. **This partition logic is
-not yet implemented** — it is carried as an explicit TODO, not
-silently dropped; until it lands, treat the ceilings as advisory and don't expect those three
-sidecar fields to appear in `review.json`.
-
-**Writes** `stage-outputs/review.json`. `review` is appended to `run.json.stages_completed`
-whenever this stage actually ran (even with zero findings). A self-skip (never opted in, opted out
-via `--no-review`/`enabled: false`, or the docs-only/no-surface auto-off gate in a
-**non**-skill-repo run) is recorded in `run.json.stages_skipped` instead.
-
-## Stage 5.8 — Fix loop
-
-Only runs when Stage 5.7 produced **≥1 confirmed finding**. A fix-planner (reviewer model) drafts
-a structured fix spec per confirmed finding, applying the `auto_fixable` rubric below.
-
-**`auto_fixable` rubric (default-deny):** a finding is `auto_fixable: true` only if it corrects an
-existing explicit contract (plan acceptance criterion, docstring/type signature, schema, test
-assertion — not a reviewer opinion), does **not** change a user-observable default (config default,
-UI copy, threshold constant, API response shape), names a concrete reproducible input in
-`failure_scenario` (not a judgment call), and the independence check below didn't mark the run
-`"degraded"`. Failing any of the first two gets `auto_fixable: false` with a `reason` field —
-design decisions are never auto-fixed by construction, since the fix agent's prompt is built
-exclusively from `auto_fixable:true` findings.
-
-Per `pipeline.review_fix.mode`:
-- **`interactive`** (default): present each fix spec for approve/edit/skip. Approved specs route
-  through the same `runGatedFix()` pattern Stage 5 uses, but as a **new gate function** — Stage 5
-  is hard-wired to the eval runner. Loop until clean or `agents.code_review_max_fix_loops`.
-  `interactive` means auto-apply confirmed `auto_fixable:true` findings (bounded by budget), then
-  always pause-and-return before Stage 6 with every remaining finding surfaced. True per-finding
-  approve/edit/skip is prose-path-only (Claude session, Copilot, Codex can literally ask).
-- **`auto`**: intended to auto-approve after `auto_approve_after` consecutive approvals (default 2),
-  or when a finding's verify-confidence ≥ `confidence_threshold` (default 0.85). **This throttle is
-  a documented follow-up, not yet enforced** in the prose stages above — the fix-planner sets
-  `auto_fixable` per the rubric, but nothing in the workflow today gates *how many* auto-fixable
-  findings get auto-approved per run against these two knobs; treat them as advisory until that gap
-  closes. Design-decision findings (`auto_fixable: false`) are never auto-approved in any mode —
-  that branch is enforced today, independent of the throttle above.
-- **`off`**: emit findings to `review.json` only; Stage 5.8 does not run.
-
-**Independence enforcement:** the reviewer model must differ in effective tier from the
-implementer's effective tier (`capModel('opus', MODEL_CAP)`); if they collide, the reviewer bumps
-one tier up, or — if already at the ceiling — the run is marked `data.independence = "degraded"`
-in `review.json` and every finding that run is surfaced only, never auto-fixed.
-
-**Oscillation guard (fingerprint-based):** each confirmed finding gets a stable fingerprint —
-`file + ":" + lens + ":" + floor(line / 10)`. Persist `fixed_fingerprints[]` per loop iteration.
-Before approving a finding in loop `n+1`, check it against the union of all prior loops'
-`fixed_fingerprints` — a match means oscillation (a later fix reintroduced an earlier one), not a
-fresh bug: don't spawn another fix attempt, pause with `run.json.status = "paused"` and report the
-original fix + regression side by side (same shape as Stage 5's persistent-mismatch pause).
-
-**Writes a single cumulative** `stage-outputs/review-fix.json` (not per-iteration files), with a
-`loops[]` array carrying one entry per iteration. `review-fix` is recorded once in
-`run.json.stages_completed` regardless of loop count.
-
-**Blocking posture:** a surviving HIGH-severity confirmed finding (auto-fixable and unresolved
-after budget exhaustion, or a HIGH-severity design decision) **blocks** — Stage 6 does not create
-a PR; `run.json.status = "paused"`, same shape as an eval max-loops pause.
-
-**Post-fix validation:** if any fix was actually applied this run, re-run the Stage 5 `validate`
-gate exactly once before Stage 6 (a single confirmation pass, not a fresh budget). A regression
-there pauses the run — an objective break, not an adversarial opinion, so this always stops rather
-than proceeding.
-
-**Fix-loop budget:** its own `agents.code_review_max_fix_loops` (default `3`, `pipeline.review_fix.*`) —
-**separate** from the shared 3-iteration budget used by Stage 5. Review findings
-are a categorically different surface (defects a green suite structurally cannot catch, discovered
-after all four of those gates already passed), so they get their own dial rather than racing a
-shared counter.
+Resolve that gate **before** opening the template. When the stage is OFF, do not load it: append
+`review` to `run.json.stages_skipped` and go to Stage 6. The template carries the lens fan-out,
+the `agents.code_review_lenses` / `code_review_max_lenses` bounds, the reviewer-model axis and its
+cap caveat, the verify pass, the circuit breaker, the `auto_fixable` rubric, the fix-loop modes and
+budget, the oscillation guard, and the blocking posture. Runs after Stage 5, before Stage 6.
 
 ---
 
@@ -797,41 +412,10 @@ Create a pull request for human review.
    git checkout -b sdlc/{feature-slug}
    ```
 
-2. **Secret scan** the files about to be staged. Skip only if `pipeline.skip_secret_scan: true`
-   in `.claude/project.json` (e.g., a security research repo where false positives dominate).
-
-   Prefer `gitleaks` if available:
-   ```bash
-   if command -v gitleaks >/dev/null 2>&1; then
-     gitleaks detect --no-git --source . --report-format json --report-path /tmp/gitleaks-{feature-slug}.json --exit-code 0 -- {specific files}
-   fi
-   ```
-
-   If `gitleaks` is not installed, run a fallback regex sweep on the same file list for these
-   high-signal patterns: `AKIA[0-9A-Z]{16}` (AWS access key), `aws_secret_access_key\s*=`,
-   `-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----`, `xox[baprs]-[0-9a-zA-Z]{10,}` (Slack),
-   `sk-[a-zA-Z0-9]{20,}` (OpenAI/Anthropic-style), `ghp_[a-zA-Z0-9]{36}` (GitHub PAT),
-   `gh[osu]_[a-zA-Z0-9]{36}` (GitHub OAuth/server/user tokens),
-   `(?i)(api[_-]?key|secret|token|password)\s*[:=]\s*['\"][^'\"]{12,}['\"]`.
-
-   **Policy — warn-only, never blocks commit or push**:
-   - Any finding (HIGH, MEDIUM, LOW, or regex-fallback match) → record file
-     and line, surface in the PR body, and **proceed** with stage + commit.
-     This pipeline does not refuse to commit on a secret-scan finding alone.
-   - HIGH findings get a `⚠ HIGH:` prefix and a one-line note that GitHub
-     Push Protection (on public remotes) may still reject the push even
-     though this skill did not. The user can scrub-and-recommit or push to a
-     private remote (e.g., Tailscale-backed internal git) at their discretion.
-   - If the regex fallback fires, treat all matches as HIGH for reporting purposes
-     (no severity distinction in the fallback) — same warn-only behavior.
-
-   Record the scan tool used and finding count in the PR body so reviewers know a scan ran.
-
-   **State write**: write `stage-outputs/secret-scan.json` with `data.tool`
-   (`gitleaks` or `regex-fallback`), `data.files_scanned[]`,
-   `data.high_findings`, `data.medium_findings`. Status is always `pass` —
-   the scan is informational, not gating.
-
+2. **Secret scan** — **read `skills/sdlc/templates/secret-scan.md` now** and run it over the
+   files about to be staged. Skip only if `pipeline.skip_secret_scan: true`. Writes
+   `stage-outputs/secret-scan.json`; status is always `pass` — the scan is informational.
+   This pipeline does not refuse to commit on a secret-scan finding alone.
 3. **Stage and commit** all changes:
    ```bash
    git add {specific files from the implementation}

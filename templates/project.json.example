@@ -115,15 +115,10 @@
       "_comment": "Optional, OFF by default. Adversarial Review->Fix stage (Stage 5.7 review / Stage 5.8 fix loop) for /sdlc and /sdlc-lite -- runs after Stage 5.6 flowsim, before Stage 6. DIFFERENT feature from 'skip_review' above: skip_review silences the single-pass built-in /review diff check at Stage 6 (post-PR, same model); review_fix is a separate pre-PR N-lens adversarial review + fix loop, default reviewer model 'opus' (see skills/sdlc/templates/models.md; the reviewer model itself now lives at models.code_review). Both toggle independently. Omit this whole block to accept the defaults below (stage stays OFF). OPT-IN, PERMANENTLY: there is no default-on flip, planned or shipped. An explicit --review-model <name> flag or an explicit enabled:true here is required to activate the stage; omitted, absent, or enabled:false all mean OFF.",
       "enabled": false,
       "mode": "interactive",
-      "_mode_comment": "One of 'interactive' (default: each confirmed finding's fix spec is presented for approve/edit/skip -- degrades to auto-fix-then-pause under the Claude Workflow tool, which has no mid-run prompt primitive), 'auto' (auto-approve after auto_approve_after consecutive approvals OR confidence >= confidence_threshold -- design-decision findings, auto_fixable:false, are NEVER auto-approved regardless of mode), 'off' (report only, Stage 5.8 does not run).",
-      "auto_approve_after": 2,
-      "confidence_threshold": 0.85,
-      "_confidence_threshold_comment": "auto mode only. A confirmed finding's adversarial-verify confidence >= this value lets it bypass the auto_approve_after counter.",
+      "_mode_comment": "One of 'interactive' (default: each confirmed finding's fix spec is presented for approve/edit/skip, then the run pauses before Stage 6 with anything remaining surfaced), 'auto' (auto-approve every confirmed auto_fixable:true finding, bounded by agents.code_review_max_fix_loops -- design-decision findings, auto_fixable:false, are NEVER auto-approved in any mode), 'off' (report only, Stage 5.8 does not run). There is no confidence or consecutive-approval throttle: the auto_fixable rubric and the loop budget are the whole bound.",
       "blocking": true,
       "_blocking_comment": "Whether a surviving HIGH-severity confirmed finding blocks Stage 6. Defaults true (matches /sdlc's PR-gate posture); /sdlc-lite treats this as false-equivalent regardless of the value here (warn-and-handoff is its posture by design, consistent with its warn-only secret scan).",
-      "max_diff_lines": 1500,
-      "max_files": 25,
-      "_cost_bound_comment": "Above either ceiling, the diff is partitioned across decompose lanes (or changed-files-gate surfaces) so no single reviewer call carries the whole diff."
+      "_cost_bound_comment": "Diff size is NOT bounded here -- every lens reviews the whole diff. The levers that exist are agents.code_review_lenses and agents.code_review_max_lenses (fan-out width), plus keeping a plan's diff small. A max_diff_lines/max_files partition scheme was specified and never built; it was removed rather than left as config that reads like behavior."
     },
 
     "loop": {

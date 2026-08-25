@@ -28,6 +28,15 @@
 > **Two enumerated gaps are still open** (§7's TODO list, mirrored as a comment in
 > `sdlc-pipeline.workflow.js`): the `max_diff_lines`/`max_files` cost-bound diff partition, and
 > `auto_approve_after`/`confidence_threshold`-driven auto-approval throttling in `auto` mode.
+>
+> **Both were DROPPED (2026-08).** Neither was ever built, and both had sat in the shipped prose
+> and in `project.json.example` long enough to read as behavior — prose and config that a user
+> pays for on every run and that does nothing. The four knobs are gone from
+> `skills/sdlc/templates/stage-5.7-review-fix.md`, `skills/sdlc/templates/models.md` and
+> `templates/project.json.example`. What replaces them: for cost, the fan-out width levers that
+> do exist (`agents.code_review_lenses`, `agents.code_review_max_lenses`); for `auto` mode, the
+> `auto_fixable` rubric plus `agents.code_review_max_fix_loops`. Sections 4.1 and 4.2 below are
+> retained as the historical design record, NOT as a description of shipped behavior.
 > Those keys parse but do not yet gate. Shipped ≠ feature-complete.
 >
 > Where this document and the live files disagree on a *config key name*, the live files win:

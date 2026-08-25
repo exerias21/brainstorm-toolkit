@@ -231,8 +231,8 @@ install_shared_templates() {
       hit=1
     fi
     [[ "$hit" -eq 1 ]] && n=$((n+1))
-  done < <(find "$dest" -name 'SKILL.md' 2>/dev/null)
-  [[ "$n" -gt 0 ]] && echo "  retargeted template citations in $n skill file(s) under $root/"
+  done < <(find "$dest" \( -name 'SKILL.md' -o -path '*/templates/*.md' \) 2>/dev/null)
+  [[ "$n" -gt 0 ]] && echo "  retargeted template citations in $n file(s) under $root/"
   return 0
 }
 

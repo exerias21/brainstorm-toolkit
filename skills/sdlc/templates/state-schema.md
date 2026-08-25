@@ -385,9 +385,23 @@ prose-path, human-interactive-approval case.
     "eval":     { "status": "pass" }
   },
   "new_failures": [],
-  "preexisting_failures": []
+  "preexisting_failures": [],
+  "requirements": [
+    { "criterion": "orders list paginates", "verdict": "met", "evidence": "app/orders.py:88" }
+  ],
+  "flow": [
+    { "step": "POST /orders -> queue -> worker", "verdict": "OK", "evidence": "app/api.py:41" }
+  ],
+  "flow_witnessed": true
 }
 ```
+
+`requirements[].verdict` is `met` / `partial` / `missing`; `flow[].verdict` is `OK` / `MISMATCH`
+/ `UNCLEAR` / `MISSING`. **`flow_witnessed`** records whether step 1 produced real test results
+for the touched surfaces. It is a **gate input, not decoration**: when it is `false` the flow
+axis is advisory — its findings are still written here and still reported, but they cannot fail
+the stage or open the fix loop (`skills/sdlc/templates/stage-5-validate.md` §3). The requirements
+axis gates either way. Both arrays are absent when there was no plan target to check against.
 
 #### `validate` (skill-repo mode — replaces standard layers)
 ```json

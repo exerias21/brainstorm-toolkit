@@ -202,9 +202,22 @@ Two parts, one gate, one `validate.json`:
    (met / partial / missing, each with a `file:line`) and **flow** (`MISMATCH` / `UNCLEAR` /
    `MISSING`) *separately*. Skip this part when there is no plan target, and say so.
 
-Green iff no new failures AND no missing requirement AND no MISMATCH/MISSING flow step.
-Failures route through the shared fix loop. A MISMATCH where the code is right and the plan is
-stale is `plan-wrong` — pause and say so; never edit code to match a stale plan.
+**The flow axis only gates when it is witnessed.** Set `witnessed` = step 1 actually ran and
+returned results for the touched surfaces (`eval.runner` / `test.unit` / `test.frontend` /
+`test.e2e`); configured-but-skipped and unconfigured both count as not run. Record it as
+`data.flow_witnessed`.
+- Witnessed → flow gates normally.
+- Unwitnessed → flow findings are reported as **advisory**: they cannot fail the stage and
+  cannot open the fix loop. Say `flow: advisory — unwitnessed (no test evidence)`.
+
+Unwitnessed, the flow trace is grep plus inference over a diff with nothing to falsify it, and
+an invented MISMATCH costs up to three fix dispatches plus three re-runs of this gate — not one
+call. The requirements axis gates unconditionally: it is grounded in two texts that are both
+present, and it is the only detector for a plan step that was silently never implemented.
+
+Green iff no new failures AND no missing requirement AND (no MISMATCH/MISSING flow step OR flow
+is unwitnessed). Failures route through the shared fix loop. A MISMATCH where the code is right
+and the plan is stale is `plan-wrong` — pause and say so; never edit code to match a stale plan.
 
 This replaces the former Stages 5, 5.5 and 5.6, which asked the same question three ways.
 
@@ -266,8 +279,8 @@ For confirmed findings, draft a structured fix spec per finding, applying the au
   the existing Stage 2/4 implement+fix machinery inline, then a fresh adversarial re-review of the
   touched files (this loop iteration's own pass) decides whether another iteration is needed. Loop
   until clean or `max_fix_loops` (own budget, separate from the shared fix budget).
-- **`auto`**: after `auto_approve_after` consecutive approvals, or confidence ≥
-  `confidence_threshold`, apply and continue — EXCEPT `auto_fixable: false` findings (design
+- **`auto`**: apply every confirmed `auto_fixable: true` finding without prompting, bounded by
+  `agents.code_review_max_fix_loops` — EXCEPT `auto_fixable: false` findings (design
   decisions), which are always surfaced, never auto-applied.
 - **`off`**: report only.
 
