@@ -24,7 +24,7 @@ on ideas together with the user before producing an implementation plan.
 `plans/brainstorm-<topic-slug>.md` in the repo. Plan mode's approve-and-proceed gate adds a
 second, redundant approval on top of the conversational convergence this skill already does
 with the user, and its sandbox blocks the repo-root write that every downstream skill
-(`/sdlc-lite`, `/flowsim`, `/repo-health`) depends on. The plan file on disk
+(`/sdlc`, `/flowsim`, `/repo-health`) depends on. The plan file on disk
 is the artifact — not a plan-mode proposal.
 
 ## When This Skill Triggers
@@ -131,7 +131,9 @@ vs data-model-first vs AI-leaning — and include at least one simpler than expe
 **Step 4b — Wildcards (four lens subagents in parallel).** In a single message, dispatch
 four Agent tool calls with `subagent_type: general-purpose`. Each agent receives the user's
 seed idea, your Step 2/3 summary, and exactly one lens prompt. Cap each response at 200
-words.
+words. **Sonnet by default** — resolve the tier per `skills/sdlc/templates/models.md`
+(`--model <tier>` > `project.json` `models.cap` > default) and print
+`model: <tier> (cap: <cap|none>)` before dispatching.
 
 1. **First Principles** — strip the idea to its physics. What is the user *actually* trying
    to accomplish at the most basic level? Propose the simplest mechanism that delivers that
@@ -171,44 +173,17 @@ means you and the user share the same understanding as you iterate.
 
 Once the user has converged on a direction, produce a concrete plan. Structure it as:
 
-```markdown
-## Brainstorm Result: [Feature Name]
-
-### Direction
-One paragraph summarizing the chosen approach and why. If the direction combines a
-conventional option with a wildcard, say so explicitly.
-
-### Conventions & reuse
-What this plan reuses from the existing codebase (from Step 2's recon), so
-implementation follows the repo instead of reinventing it:
-- Follow: <pattern> — see `path:line`
-- Reuse: <existing module/helper/type> for <purpose> — `path`
-- New (justified): <thing>, because <no existing pattern fits>
-- Doc drift: <AGENTS.md/CLAUDE.md says X but the code does Y>   (omit if none)
-
-### Implementation Steps
-Numbered list of concrete steps, each with:
-- What to do
-- Which files to create/modify
-- Key patterns to follow (reference existing code from the block above)
-
-### Cross-Module Touchpoints
-- Which other modules this connects to and how
-
-### Open Questions
-- Anything that still needs deciding (keep this short)
-
-### Appendix: Alternatives Considered
-Preserve every Conventional Approach and Wildcard generated in Step 4 — even the
-rejected ones — with a one-line "why not chosen" note. Future sessions (and the user
-revisiting later) often pick these back up.
-```
+**Write the plan using `skills/brainstorm/templates/plan.md.template`** — read it now. It
+carries the full section set (Direction, Conventions & reuse, Implementation Steps,
+Cross-Module Touchpoints, Open Questions, Appendix: Alternatives Considered) and the notes on
+what belongs in each. Keep the headings verbatim: `/sdlc`'s Stage 0 parser finds
+implementation steps and files-to-change by those names.
 
 **Use the `Write` tool** to save this to `plans/brainstorm-[topic-slug].md` at the
 **repo root** (the consumer project's working directory) — NOT under `.claude/`.
 
 The persistent plan **must** live at `<repo-root>/plans/<slug>.md` — that is the
-only location downstream skills (`/sdlc-lite`, `/flowsim`,
+only location downstream skills (`/sdlc`, `/flowsim`,
 `/repo-health`, validators) read. If the `plans/` directory doesn't exist,
 create it first (use a Bash `mkdir -p plans` or include the directory in the Write
 target — Write creates parent dirs automatically).
@@ -231,80 +206,10 @@ entry point into the brainstorm's output.
 
 ### Step 6.5: Multi-agent Vet (mode-gated)
 
-Before the single-agent validator in Step 7, optionally run a multi-lens vet
-using the `--vet [light|deep|ultra|none]` flag. Multiple agents catch issues
-one validator misses.
-
-**Mode resolution** when `--vet` is not passed explicitly:
-- `<5` implementation steps in the saved plan → `none` (skip this step; go
-  straight to Step 7).
-- `5–15` steps → `light`.
-- `>15` steps OR plan has a "Cross-Module Touchpoints" section listing more
-  than one module → suggest `deep` to the user; proceed with `light` if
-  they decline.
-- Plan grep finds keywords (`migration`, `auth`, `secret`, `oauth`,
-  `public api`, `deploy`, `rollback`, `prod`) in "Files to change" or
-  "Implementation Steps" → suggest `ultra` to the user. These flag
-  high-blast-radius plans where extra scrutiny is worth it (opt up with
-  `--model opus` for the vet reviewers if warranted).
-- User can always override the suggestion via explicit `--vet <mode>`.
-
-**Mode behavior**:
-
-#### `none`
-Skip Step 6.5 entirely. Step 7 (single validator) runs alone.
-
-#### `light` — 3 Haiku agents in parallel
-Reuse the three prompts at `skills/sdlc/templates/stage-1.5-sanity-check.md`
-(`paths`, `completeness`, `gotchas`) so vetting language is consistent across
-skills. Substitute `{plan_file}` = the saved plan path from Step 6 and
-`{feature_name}` = the topic slug. Dispatch all three Haiku agents in a single
-message. Cost: ~3 small agents, ~30s.
-
-#### `deep` — `light` + 1 Sonnet stress-test agent
-After the 3 Haiku agents return, dispatch one Sonnet agent with this prompt:
-
-> Read the plan at {plan_file}. Try to find a way it would fail. Apply
-> inversion: assume the plan is wrong, and identify the single most likely
-> mode of failure under realistic load, edge cases, or operator error.
-> Report under 250 words: name the failure mode, the step that introduces
-> it, and a one-line fix.
-
-#### `ultra` — `deep` + 2 top-tier agents in parallel
-Model cap applies: these two reviewers are **Sonnet by default** (Opus only on
-`--model opus` opt-up), resolved per
-`skills/sdlc/templates/models.md` (`--model <tier>` > `project.json`
-`models.cap` > default). Before dispatch, print `model: <tier> (cap: <cap|none>)`
-and emit the session-model nudge once when a cap is active.
-After Sonnet stress-test, dispatch the two agents (Sonnet by default; Opus on
-`--model opus` opt-up) in a single message:
-
-1. **architectural-coherence** (capped tier — Sonnet by default). Prompt:
-   > Read the plan at {plan_file} and the project's CLAUDE.md/AGENTS.md.
-   > Check whether the plan's structure fits the codebase's existing
-   > architecture: layering, abstraction boundaries, naming conventions,
-   > module ownership. Flag any contradiction with existing patterns —
-   > "the plan works in isolation but violates the established X
-   > convention." Cap report at 300 words.
-
-2. **edge-case-divergence** (capped tier — Sonnet by default). Prompt:
-   > Read the plan at {plan_file}. For each acceptance criterion,
-   > enumerate 3–5 edge cases the plan does NOT explicitly handle:
-   > nulls, empty inputs, concurrent writes, partial failures, auth
-   > expiry, off-by-one boundaries, etc. Surface "happy-path only"
-   > plans. Cap at 400 words.
-
-#### Processing results
-
-1. Collect all vet-mode reports.
-2. **If issues found**: surface them to the user. For HIGH-confidence
-   findings (`paths` flag a non-existent file; `architectural-coherence`
-   flags a layering violation), auto-revise the plan. For lower-confidence
-   findings, ask the user to adjudicate.
-3. After revisions, save the updated plan back to the same path
-   (overwrite — the saved plan is the source of truth).
-4. Proceed to Step 7 with the post-vet plan.
-
+**Off unless a vet mode is explicitly requested** (`--vet`, or the user asking for a review
+pass). Resolve that first — when no mode is set, go straight to Step 7 and do not open the
+template. When a mode *is* set, **read `skills/brainstorm/templates/vet-modes.md` now** and run
+it; it carries the modes, their agent prompts, the merge rule and the post-vet hand-back.
 ### Step 7: Validate the Plan
 
 Spawn a dedicated **validation agent** (via the Agent tool) to read the saved plan with fresh
@@ -320,7 +225,7 @@ Share the validation feedback with the user. If there are issues, revise the pla
 
 ### Step 7.5: Size the plan against one execution session
 
-A plan is usually executed in a **fresh session** (`/sdlc-lite <plan>`), so the plan itself
+A plan is usually executed in a **fresh session** (`/sdlc <plan>`), so the plan itself
 decides how big that session gets. Say so at authoring time, when splitting is cheap — not
 during execution, where it isn't.
 
@@ -366,7 +271,7 @@ missing plan is a bug.
 **Then — is this plan about the toolkit's own vendored skills?** If the plan's
 changed-files target `.claude/skills/**` (or `.github/skills/**`,
 `.agents/skills/**`) — i.e. it proposes editing *installed/vendored* skill
-copies — **do NOT route it through this consumer repo's `/sdlc-lite`.** Those edits
+copies — **do NOT route it through this consumer repo's `/sdlc`.** Those edits
 belong in the **canonical brainstorm-toolkit repo**, then get re-installed.
 Suppress the auto-pipeline sentinel and emit instead:
 `Next: file this upstream in the brainstorm-toolkit repo (these are vendored
@@ -377,9 +282,8 @@ proceeds normally below.)
 
 **Otherwise, pick the next command by flow continuity** — don't make the user
 re-choose a flow they've already established this session:
-- If `/sdlc-lite` has been used this session → continue with `/sdlc-lite`.
-- If `/sdlc-lite` has been used, or no pipeline flow is established yet →
-  use `/sdlc-lite`. It runs the full pipeline and hands back validated changes
+- `/sdlc` is the delivery path either way — it runs the full pipeline and hands
+  back validated changes
   with **no git writes**, so it's the safe default — it can't surprise the user
   with a PR.
 
@@ -395,9 +299,9 @@ sentinel pointing at a missing plan is a bug.
 
 ```
 # Append ONE structured line (multi-slot seam — coexists with a gotcha entry;
-# see docs/SEAM.md). Default to the safe pipeline; substitute /sdlc-lite with
+# see docs/SEAM.md). Default to the safe pipeline; substitute /sdlc with
 # "confirm":true if that's the established flow (it opens a PR).
-line='{"cmd":"/sdlc-lite plans/brainstorm-<topic-slug>.md","source":"brainstorm","confirm":false}'
+line='{"cmd":"/sdlc plans/brainstorm-<topic-slug>.md","source":"brainstorm","confirm":false}'
 grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action
 ```
 
@@ -418,11 +322,11 @@ The plan file exists on disk (Step 8.0). Continue:
    `/plan-html plans/brainstorm-<topic-slug>.md` to render the plan as a
    single-file HTML view the user or a stakeholder can scroll, for a
    shape-of-the-work read before delivery starts.
-2. **Continue into delivery** with the established flow, or `/sdlc-lite` by
-   default — run the full pipeline. `/sdlc-lite` hands back validated changes
-   for the user to commit (no git writes); `/sdlc-lite` goes all the way to a PR.
-   **Because `/sdlc-lite` opens a PR, confirm before taking that path** — but you do
-   not need to ask permission to continue with the safe `/sdlc-lite` path.
+2. **Continue into delivery** with the established flow, or `/sdlc` by
+   default — run the full pipeline. `/sdlc` hands back validated changes
+   for the user to commit (no git writes); `/sdlc` goes all the way to a PR.
+   **Because `/sdlc` opens a PR, confirm before taking that path** — but you do
+   not need to ask permission to continue with the safe `/sdlc` path.
 3. **Save for later** — if the user signals they're done for now, leave the
    plan file and skip the sentinel.
 
@@ -449,18 +353,3 @@ Transition conversationally — there is no planning-mode exit to perform.
   use `/brainstorm-team`
 - **Not a code generator** — this produces plans, not code. Implementation comes after.
 - **Not a requirements doc** — keep it conversational and lightweight, not formal.
-
-## Availability By Tool
-
-| Capability | Claude Code | GitHub Copilot |
-|---|---|---|
-| Brainstorming loop (Steps 1-6) | Yes | Yes |
-| Plan generation and TASKS.md output | Yes | Yes |
-| Step 4b lens divergence | Yes (4 parallel subagents) | Yes (4 sequential passes) |
-| Dedicated fresh-context validation agent | Yes | Manual checklist fallback |
-| Dedicated planning-mode UI affordances | Optional enhancement | Not required |
-
-This skill is intentionally distributed to both tools because the main brainstorming value is
-shared. Differences: Claude runs the four lenses as parallel Agent calls; Copilot walks them
-sequentially in the main context (see the Copilot override). Step 7 uses a dedicated
-validation agent on Claude and a manual checklist on Copilot.

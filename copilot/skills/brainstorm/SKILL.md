@@ -178,7 +178,7 @@ rejected ones — with a one-line "why not chosen" note.
 **Write this to `plans/brainstorm-[topic-slug].md` at the repo root** (the
 consumer project's working directory) — NOT under `.claude/`. Use the file-write
 mechanism the agent has available. The on-disk path `<repo-root>/plans/<slug>.md`
-is the source of truth — it is the only location the downstream skills (`/sdlc-lite`,
+is the source of truth — it is the only location the downstream skills (`/sdlc`,
 `/flowsim`, `/repo-health`) read. Create the `plans/` directory first if it
 doesn't exist.
 
@@ -271,25 +271,25 @@ If the plan passes, move to Step 8. Otherwise, revise it with the user.
 ### Step 8: Continue the flow
 
 Don't stop at the plan file — keep the momentum into delivery. Continue
-whichever pipeline flow has been used this session; default to `/sdlc-lite`
+whichever pipeline flow has been used this session; default to `/sdlc`
 (full pipeline, hands you the validated changes to commit — no git writes, so
 it can't surprise you with a PR).
 
 1. **Show what's being built** (optional) — `/plan-html plans/brainstorm-[topic-slug].md`
    renders the plan as a single-file HTML view for a shape-of-the-work read.
-2. **Continue into delivery** — `/sdlc-lite <plan>` by default (or `/sdlc-lite <plan>`
-   if that's the established flow; confirm first since `/sdlc-lite` opens a PR). For
-   a single tiny item, `/task` is the fast path.
+2. **Continue into delivery** — `/sdlc <plan>`. It runs the full pipeline and
+   leaves the validated changes for you to commit; it opens no PR. For a single
+   tiny item, `/task` is the fast path.
 3. **Save for later** — leave the plan at `plans/brainstorm-[topic-slug].md`
    (task items are already in `TASKS.md`).
 
 Write the next-action sentinel naming the chosen command so Copilot's Stop
 hook surfaces it — append ONE structured line (multi-slot seam; coexists with a gotcha
 entry, see `docs/SEAM.md`), deduped by `cmd`:
-`line='{"cmd":"/sdlc-lite plans/brainstorm-[topic-slug].md","source":"brainstorm","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action`
+`line='{"cmd":"/sdlc plans/brainstorm-[topic-slug].md","source":"brainstorm","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action`
 On Codex (as a fallback until its `.codex/hooks.json` Stop hook is wired+trusted), also print `Next: <command>` inline right after writing
 the sentinel, so the handoff degrades gracefully instead of vanishing. **No-hook
 nudge (SEAM2):** if no Stop hook is wired at all, the sentinel is inert — apply the
 best-effort check in `docs/SEAM.md` and tell the user to enable the plugin (it ships
 the hook, SEAM1) or run `setup.sh`/`/repo-onboarding`.
-(substitute `/sdlc-lite` if that's the established flow). Skip only on "save for later".
+(substitute `/sdlc` if that's the established flow). Skip only on "save for later".

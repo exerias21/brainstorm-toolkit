@@ -17,9 +17,9 @@
 #
 # Skills surface a follow-up command by APPENDING one line (>>), not overwriting
 # (>), so independent sources coexist. Preferred structured form (multi-slot):
-#   echo '{"cmd":"/sdlc-lite plans/foo.md","source":"brainstorm","confirm":false}' >> .claude/.next-action
+#   echo '{"cmd":"/sdlc plans/foo.md","source":"brainstorm","confirm":false}' >> .claude/.next-action
 # A bare command line is still accepted (legacy single-slot):
-#   echo '/sdlc-lite plans/brainstorm-add-orders.md' >> .claude/.next-action
+#   echo '/sdlc plans/brainstorm-add-orders.md' >> .claude/.next-action
 # Set "confirm":true for anything that writes git history (e.g. a commit); dedup by
 # cmd at the writer. Full contract: docs/SEAM.md.
 #

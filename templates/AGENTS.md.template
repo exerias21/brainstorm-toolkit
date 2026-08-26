@@ -28,11 +28,11 @@ Instructions for AI coding agents (Claude Code, GitHub Copilot, Cursor, Codex, e
 
 ## Next-action hints (Stop hook)
 
-After a skill finishes work, it may drop a one-line file at `.claude/.next-action` containing the recommended follow-up command (e.g., `/sdlc-lite plans/brainstorm-add-orders.md`). A Stop hook installed by `setup.sh` reads the file once, prints `Next: <command>` in the terminal, and removes the file. This works on both Claude Code (`.claude/settings.json` Stop hook) and GitHub Copilot (`.github/hooks/next-action.json`). The shared script lives at `scripts/hooks/next-action.sh`. Skills opting into the chain must write the referenced plan file to `plans/` *before* dropping the sentinel — a sentinel pointing at a missing file is a bug. Pass `--no-hooks` to `setup.sh` to opt out.
+After a skill finishes work, it may drop a one-line file at `.claude/.next-action` containing the recommended follow-up command (e.g., `/sdlc plans/brainstorm-add-orders.md`). A Stop hook installed by `setup.sh` reads the file once, prints `Next: <command>` in the terminal, and removes the file. This works on both Claude Code (`.claude/settings.json` Stop hook) and GitHub Copilot (`.github/hooks/next-action.json`). The shared script lives at `scripts/hooks/next-action.sh`. Skills opting into the chain must write the referenced plan file to `plans/` *before* dropping the sentinel — a sentinel pointing at a missing file is a bug. Pass `--no-hooks` to `setup.sh` to opt out.
 
 ## Pipeline state journal (`.claude/pipeline/`)
 
-When `/sdlc-lite` runs, it writes a transparent state journal under `.claude/pipeline/<feature-slug>/` — a `run.json` plus per-stage sidecars under `stage-outputs/`. This is **local-only**, **gitignored** (added by `setup.sh`), and **never required reading** for any skill. It exists so future tooling (post-mortem dashboards, CI gates, `/sdlc-lite --resume` and `/status`) can pick up where a run left off without each tool inventing its own storage. If you delete the directory, nothing breaks — the next `/sdlc-lite` run recreates it. Schema: Claude `.claude/skills/sdlc/templates/state-schema.md`; Copilot `.github/skills/sdlc/templates/state-schema.md`.
+When `/sdlc` runs, it writes a transparent state journal under `.claude/pipeline/<feature-slug>/` — a `run.json` plus per-stage sidecars under `stage-outputs/`. This is **local-only**, **gitignored** (added by `setup.sh`), and **never required reading** for any skill. It exists so future tooling (post-mortem dashboards, CI gates, `/sdlc --resume` and `/status`) can pick up where a run left off without each tool inventing its own storage. If you delete the directory, nothing breaks — the next `/sdlc` run recreates it. Schema: Claude `.claude/skills/sdlc/templates/state-schema.md`; Copilot `.github/skills/sdlc/templates/state-schema.md`.
 
 ## Build / test / run
 
@@ -86,7 +86,7 @@ stderr) when a match is found. A non-zero exit blocks the `Write`/`Edit`.
 
 **Copilot has no equivalent.** GitHub Copilot does not expose a PreToolUse-style
 hook. For Copilot consumers, the only secret defense is the Stage 6 gitleaks
-scan in `/sdlc-lite` (Tier A A3) at commit time. Plan accordingly if you rely on
+scan in `/sdlc` (Tier A A3) at commit time. Plan accordingly if you rely on
 Copilot for production-bound work.
 
 ## Toolkit skills available
@@ -96,12 +96,11 @@ This repo uses the **brainstorm-toolkit** plugin. Available slash commands (see 
 - `/brainstorm [topic]` — conversational ideation *(Plan mode on Claude, linear on Copilot)*
 - `/task "description"` — create a task and execute it with TDD
 - `/status` — show current task counts from TASKS.md
-- `/sdlc-lite {plan_file}` — autonomous plan-to-PR pipeline *(Claude only)*
+- `/sdlc {plan_file}` — autonomous plan-to-PR pipeline *(Claude only)*
 - `/repo-onboarding` — regenerate project.json / AGENTS.md / GOTCHAS.md
 - `/repo-health` — read-only hygiene sweep with a score and a "next: ..." hint
 - `/test-check` — run configured tests + log audit
 - `/gotcha [entry]` — view or append project pitfalls
-- `/eval-harness [feature]` — run pytest + fixture evals
 - `/flowsim {plan}` — trace claimed flows through code and flag mismatches
 - `/dead-code-review` — multi-agent dead code scan *(Claude only)*
 

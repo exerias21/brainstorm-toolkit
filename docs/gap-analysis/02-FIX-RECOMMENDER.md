@@ -88,7 +88,7 @@ right; the model-cap contract applies.
 - `/next` ladder rung 1 routes paused runs here (`01-CONDUCTOR-AGENT.md`).
 - The pause messages themselves should change from "Fix manually, then re-run `/sdlc {plan}`"
   to "Run `/triage <slug>` for a diagnosis, or fix manually and `/sdlc {plan} --resume`" —
-  a one-line prose edit in `/sdlc` + `/sdlc-lite` + both overlays once the skill exists
+  a one-line prose edit in `/sdlc` + `/sdlc` + both overlays once the skill exists
   (three-way-sync contract applies).
 - A `/triage`-drafted `/task` lands as a normal TASKS.md row, which means the backlog driver
   (`04-BACKLOG-LOOP.md`) picks it up — this is how a failure becomes a loop iteration instead

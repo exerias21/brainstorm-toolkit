@@ -1,6 +1,6 @@
 # Stage 1.5 — Sanity-check agent prompts
 
-Canonical for `/sdlc-lite` Stage 1.5 — orchestration first, then the
+Canonical for `/sdlc` Stage 1.5 — orchestration first, then the
 per-focus agent prompts.
 
 ## Orchestration

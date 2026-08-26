@@ -1,6 +1,6 @@
 # Stage 2 — the decompose gate (shared)
 
-Canonical for `/sdlc-lite`. Compute, then route: single implement agent
+Canonical for `/sdlc`. Compute, then route: single implement agent
 (the default) or a 2a/2b/2c decomposed fan-out.
 
 ## The gate (compute, then route)

@@ -8,7 +8,7 @@ SKILL.md says and sometimes freelances — and what to do about it.
 
 Within the same afternoon, two skills ran on real tasks and produced opposite fidelity:
 
-- **`/sdlc-lite --queue` — FOLLOWED the prose.** After the DQ1/DQ2/DQ4 hardening, an
+- **`/sdlc --queue` — FOLLOWED the prose.** After the DQ1/DQ2/DQ4 hardening, an
   agent-executed queue run wrote envelopes that conformed *exactly*: canonical keys
   (`feature_slug`, `plan_file`, `schema_version`), a distinct per-item slug
   (`n-attr-requester-attribution`, not the shared plan slug), canonical stage names
@@ -66,7 +66,7 @@ needs to be *followed*. The DQ fixes are the existence proof that the cheap leve
 
 ## Evidence trail
 
-- `skills/sdlc-lite/SKILL.md` Queue mode + `skills/sdlc/templates/state-schema.md`
+- `skills/sdlc/SKILL.md` Queue mode + `skills/sdlc/templates/state-schema.md`
   "Queued / multi-item runs" + `docs/CONVENTIONS.md` "Queued per-item slugs" — the
   prescriptive DQ1/DQ2/DQ4 prose that held.
 - `skills/brainstorm/SKILL.md` Step 4b — the abstract step that got improvised; a candidate

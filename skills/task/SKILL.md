@@ -4,7 +4,7 @@ description: >
   Create a bounded, single-purpose task and execute it with TDD. Appends a row to
   TASKS.md, writes a task file at plans/tasks/task-N-<slug>.md, and runs a write-test
   → implement → verify loop. Use for small to medium items that are too concrete for
-  /brainstorm and too small to justify the full /sdlc-lite pipeline. Invoke via /task or
+  /brainstorm and too small to justify the full /sdlc pipeline. Invoke via /task or
   when the user asks to "just do X" with a clear, bounded ask.
 argument-hint: "<description>"
 metadata:
@@ -16,8 +16,8 @@ metadata:
 ## When to use
 
 - User has a clear, bounded ask: "add a `formatPhone` util", "fix the bug where X", "rename Y to Z across the codebase".
-- Too small for `/sdlc-lite`, too concrete for `/brainstorm`.
-- `/task` always executes TDD on the current branch. If you want the full pipeline (evals + validate + plan check, changes left for you to commit), use `/sdlc-lite`. If you want just the row written and nothing run, edit `TASKS.md` directly.
+- Too small for `/sdlc`, too concrete for `/brainstorm`.
+- `/task` always executes TDD on the current branch. If you want the full pipeline (evals + validate + plan check, changes left for you to commit), use `/sdlc`. If you want just the row written and nothing run, edit `TASKS.md` directly.
 
 ## Flow
 
@@ -32,7 +32,7 @@ metadata:
    feature_slug: "task-<N>-<slug>", pipeline: "task", stage: "implement",
    status: "in_progress", started_at}` (shape per
    `skills/sdlc/templates/state-schema.md`). This puts `/task` runs in the
-   same state journal as `/sdlc-lite`. If the write fails
+   same state journal as `/sdlc`. If the write fails
    (permissions, read-only volume), log a one-line stderr warning and
    continue — **state writes never fail a task.**
 
@@ -103,4 +103,4 @@ Commit only if the user asked for it, or if they have a durable "always commit f
 - **Respect `GOTCHAS.md`.** Before writing code, check the configured `gotchas_file` (if it exists) for entries that apply to the area you're touching — scoped to the touched area, not the whole file.
 - **Capture at exit (flywheel).** If the run hit a real trap (a test flipped red→green, or something surprised you), run the loop-exit capture protocol in `skills/gotcha/SKILL.md` — auto-draft + one-tap confirm; clean runs stay silent. If capture is declined/deferred, append a `/gotcha <drafted text>` sentinel line — structured + deduped by `cmd` (multi-slot seam, see `docs/SEAM.md`): `line='{"cmd":"/gotcha <drafted text>","source":"task","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action` (never a bare `/gotcha`). On Codex (as a fallback until its `.codex/hooks.json` Stop hook is wired+trusted) also print `Next: /gotcha …` inline so the seam degrades gracefully. If no Stop hook is wired at all, apply the **no-hook nudge** (`docs/SEAM.md` SEAM2).
 - **Don't skip the failing-test step when there IS a testable surface.** A passing test that was never red verifies nothing. Only skip the red-test cycle for genuinely untestable asks (pure docs/config/copy) — handle those directly here per the note in Section 4; don't punt them to another skill.
-- **One task at a time.** `/task` handles a single bounded item. If the ask implies a *batch* of tasks, don't fire `/task` repeatedly — run them through `/sdlc-lite <range>` (e.g. `/sdlc-lite 1-5`), which keeps full-pipeline discipline across the set and commits nothing until you review. For an open-ended feature, start with `/brainstorm`.
+- **One task at a time.** `/task` handles a single bounded item. If the ask implies a *batch* of tasks, don't fire `/task` repeatedly — run them through `/sdlc <range>` (e.g. `/sdlc 1-5`), which keeps full-pipeline discipline across the set and commits nothing until you review. For an open-ended feature, start with `/brainstorm`.

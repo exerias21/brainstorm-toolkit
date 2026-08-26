@@ -76,7 +76,7 @@ done
 ```
 
 The rule says "small utility skills ≤100 lines, larger orchestration skills
-≤250 lines". Going over is a smell, not a blocker — `/sdlc-lite` itself has been
+≤250 lines". Going over is a smell, not a blocker — `/sdlc` itself has been
 above the ceiling and shipping work. Note the count in the PR body and move on.
 
 ### 6. AGENTS.md / CLAUDE.md drift check

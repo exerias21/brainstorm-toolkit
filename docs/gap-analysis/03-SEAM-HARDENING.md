@@ -19,7 +19,7 @@ Facts, from `scripts/hooks/next-action.sh`, `setup.sh`, and the skills that writ
 | Property | Behavior today | Consequence for a loop |
 |---|---|---|
 | **Capacity** | one line, one file (`awk 'NF{print; exit}'` — first non-empty line wins) | two skills finishing in one turn can't both hand off |
-| **Contention rule** | "only if absent — the outermost run wins" (`/sdlc-lite` gotcha seam, `/task`) | the gotcha capture seam and the pipeline handoff **compete for the same slot**; whichever writes first silently suppresses the other |
+| **Contention rule** | "only if absent — the outermost run wins" (`/sdlc` gotcha seam, `/task`) | the gotcha capture seam and the pipeline handoff **compete for the same slot**; whichever writes first silently suppresses the other |
 | **Lifetime** | fire-once: printed at the next Stop, then deleted — whether or not anyone acts on it | walk away after `/brainstorm`, come back tomorrow: the hint fired into an empty room and is gone; the plan sits orphaned (only `/next` — gap 1 — would rediscover it) |
 | **Consumer** | the *human's eyes*. `systemMessage` is informational; nothing executes the command | every loop iteration costs one human keystroke-and-decision |
 | **Format** | a raw command string | no source, no priority, no expiry, no "requires confirm" bit — an auto-continue consumer couldn't safely act on it |
@@ -38,8 +38,8 @@ Replace the single line with an append-friendly, still-trivially-parsable format
 object per line:
 
 ```
-{"cmd": "/gotcha [Testing] eval fixture …", "source": "sdlc-lite", "confirm": false}
-{"cmd": "/sdlc-lite plans/brainstorm-radius.md", "source": "brainstorm", "confirm": false}
+{"cmd": "/gotcha [Testing] eval fixture …", "source": "sdlc", "confirm": false}
+{"cmd": "/sdlc plans/brainstorm-radius.md", "source": "brainstorm", "confirm": false}
 {"cmd": "/sdlc plans/big-feature.md", "source": "brainstorm", "confirm": true}
 ```
 
@@ -49,7 +49,7 @@ object per line:
   auto-continue consumer (Lever C) must honor and a human reader can ignore.
 - Backward compat: a line that isn't JSON is treated as a bare command (today's format).
 - Cost: ~15 lines in `next-action.sh`, plus updating the 6 writer sites (the echo one-liners in
-  `/brainstorm`, `/task`, `/sdlc-lite`, `/repo-health` + overlays — three-way-sync applies).
+  `/brainstorm`, `/task`, `/sdlc`, `/repo-health` + overlays — three-way-sync applies).
 
 ## Lever B — the pending handoff lives in the envelope, not only the sentinel
 
@@ -75,7 +75,7 @@ prints what it would do next" and "the system does it":
 
 ```
 skill finishes → writes sentinel → Stop fires → hook (auto-continue mode) returns
-decision:block, reason:"Continue with: /sdlc-lite plans/…" → the session executes it →
+decision:block, reason:"Continue with: /sdlc plans/…" → the session executes it →
 that skill finishes → writes the next sentinel → …
 ```
 

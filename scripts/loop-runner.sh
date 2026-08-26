@@ -2,7 +2,7 @@
 # scripts/loop-runner.sh — batch-handoff queue runner (OPT-IN, you run it yourself).
 #
 # Processes the pending TASKS.md backlog in BATCHES so a long queue never bloats one
-# session: each batch is a FRESH headless process (clean context) that runs sdlc-lite
+# session: each batch is a FRESH headless process (clean context) that runs sdlc
 # in --queue mode over up to X items, then exits; the runner relaunches until the queue
 # drains. Context resets every X items — at a clean completed-item boundary, never
 # mid-plan. State is handed off via disk (.claude/pipeline/<slug>/run.json + .next-action
@@ -17,7 +17,7 @@
 # This is the toolkit's Lever-C stance as an opt-in script (NOT a skill, NOT a daemon,
 # NOT wired by setup.sh). It launches headless agents that edit files + run Bash
 # unattended on the CURRENT repo — review the allowlist below and understand the scope
-# before using. It makes NO git commits (sdlc-lite hands off a validated tree). See
+# before using. It makes NO git commits (sdlc hands off a validated tree). See
 # docs/LOOP-HYGIENE.md.
 set -euo pipefail
 
@@ -76,7 +76,7 @@ pending() { local n; n="$(grep -cE '^- \[ \] ' "$TASKS_FILE" 2>/dev/null || true
 # Build + run one batch of up to $1 items in a fresh headless process.
 run_batch() {
   local n="$1"
-  local prompt="Use the brainstorm-toolkit sdlc-lite skill in queue mode (--queue ${n}) over the pending TASKS.md backlog: process up to ${n} pending items, then stop. Durable state is under .claude/pipeline/ and TASKS.md — read your position from disk; do NOT resume any prior session, and make NO git commits."
+  local prompt="Use the brainstorm-toolkit sdlc skill in queue mode (--queue ${n}) over the pending TASKS.md backlog: process up to ${n} pending items, then stop. Durable state is under .claude/pipeline/ and TASKS.md — read your position from disk; do NOT resume any prior session, and make NO git commits."
   local -a cmd
   if [ "$ENGINE" = "claude" ]; then
     # --allowed-tools auto-approves these for unattended runs (mirrors docs/AUTONOMOUS-DISCOVERY.md).

@@ -5,12 +5,12 @@ description: >
   one-shot e2e run. Stack-agnostic (Playwright, Cypress, Puppeteer, Selenium, pytest-playwright):
   runs whatever .claude/project.json `test.e2e` defines, separates flaky failures from real ones,
   dispatches fixes, and re-runs until green or max_fix_loops is hit. Used by `/test-check --loop` and the
-  /sdlc-lite Stage 5 e2e check.
+  /sdlc Stage 5 e2e check.
 ---
 
 # E2E Test Runner
 
-You run end-to-end tests in a fix loop, mirroring `/eval-harness`'s shape but for
+You run end-to-end tests in a fix loop, mirroring the eval runner's shape but for
 browser/UI failures instead of pytest ones. You're the loop counterpart to
 `/test-check` Step 4, which runs e2e once and reports.
 
@@ -229,13 +229,13 @@ For each failure:
 - `blocked` — could not parse output, could not run command, etc.
 ```
 
-Your report is consumed by `/sdlc-lite` Stage 5 (and by humans directly). Keep the structure stable so parsers don't break.
+Your report is consumed by `/sdlc` Stage 5 (and by humans directly). Keep the structure stable so parsers don't break.
 
 ## Rules
 
 - **Read the patterns file before editing tests** — if `test.e2e_patterns_file` exists, repo-specific auth/nav conventions live there. Ignoring it causes "fixes" that contradict the repo's established flow.
 - **Don't modify application code in a way the fix agent can't justify from the failure data** — if the failure is opaque, stop and report rather than speculate.
 - **Preserve flaky-test signal** — flakes are data about the test suite's health, not noise to suppress. Always report them in the ⚠️ section, even when the overall run passes.
-- **Never commit, push, or create a PR** — that's `/sdlc-lite`'s job. You run, fix, report.
+- **Never commit, push, or create a PR** — that's `/sdlc`'s job. You run, fix, report.
 - **Never skip failing tests to make the run green** — if a test is genuinely broken and you can't fix it in `max_fix_loops`, mark `failed_after_max_iterations` and let the human decide.
 - **Graceful skip on missing config** — `test.e2e` missing means exit cleanly with a note, not error.

@@ -553,3 +553,46 @@ This plan emerged from:
   single-PBI authoring without a BRD.
 - The user-suggested addition of `/sdlc --inspect <slug>` for
   human-readable run status.
+
+---
+
+## Appendix — prose moved out of the shipped schema (2026-08)
+
+`skills/sdlc/templates/state-schema.md` is loaded on **every** pipeline run, so design record
+kept there is a per-run tax paid by every consumer. The following was moved here; the shipped
+file now carries the runtime contract only (directory layout, the `run.json` field table, and
+the per-stage `data` shapes). The review-stage shapes went to
+`skills/sdlc/templates/stage-5.7-review-fix.md`, which loads only when that opt-in stage runs.
+
+### The original design rules
+
+1. State is a transparent **side-effect**, never a contract. No skill is required to read these
+   files; they are available for those that want to.
+2. State writes are **best-effort**. A full disk or unwritable directory logs a warning and the
+   run continues. State writes never fail a pipeline run. *(kept in the shipped file)*
+3. State is **gitignored**; `setup.sh` ensures `.claude/pipeline/` is listed. *(kept)*
+
+### Lifecycle recap
+
+
+1. **Stage 1 (`parse`)**: `/sdlc` `mkdir -p .claude/pipeline/<slug>/stage-outputs/`, then writes initial `run.json` with `stage: "parse"`, `status: "in_progress"`, captures `args` and `plan_hash`. On Stage 1 completion, writes `stage-outputs/parse.json`.
+2. **Subsequent stages**: when a stage starts, `run.json.stage` and `run.json.updated_at` are updated. When the stage finishes, its sidecar is written and `run.json.stages_completed` is appended.
+3. **Skipped stages** (e.g., stages skipped because their config was absent, or skill-repo-mode skips `generate-evals`): added to `run.json.stages_skipped`; no sidecar is written.
+4. **Terminal states**:
+   - All stages pass → `run.json.status = "complete"`.
+   - Unrecoverable failure → `run.json.status = "failed"`; the failing stage's sidecar has `status: "fail"`.
+   - Pause for human review (validate failure persists) → `run.json.status = "paused"`.
+5. **Re-running `/sdlc <plan>`** (without `--resume`): overwrites the prior `run.json` and `stage-outputs/` for the same slug. Slug-collision policy (different plan files deriving the same slug) is deferred to a later phase per `docs/CONVENTIONS.md` open questions; current behavior is overwrite.
+
+## Best-effort failure mode
+
+If `mkdir -p`, `chmod`, or any state-write fails (disk full, read-only volume, permissions), `/sdlc` logs a single-line warning to stderr (`[state-envelope] write failed: <error>; continuing`) and proceeds with the pipeline. **State writes never fail a pipeline run.** The pipeline run can still produce a PR even if state was never persisted.
+
+### Artifacts that never lived in the envelope
+
+- **PBI / BRD artifacts**: `pbis/pbi-NNN.md`, `requirements/brd-NNN.md` (Phase 2/3). Run state
+  may *reference* these by ID but never copies them.
+- **Delivery artifacts** (Phase 5+): `delivery/pbi-NNN.json` is for stakeholder-readable,
+  persistent reports; `.claude/pipeline/` is ephemeral local state only.
+
+Neither shipped, so both were dropped from the runtime file.

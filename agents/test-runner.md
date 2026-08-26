@@ -4,7 +4,7 @@ description: >
   Runs a repo's configured test commands and returns ONLY a structured pass/fail summary —
   never raw output. Exists to keep test spew out of the orchestrator's context: on an audited
   run, shell commands and their output were ~53% of main-thread tokens, and test output is the
-  largest share of that. Dispatched by /test-check and by /sdlc-lite Stage 5.
+  largest share of that. Dispatched by /test-check and by /sdlc Stage 5.
 model: haiku
 tools: Read, Grep, Glob, Bash
 ---

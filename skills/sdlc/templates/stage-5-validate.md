@@ -1,6 +1,6 @@
 # Stage 5 — Validate (shared)
 
-Canonical for `/sdlc-lite`. One stage, one gate, one sidecar.
+Canonical for `/sdlc`. One stage, one gate, one sidecar.
 
 One stage, one gate, one sidecar. It answers the two questions that matter after implement:
 **does it run, and is it what the plan asked for?**
@@ -42,7 +42,7 @@ as failures; `preexisting[]` is noted separately and does not gate.
 
 ### 2. Check the delivery against the plan
 
-**Skip when there is no plan target** (an ad-hoc `/sdlc-lite` description) — there is nothing
+**Skip when there is no plan target** (an ad-hoc `/sdlc` description) — there is nothing
 to check against, and say so rather than passing silently.
 
 Dispatch **one agent** — the `ux-plan-validator` (by type: `brainstorm-toolkit:ux-plan-validator`,

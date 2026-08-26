@@ -4,7 +4,7 @@ description: >
   Trace the claimed flow from a plan or task through the source code and report
   mismatches. This is a structured code-review pass formatted as a narrative
   execution trace — the goal is to surface "the plan said X but the code does Y"
-  gaps that test suites and evals miss. Use during the /sdlc-lite fix loop, after
+  gaps that test suites and evals miss. Use during the /sdlc fix loop, after
   implementing a feature, or ad hoc when a plan and its implementation feel
   misaligned. Invoke via /flowsim or when the user says "trace the flow",
   "verify the plan matches", "walk through what actually happens".
@@ -22,7 +22,7 @@ This is NOT a program simulator. It's a **structured code review** formatted as 
 ## When to use
 
 - User invokes `/flowsim <plan-file>` or `/flowsim task-3-add-orders`
-- Called automatically by `/sdlc-lite` Stage 5 when a parent plan is available
+- Called automatically by `/sdlc` Stage 5 when a parent plan is available
 - User asks "does the plan actually match what we built?", "trace this flow", "walk through what happens when a user X"
 
 ## Inputs
@@ -32,8 +32,8 @@ This is NOT a program simulator. It's a **structured code review** formatted as 
 - **Optional**: `--focus <module>` — restrict tracing to one module (useful for large features).
 - **Optional**: `--force` — ignore the prior-run cache (see Flow step 0) and re-trace every flow.
 - **Optional signal**: latest test results as corroborating evidence. Two sources, either counts:
-  - eval results at `<eval.features_dir>/<feature>/results.json` (script/eval-harness features), and/or
-  - **`test.unit` results** (app-package features whose coverage was routed to the project's native unit suite — see `/sdlc-lite` Stage 3). A passing unit test exercising a traced flow corroborates it; a failing one is a pre-existing mismatch.
+  - eval results at `<eval.features_dir>/<feature>/results.json` (script/eval-runner features), and/or
+  - **`test.unit` results** (app-package features whose coverage was routed to the project's native unit suite — see `/sdlc` Stage 3). A passing unit test exercising a traced flow corroborates it; a failing one is a pre-existing mismatch.
   Flowsim degrades to mostly-grep **only when neither source exists** — having unit results (not just eval results) keeps the trace meaningful for the common app-code feature.
 
 ## Flow
@@ -54,7 +54,7 @@ If it exists and `--force` was NOT passed:
 
 This trims re-runs after a fix loop — flows whose code paths were not touched
 by the fix do not need to be re-walked. Typical savings: 40–60% of trace work
-on subsequent runs of `/sdlc-lite` Stage 5 against the same feature.
+on subsequent runs of `/sdlc` Stage 5 against the same feature.
 
 If `plans/flowsim-<feature-slug>.json` does not exist, proceed normally — no
 cache, every flow is traced fresh.

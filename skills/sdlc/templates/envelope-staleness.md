@@ -1,10 +1,10 @@
 # Envelope staleness — shared scan
 
 Canonical procedure for "find non-terminal pipeline envelopes and decide which are stale."
-Loaded by `/status`, `/repo-health` (Check 7), `/sdlc-lite`.
+Loaded by `/status`, `/repo-health` (Check 7), `/sdlc`.
 
 It lives in one file because it was written out five times and **had already drifted**:
-`/sdlc-lite`'s main-branch false-positive fix never reached `/status`. Five copies of a rule with
+`/sdlc`'s main-branch false-positive fix never reached `/status`. Five copies of a rule with
 one copy fixed is worse than no rule.
 
 ## The scan
@@ -34,7 +34,7 @@ These are not optional polish; without them the scan cries wolf on every healthy
 1. **Skip entirely on the `main_branch`** (`.claude/project.json::main_branch`, default `main`).
    Main accumulates merges, so *every* merged run's `base_commit` is an ancestor of HEAD and
    every run looks reconcilable. Continuation is a feature-branch concern. This is the fix that
-   existed in `/sdlc-lite` and nowhere else.
+   existed in `/sdlc` and nowhere else.
 
 2. **At most one report per scan.** Take the **single most-recently-updated** qualifying run,
    never one line per historical envelope.
@@ -52,4 +52,4 @@ The scan is identical everywhere; only the verb changes.
 |---|---|
 | `/status` | one line per non-terminal run + the next-step ladder's rung 1 |
 | `/repo-health` Check 7 | a scored finding + the reconcile hint |
-| `/sdlc-lite` | continuity detection at Stage 0/1 — **prompt, never auto-act** |
+| `/sdlc` | continuity detection at Stage 0/1 — **prompt, never auto-act** |

@@ -39,7 +39,7 @@ The differentiator vs `/brainstorm` is **structured saturation**: questions are 
 
 ## Execution mode — prose by default; Pass 3 fan-out via Workflow when ultracode is on
 
-This skill is a **hybrid**, so unlike `/sdlc-lite` only *part* of it can ever run as a
+This skill is a **hybrid**, so unlike `/sdlc` only *part* of it can ever run as a
 Workflow. The interactive passes (Pass 1 understand, Pass 2 saturate-by-questioning),
 the variant **selection**, and the expectation-contract pre-write gate are
 conversational — they **always run in the main thread** and can never be scripted
@@ -88,7 +88,7 @@ it** — change the prose first, then the Workflow.
 
 ### Step 0: Enter Plan mode
 
-Switch to **Plan mode** (`EnterPlanMode` on Claude Code; equivalent step-by-step approval flow on Copilot). This skill is conversational by design — implementation is for `/sdlc-lite` later.
+Switch to **Plan mode** (`EnterPlanMode` on Claude Code; equivalent step-by-step approval flow on Copilot). This skill is conversational by design — implementation is for `/sdlc` later.
 
 ### Pass 1 — Understand (≤2 minutes of chat)
 
@@ -169,7 +169,7 @@ that emerged in Pass 2>
 - ...
 ```
 
-`/sdlc-lite` and `/task` can grep this block to ground their own work.
+`/sdlc` and `/task` can grep this block to ground their own work.
 
 ### Step 5 — Write the plan file
 
@@ -187,7 +187,7 @@ supply the missing pieces and only proceed once they're filled in.
 The expectation contract is this skill's misalignment-catching net;
 writing a plan without it defeats the skill's purpose.
 
-Write to `plans/brainstorm-deep-<topic-slug>.md`. Slug is derived from the user's topic the same way `/brainstorm` does it. Same naming convention so downstream `/sdlc-lite <plan>` consumption is uniform. **Plan-mode sandbox:** if the host only permits writes to a transient plan path during plan mode, author there while planning, then persist the canonical copy to repo-root `plans/brainstorm-deep-<topic-slug>.md` immediately after exiting plan mode — same handling as `/brainstorm` Step 6.
+Write to `plans/brainstorm-deep-<topic-slug>.md`. Slug is derived from the user's topic the same way `/brainstorm` does it. Same naming convention so downstream `/sdlc <plan>` consumption is uniform. **Plan-mode sandbox:** if the host only permits writes to a transient plan path during plan mode, author there while planning, then persist the canonical copy to repo-root `plans/brainstorm-deep-<topic-slug>.md` immediately after exiting plan mode — same handling as `/brainstorm` Step 6.
 
 ## Args
 
@@ -277,10 +277,10 @@ Include a "Doc drift" line if AGENTS.md/CLAUDE.md disagreed with the code.>
 ```
 
 That's the contract. Don't stop at the file — continue the flow. Hand it to
-the pipeline: `/sdlc-lite <plan>` (full pipeline, hands you the validated
-changes to commit — the safe default, no git writes) or `/sdlc-lite <plan>` (full
+the pipeline: `/sdlc <plan>` (full pipeline, hands you the validated
+changes to commit — the safe default, no git writes) or `/sdlc <plan>` (full
 pipeline → PR; confirm first since it opens a PR). Continue whichever flow
-you've used this session; default to `/sdlc-lite` otherwise. `/plan-html <plan>`
+you've used this session; default to `/sdlc` otherwise. `/plan-html <plan>`
 renders the plan for a visual read first if the user wants to see the shape of
 the work. Both pipeline skills grep the expectation-contract block to ground
 their work.

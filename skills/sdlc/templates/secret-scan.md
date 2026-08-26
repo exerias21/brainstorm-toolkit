@@ -1,6 +1,6 @@
 # Secret scan (shared)
 
-Canonical for `/sdlc-lite` Stage 6 (gating posture: warn, never refuse) and `/sdlc-lite`
+Canonical for `/sdlc` Stage 6 (gating posture: warn, never refuse) and `/sdlc`
 Stage 6 (warn-only, never blocks). Run it over the changed files before the terminal
 stage.
 

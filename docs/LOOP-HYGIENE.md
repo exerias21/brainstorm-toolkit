@@ -6,7 +6,7 @@ down, what ships to do it, and the escalation for when a single session is still
 
 ## The problem
 
-The loop skills (`/sdlc-lite --queue`, the L9 auto-continue chain in
+The loop skills (`/sdlc --queue`, the L9 auto-continue chain in
 `scripts/hooks/next-action.sh`) run job→job in **one orchestrator session**. Prompt-cache reads
 are cheap *per token* (~0.1× base) but are still billed **per token of the cached prefix on every
 turn** — a 150k-token history costs on the order of $0.075/turn on Opus *just to re-read* before any
@@ -148,7 +148,7 @@ bash scripts/loop-runner.sh [--queue X] [--fresh yes|no] [--engine claude|codex]
   mirroring `AUTONOMOUS-DISCOVERY.md`); Codex uses `codex exec --ephemeral --full-auto`. Neither
   `resume`s — both would reload the full prior transcript and defeat the clean context; state is passed
   by **path** in the prompt. Extra engine flags via `LOOP_RUNNER_EXTRA` (e.g. `--max-budget-usd 5`).
-- It makes **no git commits** (sdlc-lite hands off a validated tree) and stops if a batch makes no
+- It makes **no git commits** (sdlc hands off a validated tree) and stops if a batch makes no
   progress (parked/blocked items are left for `/status` → `/triage`).
 
 **⚠ It launches headless agents that edit files and run Bash unattended on the current repo** — review

@@ -96,7 +96,7 @@ for a sweep.
 Run `gitleaks detect --no-git --source . --report-format json
 --report-path /tmp/repo-health-secrets-$$.json --exit-code 0` if available.
 If `gitleaks` is not installed, fall back to a regex sweep using the same
-pattern set as `/sdlc-lite` Stage 6 (AWS keys, GitHub tokens, private-key
+pattern set as `/sdlc` Stage 6 (AWS keys, GitHub tokens, private-key
 blocks, OpenAI/Anthropic keys, generic api/secret/token strings). Scope
 the regex sweep to tracked files only (`git ls-files`) to avoid scanning
 node_modules / .venv / build output.
@@ -213,7 +213,7 @@ Score: 87 / 100  (▼ 5 from last sweep if .claude/pipeline/last-health.json exi
   ✓ Memory:        no repo-local index (skipped)
 
 Suggested next: apply pending migration 232 (the highest-blast finding)
-                /sdlc-lite to fix the dep vuln
+                /sdlc to fix the dep vuln
                 /gotcha to revise the stale entry
 
 Run again with --no-deps if dep audit is too slow on this repo.
@@ -253,4 +253,4 @@ best-effort — failing to write the cache never fails the run.
   changing things. Run after merges land.
 - For a deep dead-code investigation — `/dead-code-review` is the
   multi-agent thorough variant.
-- For PR-scoped review — use `/review` or `/sdlc-lite`'s Stage 5 instead.
+- For PR-scoped review — use `/review` or `/sdlc`'s Stage 5 instead.

@@ -8,7 +8,7 @@ Most AI-agent task systems bolt on heavyweight task databases, multi-agent orche
 
 - **One skill = one SKILL.md file**, deliberately short (37–250 lines each).
 - **Markdown-native contracts** — `AGENTS.md`, `TASKS.md`, `GOTCHAS.md`, `.claude/project.json` — so Claude Code, GitHub Copilot, Cursor, and friends all read the same files.
-- **No central registry**, no dual persistence, no ralph-loop autonomous runners by default. `/sdlc-lite` is the heaviest thing in here and it's still one file. (Unattended looping exists but is strictly opt-in: `scripts/loop-runner.sh` only runs when you invoke it, and self-advancing requires setting `pipeline.loop.auto_continue: true`, which is off out of the box and never chains a `confirm` action.)
+- **No central registry**, no dual persistence, no ralph-loop autonomous runners by default. `/sdlc` is the heaviest thing in here and it's still one file. (Unattended looping exists but is strictly opt-in: `scripts/loop-runner.sh` only runs when you invoke it, and self-advancing requires setting `pipeline.loop.auto_continue: true`, which is off out of the box and never chains a `confirm` action.)
 
 ## Install
 
@@ -81,7 +81,7 @@ paths. Claude Code discovers all of it natively — no plugin, no sideload flag.
 | Flag | Effect |
 |---|---|
 | `--dry-run` | Print every action plus a unified `settings.json` diff; write nothing |
-| `--skills a,b,c` | Sync a subset instead of all 16 (see *token weight* below) |
+| `--skills a,b,c` | Sync a subset instead of all 14 (see *token weight* below) |
 | `--prune-relative-hooks` | Also drop pre-existing `next-action.sh` Stop hooks wired by a **relative** path |
 | `--no-hooks` | Skip the `settings.json` wiring entirely |
 | `--uninstall` | Remove exactly what this script installed |
@@ -101,8 +101,8 @@ Four things worth knowing:
   `--prune-relative-hooks` cleans that up.
 - **`--delete` is scoped per skill directory**, never to `~/.claude/skills/` as a whole, so
   unrelated user skills installed by other tools are never pruned.
-- **Token weight.** A global sync makes all 16 skills resident in *every* repo, and several
-  (`/sdlc-lite`, `/status`) assume the `AGENTS.md` / `.claude/project.json` contract.
+- **Token weight.** A global sync makes all 14 skills resident in *every* repo, and several
+  (`/sdlc`, `/status`) assume the `AGENTS.md` / `.claude/project.json` contract.
   Use `--skills` to install just the ones that travel well — `/brainstorm`, `/brainstorm-team`,
   `/brainstorm-deep`, `/gotcha`, `README.md` — and keep the pipeline skills per repo via
   `setup.sh`.
@@ -123,8 +123,8 @@ Every consumer repo gets four shared files:
 |---|---|---|
 | `AGENTS.md` | Architecture + agent conventions | Claude Code (via `CLAUDE.md` copy), Copilot, Cursor, Codex |
 | `TASKS.md` | Markdown checkbox task queue | All agents, humans, GitHub UI |
-| `GOTCHAS.md` | Project-specific pitfalls | `/gotcha`, `/sdlc-lite` sanity check |
-| `.claude/project.json` | Runner config (tests, logs, eval) | `/test-check`, `/eval-harness`, `/sdlc-lite` |
+| `GOTCHAS.md` | Project-specific pitfalls | `/gotcha`, `/sdlc` sanity check |
+| `.claude/project.json` | Runner config (tests, logs, eval) | `/test-check`, `/sdlc` |
 
 Every `project.json` key is optional — skills skip steps gracefully when config is missing. A repo with no `project.json` still gets useful behavior from `/brainstorm`, `/task`, `/gotcha`, etc.
 
@@ -137,25 +137,24 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 | `/brainstorm-deep` | Claude + Copilot + Codex † | Clarification-heavy ideation for ambiguous or high-stakes ideas. Three-pass loop (understand → saturate → plan-with-alternates), perspective-frame sub-agents, expectation-contract output. Slower than `/brainstorm`, more rigorous. |
 | `/brainstorm-team` | Claude + Copilot + Codex † | 6-agent team for competitive + product research incl. a lateral-thinking agent (sequential on Copilot) |
 | `/task` | Claude + Copilot + Codex | Create one bounded task and execute it with TDD on the current branch — no flags, always TDD |
-| `/sdlc-lite` | Claude + Copilot + Codex † | The full pipeline — sanity → implement → evals → fix → validate → plan-validate → flowsim, then **hands you the validated changes to commit yourself** (no commit, branch, push, or PR — only `/sdlc-lite` touches git). Stage 2 auto-decomposes large multi-surface plans into focused per-lane subagents + a converge step; small / single-surface plans run a single agent unchanged. Takes a plan file, a task id, a task range (`1-5`), or an ad-hoc description. Use to run full discipline on work you want to review and commit onto an open PR's branch. Same optional Review→Fix stage as `/sdlc-lite`, warn-only on surviving findings (consistent with its warn-only secret scan) rather than blocking handoff. Supports `--resume` (same envelope-resume as `/sdlc-lite`; resume keys on the resolved slug) and `--queue [N]` (attended backlog loop: selects pending TASKS.md rows by priority, re-scans between items so mid-run additions join, parks on any paused/confirm item — no git writes). |
+| `/sdlc` | Claude + Copilot + Codex † | The full pipeline — sanity → implement → evals → fix → validate → plan-validate → flowsim, then **hands you the validated changes to commit yourself** (no commit, branch, push, or PR — only `/sdlc` touches git). Stage 2 auto-decomposes large multi-surface plans into focused per-lane subagents + a converge step; small / single-surface plans run a single agent unchanged. Takes a plan file, a task id, a task range (`1-5`), or an ad-hoc description. Use to run full discipline on work you want to review and commit onto an open PR's branch. Same optional Review→Fix stage as `/sdlc`, warn-only on surviving findings (consistent with its warn-only secret scan) rather than blocking handoff. Supports `--resume` (same envelope-resume as `/sdlc`; resume keys on the resolved slug) and `--queue [N]` (attended backlog loop: selects pending TASKS.md rows by priority, re-scans between items so mid-run additions join, parks on any paused/confirm item — no git writes). |
 | `/status` | Claude + Copilot + Codex | Readout **and** recommendation in one command. Prints TASKS.md counts + the active task, surfaces any non-terminal pipeline run, then walks a 7-rung ladder to ONE recommended next command with a one-line rationale — joining run-state, the `.next-action` sentinel, TASKS.md, plans and git. For a paused run it names the failure class (flaky · code-defect · plan-wrong · config-missing) and the command that fixes it. Absorbed the former `/next` and `/triage`. Read-only — it recommends, never executes. |
 | `/repo-onboarding` | Claude + Copilot + Codex | Generate AGENTS.md + TASKS.md + project.json + GOTCHAS.md |
 | `/code-tour` | Claude + Copilot + Codex | Turn a codebase into teaching material — audit docstring coverage (bundled AST script), write why-focused docstrings that carry the reasoning and the rejected alternative, then generate a guided reading path (`TOUR.md`) with a cross-cutting pattern index, graded exercises, and an honest "what not to copy" section. Grounded in researched, source-cited standards (PEP 257, Google/NumPy styles, Diátaxis, ADRs) that separate genuine consensus from contested opinion. For onboarding, handover, or preparing a repo as a training module. Complements `/repo-onboarding` (which documents the repo at architecture level; this documents the code beneath it). |
 | `/repo-health` | Claude + Copilot + Codex | Read-only hygiene sweep (dead code + tests + deps + secrets + gotchas-currency); prints a scored report and the highest-impact next command. |
 | `/test-check` | Claude + Copilot + Codex | Run configured tests + log audit after changes (one-shot, no fix loop) |
 | `/test-check --loop` | Claude + Copilot + Codex † | Run e2e/browser tests in a fix loop with flaky-test guard (dispatches `e2e-test-runner` agent on Claude, inline on Copilot). Reach for this instead of hand-composing a Playwright agent fan-out — it fixes what it finds. |
-| `/gotcha` | Claude + Copilot + Codex | View/append project pitfalls — auto-drafted at loop-exit by `/task`, `/sdlc-lite` on real traps (objective trigger), and injected at `/brainstorm` start |
-| `/eval-harness` | Claude + Copilot + Codex | Run pytest + fixture evals with optional fix loop |
+| `/gotcha` | Claude + Copilot + Codex | View/append project pitfalls — auto-drafted at loop-exit by `/task`, `/sdlc` on real traps (objective trigger), and injected at `/brainstorm` start |
 | `/flowsim` | Claude + Copilot + Codex | Trace claimed plan flows through source code and flag mismatches |
 | `/dead-code-review` | Claude + Copilot + Codex † | Parallel dead-code / dead-doc / stale-plan scan with before-and-after test verification (sequential on Copilot). This is the built-in answer to "launch a few agents and clean up everything no longer needed". |
 | `/plan-html` | Claude + Copilot + Codex | Render any markdown plan as a self-contained, shareable HTML page (embedded CSS, zero JS, native `<details>` collapsibles, light/dark mode). Opt-in: pass the plan file as the argument — no auto-emit. Use to share plans with stakeholders or scroll-engage long plans in a browser. |
 
-All skills run on all three tools. † marks skills with a Copilot-optimized overlay at `copilot/skills/<name>/` that runs the same stages sequentially (no parallel sub-agents or Plan mode) because Copilot's VS Code agent mode doesn't yet support those primitives; when it does, overlays will be upgraded. Codex shares those constraints, so `setup.sh` installs the Copilot overlay for Codex too (a Codex-specific override at `codex/skills/<name>/` wins when one exists — today `/sdlc-lite`). Skills without a † rely only on file I/O + test runners and run identically on all three tools.
+All skills run on all three tools. † marks skills with a Copilot-optimized overlay at `copilot/skills/<name>/` that runs the same stages sequentially (no parallel sub-agents or Plan mode) because Copilot's VS Code agent mode doesn't yet support those primitives; when it does, overlays will be upgraded. Codex shares those constraints, so `setup.sh` installs the Copilot overlay for Codex too (a Codex-specific override at `codex/skills/<name>/` wins when one exists — today `/sdlc`). Skills without a † rely only on file I/O + test runners and run identically on all three tools.
 
 ## Model & cost reference
 
 What each skill dispatches under the hood, and a rough order-of-magnitude
-cost. Token counts are **per typical run**, not worst-case — a `/sdlc-lite` run
+cost. Token counts are **per typical run**, not worst-case — a `/sdlc` run
 on a tiny plan is closer to the low end, on a multi-module refactor the
 high end. Costs use 2026-04 list pricing: Opus $15 / $75, Sonnet $3 / $15,
 Haiku $1 / $5 per M tokens (input / output).
@@ -169,7 +168,6 @@ Haiku $1 / $5 per M tokens (input / output).
 | `/plan-html` | host model | none — markdown read → HTML write | 3k–10k | ~$0.01–$0.05 |
 | `/task` | host model | none — inline TDD | 5k–15k | $0.02–$0.10 |
 | `/repo-health` | host model | 2 × Haiku (dead-code + gotchas-currency); 3 procedural checks | 5k–20k | $0.02–$0.10 |
-| `/eval-harness` | host model | 0–1 × Sonnet (optional fix loop) | 5k–30k | $0.02–$0.30 |
 | `/flowsim` | host model | none — plan-vs-code grep | 10k–40k | $0.05–$0.40 |
 | `/test-check --loop` | host model | 1 × Sonnet per fix iteration | 10k–30k / iter | $0.05–$0.30 / iter |
 | `/repo-onboarding` | host model (Opus recommended) | 0–1 × Sonnet (pattern detection) | 20k–60k | $0.30–$1.00 |
@@ -186,7 +184,7 @@ Haiku $1 / $5 per M tokens (input / output).
 - The "host model" / "orchestrator" is whichever model is running the
   Claude Code or Copilot session — the toolkit doesn't pin it. Costs
   above assume Opus for Plan-mode-bearing and fan-out-heavy skills
-  (`/brainstorm`, `/brainstorm-deep`, `/sdlc-lite`, `/dead-code-review`)
+  (`/brainstorm`, `/brainstorm-deep`, `/sdlc`, `/dead-code-review`)
   and whatever the user has selected otherwise.
 - **Orchestrator context dominates real cost.** An Opus orchestrator
   carrying a 100k-token codebase context across 5 sub-agent dispatches
@@ -204,7 +202,7 @@ Haiku $1 / $5 per M tokens (input / output).
 
 ## Case studies
 
-**Why the Review→Fix stage exists.** A `/sdlc-lite` run reported everything green — 969→981
+**Why the Review→Fix stage exists.** A `/sdlc` run reported everything green — 969→981
 tests passing, flowsim 7/7 match, plan-validate 8/8, clean container logs. Three independent
 adversarial review passes (a different model from the implementer, run manually) then found 6
 real bugs the green suite never caught — a double-decoded URL, an hourly in-memory state reset
@@ -217,7 +215,7 @@ by a live-data check. Total cost: ~240k tokens across 3 passes, each 1–6 minut
 
 - **[docs/FLOW.md](docs/FLOW.md)** — one visual reference for the whole toolkit across Claude Code, Copilot, and Codex: install, the end-to-end flow diagram, the entry-skill picker, per-runtime differences, and model tiers.
 - **[docs/AUTONOMOUS-DISCOVERY.md](docs/AUTONOMOUS-DISCOVERY.md)** — optional pattern for running discovery skills unattended on a schedule: a watcher daemon driving the headless `claude` CLI against a job queue. Reference only, not shipped by `setup.sh`.
-- **[docs/LOOP-HYGIENE.md](docs/LOOP-HYGIENE.md)** — how to keep a many-hour `/sdlc-lite --queue` or auto-continue run context-cheap. The loop can't self-compact; the lever is **batch handoff** — a fresh process every `pipeline.loop.batch_size` completed items, plus a reseed hook that re-points at the on-disk envelope after a compact/clear.
+- **[docs/LOOP-HYGIENE.md](docs/LOOP-HYGIENE.md)** — how to keep a many-hour `/sdlc --queue` or auto-continue run context-cheap. The loop can't self-compact; the lever is **batch handoff** — a fresh process every `pipeline.loop.batch_size` completed items, plus a reseed hook that re-points at the on-disk envelope after a compact/clear.
 - **[docs/SEAM.md](docs/SEAM.md)** — the `.claude/.next-action` contract: multi-slot, one JSON entry per line, append-and-dedup, `confirm: true` for anything that writes git history.
 
 ## Typical workflow
@@ -231,7 +229,7 @@ flowchart LR
     C --> F[plans/brainstorm-*.md]
     E --> G[plans/pbi-NNN-*.md]
     D --> H[inline TDD]
-    F --> I[/sdlc-lite {plan}/]:::core
+    F --> I[/sdlc {plan}/]:::core
     G --> I
     H --> J[PR]
     I --> J
@@ -264,7 +262,7 @@ Or in plain text:
           │                                    │
           ├──► /task         ──► TDD inline ──┼──► PR
           │                                    │
-          └──► /sdlc-lite <plan>  ──► autonomous ──┘
+          └──► /sdlc <plan>  ──► autonomous ──┘
                                   implement → eval → test → flowsim → PR
 
    Anytime:
@@ -337,7 +335,7 @@ There are **two independent axes**, and conflating them is the classic mistake:
 `sonnet` lowers every Opus dispatch while leaving Haiku agents alone — you cut Opus spend
 without upgrading the cheap ones. Per-run override `--model <tier>` (precedence: flag >
 `models.cap` > default) wins both directions. **The fan-out is Sonnet-first by default:**
-out of the box `/sdlc-lite` and `/brainstorm --vet ultra` run their fan-outs on Sonnet; `--model opus` is the deliberate opt-up.
+out of the box `/sdlc` and `/brainstorm --vet ultra` run their fan-outs on Sonnet; `--model opus` is the deliberate opt-up.
 
 **The consequence worth knowing:** because the cap only *lowers*, a stage whose built-in
 tier is `haiku` cannot be raised by `models.cap` or `--model` at all. The per-stage key is
@@ -351,7 +349,7 @@ stage. All of it governs sub-agents only, never the session orchestrator.
 
 
 `pipeline.loop.*` tunes the backlog loop and is **entirely optional** (defaults
-shown above). `max_items` caps how many TASKS.md rows one `/sdlc-lite --queue`
+shown above). `max_items` caps how many TASKS.md rows one `/sdlc --queue`
 invocation consumes; `batch_size` is read only by `scripts/loop-runner.sh` and
 sets how many completed items a single headless process handles before context
 is reset at a clean boundary; `max_hops` bounds the auto-continue chain.
@@ -365,26 +363,25 @@ printing it, so the loop self-advances. It never chains a `confirm: true` action
 | Skill | Reads |
 |---|---|
 | `/test-check` | `test.*`, `logs.*` |
-| `/eval-harness` | `eval.*` |
-| `/sdlc-lite` | `gotchas_file`, `eval.*`, `main_branch`, delegates to `/test-check` |
+| `/sdlc` | `gotchas_file`, `eval.*`, `main_branch`, delegates to `/test-check` |
 | `/gotcha` | `gotchas_file` |
 | `/brainstorm` | `modules`, `models.cap` |
-| `/sdlc-lite`, `/brainstorm-deep`, `/brainstorm-team`, `/dead-code-review` | `models.cap` (sub-agent tier ceiling) |
-| `/sdlc-lite` | `models.sanity` + `agents.sanity_focuses` (Stage 1.5 pre-flight — never gated, so it runs every time) |
-| `/sdlc-lite` | `models.code_review`, `models.code_review_second_pass`, `agents.code_review_*` (axis 2 — never capped) |
-| `/sdlc-lite` | `pipeline.review_fix.*` — stage *behavior* only (`enabled`, `mode`, `blocking`, thresholds). Opt-in, permanently off by default |
-| `/sdlc-lite` | `agents.decompose_min_tasks` (Stage 2 decompose gate) |
-| `/sdlc-lite --queue`, `scripts/loop-runner.sh`, `scripts/hooks/next-action.sh` | `pipeline.loop.*` (`max_items`, `batch_size`, `max_hops`, `auto_continue`) |
-| `/sdlc-lite` Stage 6 | `stack.up` / `stack.down` / `stack.rebuild` / `stack.url` — printed as the manual-verification line at hand-off, never auto-run |
+| `/sdlc`, `/brainstorm-deep`, `/brainstorm-team`, `/dead-code-review` | `models.cap` (sub-agent tier ceiling) |
+| `/sdlc` | `models.sanity` + `agents.sanity_focuses` (Stage 1.5 pre-flight — never gated, so it runs every time) |
+| `/sdlc` | `models.code_review`, `models.code_review_second_pass`, `agents.code_review_*` (axis 2 — never capped) |
+| `/sdlc` | `pipeline.review_fix.*` — stage *behavior* only (`enabled`, `mode`, `blocking`, thresholds). Opt-in, permanently off by default |
+| `/sdlc` | `agents.decompose_min_tasks` (Stage 2 decompose gate) |
+| `/sdlc --queue`, `scripts/loop-runner.sh`, `scripts/hooks/next-action.sh` | `pipeline.loop.*` (`max_items`, `batch_size`, `max_hops`, `auto_continue`) |
+| `/sdlc` Stage 6 | `stack.up` / `stack.down` / `stack.rebuild` / `stack.url` — printed as the manual-verification line at hand-off, never auto-run |
 | `/task`, `/status` | (none — read TASKS.md directly) |
 | `/repo-onboarding` | writes all of the above |
 
 ## Supporting scripts
 
-- **`scripts/eval-runner.py`** — runs pytest + fixture-based pipeline evals. Auto-discovers features from `evals/*/`. See `skills/eval-harness/SKILL.md`.
+- **`scripts/eval-runner.py`** — runs pytest + fixture-based pipeline evals. Auto-discovers features from `evals/*/`. See `skills/test-check/SKILL.md` step 6.
 - **`scripts/check_docker_logs.py`** — audits logs for errors/tracebacks. Accepts `--log-command` and `--services`. Works with Docker, kubectl, journalctl, or any log source.
 - **`scripts/validate_skills.py`** — validates skill metadata, name-to-directory alignment, and Copilot-targeted skills against Claude-only capability leakage.
-- **`scripts/loop-runner.sh`** — batch-handoff queue runner for long backlogs. Drives `/sdlc-lite --queue` in a **fresh headless process every `pipeline.loop.batch_size` completed items**, so context resets at a clean item boundary instead of growing all run. Batch size resolves `--queue X` flag > `pipeline.loop.batch_size` > `pipeline.loop.max_items` > 5. See `docs/LOOP-HYGIENE.md`.
+- **`scripts/loop-runner.sh`** — batch-handoff queue runner for long backlogs. Drives `/sdlc --queue` in a **fresh headless process every `pipeline.loop.batch_size` completed items**, so context resets at a clean item boundary instead of growing all run. Batch size resolves `--queue X` flag > `pipeline.loop.batch_size` > `pipeline.loop.max_items` > 5. See `docs/LOOP-HYGIENE.md`.
 - **`scripts/hooks/next-action.sh`** — the Stop hook behind the `.next-action` seam. Reads the sentinel once, prints `Next: <command>`, deletes it. With `pipeline.loop.auto_continue: true` it instead **executes** a single non-`confirm` entry (`decision: block`), bounded by `pipeline.loop.max_hops`. See `docs/SEAM.md`.
 - **`scripts/sync-global.sh`** — user-scope installer for machines without the plugin route (see *Install → Option C*). Copies `skills/*` and `agents/*` into `~/.claude/` and `jq`-merges the Stop + `SessionStart` hooks with absolute paths. `--dry-run` previews, `--uninstall` reverses. Copies rather than symlinks, so re-run it after each `git pull`.
 - **`scripts/hooks/reseed-context.sh`** — installed as a Claude `SessionStart` hook (matcher `compact|clear`) and a Codex `PostCompact` hook. After a compaction or clear it re-points the orchestrator at the loop's durable on-disk state (pipeline envelope + sentinel), so auto-compaction stays lossless for a long `--queue` run.

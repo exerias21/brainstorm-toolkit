@@ -40,7 +40,7 @@ the next iteration). Neither arrow has an owner today.
 | Path | Terminal node | What happens after |
 |---|---|---|
 | `/task` | "row closed in TASKS.md" | nothing — no next-task prompt |
-| `/sdlc-lite` | "validated working tree — you commit" | nothing — user commits, loop ends |
+| `/sdlc` | "validated working tree — you commit" | nothing — user commits, loop ends |
 | `/sdlc` | "branch → push → PR → /review" | nothing — no PR watch, no merge/deploy re-entry |
 | any pipeline **pause** (Stage 4/5.5/5.6 budget exhausted) | "Fix manually, then re-run `/sdlc {plan_file}`" | human debugs alone; re-run **restarts from Stage 1 and overwrites state** (no `--resume` — Phase 1B is deferred) |
 
@@ -48,7 +48,7 @@ Every terminal node is a **dead end that a human must restart by typing a comman
 machinery bridging skills is:
 
 1. **The `.next-action` sentinel + Stop hook** (`scripts/hooks/next-action.sh`): one line,
-   fire-once, deleted on print, *informational only* — it prints `Next: /sdlc-lite plans/…`
+   fire-once, deleted on print, *informational only* — it prints `Next: /sdlc plans/…`
    and hopes the user types it. See [`03-SEAM-HARDENING.md`](03-SEAM-HARDENING.md).
 2. **Prose "continue the flow" instructions** inside `/brainstorm` Step 8, `/brainstorm-deep`,
    `/brainstorm-team` — they keep momentum *within one session* but the logic lives in chat
@@ -68,7 +68,7 @@ Worse, the *decision logic* for that role already exists — scattered and dupli
 three places, executable by nobody:
 
 - `/brainstorm` Step 8's flow-continuity rules ("if `/sdlc` was used this session → continue
-  with `/sdlc`; else `/sdlc-lite` is the safe default").
+  with `/sdlc`; else `/sdlc` is the safe default").
 - `/repo-health`'s "Suggested next" priority ladder (migration > dep HIGH > stale pipeline run
   > test failure > …).
 - `/status`'s "no active task — next up: <first pending>".

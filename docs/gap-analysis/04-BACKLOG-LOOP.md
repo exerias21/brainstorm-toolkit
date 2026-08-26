@@ -5,10 +5,10 @@ appends to it, a future `/triage` would append to it — but **nothing consumes 
 human picking a row**. The user's stated goal ("give a task… and have the system loop over and
 over") is precisely a backlog driver, and the toolkit explicitly declines the role today:
 `/task`'s gotchas section says *"One task at a time… If the ask implies a batch, run
-`/sdlc-lite <range>`"* — and a range is still a single human invocation over a hand-chosen
+`/sdlc <range>`"* — and a range is still a single human invocation over a hand-chosen
 span.
 
-**Levers**, from least to most autonomous: (a) queue mode on `/sdlc-lite`, (b) conductor-driven
+**Levers**, from least to most autonomous: (a) queue mode on `/sdlc`, (b) conductor-driven
 chaining via auto-continue, (c) a scheduled/headless worker — the delivery-flavored version of
 the pattern `docs/AUTONOMOUS-DISCOVERY.md` already documents.
 
@@ -20,16 +20,16 @@ the pattern `docs/AUTONOMOUS-DISCOVERY.md` already documents.
 |---|---|---|
 | A durable queue with states (`[ ]`/`[~]`/`[x]`, priorities, blocked) | ✅ | TASKS.md contract + template |
 | Reading the queue | ✅ read-only | `/status` |
-| Executing one item | ✅ | `/task`, `/sdlc-lite <task-id>` |
-| Executing a hand-picked batch | ✅ | `/sdlc-lite N-M` (range semantics: accumulate in tree, close rows at the end) |
+| Executing one item | ✅ | `/task`, `/sdlc <task-id>` |
+| Executing a hand-picked batch | ✅ | `/sdlc N-M` (range semantics: accumulate in tree, close rows at the end) |
 | **Picking the next item automatically** | ❌ | `/next` ladder rungs 5–6 would (gap 1) |
 | **Continuing to the next item after one finishes** | ❌ | the seam is fire-once + human-typed (gap 3) |
 | **Running the queue unattended** | ❌ | AUTONOMOUS-DISCOVERY covers discovery jobs only, and deliberately excludes delivery |
 | **Stop conditions / budgets for a loop** | ❌ | only per-run budgets exist (3-iteration fix loop) — nothing bounds a multi-run loop |
 
-## Lever A — `--queue` mode on `/sdlc-lite` (attended loop, smallest step)
+## Lever A — `--queue` mode on `/sdlc` (attended loop, smallest step)
 
-`/sdlc-lite --queue [max-N]`: resolve *all* `Active / Pending` rows (or the top N by priority),
+`/sdlc --queue [max-N]`: resolve *all* `Active / Pending` rows (or the top N by priority),
 then run the existing range semantics over them. This is ~zero new machinery — the range path
 already handles multi-task accumulation, single up-front sanity check, per-plan validation, and
 row close-out. What it adds over `1-5`:
@@ -39,9 +39,9 @@ row close-out. What it adds over `1-5`:
   brainstorm follow-up) join the queue — this is what makes it a loop rather than a batch;
 - explicit stop conditions (below).
 
-Keeping it inside `/sdlc-lite` (no git writes, user commits at the end) means the most
+Keeping it inside `/sdlc` (no git writes, user commits at the end) means the most
 autonomous *attended* mode still can't surprise anyone — the same reasoning `/brainstorm`
-Step 8 uses to make `sdlc-lite` the default handoff.
+Step 8 uses to make `sdlc` the default handoff.
 
 ## Lever B — conductor chaining (the session as the loop)
 
@@ -56,10 +56,10 @@ landing first and is Claude-only.
 
 `docs/AUTONOMOUS-DISCOVERY.md` already defines the architecture: job queue → watcher daemon →
 headless `claude --print --allowed-tools …` → skill runs → mark done/failed. Delivery reuses it
-with TASKS.md (or the envelope dir) as the queue and `/sdlc-lite <task-id>` as the job body.
+with TASKS.md (or the envelope dir) as the queue and `/sdlc <task-id>` as the job body.
 The doc's own reservations apply doubly for delivery:
 
-- **Terminal action stays human.** The worker runs `/sdlc-lite` (validated tree / branch
+- **Terminal action stays human.** The worker runs `/sdlc` (validated tree / branch
   artifacts), never `/sdlc`-to-PR without a human gate — or, if PRs are wanted, the PR *is*
   the human gate and the worker must be branch-scoped and rate-limited.
 - **The soft-stop rule already anticipates this**: `/sdlc`'s "Non-interactive runs" section

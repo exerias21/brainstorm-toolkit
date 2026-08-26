@@ -1,8 +1,8 @@
 # Changed-files gate
 
 A shared primitive for "did this change touch <surface>?" so stages don't each
-re-derive it. Consumed by `/sdlc-lite` Stage 5 (e2e/visual trigger) and Stage 5
-(ui/data validator gating), and reusable by `/sdlc-lite`.
+re-derive it. Consumed by `/sdlc` Stage 5 (e2e/visual trigger) and Stage 5
+(ui/data validator gating), and reusable by `/sdlc`.
 
 ## Source of truth
 

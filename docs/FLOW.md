@@ -33,7 +33,7 @@ flowchart TD
 
     PLAN --> DELIV{"How should it land?"}
     DELIV -->|"autonomous, ends in a PR"| SDLC["/sdlc"]
-    DELIV -->|"you review + commit"| LITE["/sdlc-lite"]
+    DELIV -->|"you review + commit"| LITE["/sdlc"]
     SDLC --> PIPE
     LITE --> PIPE
 
@@ -49,7 +49,7 @@ flowchart TD
 
     PIPE --> OUT{"Terminal step (the ONLY place the two differ)"}
     OUT -->|"/sdlc"| PR["branch → commit → push → PR → /review"]
-    OUT -->|"/sdlc-lite"| HO["validated working tree — you commit"]
+    OUT -->|"/sdlc"| HO["validated working tree — you commit"]
     TASK --> DONE["row closed in TASKS.md"]
 ```
 
@@ -62,10 +62,10 @@ structural checks. No flag.
 | Skill | Input | Terminal action | Use when |
 |---|---|---|---|
 | `/task <desc>` | ad-hoc ask | TDD red→green, **green commit** on current branch | a one-line fix, a small util, a rename — no evals/flowsim |
-| `/sdlc-lite <plan \| task-id \| range \| desc>` | plan, task(s), or ask | full pipeline → **validated tree you commit** | full discipline on work you'll review + commit yourself (e.g. onto an open PR branch); `/sdlc-lite 1-5` runs a queue |
+| `/sdlc <plan \| task-id \| range \| desc>` | plan, task(s), or ask | full pipeline → **validated tree you commit** | full discipline on work you'll review + commit yourself (e.g. onto an open PR branch); `/sdlc 1-5` runs a queue |
 | `/sdlc <plan-file>` | plan file | full pipeline → **PR** | autonomous delivery with human review at the PR boundary |
 
-`/sdlc` and `/sdlc-lite` run the **same pipeline**; only Stage 6 differs (PR vs hand-off). Ideate
+`/sdlc` and `/sdlc` run the **same pipeline**; only Stage 6 differs (PR vs hand-off). Ideate
 first with `/brainstorm` (fast), `/brainstorm-deep` (ambiguous/high-stakes), or `/brainstorm-team`
 (multi-agent product research).
 

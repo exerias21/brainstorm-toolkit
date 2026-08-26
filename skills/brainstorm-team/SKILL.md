@@ -144,7 +144,7 @@ Don't stop at the results file. Once the user picks features to build, turn the
 chosen blueprint(s) into delivery rather than waiting for them to re-issue a
 command:
 - Render the results for a visual read if useful: `/plan-html plans/team-brainstorm-<topic-slug>.md`.
-- Hand a chosen blueprint to the pipeline — `/sdlc-lite <plan>` (full pipeline,
-  hands you the validated changes; safe default, no git writes) or `/sdlc-lite <plan>`
+- Hand a chosen blueprint to the pipeline — `/sdlc <plan>` (full pipeline,
+  hands you the validated changes; safe default, no git writes) or `/sdlc <plan>`
   (→ PR; confirm first). Continue whichever flow has been used this session;
-  default to `/sdlc-lite`.
+  default to `/sdlc`.

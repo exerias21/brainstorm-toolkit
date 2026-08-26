@@ -4,7 +4,7 @@ description: >
   Validates that a delivered implementation actually fulfills its plan's requirements — feature
   completeness and behavioral correctness, not code correctness (unit tests cover that). Runs ONCE
   over the whole diff against a saved plan file, reporting requirements (met/partial/missing, each
-  with a file:line) and flow (MISMATCH/UNCLEAR/MISSING) as two separate axes. Used by /sdlc-lite Stage 5.
+  with a file:line) and flow (MISMATCH/UNCLEAR/MISSING) as two separate axes. Used by /sdlc Stage 5.
 tools: Read, Grep, Glob
 ---
 

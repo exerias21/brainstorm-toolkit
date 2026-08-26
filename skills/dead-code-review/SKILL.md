@@ -5,9 +5,9 @@ description: >
   project.json models.cap / --model) to find dead code, dead docs, and dead plans, then removes
   them and runs the test suite before and after to verify zero regressions. THIS IS THE SKILL FOR
   "launch a few agents to review everything for dead code / anything no longer needed" — use it
-  instead of hand-composing an ad-hoc agent fan-out. Scans backend Python, frontend TypeScript,
-  database/migrations, documentation, and scripts for unused imports, dead functions, orphaned
-  components, stale plans, and redundant migrations. Use when the user says /dead-code-review,
+  instead of hand-composing an ad-hoc agent fan-out. Scans whatever surfaces the repo actually has — server code,
+  client code, data/migrations, documentation, scripts — for unused imports, dead functions,
+  orphaned components, stale plans, and redundant migrations. Use when the user says /dead-code-review,
   "what can be deleted", "what's no longer needed", "what docs are worth keeping vs getting rid
   of", "clean this up", "look for dead code", or asks to sweep the repo after a feature lands, a
   refactor, or before a release.
@@ -34,10 +34,10 @@ for exhaustive analysis, then applies fixes with test verification.
 
 ### Phase 1: Establish Test Baseline
 
-Run all three test suites and record pass/fail counts:
-- Backend: `docker compose exec -T backend python -m pytest tests/ -v --tb=short`
-- Frontend: `cd frontend && npx vitest run`
-- E2E: `npx playwright test tests/e2e/ --reporter=list`
+Run the configured test suites (from `.claude/project.json` `test.*` — `unit`, `frontend`,
+`e2e`) and record pass/fail counts. Skip any key that is not configured, and say which you
+skipped. No `project.json` and no discoverable suite means **no baseline**: say so plainly and
+restrict the run to report-only, because "zero regressions" is unverifiable without one.
 
 ### Phase 2: Launch Parallel Analysis Agents
 
@@ -49,58 +49,24 @@ resolve each per `skills/sdlc/templates/models.md` (`--model <tier>` > `project.
 the tier here). The fan-out is **Sonnet-first**, so the Opus tier runs Sonnet unless you opt up with
 `--model opus`; print `model: <tier> (cap: <cap|none>)` before each dispatch. NO subagents.
 
-#### Agent 1: Backend Python Reviewer (Sonnet)
-Scans ALL files in `backend/` for:
-- Unused imports (check every import against usage in the file)
-- Dead functions (defined but never called — grep for function name across entire project)
-- Dead API endpoints (backend routes with no frontend consumer — cross-reference with `frontend/src/lib/api.ts`)
-- Unused schema classes (Pydantic models never used in requests/responses)
-- Unused variables (assigned but never read)
-- Stale one-time scripts (`run_migration_*.py`, `seed_*.py`, `backend/scripts/check_*.py`)
-- Commented-out code blocks
-- Redundant inline imports (same module imported at top and inline)
+**Read `skills/dead-code-review/references/lenses.md` now** — it carries the five lenses and
+their per-surface checklists, plus the shared reporting contract.
 
-#### Agent 2: Frontend TypeScript Reviewer (Sonnet)
-Scans ALL files in `frontend/src/` for:
-- Unused components (grep for component import name across all files)
-- Unused hooks (grep for hook name across all files)
-- Unused lib exports (grep for export name across all files)
-- Unused type definitions (grep for type name across all files)
-- Dead store properties/actions (defined in Zustand store but never accessed from components)
-- Dead API methods in `lib/api.ts` (methods never called from any component/page/hook)
-- Dead API types in `lib/api.ts` (types never imported outside the file)
-- Unused dependencies in `package.json` (grep for package import across all files)
-- Stale test files testing deleted components
+First resolve which lenses apply. The surfaces are **roles, not paths**: read
+`.claude/project.json` `modules` if present, otherwise infer them from the repo layout. A repo
+with no client code skips the client lens; a repo with no database skips the data lens. Say which
+lenses you dropped and why — a silent skip reads as "clean".
 
-#### Agent 3: Database & Migration Reviewer (Opus-tier — Sonnet by default under the cap)
-Cross-module dependency reasoning: a wrong drop here can break production — the Opus tier is warranted
-by load, but under the Sonnet-first default it runs Sonnet unless you opt up (`--model opus`).
-Scans ALL files in `backend/migrations/` and queries the live database:
-- Unused tables (exist in DB but never referenced in Python code)
-- Unused columns (defined but never SELECT'd/INSERT'd/UPDATE'd)
-- Duplicate indexes (regular index on same columns as a UNIQUE constraint)
-- Redundant migrations (CREATE then later DROP, or ALTER adding columns that already exist)
-- Duplicate migration numbers
-- Empty tables that may indicate abandoned features
+| Lens | Tier | Applies when |
+|---|---|---|
+| 1 — Server / backend code | Sonnet | there is a service or library layer |
+| 2 — Client / frontend code | Sonnet | there is a UI surface |
+| 3 — Data layer and migrations | Opus tier | there is a schema or migration directory |
+| 4 — Documentation and plans | Haiku | always |
+| 5 — Scripts, config, test infra | Haiku | always |
 
-#### Agent 4: Documentation & Plans Reviewer (Haiku)
-Scans ALL `.md` files in `docs/`, `plans/`, and project root:
-- Completed plans/specs (feature fully implemented — delete the plan)
-- Stale root markdown files (old debugging notes, one-time setup guides)
-- Outdated documentation that conflicts with CLAUDE.md
-- Empty directories left after prior cleanup
-
-#### Agent 5: Scripts & Config Reviewer (Haiku)
-Scans `scripts/`, config files, test infrastructure:
-- One-time scripts already run (data seeders, migration fixers, diagnostics)
-- Stale test files (tests for removed features, tests using old navigation patterns)
-- Orphaned config files (unused Vite configs, stale auth state files)
-- Stale dependencies in `requirements.txt` or `package.json`
-- Generated output directories that should be cleaned
-
-#### Agent 6: Test Runner (Baseline — Haiku)
-Runs the full test suite to establish what's currently passing before any changes. No reasoning load
-— just runs commands and reports pass/fail counts.
+Dispatch the applicable lenses in one message. There is no separate test-runner agent — Phase 1
+already established the baseline.
 
 ### Phase 3: Consolidate & Execute
 
@@ -108,7 +74,7 @@ After all agents report back:
 
 1. **Triage findings** by confidence level (HIGH/MEDIUM/LOW)
 2. **Execute HIGH-confidence removals first** — deletions, import cleanups, dead function removal
-3. **Restart services** after backend/frontend changes
+3. **Restart or rebuild** the running stack if the repo has one (`project.json` `stack.*`)
 4. **Re-run test suite** to verify zero regressions
 5. **Execute MEDIUM-confidence removals** if tests pass
 6. **Final test run** to confirm everything
@@ -125,15 +91,15 @@ Provide a summary table:
 
 | Scope | What runs |
 |-------|-----------|
-| `full` (default) | All 6 agents |
-| `backend` | Agent 1 (Python) + Agent 3 (Database) + Agent 6 (Tests) |
-| `frontend` | Agent 2 (TypeScript) + Agent 6 (Tests) |
-| `database` | Agent 3 (Database) only |
-| `docs` | Agent 4 (Documentation) + Agent 5 (Scripts) |
+| `full` (default) | every lens that applies to this repo |
+| `backend` | lenses 1 + 3 |
+| `frontend` | lens 2 |
+| `database` | lens 3 |
+| `docs` | lenses 4 + 5 |
 
 ## Rules
 
-- Use the tiered model assignments above (Haiku / Sonnet / Opus) — do NOT promote everything to Opus.
+- Use the tiered assignments in `references/lenses.md` (Haiku / Sonnet / Opus) — do NOT promote everything to Opus.
   The fan-out is **Sonnet-first**, so the Opus tier is an explicit opt-up (`--model opus`); each agent's
   tier is chosen based on reasoning load and blast radius of a wrong
   call. If a specific run genuinely needs deeper analysis (e.g., the database agent flags ambiguous
@@ -142,6 +108,6 @@ Provide a summary table:
 - Never commit during the review — the user decides when to commit
 - Always run tests before AND after to verify zero regressions
 - Only remove code at HIGH confidence unless the user explicitly approves MEDIUM items
-- Consult `.claude/skills/gotcha/GOTCHAS.md` Code Hygiene section for known patterns
+- Consult `GOTCHAS.md` at repo root (or `project.json` `gotchas_file`) for known patterns
 - If a function appears unused but is referenced by a string-based dispatch (like intent routing), do NOT remove it
 - If a type is used as a return type of a live API method, do NOT remove it even if never imported externally

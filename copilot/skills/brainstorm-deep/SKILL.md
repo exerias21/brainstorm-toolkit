@@ -116,7 +116,7 @@ Plans without this block fail acceptance — refuse to write them.
 
 ## Step 5 — Write the plan file
 
-Write to `plans/brainstorm-deep-<topic-slug>.md`. Same naming convention as `/brainstorm` so downstream `/sdlc-lite <plan>` consumption is uniform.
+Write to `plans/brainstorm-deep-<topic-slug>.md`. Same naming convention as `/brainstorm` so downstream `/sdlc <plan>` consumption is uniform.
 
 ## Args
 

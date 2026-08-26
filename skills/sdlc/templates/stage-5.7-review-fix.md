@@ -1,6 +1,6 @@
 # Stages 5.7 / 5.8 — Adversarial review + fix loop (shared)
 
-Canonical for `/sdlc-lite`. **Opt-in, permanently OFF by default** —
+Canonical for `/sdlc`. **Opt-in, permanently OFF by default** —
 do not load this file unless the stage is enabled (see the enablement rule below).
 
 **Opt-in, permanently OFF by default.** This stage activates only on an explicit
@@ -149,3 +149,151 @@ are a categorically different surface (defects a green suite structurally cannot
 after all four of those gates already passed), so they get their own dial rather than racing a
 shared counter.
 
+---
+
+## Sidecar shapes (this stage only)
+
+These live here rather than in `state-schema.md` because the stage is opt-in and permanently
+OFF by default — a default run should not carry a thousand words describing files it will never
+write. `state-schema.md` carries the envelope contract; this section carries the two shapes
+that only exist when this stage runs.
+
+#### `review` (Stage 5.7 -- only when the reviewer-model axis resolves ON)
+```json
+{
+  "lenses": ["correctness", "plan-alignment", "config-env-docs", "security"],
+  "reviewer_model": "opus",
+  "independence": "ok",
+  "passes_run": 1,
+  "second_pass_model": null,
+  "diff_lines_reviewed": 340,
+  "partitioned": false,
+  "findings": [
+    {
+      "finding_id": "f0-1",
+      "lens": "correctness",
+      "severity": "high",
+      "file": "api/scrapers/ddg.py",
+      "line": 42,
+      "defect": "_unwrap_ddg_href double-decodes the href (parse_qs then unquote again)",
+      "failure_scenario": "A scraped URL whose query value contains %26 is corrupted to & before storage.",
+      "fix": "Drop the second unquote() call; parse_qs already unquotes."
+    }
+  ],
+  "confirmed": [
+    { "finding_id": "f0-1", "verify_confidence": 0.93, "evidence": "api/scrapers/ddg.py:42 -- `unquote(parse_qs(qs)['u'][0])`" }
+  ],
+  "demoted_lenses": [],
+  "deferred_debt": []
+}
+```
+`findings` is the raw merged fan-out output across all lenses (each tagged with its producing
+lens and a `finding_id`). `passes_run` (1 or 2) and `models.code_review_second_pass` (the effective model
+dispatched for the completeness critic, or `null` when `passes_run` is 1) record whether
+`agents.code_review_passes` was 2 for this run. When `passes_run` is 2, each item in `findings`
+additionally carries `pass: 1` or `pass: 2` (set at merge time, never by the reviewing or critic
+agent itself); a `passes_run: 1` run never adds this field, so its absence means pass 1. This
+`pass` tag is unrelated to the loop-scoped `finding_id` numbering described next -- two independent
+axes that happen to share the word "pass."
+
+**`finding_id` is loop-scoped, not run-global**: it is minted as `f<reviewPass>-<n>` where
+`reviewPass` starts at 0 for the pre-fix-loop initial review (the pass this top-level `review.json`
+snapshot reflects) and increments by one on every subsequent re-review inside Stage 5.8's fix loop
+-- a stable cross-loop id is not attempted because the lens dispatch re-runs on every call, so a
+later loop's "same" index is not guaranteed to name the same defect. `confirmed` is the subset that
+survived the adversarial verify sub-pass, referenced back by `finding_id`; each
+`confirmed[].verify_confidence` is copied verbatim from that finding's verify-verdict `confidence`
+value -- not a separately-computed number. `deferred_debt` entries are out-of-scope issues surfaced
+incidentally during review (each with a `debt_hash` dedup key, auto-appended once each to
+`TASKS.md`). **If `confirmed` is empty, OR `pipeline.review_fix.mode` is `"off"`, Stage 5.8 is
+skipped entirely** -- no `review-fix.json` is written. On the prose/overlay paths, `review-fix` is
+recorded in `run.json.stages_skipped` for this self-skip.
+
+#### `review-fix` (Stage 5.8 -- single cumulative sidecar; only when `review.json.confirmed` is non-empty)
+```json
+{
+  "fix_loops_run": 2,
+  "max_fix_loops": 3,
+  "final_pass_count": 3,
+  "final_fail_count": 0,
+  "remaining_failures": [],
+  "loops": [
+    {
+      "loop": 1,
+      "fix_specs": [
+        { "finding_id": "f0-1", "auto_fixable": true, "spec": "Remove the second unquote() in _unwrap_ddg_href (api/scrapers/ddg.py:42)." }
+      ],
+      "decisions": [
+        { "finding_id": "f0-1", "action": "approved", "mode": "interactive", "reason": null }
+      ],
+      "fixed_fingerprints": ["api/scrapers/ddg.py:correctness:4"],
+      "reverify": { "status": "pass", "remaining_findings": [] }
+    }
+  ]
+}
+```
+Mirrors the shared fix-loop sidecar shape (`fix_loops_run`/`max_fix_loops`/`final_pass_count`/
+`final_fail_count`/`remaining_failures`) with a `loops[]` array added for per-iteration detail.
+`decisions[].action` is one of `approved`, `edited`, `skipped`; in `auto` mode `action` is still
+`approved` but `reason` is populated (e.g. `"auto: confidence 0.93 >= threshold 0.85"`). A finding
+with `auto_fixable: false` can never appear with `action: "approved"` except under `interactive`
+mode with an explicit human approval -- the fix-planner routes design-decision findings to a forced
+human prompt regardless of `pipeline.review_fix.mode`.
+
+**`loops[n].fix_specs`/`decisions` reference ids from the review pass that ran *before* that
+iteration's fix agent, not from `loops[n]`'s own re-review.** Concretely: `loops[0]` (loop 1) fixes
+findings minted by the pre-loop initial review (`review.json`'s own `f0-*` ids); its `reverify`
+field reports the result of the re-review that ran immediately *after* the fix, which mints a fresh
+`f1-*` set. `loops[1]` (loop 2), if it runs, fixes findings from that `f1-*` re-review, and so on.
+An id is only ever meaningful paired with the pass that minted it -- there is no guaranteed stable
+identity for "the same defect" across loops; the oscillation guard uses a content fingerprint for
+that instead. Persisted `fix_specs`/`decisions` are **id-keyed** (`finding_id`), never index-keyed
+-- the fix-planner's agent-return shape is index-keyed, but the JS maps each `finding_index` to its
+confirmed finding's `finding_id` when interpolating the fix agent's envelope payload, so raw indices
+never reach the sidecar.
+
+**`reverify` is never written by the fix agent itself, on either path.** The fix agent runs
+*before* its own loop's re-review exists, so it cannot know that result.reason` is always `"workflow auto-apply"` (there
+is no human channel there) rather than `null` -- the `null` shown in the example above is the
+prose-path, human-interactive-approval case.
+
+## `.claude/pipeline/_review-stats.json` — review circuit breaker (cross-run ledger)
+
+Unlike every sidecar above, this file is **not per-run** — it is a rolling cross-run ledger, one
+file per repo, keyed by lens. It backs the Review→Fix stage's false-positive circuit breaker
+(repo-local, already covered by the existing `.claude/pipeline/` `.gitignore` entry):
+
+```json
+{
+  "schema_version": 1,
+  "lenses": {
+    "correctness":     { "runs": [{ "raw": 3, "confirmed": 2, "ts": "2026-07-03T18:04:00Z" }], "demoted": false },
+    "plan-alignment":  { "runs": [], "demoted": false },
+    "config-env-docs": { "runs": [], "demoted": true },
+    "security":        { "runs": [], "demoted": false }
+  }
+}
+```
+
+- `runs[]` is capped at the last 20 entries per lens (oldest evicted on push) — a rolling
+  confirmed/raw ratio across the last 20 runs.
+- `demoted` flips `true` once that lens's confirmed-rate (`sum(confirmed)/sum(raw)` over the
+  window) drops under 40%, flips back `false` after 5 consecutive runs at ≥60%.
+- **Writer:** the same Stage 5.7 persist step that writes `review.json` also appends this run's
+  `{raw, confirmed, ts}` per dispatched lens to `_review-stats.json` and recomputes `demoted`, on
+  **both** the Workflow and the prose/overlay paths (a Copilot/Codex run updates the same file at
+  the same path — there is no separate per-tool ledger). The resolved lens list for the **next**
+  run is `(cfg.review_fix?.lenses ?? DEFAULT_LENSES).filter(l => !stats.lenses[l]?.demoted)` —
+  demotion never changes which lenses ran *this* run, only which ones are dispatched on subsequent
+  runs.
+- `review.json.data.demoted_lenses` is this run's *view* of which lenses were skipped because
+  `_review-stats.json` already marked them demoted going in — the two files are consistent by
+  construction (one reads what the other most recently wrote).
+- This mechanism (the sidecar, the writer-side update, and the demotion-aware lens filter) is
+  **active**: the per-lens ledger in `_review-stats.json` backs live lens demotion (a lens whose
+  confirmed-rate drops under 40% is demoted; 5 consecutive runs at ≥60% re-promote it, capped at the
+  last 20 runs per lens). `REVIEW_LENSES` filters out demoted lenses from dispatch on every run, and
+  `review.json.data.demoted_lenses` records which lenses were skipped because this ledger already
+  marked them demoted going in.
+
+---
