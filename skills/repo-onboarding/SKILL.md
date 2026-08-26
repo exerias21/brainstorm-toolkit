@@ -18,12 +18,6 @@ the rest of the toolkit reads. Run this **once per repo** after dropping the
 toolkit's skills and scripts in place. After it finishes, `/test-check`,
 `/test-check` and `/sdlc` should work with no further setup.
 
-## When triggered
-
-- User invokes `/repo-onboarding`, `/discovery`, `/onboard`, `/codelearn`, or `/init-toolkit`
-- User says "set this repo up for the toolkit", "onboard this repo", "analyze this codebase", "bootstrap AGENTS.md"
-- After the user runs `setup.sh` from the brainstorm-toolkit plugin
-
 ## Output
 
 Produces (or offers to produce):

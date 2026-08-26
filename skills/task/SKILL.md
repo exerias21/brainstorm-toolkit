@@ -13,11 +13,11 @@ metadata:
 
 # Task — single-task TDD execution
 
-## When to use
+## Boundaries
 
-- User has a clear, bounded ask: "add a `formatPhone` util", "fix the bug where X", "rename Y to Z across the codebase".
-- Too small for `/sdlc`, too concrete for `/brainstorm`.
-- `/task` always executes TDD on the current branch. If you want the full pipeline (evals + validate + plan check, changes left for you to commit), use `/sdlc`. If you want just the row written and nothing run, edit `TASKS.md` directly.
+`/task` always executes TDD on the current branch. Want the full pipeline (evals + validate +
+plan check, changes left for you to commit)? That's `/sdlc`. Want just the row written and
+nothing run? Edit `TASKS.md` directly.
 
 ## Flow
 

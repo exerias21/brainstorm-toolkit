@@ -19,13 +19,10 @@ metadata:
 
 This is NOT a program simulator. It's a **structured code review** formatted as a narrative trace: "the plan claims X → grep/read the code → report what actually happens". LLMs are reliable at static analysis ("does this call exist", "what does this function return") when scoped to 2–3 hops. Flowsim keeps the scope tight on purpose.
 
-## When to use
-
-- User invokes `/flowsim <plan-file>` or `/flowsim task-3-add-orders`
-- Called automatically by `/sdlc` Stage 5 when a parent plan is available
-- User asks "does the plan actually match what we built?", "trace this flow", "walk through what happens when a user X"
-
 ## Inputs
+
+Also called inline by `/sdlc` Stage 5 (as its flow axis) whenever a parent plan
+is available.
 
 - **Plan source**: a `plans/brainstorm-<slug>.md` file, a `plans/tasks/task-N-<slug>.md` file, or a TASKS.md row. The plan must describe at least one flow: entry point → steps → outcome.
 - **Optional**: `--max-hops N` (default 3) — how many function/module jumps to follow per flow.

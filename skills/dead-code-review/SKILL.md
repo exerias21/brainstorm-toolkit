@@ -22,14 +22,6 @@ Systematically find and remove dead code, stale documentation, unused database o
 files across the entire codebase. Uses parallel agents tiered by reasoning load (Haiku / Sonnet / Opus)
 for exhaustive analysis, then applies fixes with test verification.
 
-## When to trigger this skill
-
-- User invokes `/dead-code-review`
-- After completing a major feature or multi-file refactor
-- Before a release or milestone
-- When the user asks to "clean up", "remove dead code", or "audit the codebase"
-- Periodically (monthly) as codebase hygiene
-
 ## Process
 
 ### Phase 1: Establish Test Baseline

@@ -21,14 +21,6 @@ An interactive ideation skill that walks through a structured brainstorming proc
 user. This is conversational — think out loud, ask questions, and iterate on ideas together with
 the user before producing an implementation plan.
 
-## When This Skill Triggers
-
-- User says `/brainstorm` or `/brainstorm [topic]`
-- User mentions brainstorming, ideating, or exploring an idea
-- User says things like "what if we...", "I have an idea for...", "how should we approach...",
-  "let's think through...", "let's explore..."
-- User wants to plan a feature but isn't ready to commit to a specific approach yet
-
 ## How It Works
 
 ### Step 1: Understand the Seed

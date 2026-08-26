@@ -6,9 +6,6 @@ spec for all of them. A skill needs only a one-line pointer here plus the
 print-then-dispatch rule — never inline the syntax (keeps skills under their line
 ceilings).
 
-Supersedes the former `model-cap.md` and `review-model.md`, which were split across
-two files and left the per-stage tiers scattered under `pipeline.*`.
-
 ## The config surface
 
 ```json
@@ -27,9 +24,8 @@ two files and left the per-stage tiers scattered under `pipeline.*`.
 }
 ```
 
-Every key is optional; a missing key means the built-in default. There is **no
-back-compat with the old `pipeline.*.model` keys** — they are no longer read (see
-*Migration* at the end).
+Every key is optional; a missing key means the built-in default. The old `pipeline.*.model`
+keys are no longer read (see *Migration* at the end).
 
 ## Two axes — keep them mechanically separate
 
@@ -39,7 +35,7 @@ This is the one rule a future edit must not break.
 |---|---|---|
 | Keys | `models.cap`, `models.sanity` | `models.code_review`, `models.code_review_second_pass` |
 | Values | `haiku` \| `sonnet` \| `opus` | `haiku` \| `sonnet` \| `opus` \| `fable` |
-| Stages | 1.5, 2, 5.5, and every other fan-out | 5.7 / 5.8 only |
+| Stages | 1.5, 2, and every other fan-out | 5.7 / 5.8 only |
 
 zero log line. This is the highest-priority hazard in this file.
 
@@ -150,19 +146,11 @@ one reviewer call.
 An unrecognized entry in any list is ignored with one warning — the lists are deliberately
 open so a repo can add its own.
 
-## Reasoning effort — partial support, stated honestly
+## Reasoning effort — not settable here
 
-Reasoning effort is **not uniformly settable**, so there is deliberately no
-`models.*_effort` config key. Adding one would create a knob that silently does nothing on
-the default path — the exact failure this contract exists to prevent.
-
-| Path | Effort settable? |
-|---|---|
-| Agent definition frontmatter (`agents/*.md`) | **Yes** — `effort:` |
-| **Prose path (the default, and the only path on Copilot/Codex)** | **No** — the Agent tool exposes `model` but has no `effort` parameter |
-
-inherits the session effort there. If you need a stage to think harder today, **raise its
-tier** — that works on every path. Revisit if the Agent tool ever gains the parameter.
+There is deliberately **no `models.*_effort` key** — the Agent tool exposes `model` but no
+`effort` parameter, so the key would silently do nothing. To make a stage think harder, **raise
+its tier**. Background: `docs/MODEL-AXES.md`.
 
 ## Prose dispatch rule (the DEFAULT path — this is what makes any of it real)
 
@@ -180,19 +168,12 @@ silent. `validate_skills.py` checks that fan-out skills point at this file.
 
 ## Runtime regimes
 
-  `agent()` that omits `model` inherits the session tier and **bypasses the cap**, so every
-  dispatch must be wrapped.
-- **Copilot** → stages run inline in the session model; the cap is **advisory** (no
+- **Claude** → parallel sub-agents; the tier resolved below is passed at each dispatch.
+- **Copilot** → stages run inline in the session model; the cap is **advisory** (there is no
   sub-agent tier to lower). The `agents.*` counts still apply.
-- **Codex** → advisory too, but for a different reason worth keeping straight. Codex *does*
-  have native subagents (`.codex/agents/*.toml`, parallel, `max_threads`) — it is not
-  structurally inline-only like Copilot. What blocks tiering is that **per-subagent model
-  override is reported regressed upstream** (subagents inherit the parent model), so the
-  fan-out runs single-model.
-
-  > **Reported, not verified here** — from web research on 2026-07-13, not a hands-on Codex
-  > install, and an upstream bug that may already be fixed. Re-check before relying on the
-  > limitation *or* its absence. Describes Codex only; changes nothing about tier defaults
+- **Codex** → advisory too. Codex has native subagents, but per-subagent model override is
+  reported regressed upstream, so its fan-out runs single-model. Background and the caveat on
+  that report: `docs/MODEL-AXES.md`.
 
 ## Invalid input — fall through, never guess
 
@@ -215,23 +196,6 @@ Tool-agnostic wording — not `/model`, which is Claude-specific.
 
 ## Migration from the old keys
 
-The old keys are **no longer read** (clean break, 2026-07-26):
-
-| Old | New |
-|---|---|
-| `pipeline.sanity_check.model` | `models.sanity` |
-| `pipeline.sanity_check.focuses` | `agents.sanity_focuses` |
-| `pipeline.review_fix.model` | `models.code_review` |
-| `pipeline.review_fix.second_pass_model` | `models.code_review_second_pass` |
-| `pipeline.review_fix.lenses` | `agents.code_review_lenses` |
-| `pipeline.review_fix.passes` | `agents.code_review_passes` |
-| `pipeline.review_fix.max_fix_loops` | `agents.code_review_max_fix_loops` |
-| `pipeline.decompose_min_tasks` | `agents.decompose_min_tasks` |
-
-`pipeline.review_fix.enabled` / `.mode` / `.blocking` stay under `pipeline.review_fix` — they
-are stage *behavior*, not model or count selection. (`.confidence_threshold`,
-`.auto_approve_after`, `.max_diff_lines` and `.max_files` were specified but never built; they
-have been removed rather than left standing as config that reads like behavior.)
-
-A repo still using an old key silently gets the built-in default. `/repo-onboarding`
-rewrites the block; `/repo-health` flags leftovers.
+The `pipeline.*` model keys were renamed to `models.*` / `agents.*` in a clean break. A repo
+still using an old key silently gets the built-in default; `/repo-onboarding` rewrites the
+block and `/repo-health` flags leftovers. Full mapping: `docs/MODEL-AXES.md`.

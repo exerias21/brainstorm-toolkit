@@ -17,16 +17,11 @@ metadata:
 
 # /plan-html — markdown plan to a single-file shareable HTML
 
-## When to use
+## Scope note
 
-- You have a markdown plan (`plans/<slug>.md`, brainstorm output, threat
-  model, SDLC plan) and want to share it visually with someone who
-  isn't going to scroll through raw markdown.
-- The plan has 3+ top-level sections — the TOC starts paying for itself
-  there. For 1–2 section plans, markdown reads fine and the TOC is noise
-  (the skill omits it automatically).
-- Never auto-fires. You invoke it on demand. The markdown stays the
-  source of truth.
+The TOC starts paying for itself at **3+ top-level sections**; for a 1–2 section plan it is
+noise, and the skill omits it automatically. This never auto-fires — you invoke it, and the
+markdown stays the source of truth.
 
 ## Argument
 

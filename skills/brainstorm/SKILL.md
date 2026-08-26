@@ -29,14 +29,6 @@ with the user, and its sandbox blocks the repo-root write that every downstream 
 (`/sdlc`, `/flowsim`, `/repo-health`) depends on. The plan file on disk
 is the artifact — not a plan-mode proposal.
 
-## When This Skill Triggers
-
-- User says `/brainstorm` or `/brainstorm [topic]`
-- User mentions brainstorming, ideating, or exploring an idea
-- User says things like "what if we...", "I have an idea for...", "how should we approach...",
-  "let's think through...", "let's explore..."
-- User wants to plan a feature but isn't ready to commit to a specific approach yet
-
 ## Subagent Usage During Brainstorming
 
 The conversational loop stays in the **main context window** — you and the user share
