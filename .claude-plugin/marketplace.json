@@ -20,7 +20,6 @@
       ],
       "skills": [
         "./skills/brainstorm",
-        "./skills/brainstorm-deep",
         "./skills/brainstorm-team",
         "./skills/code-tour",
         "./skills/dead-code-review",

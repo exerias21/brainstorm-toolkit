@@ -94,8 +94,10 @@ but marked unimplemented, and the prose↔Workflow sync leg had **no automated g
 said so outright: "keeping them in sync is on the author"). In the audited session it was
 invoked zero times; the Workflow tool *was* called five times and every call passed an inline
 ad-hoc script instead. It was the least capable of the three expressions and the most expensive
-to maintain. `skills/brainstorm-deep/workflows/` is unaffected — 205 lines, one fan-out, no
-cross-tool sync obligation.
+to maintain. `/brainstorm-deep` carried the last remaining Workflow (205 lines, one fan-out);
+it was deleted too, so **nothing in this repo runs a Workflow any more**. Do not add one back:
+a Workflow is a second expression of a stage with no automated guard keeping it in sync with
+the prose, and every attempt at that here has ended the same way.
 
 **So a stage-contract change is now a two-leg edit:** the canonical prose, then the
 Copilot/Codex overlays (which have no Workflow and never did — the prose is all they run).

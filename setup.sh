@@ -224,7 +224,7 @@ install_shared_templates() {
       hit=1
     fi
     # Seed templates only (*.template). A skill-local `templates/<x>.md` resolves relative to
-    # the skill dir already and MUST NOT be rewritten -- doing so would break brainstorm-deep
+    # the skill dir already and MUST NOT be rewritten -- doing so would break /brainstorm
     # and cheatsheet, which ship their own templates/ dirs.
     if grep -q '`templates/[A-Za-z0-9._-]*\.template`' "$f" 2>/dev/null; then
       sed -i.bak "s|\`templates/\([A-Za-z0-9._-]*\.template\)\`|\`$root/templates/\1\`|g" "$f" && rm -f "$f.bak"

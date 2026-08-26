@@ -280,12 +280,11 @@ file per repo, keyed by lens. It backs the Review→Fix stage's false-positive c
 - `demoted` flips `true` once that lens's confirmed-rate (`sum(confirmed)/sum(raw)` over the
   window) drops under 40%, flips back `false` after 5 consecutive runs at ≥60%.
 - **Writer:** the same Stage 5.7 persist step that writes `review.json` also appends this run's
-  `{raw, confirmed, ts}` per dispatched lens to `_review-stats.json` and recomputes `demoted`, on
-  **both** the Workflow and the prose/overlay paths (a Copilot/Codex run updates the same file at
-  the same path — there is no separate per-tool ledger). The resolved lens list for the **next**
-  run is `(cfg.review_fix?.lenses ?? DEFAULT_LENSES).filter(l => !stats.lenses[l]?.demoted)` —
-  demotion never changes which lenses ran *this* run, only which ones are dispatched on subsequent
-  runs.
+  `{raw, confirmed, ts}` per dispatched lens to `_review-stats.json` and recomputes `demoted`.
+  Every runtime writes the same file at the same path — there is no per-tool ledger. The resolved
+  lens list for the **next** run is `agents.code_review_lenses` (or the four defaults) minus any
+  lens currently `demoted` — demotion never changes which lenses ran *this* run, only which ones
+  are dispatched on subsequent runs.
 - `review.json.data.demoted_lenses` is this run's *view* of which lenses were skipped because
   `_review-stats.json` already marked them demoted going in — the two files are consistent by
   construction (one reads what the other most recently wrote).

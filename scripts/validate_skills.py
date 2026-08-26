@@ -48,7 +48,6 @@ VALID_TARGETS = {"claude", "copilot", "codex"}
 MODEL_CAP_FAN_OUT_SKILLS = {
     "sdlc",
     "brainstorm",
-    "brainstorm-deep",
     "brainstorm-team",
     "dead-code-review",
 }

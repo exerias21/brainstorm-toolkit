@@ -81,7 +81,7 @@ paths. Claude Code discovers all of it natively — no plugin, no sideload flag.
 | Flag | Effect |
 |---|---|
 | `--dry-run` | Print every action plus a unified `settings.json` diff; write nothing |
-| `--skills a,b,c` | Sync a subset instead of all 14 (see *token weight* below) |
+| `--skills a,b,c` | Sync a subset instead of all 13 (see *token weight* below) |
 | `--prune-relative-hooks` | Also drop pre-existing `next-action.sh` Stop hooks wired by a **relative** path |
 | `--no-hooks` | Skip the `settings.json` wiring entirely |
 | `--uninstall` | Remove exactly what this script installed |
@@ -101,10 +101,10 @@ Four things worth knowing:
   `--prune-relative-hooks` cleans that up.
 - **`--delete` is scoped per skill directory**, never to `~/.claude/skills/` as a whole, so
   unrelated user skills installed by other tools are never pruned.
-- **Token weight.** A global sync makes all 14 skills resident in *every* repo, and several
+- **Token weight.** A global sync makes all 13 skills resident in *every* repo, and several
   (`/sdlc`, `/status`) assume the `AGENTS.md` / `.claude/project.json` contract.
   Use `--skills` to install just the ones that travel well — `/brainstorm`, `/brainstorm-team`,
-  `/brainstorm-deep`, `/gotcha`, `README.md` — and keep the pipeline skills per repo via
+  `/gotcha` — and keep the pipeline skills per repo via
   `setup.sh`.
 
 Don't run Option C **and** Option A together: double registration means each skill is discovered
@@ -134,7 +134,6 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 |---|---|---|
 | `README.md` | Claude + Copilot + Codex | Print every installed skill + the typical chains. The always-current view; `CHEATSHEET.md` is the printable companion. |
 | `/brainstorm` | Claude + Copilot + Codex † | Conversational feature ideation with lens-divergent wildcards (Plan mode on Claude, linear on Copilot) |
-| `/brainstorm-deep` | Claude + Copilot + Codex † | Clarification-heavy ideation for ambiguous or high-stakes ideas. Three-pass loop (understand → saturate → plan-with-alternates), perspective-frame sub-agents, expectation-contract output. Slower than `/brainstorm`, more rigorous. |
 | `/brainstorm-team` | Claude + Copilot + Codex † | 6-agent team for competitive + product research incl. a lateral-thinking agent (sequential on Copilot) |
 | `/task` | Claude + Copilot + Codex | Create one bounded task and execute it with TDD on the current branch — no flags, always TDD |
 | `/sdlc` | Claude + Copilot + Codex † | The full pipeline — sanity → implement → evals → fix → validate → plan-validate → flowsim, then **hands you the validated changes to commit yourself** (no commit, branch, push, or PR — only `/sdlc` touches git). Stage 2 auto-decomposes large multi-surface plans into focused per-lane subagents + a converge step; small / single-surface plans run a single agent unchanged. Takes a plan file, a task id, a task range (`1-5`), or an ad-hoc description. Use to run full discipline on work you want to review and commit onto an open PR's branch. Same optional Review→Fix stage as `/sdlc`, warn-only on surviving findings (consistent with its warn-only secret scan) rather than blocking handoff. Supports `--resume` (same envelope-resume as `/sdlc`; resume keys on the resolved slug) and `--queue [N]` (attended backlog loop: selects pending TASKS.md rows by priority, re-scans between items so mid-run additions join, parks on any paused/confirm item — no git writes). |
@@ -174,7 +173,6 @@ Haiku $1 / $5 per M tokens (input / output).
 | `/brainstorm` (`light`) | host (Opus) | 3 × Haiku lens agents | 20k–50k | $0.10–$0.40 |
 | `/brainstorm` (`deep`) | host (Opus) | 3 × Haiku + 1 × Sonnet stress-test | 30k–70k | $0.20–$0.80 |
 | `/brainstorm` (`ultra`) | host (Opus) | 3 × Haiku + 1 × Sonnet + 2 × Opus | 60k–120k | $1.00–$3.00 |
-| `/brainstorm-deep` | host (Opus) | 4 × Sonnet perspective-frame agents (parallel) by default; `--frames` overrides; structured saturation Q&A stays inline | 30k–80k | $0.20–$0.80 |
 | `/brainstorm-team` | host (Opus) | 6 × Sonnet teammates (4 parallel, 2 sequential) | 60k–150k | $0.60–$2.00 |
 | `/dead-code-review` | host (Opus) | 3 × Haiku + 2 × Sonnet + 1 × Opus (parallel) | 80k–200k | $0.80–$2.50 |
 | `/repo-health` | host model | 2 × Haiku + 1 × Sonnet **per PBI batch** | scales with batch | $0.10–$1.00 / batch |
@@ -184,7 +182,7 @@ Haiku $1 / $5 per M tokens (input / output).
 - The "host model" / "orchestrator" is whichever model is running the
   Claude Code or Copilot session — the toolkit doesn't pin it. Costs
   above assume Opus for Plan-mode-bearing and fan-out-heavy skills
-  (`/brainstorm`, `/brainstorm-deep`, `/sdlc`, `/dead-code-review`)
+  (`/brainstorm`, `/sdlc`, `/dead-code-review`)
   and whatever the user has selected otherwise.
 - **Orchestrator context dominates real cost.** An Opus orchestrator
   carrying a 100k-token codebase context across 5 sub-agent dispatches
@@ -366,7 +364,7 @@ printing it, so the loop self-advances. It never chains a `confirm: true` action
 | `/sdlc` | `gotchas_file`, `eval.*`, `main_branch`, delegates to `/test-check` |
 | `/gotcha` | `gotchas_file` |
 | `/brainstorm` | `modules`, `models.cap` |
-| `/sdlc`, `/brainstorm-deep`, `/brainstorm-team`, `/dead-code-review` | `models.cap` (sub-agent tier ceiling) |
+| `/sdlc`, `/brainstorm-team`, `/dead-code-review` | `models.cap` (sub-agent tier ceiling) |
 | `/sdlc` | `models.sanity` + `agents.sanity_focuses` (Stage 1.5 pre-flight — never gated, so it runs every time) |
 | `/sdlc` | `models.code_review`, `models.code_review_second_pass`, `agents.code_review_*` (axis 2 — never capped) |
 | `/sdlc` | `pipeline.review_fix.*` — stage *behavior* only (`enabled`, `mode`, `blocking`, thresholds). Opt-in, permanently off by default |

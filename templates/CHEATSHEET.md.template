@@ -113,7 +113,6 @@ Ideation family — pick by ambiguity, not by topic:
 
 ```
   /brainstorm [topic]      → fast conversational, low ambiguity
-  /brainstorm-deep [topic] → clarification-heavy (3-pass + perspective frames
                              + expectation contract) for ambiguous / high-stakes
   /brainstorm-team [topic] → multi-agent product/competitive research team
 ```
