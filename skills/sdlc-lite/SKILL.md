@@ -34,7 +34,8 @@ history.
 - You are on the branch the changes should land on (typically an open PR's
   branch). `/sdlc-lite` never switches branches and never commits.
 - `.claude/project.json` optional; every key optional. The eval stage and Stage 5's
-  plan check skip silently when their config or a plan target is absent.
+  plan check + flowsim flow trace skip silently when their config or a plan target
+  is absent.
   **But** if `project.json` is absent while `project.json.example` is present,
   warn once at Stage 0 — every gated setting (`models.cap`, `pipeline.*`, test
   commands) is silently inert and the run will report `cap: none`.
@@ -87,8 +88,8 @@ Detect the argument shape:
 
 2. **Task id** — arg matches `task-NNN` or a bare row number. Read that
    `TASKS.md` row and its linked `plans/tasks/task-N-<slug>.md`. The task
-   file's `parent_plan:` frontmatter (if present) becomes the Stage 5 plan
-   target.
+   file's `parent_plan:` frontmatter (if present) becomes the flowsim / Stage 5
+   plan target.
 
 3. **Task range** — arg is `N-M`, `task-N..task-M`, or `tasks N-M`. Resolve
    every `Active / Pending` row in that inclusive range to its task file.
@@ -345,12 +346,12 @@ themselves. (Want the commit + PR done for you? That's `/sdlc`.)
    ```
    **Range semantics**: process tasks in order; the changes from all tasks
    accumulate in the working tree. You decide how to slice commits (per task,
-   or one bundle). Sanity-check (1.5) ran once up front; Stage 5's plan check ran
-   once at the end over the shared parent plan.
+   or one bundle). Sanity-check (1.5) ran once up front; Stage 5's plan check and
+   flowsim trace ran once at the end over the shared parent plan.
 
 3. **Capture at loop-exit + seam** — run the shared protocol in
    `skills/gotcha/SKILL.md`. Auto-draft a gotcha **only** on an objective
-   trigger — a test/eval/flow fix-loop that **failed-then-recovered**, or the
+   trigger — a test/eval/flowsim fix-loop that **failed-then-recovered**, or the
    user voicing surprise — route it through gotcha's dedup, and one-tap confirm.
    A clean run stays silent (no vibe-gating). If capture is **declined/deferred**,
    drop the seam sentinel instead — append ONE structured line, deduped by `cmd`
@@ -403,9 +404,9 @@ already on disk.
 
 Summarize: branch the changes are sitting on (uncommitted), files changed,
 suggested commit message, eval pass/fail (or "skipped — no test surface"),
-test-check summary, the Stage 5 plan check — requirements verdict plus the flow
-axis and whether it was witnessed or advisory (or "skipped — no plan target") —
-and anything left open. Make it explicit that **nothing was committed** — the next move is
+test-check summary, the Stage 5 plan check — requirements verdict plus the flowsim
+flow trace and whether it was witnessed or advisory (or "skipped — no plan target")
+— and anything left open. Make it explicit that **nothing was committed** — the next move is
 yours.
 
 ## Gotchas

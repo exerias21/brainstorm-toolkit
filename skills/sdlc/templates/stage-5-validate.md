@@ -52,7 +52,8 @@ or bare `ux-plan-validator` when vendored), Sonnet by default per
 > mark it met / partially met / missing, with a `file:line` for each judgement. Feature
 > completeness and behavioural correctness — not code style, which the tests and the review
 > stage cover.
-> **(b) Flow:** trace each flow the plan claims through the actual source, in order, and flag
+> **(b) Flow (the flowsim trace, inline):** trace each flow the plan claims through the actual
+> source, in order, and flag
 > `MISMATCH` (code does something different), `UNCLEAR` (can't follow it), or `MISSING` (the
 > step isn't there). This catches the case where every individual criterion passes but the
 > end-to-end path silently deviates — wrong ordering, a skipped step, a different module doing
@@ -87,8 +88,10 @@ texts that are both present — the plan and the diff — and it is the pipeline
 a plan step that was silently never implemented. A test suite cannot fail for a step nobody
 wrote, especially one whose tests Stage 3 generated from the implementation in this same run.
 
-For a deeper interactive trace, `/flowsim` remains available as a standalone skill; this stage
-is its inline, bounded form.
+Axis (b) **is** the flowsim step of the pipeline — it still runs as a stage of the process, it
+just no longer writes its own sidecar (its results live in `validate.json`'s `data.flow[]`). For
+a deeper interactive trace, `/flowsim` remains available as a standalone skill; this is its
+inline, bounded form.
 
 ### 3. Gate
 

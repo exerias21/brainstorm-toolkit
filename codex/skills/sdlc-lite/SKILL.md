@@ -52,8 +52,8 @@ templates, no new schema beyond `run.json.pipeline = "sdlc-lite"` and a
 
 - You are on the branch the changes should land on. This skill never switches
   branches and never commits.
-- `.claude/project.json` optional. The eval stage and Stage 5's plan check skip
-  silently when their config or a plan target is absent.
+- `.claude/project.json` optional. The eval stage and Stage 5's plan check +
+  flowsim flow trace skip silently when their config or a plan target is absent.
 
 ## Output verbosity (default: quiet)
 
@@ -388,8 +388,8 @@ already on disk.
 
 Summarize: branch the changes sit on (uncommitted), files changed, suggested
 commit message, eval pass/fail, test-check summary, the Stage 5 plan check —
-requirements verdict plus the flow axis and whether it was witnessed or advisory
-(or "skipped — no plan target") — and anything left open. Make clear **nothing was
+requirements verdict plus the flowsim flow trace and whether it was witnessed or
+advisory (or "skipped — no plan target") — and anything left open. Make clear **nothing was
 committed** — the next move is yours.
 
 ## Gotchas
