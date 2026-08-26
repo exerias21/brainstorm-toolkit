@@ -21,7 +21,7 @@ is the *map*; `README.md` is the *menu*.
                              │
               ┌──────────────┴──────────────┐
               ▼                             ▼
-       /sdlc {plan}                    /task "..."
+       /sdlc-lite {plan}               /task "..."
        /sdlc-lite <X>                  (single-row TDD)
               │                             │
               ▼                             ▼
@@ -31,7 +31,7 @@ is the *map*; `README.md` is the *menu*.
               │                             │
         ┌─────┴─────┐                       │
         ▼           ▼                       │
-   /sdlc: PR    /sdlc-lite:                 │
+   /sdlc-lite: hand-off                    │
                 validated tree ─────────────┘
                 (you commit)
                       │
@@ -56,7 +56,7 @@ Execution tiers — same pipeline in the middle, different ending:
                       to commit. No git writes.
                       <X> = plan file | task-id | range "1-5" | description
                             | --queue [N] (attended backlog loop)
-  /sdlc {plan}      → FULL pipeline, then commits → branch → push → PR.
+  /sdlc-lite {plan} → FULL pipeline, then hands you the validated tree.
                       The only tier that touches git history.
 
   Stage 2 (implement) auto-decomposes a large multi-surface plan (>=2
@@ -78,8 +78,7 @@ Cost control — two INDEPENDENT model axes. Keep them straight:
     .implement — those are the ONLY way to RAISE a Haiku stage.
     Governs sub-agents only — for full savings also set your session model.
 
-    DEFAULT is Sonnet-first: /sdlc, /sdlc-lite, /brainstorm --vet and the
-    ultracode workflows run Sonnet out of the box; --model opus opts up.
+    DEFAULT is Sonnet-first: /sdlc-lite, /brainstorm --vet and the
 
   AXIS 2 — the adversarial reviewer (Stage 5.7/5.8 only). NEVER capped.
     "models": { "code_review": "opus" }  or  --review-model <name>
@@ -107,7 +106,7 @@ In parallel, runnable any time:
   /eval-harness     → scaffold + run the eval suite
   /plan-html {plan} → render any markdown plan as a single-file shareable HTML
   /gotcha "<entry>" → capture a pitfall (also auto-drafted at loop-exit by
-                      /task, /sdlc, /sdlc-lite on real traps; injected at
+                      /task, /sdlc-lite on real traps; injected at
                       /brainstorm start)
 ```
 
@@ -133,7 +132,6 @@ Convention skills — load a house pattern before writing code:
 |---|---|---|
 | `README.md` | Print this map + every installed skill | "remind me what's here" |
 | `/brainstorm [topic]` | Conversational ideation → plan file | start of any feature |
-| `/sdlc {plan}` | Autonomous plan-to-PR pipeline (commits + PR) | plan is bounded + clear |
 | `/sdlc-lite <X>` | Full pipeline, hands you the changes to commit (no git writes) | full discipline, you commit (e.g. onto an open PR) |
 | `/task "..."` | One-row TDD task | a single bug or small change |
 | `/status` | What to do now, from run state + sentinel + TASKS.md | after any interruption |
@@ -202,10 +200,8 @@ setting `disableSideloadFlags`); don't run it *and* the plugin together.
 | Stop hook | `.claude/settings.json` | `.github/hooks/` | `.codex/hooks.json` (trust via `/hooks`) |
 | Plan mode (interactive) | Yes | No (linear approval) | Yes (its own) |
 | Multi-agent parallel | Yes (Agent tool) | Sequential | Native subagents, single-model |
-| Workflow tool (ultracode) | Yes | No | No |
 
 Copilot and Codex run the **prose** stages — the canonical source of truth.
-The Workflow script is a Claude-only enhancement that mirrors them.
 
 When in doubt: which tool's prompt did you type the slash into? That's
 where the skill ran. There's no cross-tool dispatch.
@@ -221,7 +217,7 @@ where the skill ran. There's no cross-tool dispatch.
 - **A skill's behavior doesn't match this map** → run `README.md
   <skill-name>` for the live SKILL.md. This template can drift; the
   SKILL.md files are authoritative.
-- **`/sdlc` complains about missing config** → `.claude/project.json`
+- **`/sdlc-lite` complains about missing config** → `.claude/project.json`
   needs `test.unit` (or whatever stage 5 references). Copy from
   `.claude/project.json.example` and fill in.
 - **A config key seems to do nothing** → check it against

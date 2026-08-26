@@ -1,19 +1,19 @@
 # Resumption (`--resume`) — shared contract
 
-Canonical for `/sdlc` and `/sdlc-lite`. `/sdlc-lite` differs only in the terminal
-stage (hand-off, not PR) and in writing `handoff.json` instead of `pr-create.json`.
+Canonical for `/sdlc-lite`. `/sdlc-lite` differs only in the terminal
+stage: a hand-off that writes `handoff.json`, never a PR.
 
-`/sdlc <plan> --resume` picks up a paused/failed prior run instead of restarting
+`/sdlc-lite <plan> --resume` picks up a paused/failed prior run instead of restarting
 from Stage 1 — which would both re-spend every green stage and **overwrite the
 failure evidence you're resuming to fix**. Behavior:
 
 1. Read `.claude/pipeline/<slug>/run.json` (slug derived from the plan file
    exactly as Stage 1 does it). **If absent** → error: "no prior run for
-   `<slug>` — run `/sdlc <plan>` without `--resume` to start fresh." Do not
+   `<slug>` — run `/sdlc-lite <plan>` without `--resume` to start fresh." Do not
    create a fresh run under `--resume`.
 2. **Staleness guard.** If `run.json.plan_hash` ≠ the current plan file's hash,
    the plan changed since the paused run — **reject**: "plan `<slug>` changed
-   since the paused run; start fresh (`/sdlc <plan>`) or revert the plan." Don't
+   since the paused run; start fresh (`/sdlc-lite <plan>`) or revert the plan." Don't
    try to reconcile. (Optional/additive: a per-stage `prompt_hash` mismatch —
    the *toolkit* changed a stage's prompt since the run — may *warn* rather than
    reject; skip the check entirely when the field is absent.)

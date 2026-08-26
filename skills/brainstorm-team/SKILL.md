@@ -145,6 +145,6 @@ chosen blueprint(s) into delivery rather than waiting for them to re-issue a
 command:
 - Render the results for a visual read if useful: `/plan-html plans/team-brainstorm-<topic-slug>.md`.
 - Hand a chosen blueprint to the pipeline — `/sdlc-lite <plan>` (full pipeline,
-  hands you the validated changes; safe default, no git writes) or `/sdlc <plan>`
+  hands you the validated changes; safe default, no git writes) or `/sdlc-lite <plan>`
   (→ PR; confirm first). Continue whichever flow has been used this session;
   default to `/sdlc-lite`.

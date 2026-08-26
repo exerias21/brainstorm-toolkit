@@ -1,13 +1,13 @@
 # State Envelope Schema
 
-`/sdlc` writes a transparent state journal under `.claude/pipeline/<feature-slug>/` as it runs. This file documents the on-disk shape so consumers (orchestrators, dashboards, `/sdlc --resume` and the future `/sdlc --inspect`) can read it without inventing their own contract.
+`/sdlc-lite` writes a transparent state journal under `.claude/pipeline/<feature-slug>/` as it runs. This file documents the on-disk shape so consumers (orchestrators, dashboards, `/sdlc-lite --resume`, `/status` and `/repo-health`) can read it without inventing their own contract.
 
 **Status**: schema_version 1. Backward-compatible field additions are allowed without bumping the version; field renames or removals require a version bump.
 
 **Design rules** (from `docs/PHASE-1-STATE-ENVELOPE.md`):
 
 1. State is a transparent **side-effect**, never a contract. No skill is required to read these files; they're available for those that want to.
-2. State writes are **best-effort**. If the disk is full or the directory is unwritable, `/sdlc` logs a warning and continues. State writes never fail a pipeline run.
+2. State writes are **best-effort**. If the disk is full or the directory is unwritable, `/sdlc-lite` logs a warning and continues. State writes never fail a pipeline run.
 3. State is **gitignored**. `setup.sh` ensures consumers' `.gitignore` lists `.claude/pipeline/`.
 
 ---
@@ -28,11 +28,10 @@
     validate.json
     review.json             # Stage 5.7 -- only when a reviewer resolves (see the reviewer-model enablement chain, models.md)
     review-fix.json         # Stage 5.8 -- only when review.json.data.confirmed is non-empty; single cumulative file, data.loops[] holds one entry per iteration (NOT numbered review-fix-<n>.json files)
-    secret-scan.json
-    pr-create.json
+    handoff.json            # Stage 6 hand-off
 ```
 
-Stage filenames use the **canonical kebab names** from `docs/CONVENTIONS.md` "Stage names" — `parse`, `sanity-check`, `decompose`, `implement`, `implement-<lane>`, `converge`, `generate-evals`, `validate`,  `review`, `review-fix`, `secret-scan`, `pr-create`. Never decimal-versioned (no `stage-1.5.json`).
+Stage filenames use the **canonical kebab names** from `docs/CONVENTIONS.md` "Stage names" — `parse`, `sanity-check`, `decompose`, `implement`, `implement-<lane>`, `converge`, `generate-evals`, `validate`, `review`, `review-fix`. Never decimal-versioned (no `stage-1.5.json`).
 
 Note: `review-fix`'s internal `loops[]` index is a bounded loop counter (`max_fix_loops`, default 3), **not** an artifact ID — it is not zero-padded and does not fall under the `pbi-001`/`task-001` convention.
 
@@ -70,9 +69,9 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
 |---|---|---|---|
 | `schema_version` | int | yes | Currently `1`. Bumped only on breaking change. |
 | `feature_slug` | string | yes | Derived from plan filename per CONVENTIONS.md slug-derivation. RFC 1123-compliant. |
-| `plan_file` | string | yes | Path relative to repo root, as passed to `/sdlc`. |
+| `plan_file` | string | yes | Path relative to repo root, as passed to `/sdlc-lite`. |
 | `plan_hash` | string | yes | `sha256:<hex>` of the plan file's contents at Stage 1. Lets `--resume` detect plan edits (a mismatch rejects the resume). |
-| `args` | object | yes | Snapshot of run-time decisions. Snake_case keys. `/sdlc` is zero-flag — the only field currently recorded is `skill_repo` (auto-detected from `.claude-plugin/marketplace.json` presence at repo root). New additive fields are allowed. |
+| `args` | object | yes | Snapshot of run-time decisions. Snake_case keys. `/sdlc-lite` is zero-flag — the only field currently recorded is `skill_repo` (auto-detected from `.claude-plugin/marketplace.json` presence at repo root). New additive fields are allowed. |
 | `pipeline` | string | optional | Which skill wrote this run: `sdlc`, `sdlc-lite`, or `task`. Absent ⇒ assume `sdlc` (back-compat). Lets `/status`, `/repo-health`, and the Stop hook distinguish run types. |
 | `base_commit` | string | optional | `git rev-parse HEAD` captured at Stage 1, before any implementation commit. Powers **continuity detection** (is this branch's prior run an ancestor of HEAD?) and **reconciliation** (an `in_progress` run whose `base_commit` is already an ancestor of HEAD was almost certainly committed outside the pipeline). Additive; absent on older runs. |
 | `started_at` | ISO 8601 string | yes | UTC, second precision. |
@@ -92,15 +91,14 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
   "stages_completed": [
     "parse", "sanity-check", "implement", "generate-evals",
     "validate", "review", "review-fix",
-    "secret-scan", "pr-create"
+    "secret-scan", "handoff"
   ]
 }
 ```
 
 When `pipeline.review_fix.enabled` is `false`, `--no-review` was passed, or `review.json`'s
 `confirmed[]` ends up empty, `review` and/or `review-fix` move to `stages_skipped` instead on the
-prose/overlay paths — same documented convention as `generate-evals`'s own skill-repo-mode skip. On the Workflow path this is logged, not array-appended (a
-pre-existing gap, not new here).
+prose/overlay paths — same documented convention as `generate-evals`'s own skill-repo-mode skip.
 
 **Queued / multi-item runs (`/sdlc-lite --queue`, L10).** A queue run stays on **this exact
 schema** — it does **not** invent a parallel shape. Concretely (dogfood-hardened):
@@ -140,13 +138,13 @@ Written when a stage finishes (or pauses, or fails). One file is written per sta
 | `stage` | string | yes | Canonical kebab name. Must match the filename. |
 | `status` | enum | yes | One of `pass`, `fail`, `paused`. `pass` means the stage completed and the pipeline may proceed. `fail` is terminal. `paused` means human intervention needed. |
 | `started_at` / `ended_at` | ISO 8601 strings | yes | UTC, second precision. |
-| `summary` | string | yes | One-line human summary suitable for `--inspect`. |
+| `summary` | string | yes | One-line human summary, read by `/status`. |
 | `prompt_hash` | string | optional | `sha256:<hex>` of the SKILL.md prompt template that drove this stage. Lets `--resume` detect toolkit upgrades that changed how a stage runs (per Open Question #3 in the plan: re-run any stage whose `prompt_hash` differs from the cached value). |
 | `data` | object | yes | Stage-specific payload. May be `{}` for stages with no structured output. Shape per stage below. |
 
 ### Per-stage `data` shapes
 
-Below is the shape each stage's `data` field is expected to take. These are the contracts `--resume` and `--inspect` will rely on; new keys are additive and safe.
+Below is the shape each stage's `data` field is expected to take. These are the contracts `--resume` and `/status` rely on; new keys are additive and safe.
 
 #### `parse`
 ```json
@@ -318,8 +316,7 @@ value -- not a separately-computed number. `deferred_debt` entries are out-of-sc
 incidentally during review (each with a `debt_hash` dedup key, auto-appended once each to
 `TASKS.md`). **If `confirmed` is empty, OR `pipeline.review_fix.mode` is `"off"`, Stage 5.8 is
 skipped entirely** -- no `review-fix.json` is written. On the prose/overlay paths, `review-fix` is
-recorded in `run.json.stages_skipped` for this self-skip; on the Workflow path this is logged, not
-array-appended (a pre-existing gap, not new here).
+recorded in `run.json.stages_skipped` for this self-skip.
 
 #### `review-fix` (Stage 5.8 -- single cumulative sidecar; only when `review.json.confirmed` is non-empty)
 ```json
@@ -365,10 +362,7 @@ confirmed finding's `finding_id` when interpolating the fix agent's envelope pay
 never reach the sidecar.
 
 **`reverify` is never written by the fix agent itself, on either path.** The fix agent runs
-*before* its own loop's re-review exists, so it cannot know that result. On the Workflow, the fix
-agent's envelope note writes only `fix_specs`/`decisions`/`fixed_fingerprints`; `reverify` is
-back-filled by the `persist:review-fix` call after the loop, from the pass-N re-review result
-already held in JS. On the Workflow, `decisions[].reason` is always `"workflow auto-apply"` (there
+*before* its own loop's re-review exists, so it cannot know that result.reason` is always `"workflow auto-apply"` (there
 is no human channel there) rather than `null` -- the `null` shown in the example above is the
 prose-path, human-interactive-approval case.
 
@@ -420,27 +414,7 @@ axis gates either way. Both arrays are absent when there was no plan target to c
 ```
 
 
-#### `secret-scan`
-```json
-{
-  "tool": "gitleaks",
-  "files_scanned": ["api/routes/orders.py", "api/schemas/order.py"],
-  "high_findings": 0,
-  "medium_findings": 0
-}
-```
-
-#### `pr-create`
-```json
-{
-  "branch": "sdlc/add-orders",
-  "pr_url": "https://github.com/org/repo/pull/42",
-  "pr_number": 42,
-  "commit_sha": "abc1234"
-}
-```
-
-#### `handoff` (sdlc-lite mode — replaces `pr-create`)
+#### `handoff` (Stage 6)
 ```json
 {
   "branch": "feature-branch",
@@ -497,18 +471,18 @@ file per repo, keyed by lens. It backs the Review→Fix stage's false-positive c
 
 ## Lifecycle
 
-1. **Stage 1 (`parse`)**: `/sdlc` `mkdir -p .claude/pipeline/<slug>/stage-outputs/`, then writes initial `run.json` with `stage: "parse"`, `status: "in_progress"`, captures `args` and `plan_hash`. On Stage 1 completion, writes `stage-outputs/parse.json`.
+1. **Stage 1 (`parse`)**: `/sdlc-lite` `mkdir -p .claude/pipeline/<slug>/stage-outputs/`, then writes initial `run.json` with `stage: "parse"`, `status: "in_progress"`, captures `args` and `plan_hash`. On Stage 1 completion, writes `stage-outputs/parse.json`.
 2. **Subsequent stages**: when a stage starts, `run.json.stage` and `run.json.updated_at` are updated. When the stage finishes, its sidecar is written and `run.json.stages_completed` is appended.
 3. **Skipped stages** (e.g., stages skipped because their config was absent, or skill-repo-mode skips `generate-evals`): added to `run.json.stages_skipped`; no sidecar is written.
 4. **Terminal states**:
    - All stages pass → `run.json.status = "complete"`.
    - Unrecoverable failure → `run.json.status = "failed"`; the failing stage's sidecar has `status: "fail"`.
    - Pause for human review (validate failure persists) → `run.json.status = "paused"`.
-5. **Re-running `/sdlc <plan>`** (without `--resume`): overwrites the prior `run.json` and `stage-outputs/` for the same slug. Slug-collision policy (different plan files deriving the same slug) is deferred to a later phase per `docs/CONVENTIONS.md` open questions; current behavior is overwrite.
+5. **Re-running `/sdlc-lite <plan>`** (without `--resume`): overwrites the prior `run.json` and `stage-outputs/` for the same slug. Slug-collision policy (different plan files deriving the same slug) is deferred to a later phase per `docs/CONVENTIONS.md` open questions; current behavior is overwrite.
 
 ## Best-effort failure mode
 
-If `mkdir -p`, `chmod`, or any state-write fails (disk full, read-only volume, permissions), `/sdlc` logs a single-line warning to stderr (`[state-envelope] write failed: <error>; continuing`) and proceeds with the pipeline. **State writes never fail a pipeline run.** The pipeline run can still produce a PR even if state was never persisted.
+If `mkdir -p`, `chmod`, or any state-write fails (disk full, read-only volume, permissions), `/sdlc-lite` logs a single-line warning to stderr (`[state-envelope] write failed: <error>; continuing`) and proceeds with the pipeline. **State writes never fail a pipeline run.** The pipeline run can still produce a PR even if state was never persisted.
 
 ## What does NOT live here
 

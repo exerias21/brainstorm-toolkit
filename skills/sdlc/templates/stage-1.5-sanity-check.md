@@ -1,6 +1,6 @@
 # Stage 1.5 — Sanity-check agent prompts
 
-Canonical for `/sdlc` and `/sdlc-lite` Stage 1.5 — orchestration first, then the
+Canonical for `/sdlc-lite` Stage 1.5 — orchestration first, then the
 per-focus agent prompts.
 
 ## Orchestration
@@ -29,7 +29,8 @@ stronger reader does better. Raising it costs on **every** run that reaches Stag
 which is every run, since the stage is never gated.
 
 The resolved tier still passes through the **model cap** (`models.cap` / `--model`, see
-`templates/models.md`), which is a *ceiling*: `capModel(effective_default, cap)`. Note
+`skills/sdlc/templates/models.md`), which is a *ceiling* — it lowers a tier, never raises
+one. Note
 the consequence, because it is the whole reason this key exists — **the cap can only
 lower, so while the site default is `haiku` there is no way to raise this stage at all.**
 `models.cap: "opus"` does not raise it; `--model opus` does not raise it. Setting

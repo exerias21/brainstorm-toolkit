@@ -1,6 +1,6 @@
 # Secret scan (shared)
 
-Canonical for `/sdlc` Stage 6 (gating posture: warn, never refuse) and `/sdlc-lite`
+Canonical for `/sdlc-lite` Stage 6 (gating posture: warn, never refuse) and `/sdlc-lite`
 Stage 6 (warn-only, never blocks). Run it over the changed files before the terminal
 stage.
 
@@ -34,8 +34,7 @@ high-signal patterns: `AKIA[0-9A-Z]{16}` (AWS access key), `aws_secret_access_ke
 
 Record the scan tool used and finding count in the PR body so reviewers know a scan ran.
 
-**State write**: write `stage-outputs/secret-scan.json` with `data.tool`
-(`gitleaks` or `regex-fallback`), `data.files_scanned[]`,
-`data.high_findings`, `data.medium_findings`. Status is always `pass` —
-the scan is informational, not gating.
+**No sidecar.** The scan never gates (status was always `pass`) and nothing ever read
+`secret-scan.json`. Report findings inline and append `secret-scan` to
+`run.json.stages_completed`; that is what every consumer actually reads.
 

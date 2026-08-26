@@ -116,7 +116,7 @@ Plans without this block fail acceptance — refuse to write them.
 
 ## Step 5 — Write the plan file
 
-Write to `plans/brainstorm-deep-<topic-slug>.md`. Same naming convention as `/brainstorm` so downstream `/sdlc <plan>` consumption is uniform.
+Write to `plans/brainstorm-deep-<topic-slug>.md`. Same naming convention as `/brainstorm` so downstream `/sdlc-lite <plan>` consumption is uniform.
 
 ## Args
 
@@ -138,7 +138,7 @@ Write to `plans/brainstorm-deep-<topic-slug>.md`. Same naming convention as `/br
 
 - Ask is small, well-scoped, low-stakes → `/brainstorm`
 - User wants competitive analysis or multi-persona separate sections → `/brainstorm-team`
-- User has a clear PBI in mind → `/pbi` (Phase 1D)
+- User has a clear PBI in mind → `/task`
 - "Audit the existing X for issues" → `/repo-health` or `/dead-code-review`
 
 ## Cost note

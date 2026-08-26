@@ -1,33 +1,31 @@
 ---
 name: sdlc-lite
 description: >
-  The full /sdlc pipeline with a different ending: implement → evals → fix →
-  validate, then HAND OFF the validated changes in
-  your working tree for you to commit — it never commits, branches, pushes, or
-  opens a PR. Use to run full SDLC discipline on work you want to review and
-  commit yourself (e.g. onto an open PR's branch). Takes a plan file (like
-  /sdlc), a task id, a task range (e.g. "1-5"), or an ad-hoc description. Only
-  /sdlc touches git history; /sdlc-lite leaves that to you.
+  Run the full SDLC pipeline on a plan file, task id, task range (e.g. "1-5"), or
+  an ad-hoc description: sanity-check → implement → evals → fix → validate →
+  flowsim, then hand off the validated changes in your working tree for you to
+  commit. Never commits, branches, pushes, or opens a PR — no git writes at all.
+  Use when you want full SDLC discipline on work you will review and commit
+  yourself, e.g. onto an open PR's branch. Use /task instead for a single small
+  TDD fix with no plan.
 argument-hint: "<plan-file | task-id | task-range | description> [--resume] [--queue [N]]"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
-# sdlc-lite — the /sdlc pipeline, leaving the commit to you (no git writes)
+# sdlc-lite — the full SDLC pipeline, leaving the commit to you (no git writes)
 
 ## When to use
 
 | Skill | Input | Pipeline | Terminal action |
 |---|---|---|---|
 | `/task <description>` | ad-hoc ask | TDD red→green only | commit only if you ask |
-| `/sdlc-lite <plan \| task-id \| range \| desc>` | plan, task(s), or ask | **full** (sanity→implement→evals→validate) | **validated changes left in your working tree — you commit** |
-| `/sdlc <plan-file>` | plan file | full | new branch → push → **PR** → `/review` |
+| `/sdlc-lite <plan \| task-id \| range \| desc>` | plan, task(s), or ask | **full** (sanity→implement→evals→validate→flowsim) | **validated changes left in your working tree — you commit** |
 
-`/sdlc-lite` and `/sdlc` run the **same stages** and reuse `/sdlc`'s templates
-and state envelope verbatim. They differ in exactly one place: Stage 6. `/sdlc`
-commits, pushes, and opens a PR; **`/sdlc-lite` does no git writes at all** — it
-hands you a validated, ready-to-commit working tree. Only `/sdlc` touches git
-history.
+**It does no git writes, ever** — no commit, branch, push, PR, or `/review`. It
+hands you a validated, ready-to-commit working tree; the commit is yours. Stage
+bodies live in `skills/sdlc/templates/` (a shared template tree, not a skill);
+each stage below names the one it loads.
 
 ## Prerequisites
 
@@ -52,10 +50,10 @@ narration; a missing `project.json` means `quiet`, by design.
 
 ## State envelope
 
-Writes to `.claude/pipeline/<slug>/` — same path and sidecar shapes as `/sdlc`
+Writes to `.claude/pipeline/<slug>/` — the canonical envelope
 (see `skills/sdlc/templates/state-schema.md`). Two additive fields:
 
-- `run.json.pipeline = "sdlc-lite"` (distinguishes from `/sdlc` runs).
+- `run.json.pipeline = "sdlc-lite"` (distinguishes from `/sdlc-lite` runs).
 - Stage 6 sidecar is `handoff.json`
   (`{branch, files_changed[], committed: false, suggested_commit_msg}`)
 
@@ -64,7 +62,7 @@ prior run for the resolved slug instead of restarting from scratch — **read
 `skills/sdlc/templates/resumption.md` now** and follow it (read `run.json`; reject on a
 `plan_hash` mismatch; skip stages whose sidecar shows `status: "pass"`; resume at the first
 non-passing one). The only differences are the terminal stage (hand-off, not PR) and the
-`handoff.json` sidecar in place of `pr-create.json` — both additive, no schema bump. Resume
+`handoff.json` sidecar it writes at Stage 6. Resume
 keys on the **resolved slug**, so an ad-hoc-description run must be resumed with the *same
 description text* (a reworded description derives a different slug → "no prior run"); task-id
 / range / plan-file inputs resolve to a stable slug and resume cleanly.
@@ -78,7 +76,7 @@ For a task **range**, `run.json.data.task_range` records the resolved ids.
 Detect the argument shape:
 
 1. **Plan file** — arg is a path ending `.md` that exists (e.g.
-   `plans/my-feature.md`). Use it as the plan, exactly like `/sdlc` Stage 1.
+   `plans/my-feature.md`). Use it as the plan and parse it per Stage 0 below.
    This is the primary path and the one that exercises the full pipeline
    (Stage 5's plan check has a plan to check against). **Also scan `TASKS.md`
    for `Active / Pending` rows that reference this plan** (by path or slug —
@@ -111,18 +109,44 @@ Mark resolved rows `[~]` (in-progress). Derive `slug` per the algorithm in
 `docs/CONVENTIONS.md`. Capture `base_commit` = `git rev-parse HEAD` and
 initialize the state envelope at `.claude/pipeline/<slug>/` with
 `pipeline: "sdlc-lite"`, `base_commit`, `status: "in_progress"`.
+
+**Then parse the plan.** Read the resolved plan/task file(s) fully and extract:
+feature name/slug; implementation steps (numbered lists with file paths, or
+checkbox rows); files to create or modify (file paths, a table of files, or each
+linked task file's `files:` frontmatter); acceptance criteria ("expected",
+"should", "must", "verify" language); cross-module touchpoints. A `TASKS.md`-style
+checkbox list counts every `[ ]`/`[~]` row in `Active / Pending` as an
+implementation step.
+
+**Write `stage-outputs/parse.json`** with `data.feature_name`,
+`data.files_to_change`, `data.implementation_step_count`,
+`data.acceptance_criteria_count`, and append `parse` to
+`run.json.stages_completed`. This is not bookkeeping: Stage 2's decompose gate
+reads `data.files_to_change` and `data.implementation_step_count` and cannot run
+without them.
+
+**Skill-repo detection** (automatic, no flag): if `.claude-plugin/marketplace.json`
+exists at repo root, the repo is itself a markdown-skill plugin — switch to the
+substitutions in **Skill-repo mode** below for the rest of the run.
+
+**Vendored-skill guard:** if `.claude-plugin/marketplace.json` is **absent** (an
+ordinary consumer repo) but the plan's changed files target `.claude/skills/**`,
+`.github/skills/**`, or `.agents/skills/**` — i.e. it edits *installed* skill
+copies — **stop and report.** Those edits belong upstream in the canonical
+toolkit repo and then get re-installed; shipping them through a consumer's
+pipeline diverges the vendored copy from canonical.
 **Queue-mode exception:** the plan-file slug is shared by every row of a plan, so a
 queued item derives a **distinct per-item slug** (`<plan-slug>-<row-id>`, or the
 linked task-file slug) — see **Queue mode** — otherwise all its items collide on one
 `.claude/pipeline/<slug>/` envelope.
 
 **Continuity detection** (prompt, never auto) — the shared scan in
-`skills/sdlc/templates/envelope-staleness.md`, same as `/sdlc`: **skip entirely when on the `main_branch`** (merges make every run an
-ancestor there — pure noise). On a feature branch, take only the **single
-most-recently-updated** run whose `base_commit` is an ancestor of HEAD, and
-prompt **only** if it's non-terminal OR complete with HEAD advanced past its
-recorded `commit_sha` (follow-up landed outside the pipeline). One prompt at
-most, or none.
+`skills/sdlc/templates/envelope-staleness.md`: **skip entirely when on the
+`main_branch`** (merges make every run an ancestor there — pure noise). On a
+feature branch, take only the **single most-recently-updated** run whose
+`base_commit` is an ancestor of HEAD, and prompt **only** if it's non-terminal OR
+complete with HEAD advanced past that `base_commit` (follow-up landed outside the
+pipeline). One prompt at most, or none.
 
 ## Queue mode (`--queue`) — attended backlog loop
 
@@ -130,7 +154,7 @@ most, or none.
 so work appended *during* the run (a `/status`-drafted fix, a brainstorm follow-up)
 joins the loop — that re-scan is what makes it a loop rather than a fixed batch.
 **No git writes** (it's `/sdlc-lite`): the whole loop leaves validated changes in
-your tree for you to commit; it never runs `/sdlc` or opens a PR. The loop itself is
+your tree for you to commit; it never opens a PR. The loop itself is
 **prose-orchestrated** — each item runs the normal sdlc-lite pipeline (prose or, under
 one pipeline run per item); the selection, re-scan, and stop conditions are here.
 
@@ -251,7 +275,7 @@ disjoint.
   substitute `{feature_name}` and `{plan_content}`; **Sonnet by default** (Opus
   only on `--model opus`, per `skills/sdlc/templates/models.md`) on Claude,
   inline on Copilot/Codex. Writes `implement.json`, no decompose/converge sidecars.
-  **Model cap applies** (inherited from `/sdlc` Stage 2): the implement/fix/lane
+  **Model cap applies**: the implement/fix/lane
   tiers are lowered per `skills/sdlc/templates/models.md` — `--model <tier>`
   flag > `project.json models.cap` > default.
 - **Decompose (large multi-surface plan):** run 2a/2b/2c —
@@ -328,7 +352,7 @@ there pauses the run for `/sdlc-lite` too (an objective break, not an adversaria
 `/sdlc-lite` runs the full pipeline and then **stops at the edge of git**. It
 does not commit, stage-and-commit, branch, push, open a PR, or invoke
 `/review`. The user reviews the validated working tree and commits it
-themselves. (Want the commit + PR done for you? That's `/sdlc`.)
+themselves.
 
 1. **Secret scan** the changed files — **read `skills/sdlc/templates/secret-scan.md` now**
    and run it. **Warn-only**: surface findings (file:line) but never block. HIGH findings
@@ -372,7 +396,7 @@ themselves. (Want the commit + PR done for you? That's `/sdlc`.)
    changed-files gate flagged the **deploy-delta** surface, append
    `- [ ] (P1) rebuild <env> for <slug> (dependency change — rebuild, not restart) — plans/<slug>.md`;
    and a `- [ ] (P2) verify <slug> deployed — /repo-health`
-   row closes the loop the same way `/sdlc` Stage 6 does.
+   row closes the loop.
    **Then print the manual-verification line** from `.claude/project.json` `stack.*`
    (all keys optional): the deploy-delta case prints `stack.rebuild` (a dependency
    changed, so a plain restart would run stale code), otherwise `stack.up`; append
@@ -409,18 +433,42 @@ flow trace and whether it was witnessed or advisory (or "skipped — no plan tar
 — and anything left open. Make it explicit that **nothing was committed** — the next move is
 yours.
 
+## Skill-repo mode (auto-detected)
+
+Active when `.claude-plugin/marketplace.json` exists at repo root (detected at
+Stage 0). The standard pipeline is shaped for "code-with-tests"; a skill repo has
+no test surface, so the eval-driven stages are inapplicable. Three stages change;
+every other stage runs unmodified.
+
+| Stage | Skill-repo behavior |
+|---|---|
+| Stage 3 — Generate evals | **skip** (no test surface) — append `generate-evals` to `run.json.stages_skipped` |
+| Stage 5 — Validate | **substitute** with `skills/sdlc/templates/stage-5-skill-repo.md` (HARD: validator, marketplace registration, template-reference resolution, setup.sh dry install; SOFT: line-count ceiling, README skills-table drift, overlay parity). Writes `validate.json` with `data.mode = "skill-repo"` |
+| Stage 5.7 — Adversarial review | **adapt, never self-skip** — a docs-only diff is the code surface here. Correctness and plan-alignment apply equally to prose; `security` applies its skill-repo shell-injection check; `config-env-docs` repoints to the frontmatter / marketplace / template-reference checks in `stage-5-skill-repo.md` |
+
+## Safety rules
+
+- **Stop on ambiguity** — if the plan has unclear steps, pause and ask.
+- **Stop on repeated failures** — if a fix loop can't resolve within its budget,
+  report rather than grinding.
+- **Don't fix pre-existing failures** — only fix what this run introduced.
+  Stage 5's `preexisting[]` is reported, never gated on.
+- **Autonomy overrides interactive output styles** — this is an autonomous
+  pipeline. If an interactive output style (a "learning"/contribution-seeking
+  mode) is active, the explicit invocation wins: run autonomously, don't pause
+  to solicit user-authored code mid-pipeline.
+
 ## Gotchas
 
 - **It does no git writes — ever.** No commit, no branch, no push, no PR, no
-  `/review`. It hands you a validated working tree; you commit. Only `/sdlc`
-  touches git history.
+  `/review`. It hands you a validated working tree; you commit.
 - **Stage 5's plan check runs whenever there's a plan to check** — pass a plan
   file (or a task with `parent_plan`) and they run unconditionally. They skip
   only when there is literally no plan target to validate against — never
   behind a separate opt-in flag or frontmatter knob.
-- **Don't fork `/sdlc`'s templates.** If a stage needs different prompt copy,
-  the work is probably a `/sdlc` job — re-invoke as `/sdlc`. Zero template
-  duplication is the contract.
+- **Don't fork the shared templates.** Stage bodies live once in
+  `skills/sdlc/templates/`; edit the template, never copy it into this file.
+  Zero template duplication is the contract.
 - **Range accumulates in the tree.** A range runs the pipeline over each task
   and leaves all changes uncommitted together; you choose how to slice the
   commits when you review.

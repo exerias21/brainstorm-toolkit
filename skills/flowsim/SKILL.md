@@ -4,7 +4,7 @@ description: >
   Trace the claimed flow from a plan or task through the source code and report
   mismatches. This is a structured code-review pass formatted as a narrative
   execution trace — the goal is to surface "the plan said X but the code does Y"
-  gaps that test suites and evals miss. Use during the /sdlc fix loop, after
+  gaps that test suites and evals miss. Use during the /sdlc-lite fix loop, after
   implementing a feature, or ad hoc when a plan and its implementation feel
   misaligned. Invoke via /flowsim or when the user says "trace the flow",
   "verify the plan matches", "walk through what actually happens".
@@ -22,7 +22,7 @@ This is NOT a program simulator. It's a **structured code review** formatted as 
 ## When to use
 
 - User invokes `/flowsim <plan-file>` or `/flowsim task-3-add-orders`
-- Called automatically by `/sdlc` Stage 5 when a parent plan is available
+- Called automatically by `/sdlc-lite` Stage 5 when a parent plan is available
 - User asks "does the plan actually match what we built?", "trace this flow", "walk through what happens when a user X"
 
 ## Inputs
@@ -33,7 +33,7 @@ This is NOT a program simulator. It's a **structured code review** formatted as 
 - **Optional**: `--force` — ignore the prior-run cache (see Flow step 0) and re-trace every flow.
 - **Optional signal**: latest test results as corroborating evidence. Two sources, either counts:
   - eval results at `<eval.features_dir>/<feature>/results.json` (script/eval-harness features), and/or
-  - **`test.unit` results** (app-package features whose coverage was routed to the project's native unit suite — see `/sdlc` Stage 3). A passing unit test exercising a traced flow corroborates it; a failing one is a pre-existing mismatch.
+  - **`test.unit` results** (app-package features whose coverage was routed to the project's native unit suite — see `/sdlc-lite` Stage 3). A passing unit test exercising a traced flow corroborates it; a failing one is a pre-existing mismatch.
   Flowsim degrades to mostly-grep **only when neither source exists** — having unit results (not just eval results) keeps the trace meaningful for the common app-code feature.
 
 ## Flow
@@ -54,7 +54,7 @@ If it exists and `--force` was NOT passed:
 
 This trims re-runs after a fix loop — flows whose code paths were not touched
 by the fix do not need to be re-walked. Typical savings: 40–60% of trace work
-on subsequent runs of `/sdlc` Stage 5 against the same feature.
+on subsequent runs of `/sdlc-lite` Stage 5 against the same feature.
 
 If `plans/flowsim-<feature-slug>.json` does not exist, proceed normally — no
 cache, every flow is traced fresh.
@@ -114,33 +114,10 @@ Produce a markdown block:
 ### Flow 2: ...
 ```
 
-### 5. Emit structured output for /sdlc
-
-If invoked by `/sdlc`, also write a machine-readable summary to `plans/flowsim-<feature-slug>.json`:
-
-```json
-{
-  "feature": "add-orders",
-  "flows": [
-    {
-      "id": 1,
-      "description": "User submits order form",
-      "status": "MISMATCH",
-      "mismatches": [
-        {"step": 2, "anchor": "api/schemas/order.py:10", "detail": "Schema missing payment_method field"},
-        {"step": 3, "anchor": null, "detail": "OrderService class not found; logic inline in route"}
-      ]
-    }
-  ]
-}
-```
-
-This lets `/sdlc` feed findings into Stage 5's shared fix loop without re-parsing the markdown.
-
 ## Rules
 
 - **Three hops max by default.** Deeper chains get unreliable; if the plan implies a 5-hop flow, split it into two flows of 3 hops each.
 - **Every claim needs a `file:line` anchor** or an explicit `MISSING` marker. No "I think this is in the code somewhere".
 - **Don't invent flows the plan didn't claim.** If the plan is vague, say so and ask the user to clarify before tracing.
-- **Don't fix anything.** Flowsim is read-only. Handing fixes off to `/sdlc`'s fix loop or the user is the correct move.
+- **Don't fix anything.** Flowsim is read-only. Hand findings to the user (or, when running inside the pipeline, to Stage 5's fix loop).
 - **Cap output at ~60 lines of markdown** unless there are many flows. A 200-line flowsim report is a sign the plan is too ambitious for one feature.

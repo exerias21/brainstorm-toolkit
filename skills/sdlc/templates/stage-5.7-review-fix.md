@@ -1,6 +1,6 @@
 # Stages 5.7 / 5.8 — Adversarial review + fix loop (shared)
 
-Canonical for `/sdlc` and `/sdlc-lite`. **Opt-in, permanently OFF by default** —
+Canonical for `/sdlc-lite`. **Opt-in, permanently OFF by default** —
 do not load this file unless the stage is enabled (see the enablement rule below).
 
 **Opt-in, permanently OFF by default.** This stage activates only on an explicit
@@ -15,7 +15,7 @@ Runs after Stage 5, before Stage 6, once enabled and not auto-off'd. Fans out
 **one reviewer pass per configured lens** (parallel sub-agents on Claude; sequential inline passes
 on Copilot/Codex), each at the **reviewer** model — `models.code_review` / `--review-model`,
 default `opus`, resolved per `skills/sdlc/templates/models.md`. That axis is separate from the
-`haiku < sonnet < opus` cap ladder and is never routed through `capModel()`.
+`haiku < sonnet < opus` cap ladder and `models.cap` never lowers it.
 
 **Which lenses run — `agents.code_review_lenses`.** Read the array from `.claude/project.json`;
 when the key is absent, use all four defaults below. **Set fewer to cut the stage's cost roughly
@@ -48,7 +48,8 @@ review: reviewer runs <model> on <n> lens(es) + verify + fix-planner. models.cap
         agents.code_review_max_lenses. See templates/models.md.
 ```
 
-Never "fix" this by routing the reviewer model through `capModel()` — it silently no-ops.
+Never "fix" this by capping the reviewer — the cap does not govern this axis, and pretending
+otherwise just hides the cost. Lower `models.code_review` or cut the fan-out instead.
 
 | Lens | What it looks for |
 |---|---|
@@ -81,9 +82,7 @@ after 5 consecutive runs at ≥60%.
 
 **Diff size is not bounded here.** Each lens reviews the whole diff. The levers that actually
 exist are the fan-out ones above — `agents.code_review_lenses` and `agents.code_review_max_lenses`
-— plus keeping the plan small enough that one run's diff is reviewable. (A `max_diff_lines` /
-`max_files` partition scheme was specified and never built; it was removed rather than left
-standing as prose that reads like behavior. See `docs/REVIEW-FIX-STAGE.md` §4.1 for the record.)
+— plus keeping the plan small enough that one run's diff is reviewable.
 
 **Writes** `stage-outputs/review.json`. `review` is appended to `run.json.stages_completed`
 whenever this stage actually ran (even with zero findings). A self-skip (never opted in, opted out
@@ -120,7 +119,7 @@ Per `pipeline.review_fix.mode`:
 - **`off`**: emit findings to `review.json` only; Stage 5.8 does not run.
 
 **Independence enforcement:** the reviewer model must differ in effective tier from the
-implementer's effective tier (`capModel('opus', MODEL_CAP)`); if they collide, the reviewer bumps
+implementer's effective tier (its default after the cap is applied); if they collide, the reviewer bumps
 one tier up, or — if already at the ceiling — the run is marked `data.independence = "degraded"`
 in `review.json` and every finding that run is surfaced only, never auto-fixed.
 

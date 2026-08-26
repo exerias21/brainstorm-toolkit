@@ -16,7 +16,7 @@ metadata:
 This skill inspects the current repository and generates the config files that
 the rest of the toolkit reads. Run this **once per repo** after dropping the
 toolkit's skills and scripts in place. After it finishes, `/test-check`,
-`/eval-harness`, and `/sdlc` should work with no further setup.
+`/eval-harness`, and `/sdlc-lite` should work with no further setup.
 
 ## When triggered
 
@@ -89,7 +89,7 @@ Build a draft `project.json` from what you found. Fill in:
 - `main_branch` — from git
 - `modules` — inferred from top-level code directories (`src/`, `api/`, `web/`, `packages/*`, etc.)
 - `models.cap` — the standing **sub-agent model-tier ceiling** for every fan-out
-  skill (`/sdlc`, `/dead-code-review`, `/brainstorm-*`, …). A ceiling, not a swap:
+  skill (`/sdlc-lite`, `/dead-code-review`, `/brainstorm-*`, …). A ceiling, not a swap:
   tiers rank `haiku (1) < sonnet (2) < opus (3)` and `effective = min(default, cap)`
   — the cap only ever *lowers*, so `cap: "sonnet"` runs Opus sites at Sonnet while
   Haiku/Sonnet sites are untouched. Governs **sub-agent dispatch only**, never the
@@ -123,7 +123,7 @@ keystroke, and state the cost direction in each option:
 | Ask | Key | Options (default first) |
 |---|---|---|
 | **Ceiling for every sub-agent fan-out — implementers, fix agents, sanity + review lenses.** The single biggest cost lever. | `models.cap` | `sonnet` (Sonnet-first standing default) · `haiku` (cheapest; fine for sweeps/monitoring) · `opus` (**no ceiling** — every stage runs at its own full default tier) · omit |
-| **Which model pre-flights your plan before any code is written** (Stage 1.5, never gated — it runs on *every* `/sdlc` and `/sdlc-lite` run). Say plainly that the built-in is Haiku and that **`models.cap` cannot raise it** — this key is the only lever. | `models.sanity` / `.focuses` | omit → 3 Haiku agents (`paths`, `completeness`, `gotchas`) · `sonnet` (better judgment on `completeness`, which asks whether the plan hangs together) · fewer focuses to cut cost (`paths` is mechanical; drop `gotchas` when there's no `GOTCHAS.md`) |
+| **Which model pre-flights your plan before any code is written** (Stage 1.5, never gated — it runs on *every* `/sdlc-lite` run). Say plainly that the built-in is Haiku and that **`models.cap` cannot raise it** — this key is the only lever. | `models.sanity` / `.focuses` | omit → 3 Haiku agents (`paths`, `completeness`, `gotchas`) · `sonnet` (better judgment on `completeness`, which asks whether the plan hangs together) · fewer focuses to cut cost (`paths` is mechanical; drop `gotchas` when there's no `GOTCHAS.md`) |
 | **Enable the adversarial Review→Fix stage?** Off unless you say yes — it never runs by accident. | `pipeline.review_fix.enabled` / `.model` | `false` (default) · `true` + reviewer `opus` · `true` + reviewer `fable` (usage-billed, explicit opt-in) |
 | **How many review lenses?** Ask only if the stage was just enabled. One reviewer call per lens at the reviewer model, so this scales the stage's cost roughly linearly. | `agents.code_review_lenses` | omit → all four (`correctness`, `plan-alignment`, `config-env-docs`, `security`) · `["correctness", "security"]` (half cost; good default for app code) · `["correctness"]` (quarter cost; highest-yield single lens) |
 | **How do you bring this app up for manual verification?** Confirm or correct what was detected. | `stack.up` / `stack.rebuild` / `stack.url` | the detected compose/dev commands · corrected by the user · omit (skills then say which key is missing instead of guessing) |
@@ -169,7 +169,7 @@ After the user confirms (or adjusts):
    ```
 
    Why each:
-   - `.claude/pipeline/` — per-run `/sdlc` + `/sdlc-lite` envelopes; one dir per
+   - `.claude/pipeline/` — per-run `/sdlc-lite` + `/sdlc-lite` envelopes; one dir per
      run, pure churn if tracked.
    - `.claude/.next-action` / `.auto-continue-hops` — the seam's scratch files.
    - `.claude/project.json` — **machine-specific.** It holds test commands, paths

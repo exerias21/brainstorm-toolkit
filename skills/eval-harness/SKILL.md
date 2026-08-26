@@ -42,8 +42,8 @@ package** (`backend/app/...`, `src/...`, a framework service module) are
 **not reachable** here — that is intentional, not a bug.
 
 For app-package logic, generate tests into the **project's native unit suite**
-(where `test.unit` points) and run them via `/test-check` / `/sdlc` Stage 5,
-**not** through this harness. `/sdlc` Stage 3 does this routing automatically;
+(where `test.unit` points) and run them via `/test-check` / `/sdlc-lite` Stage 5,
+**not** through this harness. `/sdlc-lite` Stage 3 does this routing automatically;
 don't force app code into `scripts/` just to use the eval harness.
 
 ## When to Use

@@ -39,7 +39,7 @@ The differentiator vs `/brainstorm` is **structured saturation**: questions are 
 
 ## Execution mode — prose by default; Pass 3 fan-out via Workflow when ultracode is on
 
-This skill is a **hybrid**, so unlike `/sdlc` only *part* of it can ever run as a
+This skill is a **hybrid**, so unlike `/sdlc-lite` only *part* of it can ever run as a
 Workflow. The interactive passes (Pass 1 understand, Pass 2 saturate-by-questioning),
 the variant **selection**, and the expectation-contract pre-write gate are
 conversational — they **always run in the main thread** and can never be scripted
@@ -48,7 +48,7 @@ conversational — they **always run in the main thread** and can never be scrip
 **The prose passes below are the default and the source of truth.** The one
 autonomous slice — **Pass 3's parallel perspective-frame fan-out + variant
 drafting** — is delegated to a deterministic Workflow **only when explicitly opted
-in** (same flag and gate as `/sdlc`):
+in** — `/brainstorm-deep` is now the only Workflow-backed skill in the toolkit:
 
 **Use the Workflow for Pass 3 IFF ALL of:** Claude Code with the Workflow tool
 available, **ultracode explicitly enabled** (keyword, session flag, or asked-for by
@@ -82,14 +82,13 @@ parallel Agent dispatch in Pass 3 below). That covers any non-ultracode Claude r
 Copilot/Codex (no Workflow tool — Codex has its own plan mode, but not this JS
 orchestration primitive, and uses the sequential overlay), older Claude Code, and
 `skip_workflow: true`. **The prose is the source of truth; the Workflow mirrors
-it** — change the prose first, then the Workflow (see `CLAUDE.md` → "Workflow-backed
-skills … the three-way sync contract").
+it** — change the prose first, then the Workflow.
 
 ## How it works
 
 ### Step 0: Enter Plan mode
 
-Switch to **Plan mode** (`EnterPlanMode` on Claude Code; equivalent step-by-step approval flow on Copilot). This skill is conversational by design — implementation is for `/sdlc` later.
+Switch to **Plan mode** (`EnterPlanMode` on Claude Code; equivalent step-by-step approval flow on Copilot). This skill is conversational by design — implementation is for `/sdlc-lite` later.
 
 ### Pass 1 — Understand (≤2 minutes of chat)
 
@@ -170,7 +169,7 @@ that emerged in Pass 2>
 - ...
 ```
 
-`/sdlc` and `/task` can grep this block to ground their own work.
+`/sdlc-lite` and `/task` can grep this block to ground their own work.
 
 ### Step 5 — Write the plan file
 
@@ -188,7 +187,7 @@ supply the missing pieces and only proceed once they're filled in.
 The expectation contract is this skill's misalignment-catching net;
 writing a plan without it defeats the skill's purpose.
 
-Write to `plans/brainstorm-deep-<topic-slug>.md`. Slug is derived from the user's topic the same way `/brainstorm` does it. Same naming convention so downstream `/sdlc <plan>` consumption is uniform. **Plan-mode sandbox:** if the host only permits writes to a transient plan path during plan mode, author there while planning, then persist the canonical copy to repo-root `plans/brainstorm-deep-<topic-slug>.md` immediately after exiting plan mode — same handling as `/brainstorm` Step 6.
+Write to `plans/brainstorm-deep-<topic-slug>.md`. Slug is derived from the user's topic the same way `/brainstorm` does it. Same naming convention so downstream `/sdlc-lite <plan>` consumption is uniform. **Plan-mode sandbox:** if the host only permits writes to a transient plan path during plan mode, author there while planning, then persist the canonical copy to repo-root `plans/brainstorm-deep-<topic-slug>.md` immediately after exiting plan mode — same handling as `/brainstorm` Step 6.
 
 ## Args
 
@@ -212,7 +211,7 @@ Write to `plans/brainstorm-deep-<topic-slug>.md`. Slug is derived from the user'
 - Ask is small, well-scoped, low-stakes → `/brainstorm`
 - User wants faster divergent ideation with model-tier-driven rigor (3 Haiku + Sonnet stress-test + 2 reviewers, Sonnet by default) **on a plan they're already mostly happy with** → `/brainstorm --vet ultra`. Difference: `ultra` is a *validator stack* applied to an existing draft; `brainstorm-deep` is a *clarification loop* run before the draft exists. If you're not sure what you want, you want this skill, not `ultra`.
 - User wants competitive analysis or a multi-persona team to write separate sections → `/brainstorm-team`
-- User already has a clear PBI in mind and just wants it written up → `/task` for now (`/pbi` will be the right answer once Phase 1D lands; it doesn't exist yet)
+- User already has a clear PBI in mind and just wants it written up → `/task`
 - Ask is "audit the existing X for issues," not "design something new" → `/repo-health` or `/dead-code-review`
 
 ## Subagent usage summary
@@ -279,7 +278,7 @@ Include a "Doc drift" line if AGENTS.md/CLAUDE.md disagreed with the code.>
 
 That's the contract. Don't stop at the file — continue the flow. Hand it to
 the pipeline: `/sdlc-lite <plan>` (full pipeline, hands you the validated
-changes to commit — the safe default, no git writes) or `/sdlc <plan>` (full
+changes to commit — the safe default, no git writes) or `/sdlc-lite <plan>` (full
 pipeline → PR; confirm first since it opens a PR). Continue whichever flow
 you've used this session; default to `/sdlc-lite` otherwise. `/plan-html <plan>`
 renders the plan for a visual read first if the user wants to see the shape of

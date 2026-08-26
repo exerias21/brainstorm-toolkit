@@ -70,10 +70,10 @@ into `references/` — that ships it (installed once per tool — up to three id
 
 - **`AGENTS.md`** — repo-wide agent instructions. Consumer repos symlink (POSIX) or copy `CLAUDE.md` → `AGENTS.md`.
 - **`TASKS.md`** — markdown checkbox list at repo root; the portable task tracker shared by Claude's `TaskCreate` mirror and Copilot's TODO reading.
-- **`GOTCHAS.md`** — project-specific pitfalls; consulted by `/gotcha` and the sanity-check stage of `/sdlc`.
+- **`GOTCHAS.md`** — project-specific pitfalls; consulted by `/gotcha` and the sanity-check stage of `/sdlc-lite`.
 - **`.claude/project.json`** — optional per-project config (test commands, eval runner, modules list); every key is optional, missing keys are skipped.
-- **Gotcha flywheel** — the loop-exit capture protocol is centralized in `skills/gotcha/SKILL.md` ("Capture at loop-exit"). `/task`, `/sdlc-lite`, `/sdlc` reference it and auto-draft a gotcha **only on an objective trigger** (a fix-loop that failed-then-recovered, or the user voicing surprise), routed through gotcha's dedup — never a vibe-gate. `/task` + `/sdlc-lite` also drop a `/gotcha <text>` `.next-action` sentinel when capture is declined; the seam is Stop-hook-backed on **all three** runtimes (Claude `.claude/settings.json`, Copilot `.github/hooks/`, Codex `.codex/hooks.json` — Codex has a Stop hook with the same `decision:block` contract, shipped by the plugin/`setup.sh`); writers also print an inline `Next:` fallback for when no hook is wired/trusted yet. `/brainstorm` injects area-scoped gotchas at Step 2 (entry), not only at validation.
-- **Model cap** — `.claude/project.json` `models.cap` (or the per-run `--model <tier>` flag) is a **ceiling** on sub-agent model tier for the fan-out skills (`/sdlc`, `/sdlc-lite`, `/brainstorm*`). The fan-out is **Sonnet-first by default** — the Workflows default `model_cap` to `'sonnet'` and the prose dispatch sites say "Sonnet by default"; Opus is an explicit opt-up via `--model opus`. Keep it that way when adding a fan-out dispatch (default Sonnet, not Opus). Canonical contract: `skills/sdlc/templates/models.md`. Prose is the only enforcement surface — each fan-out dispatch resolves the tier (`--model` > `models.cap` > default) and prints `model: <tier> (cap: <cap|none>)` before dispatching; `validate_skills.py` soft-warns if a fan-out skill drops the `models.md` pointer. Adding/rewording a fan-out dispatch means updating both legs (prose, overlays). A second, independent axis exists for `/sdlc` and `/sdlc-lite` only: the **reviewer-model axis** (`models.code_review` / `--review-model`, default `opus`, canonical contract at `skills/sdlc/templates/models.md`), which selects the adversarial Review→Fix stage's reviewer. The stage is opt-in, permanently — it never runs unless explicitly enabled. `fable` remains a valid, explicit opt-in value (usage-billed since Claude Fable 5's 2026-07-07 promotional-access sunset), never the default. This axis is NOT a value on the `haiku < sonnet < opus` ladder, is NOT subject to the Sonnet-first default, and must NEVER be passed through `capModel()`. Keep the two axes mechanically separate in any future edit. Because `models.cap` cannot bound Axis 2, the review stage's cost is bounded by its **fan-out width** instead: `agents.code_review_lenses` selects which lenses, `agents.code_review_max_lenses` (default `4`) caps how many, applied after circuit-breaker demotion and in list order. When a cap is set and the reviewer outranks it, the stage must say so out loud rather than let the user read `cap: sonnet` next to N Opus agents — a log line only, never a `capModel()` call.
+- **Gotcha flywheel** — the loop-exit capture protocol is centralized in `skills/gotcha/SKILL.md` ("Capture at loop-exit"). `/task` and `/sdlc-lite` reference it and auto-draft a gotcha **only on an objective trigger** (a fix-loop that failed-then-recovered, or the user voicing surprise), routed through gotcha's dedup — never a vibe-gate. `/task` and `/sdlc-lite` also drop a `/gotcha <text>` `.next-action` sentinel when capture is declined; the seam is Stop-hook-backed on all three runtimes (Claude `.claude/settings.json`, Copilot `.github/hooks/`, Codex `.codex/hooks.json` — Codex has a Stop hook with the same `decision:block` contract, shipped by the plugin/`setup.sh`); writers also print an inline `Next:` fallback for when no hook is wired/trusted yet. `/brainstorm` injects area-scoped gotchas at Step 2 (entry), not only at validation.
+- **Model cap** — `.claude/project.json` `models.cap` (or the per-run `--model <tier>` flag) is a **ceiling** on sub-agent model tier for the fan-out skills (`/sdlc-lite`, `/brainstorm*`). The fan-out is **Sonnet-first by default** — the Workflows default `model_cap` to `'sonnet'` and the prose dispatch sites say "Sonnet by default"; Opus is an explicit opt-up via `--model opus`. Keep it that way when adding a fan-out dispatch (default Sonnet, not Opus). Canonical contract: `skills/sdlc/templates/models.md`. Prose is the only enforcement surface — each fan-out dispatch resolves the tier (`--model` > `models.cap` > default) and prints `model: <tier> (cap: <cap|none>)` before dispatching; `validate_skills.py` soft-warns if a fan-out skill drops the `models.md` pointer. Adding/rewording a fan-out dispatch means updating both legs (prose, overlays). A second, independent axis exists for `/sdlc-lite` only: the **reviewer-model axis** (`models.code_review` / `--review-model`, default `opus`, canonical contract at `skills/sdlc/templates/models.md`), which selects the adversarial Review→Fix stage's reviewer. The stage is opt-in, permanently — it never runs unless explicitly enabled. `fable` remains a valid, explicit opt-in value (usage-billed since Claude Fable 5's 2026-07-07 promotional-access sunset), never the default. This axis is NOT a value on the `haiku < sonnet < opus` ladder, is NOT subject to the Sonnet-first default, and must NEVER be passed through `capModel()`. Keep the two axes mechanically separate in any future edit. Because `models.cap` cannot bound Axis 2, the review stage's cost is bounded by its **fan-out width** instead: `agents.code_review_lenses` selects which lenses, `agents.code_review_max_lenses` (default `4`) caps how many, applied after circuit-breaker demotion and in list order. When a cap is set and the reviewer outranks it, the stage must say so out loud rather than let the user read `cap: sonnet` next to N Opus agents — a log line only, never a `capModel()` call.
 
 ## When modifying skills
 
@@ -103,28 +103,39 @@ Copilot/Codex overlays (which have no Workflow and never did — the prose is al
 
 ### Where the canonical stage prose lives: `skills/sdlc/templates/`
 
-`/sdlc` and `/sdlc-lite` run the same stages, so each stage's body lives in **one template**
-under `skills/sdlc/templates/` and both `SKILL.md` files are thin: a short framing paragraph, the
-gate/skip rule that decides *whether* to run, and a `**Read skills/sdlc/templates/<x>.md now**`
-pointer. `output-verbosity`, `resumption`, `stage-1.5-sanity-check`, `stage-2-gate`,
-`stage-2-implement`, `stage-2a/2b/2c`, `stage-3-evals`, `fix-loop`, `stage-5-validate`,
-`stage-5.7-review-fix`, `secret-scan`, `changed-files-gate`, `convention-grounding`,
-`envelope-staleness`, `models`, `state-schema`.
+**`skills/sdlc/` is not a skill.** It holds no `SKILL.md` — only `templates/`, the shared
+stage bodies that `/sdlc-lite` and its Copilot/Codex overlays all load. The path is kept
+because 70+ citations, `setup.sh`'s `install_shared_templates()`, and
+`scripts/ci/check_install_refs.py` all hardcode the string `skills/sdlc/templates/`.
+`validate_skills.py` skips a `skills/<name>/` dir that has no `SKILL.md` but does have
+`templates/`; `setup.sh` skips it in the per-skill loop for the same reason and ships the
+tree in step 1b.
+
+Each stage's body lives in **one** template there — `output-verbosity`, `resumption`,
+`stage-1.5-sanity-check`, `stage-2-gate`, `stage-2-implement`, `stage-2a/2b/2c`,
+`stage-3-evals`, `fix-loop`, `stage-5-validate`, `stage-5.7-review-fix`, `secret-scan`,
+`stage-5-skill-repo`, `changed-files-gate`, `convention-grounding`, `envelope-staleness`,
+`models`, `state-schema` — and `skills/sdlc-lite/SKILL.md` stays thin per stage: a short
+framing paragraph, the gate/skip rule that decides *whether* to run, and a
+`**Read skills/sdlc/templates/<x>.md now**` pointer.
 
 Two rules follow, and both are load-bearing:
 
 - **Edit the template, not the skill.** A stage-contract change is one edit in
-  `skills/sdlc/templates/` plus the overlays. Copying a stage body back into a `SKILL.md`
-  re-creates the `/sdlc`↔`/sdlc-lite` drift the split exists to prevent.
-- **A `SKILL.md` must never defer to the other skill's prose.** `/sdlc-lite` previously said
-  "run `/sdlc` Stage N verbatim" 15 times, which meant a *lite* run loaded all 1,069 lines of
-  `/sdlc` — ~16k tokens of instructions for a pipeline that shares only its stage bodies. Point
-  at the template instead. Whichever skill is invoked should load only its own file plus the
-  templates for stages it actually reaches.
+  `skills/sdlc/templates/` plus the overlays. Copying a stage body into a `SKILL.md`
+  re-creates the canonical↔overlay drift the split exists to prevent.
+- **The gate goes in the skill, the body goes in the template.** A stage that self-skips
+  (no `eval.runner`, review not opted in, no plan target, not a skill repo) must be able to
+  decide that *without* opening the template it is skipping. That is where most of the
+  saving comes from: a default run never loads `stage-5.7-review-fix.md` at all.
 
-That second rule is why the gate goes **in the skill** and the body goes **in the template**: a
-stage that self-skips (no `eval.runner`, review not opted in, no plan target) must be able to
-decide that *without* opening the template it is skipping.
+The former `/sdlc-lite` — the PR-opening sibling — was **deleted** and folded into `/sdlc-lite`.
+It duplicated every stage, and `/sdlc-lite` deferred to its prose 15 times, so a *lite* run
+loaded all 1,069 lines of it. What survived the fold: Stage 1 plan parsing (the decompose
+gate reads `parse.json` and had no writer on the lite path), skill-repo mode, the
+vendored-skill guard, the soft-stop tier (now in `changed-files-gate.md`), and four safety
+rules. What went: branch/commit/push/`gh pr create`, the `pr-create.json` sidecar, and
+`pipeline.skip_review`.
 
 
 ## When adding a new skill
@@ -136,10 +147,12 @@ decide that *without* opening the template it is skipping.
 
 ## When adding a sub-agent (`agents/`) — usually: don't
 
-Sub-agent definitions are a **different artifact from skills**, with their own failure mode:
-this repo shipped four of them and **three had never been dispatched once**, because every
-dispatch site names `subagent_type: general-purpose` and pastes the role in from a
-in principle.
+Sub-agent definitions are a **different artifact from skills**, with their own failure mode.
+An earlier four-agent set went almost entirely undispatched: every dispatch site named
+`subagent_type: general-purpose` and pasted the role prompt in from a template, so the agent
+files sat there costing maintenance and buying nothing. The three that survive
+(`test-runner`, `e2e-test-runner`, `ux-plan-validator`) are each named at a real dispatch
+site — check that before adding a fourth.
 
 **The rule:**
 

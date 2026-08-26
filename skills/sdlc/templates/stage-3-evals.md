@@ -1,6 +1,6 @@
 # Stage 3 — Generate evals (shared)
 
-Canonical for `/sdlc` and `/sdlc-lite`. Skip silently when no `eval.runner` is
+Canonical for `/sdlc-lite`. Skip silently when no `eval.runner` is
 configured; record `data.skipped_reason`.
 
 Create test cases that verify the plan's INTENT, not just "does it compile."

@@ -6,7 +6,7 @@ already has**. The source of truth is the **live code**, not `AGENTS.md` /
 verify against the code and trust the code when they disagree.
 
 Run this **before generating approaches** (the brainstorm skills) or **before
-writing code** (Stage 2 of `/sdlc`, `/sdlc-lite`). Scope the recon to the
+writing code** (Stage 2 of `/sdlc-lite`). Scope the recon to the
 feature's target area — do not survey the whole repo.
 
 ## Procedure
@@ -30,7 +30,7 @@ feature's target area — do not survey the whole repo.
    - in a brainstorm skill, add a `- [ ] (P3) Reconcile <doc> drift: <X> — code
      does <Y>` row to `TASKS.md` alongside the plan, so the stale doc gets fixed
      on its own track;
-   - in `/sdlc` / `/sdlc-lite`, surface the drift in the Stage 6 hand-off / PR
+   - in `/sdlc-lite`, surface the drift in the Stage 6 hand-off / PR
      body and nudge `/gotcha` if it's a genuine trap.
    This is the loop that keeps `AGENTS.md` / `CLAUDE.md` honest over time —
    grounding consumes them as hints *and* repairs them when they lie.
@@ -41,7 +41,7 @@ feature's target area — do not survey the whole repo.
 ## Output — a `## Conventions & reuse` block
 
 Emit a compact block the rest of the work binds to. In the brainstorm skills it
-becomes a section of the plan file; in `/sdlc` / `/sdlc-lite` Stage 2 it is the
+becomes a section of the plan file; in `/sdlc-lite` Stage 2 it is the
 checklist the implementation must honor (and re-verify against live code, since
 code may have moved since the plan was written):
 

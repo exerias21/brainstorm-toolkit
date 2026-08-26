@@ -19,8 +19,8 @@
 # (>), so independent sources coexist. Preferred structured form (multi-slot):
 #   echo '{"cmd":"/sdlc-lite plans/foo.md","source":"brainstorm","confirm":false}' >> .claude/.next-action
 # A bare command line is still accepted (legacy single-slot):
-#   echo '/sdlc plans/brainstorm-add-orders.md' >> .claude/.next-action
-# Set "confirm":true for anything that writes git history (e.g. /sdlc); dedup by
+#   echo '/sdlc-lite plans/brainstorm-add-orders.md' >> .claude/.next-action
+# Set "confirm":true for anything that writes git history (e.g. a commit); dedup by
 # cmd at the writer. Full contract: docs/SEAM.md.
 #
 # Cross-tool: the SAME script is wired into every runtime's `Stop` hook — Claude Code
@@ -66,7 +66,7 @@ msgs=()
 #    handoff) coexist instead of racing for a single slot. Each line is either:
 #      - a JSON object {"cmd": "...", "source": "...", "confirm": bool}, or
 #      - a bare command string (legacy single-slot format — still supported).
-#    `confirm: true` marks an action a human should approve first (e.g. /sdlc,
+#    `confirm: true` marks an action a human should approve first (e.g. a commit,
 #    which opens a PR); a future auto-continue consumer must honor it.
 sentinel_cmds=()      # raw cmds, for the auto-continue decision (L9)
 sentinel_confirm=()   # 0/1 per cmd, parallel to sentinel_cmds

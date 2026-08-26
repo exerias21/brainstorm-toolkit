@@ -1,6 +1,6 @@
 # Stage 5 — Validate (shared)
 
-Canonical for `/sdlc` and `/sdlc-lite`. One stage, one gate, one sidecar.
+Canonical for `/sdlc-lite`. One stage, one gate, one sidecar.
 
 One stage, one gate, one sidecar. It answers the two questions that matter after implement:
 **does it run, and is it what the plan asked for?**
@@ -35,7 +35,9 @@ as failures; `preexisting[]` is noted separately and does not gate.
   is configured **and** the frontend surface was touched. It runs its own bounded fix loop with
   a flaky-test guard; its iterations count toward the shared budget. If the frontend surface was
   touched and no `test.e2e` is configured, raise a **soft-stop candidate** ("frontend changed
-  but no visual check ran") — never pass silently.
+  but no visual check ran") — never pass silently. Its semantics (ask once, proceed on
+  confirmation, proceed-and-document when non-interactive) are the **Soft-stop tier** section of
+  `skills/sdlc/templates/changed-files-gate.md`.
 - Eval regression (if `eval.runner` configured) — this is the only place evals run.
 
 ### 2. Check the delivery against the plan

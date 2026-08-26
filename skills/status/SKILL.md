@@ -3,7 +3,7 @@ name: status
 description: >
   Show a quick readout of the current work queue: task counts by state, the active
   task, and the most recently completed task. Also surfaces any non-terminal
-  pipeline runs (so a stalled /sdlc or /sdlc-lite run can't hide). Reads
+  pipeline runs (so a stalled /sdlc-lite run can't hide). Reads
   TASKS.md and .claude/pipeline/ directly — no subagents, no dashboards.
   Invoke via /status or when the user asks "what's left?", "current task?",
   "status". Read-only by default; `--prune-stale` is an opt-in, confirm-gated

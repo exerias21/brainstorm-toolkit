@@ -1,3 +1,8 @@
+> **ARCHIVED (2026-08).** A completed 2026-04 roadmap, kept as a historical record. It is
+> stale in several places — it predates the Stage 4/5.5/5.6 merges, the flowsim-sidecar
+> removal, the 25→16 skill cut and the deletion of `/sdlc`. Do not read it as current
+> behavior; `CLAUDE.md` and the skills themselves are authoritative.
+
 # Brainstorm: Toward a Production-Grade Pipeline
 
 **Date:** 2026-04-24

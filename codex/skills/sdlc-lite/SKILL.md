@@ -1,13 +1,12 @@
 ---
 name: sdlc-lite
 description: >
-  Sequential full-pipeline-minus-git skill for Codex CLI. Takes a plan file, a
-  task id, a task range (e.g. "1-5"), or an ad-hoc description; runs
-  implement → evals → validate; then hands off the
-  validated changes for you to commit. No commit, no branch, no push, no PR.
-  Codex-optimized overlay of canonical /sdlc-lite — every stage runs inline
-  (no parallel sub-agents, no Plan mode). Same stages as /sdlc; only /sdlc
-  touches git.
+  Run the full SDLC pipeline on a plan file, task id, task range (e.g. "1-5"),
+  or an ad-hoc description: sanity-check -> implement -> evals -> fix ->
+  validate -> flowsim, then hand off the validated changes for you to commit.
+  No commit, no branch, no push, no PR. Codex overlay of the canonical skill --
+  every stage runs inline (sequential, no parallel sub-agents). Use /task instead for a
+  single small TDD fix with no plan.
 argument-hint: "<plan-file | task-id | task-range | description> [--resume] [--queue [N]]"
 metadata:
   brainstorm-toolkit-applies-to: codex
@@ -22,19 +21,16 @@ runs every stage inline. Codex CLI's 2026 Agent Skills spec doesn't drive that
 fan-out. (Codex has native subagents and its own plan mode; what it lacks is a
 usable per-subagent model override — see the cap note below.) This overlay tracks
 the Copilot one closely; tune independently if Codex behavior diverges. Same stages as
-`/sdlc`; the only difference is Stage 6 — `/sdlc-lite` does **no git writes**
-(hands you a validated tree to commit), while `/sdlc` commits + opens a PR.
+`/sdlc-lite`; the only difference is Stage 6 — `/sdlc-lite` does **no git writes**
+(hands you a validated tree to commit), while `/sdlc-lite` commits + opens a PR.
 
 **Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/models.md`, a plugin-repo citation) is honored wherever sub-agents are dispatched. **The cap is advisory on this runtime** — set your session model to the cap tier for the savings.
 
 > **Why advisory here is a Codex-specific story.** Codex *does* have native subagents (`.codex/agents/*.toml`, parallel, `max_threads`) — it is not structurally inline-only the way Copilot is. What blocks tiering is that **per-subagent model override is reported regressed upstream** (subagents inherit the parent model), so the Haiku/Sonnet fan-out runs single-model: functional, but with none of the per-stage cost savings. Reported 2026-07-13 from research, **not verified against a real Codex install**, and it may already be fixed — see the Codex entry under *Runtime regimes* in `models.md` before relying on it either way.
 
-> **`skills/sdlc/templates/*` paths below are citations into the brainstorm-toolkit
-The shared `skills/sdlc/templates/*` tree IS installed on this runtime (setup.sh ships it
-and rewrites the citation prefix). Open the templates the stages name.
-> skill tree wholesale, so `.agents/skills/sdlc/` ships `SKILL.md` only. Do not try to
-> open them; everything this overlay needs to execute is inlined here. Read them in the
-> plugin repo only if you are changing the contract itself.
+> **`skills/sdlc/templates/*` paths below are real, installed files on this runtime.**
+> `setup.sh` ships that shared template tree alongside the skills and rewrites the citation
+> prefix, so open the templates the stages name rather than relying on anything inlined here.
 
 ## When to use
 
@@ -42,11 +38,10 @@ and rewrites the citation prefix). Open the templates the stages name.
 |---|---|---|
 | `/task <description>` | ad-hoc ask | TDD red-green → commit only if you ask |
 | `/sdlc-lite <plan \| task-id \| range \| desc>` | plan, task(s), or ask | full pipeline → validated changes left for you to commit |
-| `/sdlc <plan-file>` | plan file | full pipeline → commit + PR |
 
-Reuses `/sdlc`'s stage templates and state envelope verbatim — no new
-templates, no new schema beyond `run.json.pipeline = "sdlc-lite"` and a
-`handoff.json` sidecar at Stage 6.
+Stage bodies live once in the shared `skills/sdlc/templates/` tree; this overlay
+adds no new templates and no new schema beyond `run.json.pipeline = "sdlc-lite"`
+and a `handoff.json` sidecar at Stage 6.
 
 ## Prerequisites
 
@@ -78,7 +73,7 @@ setting (`models.cap`, `pipeline.*`, test commands) is silently inert.
 
 ## Stage 0 — Resolve input
 
-- **Plan file** (path ending `.md` that exists) → use as the plan, like `/sdlc`.
+- **Plan file** (path ending `.md` that exists) → use as the plan, like `/sdlc-lite`.
 - **Task id** (`task-NNN` or a row number) → read that row + linked task file;
   its `parent_plan:` becomes the Stage 5 plan target.
 - **Task range** (`N-M`, `task-N..task-M`, `tasks N-M`) → resolve every
@@ -119,10 +114,10 @@ computed required fields that get dropped otherwise (DQ6):**
 
 **`--resume`:** if `--resume` was passed, read the existing `run.json` instead of
 re-initializing — reject on a `plan_hash` mismatch, skip stages whose sidecar shows
-`status: "pass"`, and resume at the first non-passing one (follows `/sdlc`'s
+`status: "pass"`, and resume at the first non-passing one (follows `/sdlc-lite`'s
 Resumption rules; error if there's no prior run).
 
-**Continuity detection** (prompt, never auto) — same logic as `/sdlc`: **skip
+**Continuity detection** (prompt, never auto) — same logic as `/sdlc-lite`: **skip
 entirely on the `main_branch`** (merges make every run an ancestor there — pure
 noise). On a feature branch, take only the **single most-recently-updated** run
 whose `base_commit` is an ancestor of HEAD, and prompt **only** if it's
@@ -131,7 +126,7 @@ non-terminal OR complete with HEAD advanced past its recorded `commit_sha`
 
 ## Stage 1.5 — Sanity check
 
-Run `/sdlc` Stage 1.5 inline (sequential pre-flight). Not gated, not optional.
+Run `/sdlc-lite` Stage 1.5 inline (sequential pre-flight). Not gated, not optional.
 For a range, run once over the combined set. Stop and report on a real blocker.
 `agents.sanity_focuses` selects which checks run (default all three); on this
 runtime `models.sanity` is advisory like every tier — set your session
@@ -139,7 +134,7 @@ model instead.
 
 ## Stage 2 — Implement
 
-**Runtime note — why there is no delegation rule here.** The canonical `/sdlc` forbids the
+**Runtime note — why there is no delegation rule here.** The canonical `/sdlc-lite` forbids the
 orchestrator from calling Write/Edit during Stage 2, because on Claude the implement work
 belongs in a sub-agent whose context is discarded. **This runtime has no sub-agent seam**, so
 that rule cannot apply: you *are* the implementer and you must write the files. The cost it
@@ -148,7 +143,7 @@ short and hand off at stage boundaries (`docs/LOOP-HYGIENE.md`), because every f
 stays in your context for the rest of the run.
 
 
-Run `/sdlc` Stage 2 inline, including its **auto-gate** (see
+Run `/sdlc-lite` Stage 2 inline, including its **auto-gate** (see
 `.agents/skills/sdlc/SKILL.md`), preceded by **live-code grounding**.
 
 **Live-code grounding** (inlined from `skills/sdlc/templates/convention-grounding.md`;
@@ -193,7 +188,7 @@ blocker.
 
 ## Stage 3 — Generate evals
 
-Same procedure as `/sdlc` Stage 3 (see `.agents/skills/sdlc/SKILL.md`):
+Same procedure as `/sdlc-lite` Stage 3 (see `.agents/skills/sdlc/SKILL.md`):
 - new Python pure functions → `tests/eval/test_{slug}_eval.py`,
 - scripts with `--input` fixtures → `<eval.features_dir>/{slug}/`,
 - no testable surface → note and proceed.
@@ -204,7 +199,7 @@ Same procedure as `/sdlc` Stage 3 (see `.agents/skills/sdlc/SKILL.md`):
 
 On a gate failure: parse the results, dispatch a fix for **only** those failures (no
 refactor), re-run the gate. Max **3 iterations, used by Stage 5**. On
-exhaustion, pause with the Diagnosis block from `/sdlc` (fastest path `/status`;
+exhaustion, pause with the Diagnosis block from `/sdlc-lite` (fastest path `/status`;
 or name the class — flaky · code-defect · plan-wrong · config-missing — and one command),
 then `--resume` reuses the green stages.
 
@@ -215,7 +210,7 @@ the tests; Stage 5 runs them.
 
 ## Stage 5 — Validate (one stage)
 
-**Tests: report structure, not output.** The canonical `/sdlc` dispatches a Haiku `test-runner`
+**Tests: report structure, not output.** The canonical `/sdlc-lite` dispatches a Haiku `test-runner`
 sub-agent so raw suite output never enters the orchestrator's context. This runtime has no
 sub-agent seam, so you run the suites yourself — but report only
 `{layer, name, file, expected, actual}` per failure plus totals. Do not paste runner output
@@ -265,7 +260,7 @@ case this is a
 skill repo, `.md` skill files ARE the code surface (there is no separate `.env`/compose surface to
 gate on here), and this docs-only self-skip does not apply — Stage 5.7 runs, with the
 config/env/docs lens repointed to `skills/sdlc/templates/stage-5-skill-repo.md`'s structural checks in place of
-env/compose checks. (This mirrors D6 / plan §5.3 gate 1's exemption on the canonical/Workflow side;
+env/compose checks. (This mirrors D6 / plan §5.3 gate 1's exemption on the canonical side;
 this overlay runtime has no other skill-repo detection of its own, so the marketplace-manifest
 check above IS its skill-repo signal.)
 
@@ -316,7 +311,7 @@ For confirmed findings, draft a structured fix spec per finding, applying the au
 
 **Post-fix validation (once, after the loop exits — not per iteration):** if any fix was applied
 this run, re-run the Stage 5 `validate` gate exactly once before Stage 6. A regression there pauses
-the run for **both** `/sdlc` and `/sdlc-lite` — an objective test break, unlike the severity-gated
+the run for **both** `/sdlc-lite` — an objective test break, unlike the severity-gated
 review-finding blocking below, stops both modes rather than handing off broken code (see the
 canonical prose's "Post-fix validation").
 
@@ -363,7 +358,7 @@ push, PR, or `/review`. You review and commit.
    manifest/lockfile/Dockerfile changed (deploy-delta), append
    `- [ ] (P1) rebuild <env> for {feature-slug} (dependency change — rebuild, not restart) — plans/{feature-slug}.md`;
    and a `- [ ] (P2) verify {feature-slug} deployed — `/repo-health` plans/{feature-slug}.md`
-   row closes the loop the same way `/sdlc` Stage 6 does.
+   row closes the loop the same way `/sdlc-lite` Stage 6 does.
    **Then print the manual-verification line** from `.claude/project.json` `stack.*` (all
    keys optional): `stack.rebuild` on the deploy-delta case (a dependency changed, so a
    plain restart runs stale code), otherwise `stack.up`; append `stack.url` when set.
@@ -395,10 +390,10 @@ committed** — the next move is yours.
 ## Gotchas
 
 - **Does no git writes.** No commit, branch, push, PR, or `/review`. Hands you
-  a validated tree; you commit. Only `/sdlc` touches git history.
+  a validated tree; you commit. Only `/sdlc-lite` touches git history.
 - **Stage 5's plan check runs whenever there's a plan to check.**
   when there is no plan target — not behind a frontmatter knob.
-- **Don't fork `/sdlc`'s templates.** If a stage needs different copy, it's a
-  `/sdlc` job — re-invoke as `/sdlc`.
+- **Don't fork `/sdlc-lite`'s templates.** If a stage needs different copy, it's a
+  `/sdlc-lite` job — re-invoke as `/sdlc-lite`.
 - **Range accumulates in the tree** — all tasks' changes land uncommitted
   together; you slice the commits.

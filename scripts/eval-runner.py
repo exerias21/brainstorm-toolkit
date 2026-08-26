@@ -355,8 +355,6 @@ def run_all_tests(features: dict, tests_dir: Path, project_root: Path) -> dict:
 
         eval.thresholds = {
             "min_pass_rate":        0.85,   # fraction in [0, 1]
-            "max_flake_retries":    3,      # informational; surfaced in summary
-            "min_coverage_delta":   0,      # informational; surfaced in summary
         }
 
     Missing key/block → fall back to prior binary pass/fail. Never KeyError.
@@ -445,8 +443,6 @@ def run_all_tests(features: dict, tests_dir: Path, project_root: Path) -> dict:
     if thresholds:
         out["thresholds"] = {
             "min_pass_rate": thresholds.get("min_pass_rate", None),
-            "max_flake_retries": thresholds.get("max_flake_retries", None),
-            "min_coverage_delta": thresholds.get("min_coverage_delta", None),
         }
     return out
 

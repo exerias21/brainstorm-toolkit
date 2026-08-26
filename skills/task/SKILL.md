@@ -4,7 +4,7 @@ description: >
   Create a bounded, single-purpose task and execute it with TDD. Appends a row to
   TASKS.md, writes a task file at plans/tasks/task-N-<slug>.md, and runs a write-test
   → implement → verify loop. Use for small to medium items that are too concrete for
-  /brainstorm and too small to justify the full /sdlc pipeline. Invoke via /task or
+  /brainstorm and too small to justify the full /sdlc-lite pipeline. Invoke via /task or
   when the user asks to "just do X" with a clear, bounded ask.
 argument-hint: "<description>"
 metadata:
@@ -16,7 +16,7 @@ metadata:
 ## When to use
 
 - User has a clear, bounded ask: "add a `formatPhone` util", "fix the bug where X", "rename Y to Z across the codebase".
-- Too small for `/sdlc`, too concrete for `/brainstorm`.
+- Too small for `/sdlc-lite`, too concrete for `/brainstorm`.
 - `/task` always executes TDD on the current branch. If you want the full pipeline (evals + validate + plan check, changes left for you to commit), use `/sdlc-lite`. If you want just the row written and nothing run, edit `TASKS.md` directly.
 
 ## Flow
@@ -32,7 +32,7 @@ metadata:
    feature_slug: "task-<N>-<slug>", pipeline: "task", stage: "implement",
    status: "in_progress", started_at}` (shape per
    `skills/sdlc/templates/state-schema.md`). This puts `/task` runs in the
-   same state journal as `/sdlc` and `/sdlc-lite`. If the write fails
+   same state journal as `/sdlc-lite`. If the write fails
    (permissions, read-only volume), log a one-line stderr warning and
    continue — **state writes never fail a task.**
 

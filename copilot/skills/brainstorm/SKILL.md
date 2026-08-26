@@ -178,7 +178,7 @@ rejected ones — with a one-line "why not chosen" note.
 **Write this to `plans/brainstorm-[topic-slug].md` at the repo root** (the
 consumer project's working directory) — NOT under `.claude/`. Use the file-write
 mechanism the agent has available. The on-disk path `<repo-root>/plans/<slug>.md`
-is the source of truth — it is the only location the downstream skills (`/sdlc`,
+is the source of truth — it is the only location the downstream skills (`/sdlc-lite`,
 `/flowsim`, `/repo-health`) read. Create the `plans/` directory first if it
 doesn't exist.
 
@@ -277,8 +277,8 @@ it can't surprise you with a PR).
 
 1. **Show what's being built** (optional) — `/plan-html plans/brainstorm-[topic-slug].md`
    renders the plan as a single-file HTML view for a shape-of-the-work read.
-2. **Continue into delivery** — `/sdlc-lite <plan>` by default (or `/sdlc <plan>`
-   if that's the established flow; confirm first since `/sdlc` opens a PR). For
+2. **Continue into delivery** — `/sdlc-lite <plan>` by default (or `/sdlc-lite <plan>`
+   if that's the established flow; confirm first since `/sdlc-lite` opens a PR). For
    a single tiny item, `/task` is the fast path.
 3. **Save for later** — leave the plan at `plans/brainstorm-[topic-slug].md`
    (task items are already in `TASKS.md`).
@@ -292,4 +292,4 @@ the sentinel, so the handoff degrades gracefully instead of vanishing. **No-hook
 nudge (SEAM2):** if no Stop hook is wired at all, the sentinel is inert — apply the
 best-effort check in `docs/SEAM.md` and tell the user to enable the plugin (it ships
 the hook, SEAM1) or run `setup.sh`/`/repo-onboarding`.
-(substitute `/sdlc` if that's the established flow). Skip only on "save for later".
+(substitute `/sdlc-lite` if that's the established flow). Skip only on "save for later".

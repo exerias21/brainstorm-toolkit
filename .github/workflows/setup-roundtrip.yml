@@ -19,3 +19,8 @@ jobs:
 
       - name: setup-roundtrip
         run: bash scripts/ci/setup-roundtrip.sh
+
+      - name: install-refs resolve
+        run: |
+          bash setup.sh --target /tmp/install-refs-probe --tools all
+          python scripts/ci/check_install_refs.py /tmp/install-refs-probe

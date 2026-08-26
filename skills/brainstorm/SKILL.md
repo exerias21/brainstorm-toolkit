@@ -24,7 +24,7 @@ on ideas together with the user before producing an implementation plan.
 `plans/brainstorm-<topic-slug>.md` in the repo. Plan mode's approve-and-proceed gate adds a
 second, redundant approval on top of the conversational convergence this skill already does
 with the user, and its sandbox blocks the repo-root write that every downstream skill
-(`/sdlc`, `/sdlc-lite`, `/flowsim`, `/repo-health`) depends on. The plan file on disk
+(`/sdlc-lite`, `/flowsim`, `/repo-health`) depends on. The plan file on disk
 is the artifact — not a plan-mode proposal.
 
 ## When This Skill Triggers
@@ -208,7 +208,7 @@ revisiting later) often pick these back up.
 **repo root** (the consumer project's working directory) — NOT under `.claude/`.
 
 The persistent plan **must** live at `<repo-root>/plans/<slug>.md` — that is the
-only location downstream skills (`/sdlc`, `/sdlc-lite`, `/flowsim`,
+only location downstream skills (`/sdlc-lite`, `/flowsim`,
 `/repo-health`, validators) read. If the `plans/` directory doesn't exist,
 create it first (use a Bash `mkdir -p plans` or include the directory in the Write
 target — Write creates parent dirs automatically).
@@ -366,7 +366,7 @@ missing plan is a bug.
 **Then — is this plan about the toolkit's own vendored skills?** If the plan's
 changed-files target `.claude/skills/**` (or `.github/skills/**`,
 `.agents/skills/**`) — i.e. it proposes editing *installed/vendored* skill
-copies — **do NOT route it through this consumer repo's `/sdlc`.** Those edits
+copies — **do NOT route it through this consumer repo's `/sdlc-lite`.** Those edits
 belong in the **canonical brainstorm-toolkit repo**, then get re-installed.
 Suppress the auto-pipeline sentinel and emit instead:
 `Next: file this upstream in the brainstorm-toolkit repo (these are vendored
@@ -377,7 +377,7 @@ proceeds normally below.)
 
 **Otherwise, pick the next command by flow continuity** — don't make the user
 re-choose a flow they've already established this session:
-- If `/sdlc` has been used this session → continue with `/sdlc`.
+- If `/sdlc-lite` has been used this session → continue with `/sdlc-lite`.
 - If `/sdlc-lite` has been used, or no pipeline flow is established yet →
   use `/sdlc-lite`. It runs the full pipeline and hands back validated changes
   with **no git writes**, so it's the safe default — it can't surprise the user
@@ -395,7 +395,7 @@ sentinel pointing at a missing plan is a bug.
 
 ```
 # Append ONE structured line (multi-slot seam — coexists with a gotcha entry;
-# see docs/SEAM.md). Default to the safe pipeline; substitute /sdlc with
+# see docs/SEAM.md). Default to the safe pipeline; substitute /sdlc-lite with
 # "confirm":true if that's the established flow (it opens a PR).
 line='{"cmd":"/sdlc-lite plans/brainstorm-<topic-slug>.md","source":"brainstorm","confirm":false}'
 grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action
@@ -420,8 +420,8 @@ The plan file exists on disk (Step 8.0). Continue:
    shape-of-the-work read before delivery starts.
 2. **Continue into delivery** with the established flow, or `/sdlc-lite` by
    default — run the full pipeline. `/sdlc-lite` hands back validated changes
-   for the user to commit (no git writes); `/sdlc` goes all the way to a PR.
-   **Because `/sdlc` opens a PR, confirm before taking that path** — but you do
+   for the user to commit (no git writes); `/sdlc-lite` goes all the way to a PR.
+   **Because `/sdlc-lite` opens a PR, confirm before taking that path** — but you do
    not need to ask permission to continue with the safe `/sdlc-lite` path.
 3. **Save for later** — if the user signals they're done for now, leave the
    plan file and skip the sentinel.

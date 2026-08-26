@@ -17,7 +17,7 @@
 #   --dry-run                Print every action and the settings.json diff; write nothing.
 #                            RUN THIS FIRST.
 #   --skills a,b,c           Sync only these skills (default: all of skills/*).
-#                            All 24 are user-scope-resident in EVERY repo once synced —
+#                            All 16 are user-scope-resident in EVERY repo once synced —
 #                            see "Token weight" below before taking the default.
 #   --no-hooks               Skip the ~/.claude/settings.json hook wiring entirely.
 #   --prune-relative-hooks   Also remove pre-existing Stop hooks that invoke
