@@ -27,12 +27,12 @@ flowchart TD
     CFG --> PICK{"Size of the ask?"}
 
     PICK -->|"one bounded fix"| TASK["/task — TDD red→green, commits on current branch"]
-    PICK -->|"needs ideation"| BS["/brainstorm · /brainstorm-deep · /brainstorm-team"]
+    PICK -->|"needs ideation"| BS["/brainstorm · /brainstorm-team"]
     PICK -->|"already have a plan"| PLAN["plans/brainstorm-*.md"]
     BS --> PLAN
 
     PLAN --> DELIV{"How should it land?"}
-    DELIV -->|"autonomous, ends in a PR"| SDLC["/sdlc"]
+    DELIV -->|"full pipeline, you commit"| SDLC["/sdlc"]
     DELIV -->|"you review + commit"| LITE["/sdlc"]
     SDLC --> PIPE
     LITE --> PIPE
@@ -63,26 +63,26 @@ structural checks. No flag.
 |---|---|---|---|
 | `/task <desc>` | ad-hoc ask | TDD red→green, **green commit** on current branch | a one-line fix, a small util, a rename — no evals/flowsim |
 | `/sdlc <plan \| task-id \| range \| desc>` | plan, task(s), or ask | full pipeline → **validated tree you commit** | full discipline on work you'll review + commit yourself (e.g. onto an open PR branch); `/sdlc 1-5` runs a queue |
-| `/sdlc <plan-file>` | plan file | full pipeline → **PR** | autonomous delivery with human review at the PR boundary |
 
-`/sdlc` and `/sdlc` run the **same pipeline**; only Stage 6 differs (PR vs hand-off). Ideate
-first with `/brainstorm` (fast), `/brainstorm-deep` (ambiguous/high-stakes), or `/brainstorm-team`
-(multi-agent product research).
+`/sdlc` is the only pipeline skill — it runs every stage and then **stops at the edge of git**,
+handing you a validated working tree. It never commits, branches, pushes, or opens a PR. Ideate
+first with `/brainstorm` (which asks clarifying questions when the seed is ambiguous) or
+`/brainstorm-team` (multi-agent product research).
 
 ## Same pipeline, three runtimes
 
 | | **Claude Code** | **GitHub Copilot** | **OpenAI Codex** |
 |---|---|---|---|
 | Skills install to | `.claude/skills/` | `.github/skills/` | `.agents/skills/` |
-| Pipeline execution | **prose by default; deterministic Workflow when `ultracode` is on** | sequential prose overlay | sequential prose overlay |
-| Parallel sub-agents | yes (Agent tool + Workflow fan-out) | no — inline, sequential | no — inline, sequential |
+| Pipeline execution | prose, with parallel sub-agent fan-out | sequential prose overlay | sequential prose overlay |
+| Parallel sub-agents | yes (Agent tool) | no — inline, sequential | no — inline, sequential |
 | Plan mode | yes (`/brainstorm`) | no (linear overlay) | its own plan mode |
-| `models.cap` ceiling | enforced per dispatch (`capModel()`) | advisory — set session model | advisory — set session model |
+| `models.cap` ceiling | resolved and printed per dispatch | advisory — set session model | advisory — set session model |
 
-**Source of truth = the canonical prose** in `skills/<name>/SKILL.md`. The Claude-only Workflow
-script (`skills/sdlc/workflows/sdlc-pipeline.workflow.js`) *mirrors* that prose; the `copilot/` and
-`codex/` overlays are the cross-tool fallback. Change the prose first, then bring the Workflow and
-overlays into line — the three-way-sync contract in [`../CLAUDE.md`](../CLAUDE.md).
+**Source of truth = the canonical prose.** Each pipeline stage's body lives once in
+`skills/sdlc/templates/`; `skills/sdlc/SKILL.md` and the `copilot/` and `codex/` overlays all
+point at the same template. Nothing in this repo runs a Workflow any more. Change the template
+first, then the overlays — see [`../CLAUDE.md`](../CLAUDE.md).
 
 ## Model tiers
 

@@ -2,7 +2,8 @@
 name: brainstorm
 description: >
   Interactive brainstorming and feature ideation skill. Guides the user through structured creative
-  exploration: clarifying the idea, exploring codebase context, generating multiple approaches,
+  exploration: asking focused clarifying questions when the seed is ambiguous, exploring codebase
+  context, generating multiple approaches,
   evaluating tradeoffs, and producing a concrete action plan. Use this skill whenever the user says
   /brainstorm, mentions "brainstorm", "let's think through", "I have an idea", "what if we",
   "how should we approach", "let's explore", or otherwise wants to ideate on a feature, improvement,
@@ -32,16 +33,24 @@ the user before producing an implementation plan.
 
 ### Step 1: Understand the Seed
 
-Start by understanding what the user wants to explore. If they gave a topic with `/brainstorm`,
-use that as the seed. Otherwise, ask.
+If the user gave a topic with `/brainstorm`, that's the seed; otherwise ask for one.
 
-Ask 2-3 focused clarifying questions. Good questions surface:
-- **The "why"** — What problem does this solve? What's the user feeling or frustrated by?
-- **The scope** — Is this a quick enhancement or a new module? Who uses it?
-- **The spark** — What inspired this? Was there a specific moment or observation?
+**Ask before you explore — the gate is objective.** Ask clarifying questions when **any** of
+these is true: the seed names a problem but no shape (or a shape but no problem); who uses it
+and what they do today is unstated; it spans more than one surface without saying which is
+primary; two readings would produce materially different plans; or it references something you
+cannot find in the repo.
 
-Don't over-interview. Two good questions beat five mediocre ones. If the user's initial
-description is already detailed, skip straight to exploration.
+None true and the seed is concrete? Skip to Step 2 and say you're skipping.
+
+Ask **2–3 questions in one message** — the ones whose answers change the plan: the **why**
+(what problem, what workaround today), the **scope** (enhancement or module, who uses it), the
+**spark** (what prompted it now — the moment usually carries the real constraint). Thin answers
+are a reason to ask again, **once**: name the unknown rather than picking a reading.
+
+**This holds all session.** A plan-shaping ambiguity at any later step is a question, not an
+assumption. Everything a careful colleague would just decide, decide — and note it under Open
+Questions.
 
 ### Step 2: Explore for Context — ground in the live code
 

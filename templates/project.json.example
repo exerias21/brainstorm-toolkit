@@ -19,7 +19,7 @@
   },
 
   "stack": {
-    "_comment": "Optional. How to bring this project's runnable stack up/down for MANUAL verification — the hand-off at the end of /sdlc-lite, or an ad-hoc 'get it running so I can click through'. Every key optional; a missing key means that action is unavailable and skills say so instead of guessing. These are NEVER run automatically: a skill may print the command, and only runs one when you ask.",
+    "_comment": "Optional. How to bring this project's runnable stack up/down for MANUAL verification — the hand-off at the end of /sdlc, or an ad-hoc 'get it running so I can click through'. Every key optional; a missing key means that action is unavailable and skills say so instead of guessing. These are NEVER run automatically: a skill may print the command, and only runs one when you ask.",
     "up": "docker compose up -d --build",
     "down": "docker compose down",
     "_rebuild_comment": "Clean rebuild — used when a dependency manifest changed (see discipline.deploy_delta_globs), where a plain restart would silently run stale code.",
@@ -29,7 +29,7 @@
   },
 
   "eval": {
-    "_comment": "Used by /eval-harness and /sdlc stages 3-4.",
+    "_comment": "Used by /test-check step 6 and /sdlc Stage 3.",
     "_runner_options": "Two patterns: (1) consumer-resident (setup.sh copied scripts/ into this repo) — use 'python3 scripts/eval-runner.py'; (2) plugin-resident (setup.sh ran with --no-copy-scripts) — use 'python3 /absolute/path/to/brainstorm-toolkit/scripts/eval-runner.py'. Plugin-resident keeps shared infra in one place and benefits from plugin updates without re-running setup.",
     "runner": "python3 scripts/eval-runner.py",
     "features_dir": "evals/",
@@ -84,14 +84,14 @@
   },
 
   "pipeline": {
-    "_comment": "Optional. Knobs read by /sdlc-lite. Most keys default to false/unset; decompose_min_tasks defaults to 6 when unset.",
+    "_comment": "Optional. Knobs read by /sdlc. Most keys default to false/unset; decompose_min_tasks defaults to 6 when unset.",
     "skip_secret_scan": false,
     "_decompose_min_tasks_comment": "Optional. Stage 2 fans out into per-surface lanes only when surfaces>=2 AND task_count>=this AND the file sets are disjoint. Default 6.",
     "_poka_yoke_comment": "Claude-only. When true, /repo-onboarding writes a PreToolUse hook to .claude/settings.json that blocks Write/Edit when a likely secret is in the payload. Enabling this key alone does NOT install the hook — see AGENTS.md 'Hooks (Claude-only)' for the settings.json schema. Copilot consumers gain nothing from this key (no PreToolUse equivalent); rely on the Stage 6 gitleaks scan instead.",
     "poka_yoke": false,
 
     "output": {
-      "_comment": "Optional. Stage-narration verbosity for /sdlc and /sdlc-lite. DEFAULT IS 'quiet' -- this block exists to opt OUT, not in. Narration is re-read by every later turn in the same session, so it compounds. Detail is never lost: it is already written to the stage sidecars under .claude/pipeline/<slug>/stage-outputs/. MEASURED CAVEAT: on an audited run narration was only ~2% of main-thread tokens -- do this for signal-to-noise, not for savings. The real drivers were shell traffic (~53%) and the orchestrator writing files into its own context instead of delegating (~18%).",
+      "_comment": "Optional. Stage-narration verbosity for /sdlc. DEFAULT IS 'quiet' -- this block exists to opt OUT, not in. Narration is re-read by every later turn in the same session, so it compounds. Detail is never lost: it is already written to the stage sidecars under .claude/pipeline/<slug>/stage-outputs/. MEASURED CAVEAT: on an audited run narration was only ~2% of main-thread tokens -- do this for signal-to-noise, not for savings. The real drivers were shell traffic (~53%) and the orchestrator writing files into its own context instead of delegating (~18%).",
       "verbosity": "quiet",
       "_verbosity_comment": "'quiet' (default) | 'normal'. Under 'quiet' each stage prints ONE status line (stage, verdict, model line) and the run ends with one summary table. Even under 'quiet' the per-dispatch 'model: <tier> (cap: <cap>)' line, every gate verdict, and the 'Next:' seam line are ALWAYS printed -- nothing automated enforces the first (validate_skills.py only soft-warns that a fan-out skill references the models contract; it never checks the line is printed), so that instruction is the whole enforcement surface."
     },
@@ -103,19 +103,19 @@
     },
 
     "review_fix": {
-      "_comment": "Optional, OFF by default. Adversarial Review->Fix stage (Stage 5.7 review / Stage 5.8 fix loop) for /sdlc-lite -- an N-lens adversarial review + fix loop that runs after Stage 5, before the Stage 6 hand-off. Default reviewer model 'opus' (see skills/sdlc/templates/models.md; the reviewer model itself lives at models.code_review). Omit this whole block to accept the defaults below (stage stays OFF). OPT-IN, PERMANENTLY: there is no default-on flip, planned or shipped. An explicit --review-model <name> flag or an explicit enabled:true here is required to activate the stage; omitted, absent, or enabled:false all mean OFF.",
+      "_comment": "Optional, OFF by default. Adversarial Review->Fix stage (Stage 5.7 review / Stage 5.8 fix loop) for /sdlc -- an N-lens adversarial review + fix loop that runs after Stage 5, before the Stage 6 hand-off. Default reviewer model 'opus' (see skills/sdlc/templates/models.md; the reviewer model itself lives at models.code_review). Omit this whole block to accept the defaults below (stage stays OFF). OPT-IN, PERMANENTLY: there is no default-on flip, planned or shipped. An explicit --review-model <name> flag or an explicit enabled:true here is required to activate the stage; omitted, absent, or enabled:false all mean OFF.",
       "enabled": false,
       "mode": "interactive",
       "_mode_comment": "One of 'interactive' (default: each confirmed finding's fix spec is presented for approve/edit/skip, then the run pauses before Stage 6 with anything remaining surfaced), 'auto' (auto-approve every confirmed auto_fixable:true finding, bounded by agents.code_review_max_fix_loops -- design-decision findings, auto_fixable:false, are NEVER auto-approved in any mode), 'off' (report only, Stage 5.8 does not run). There is no confidence or consecutive-approval throttle: the auto_fixable rubric and the loop budget are the whole bound.",
       "blocking": true,
-      "_blocking_comment": "Whether a surviving HIGH-severity confirmed finding blocks Stage 6. Defaults true (matches /sdlc's PR-gate posture); /sdlc-lite treats this as false-equivalent regardless of the value here (warn-and-handoff is its posture by design, consistent with its warn-only secret scan).",
+      "_blocking_comment": "Whether a surviving HIGH-severity confirmed finding blocks Stage 6. Defaults true (matches /sdlc's PR-gate posture); /sdlc treats this as false-equivalent regardless of the value here (warn-and-handoff is its posture by design, consistent with its warn-only secret scan).",
       "_cost_bound_comment": "Diff size is NOT bounded here -- every lens reviews the whole diff. The levers that exist are agents.code_review_lenses and agents.code_review_max_lenses (fan-out width). See skills/sdlc/templates/models.md for the removed-key record."
     },
 
     "loop": {
-      "_comment": "Optional. Knobs for the --queue backlog loop (/sdlc-lite --queue), the L9 auto-continue Stop hook, and the batch-handoff runner (scripts/loop-runner.sh). All optional.",
+      "_comment": "Optional. Knobs for the --queue backlog loop (/sdlc --queue), the L9 auto-continue Stop hook, and the batch-handoff runner (scripts/loop-runner.sh). All optional.",
       "max_items": 5,
-      "_max_items_comment": "Max items one /sdlc-lite --queue invocation consumes before it stops (the [N] arg overrides). Default 5.",
+      "_max_items_comment": "Max items one /sdlc --queue invocation consumes before it stops (the [N] arg overrides). Default 5.",
       "batch_size": 5,
       "_batch_size_comment": "scripts/loop-runner.sh ONLY: items per FRESH headless process before context is reset (a clean completed-item boundary, never mid-plan). 5-10 is the useful range -- large enough to amortize the per-process baseline, small enough to cap growth. Resolves: --queue X flag > batch_size > max_items > 5. See docs/LOOP-HYGIENE.md.",
       "max_hops": 5,

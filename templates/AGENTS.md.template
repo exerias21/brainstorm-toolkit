@@ -96,7 +96,7 @@ This repo uses the **brainstorm-toolkit** plugin. Available slash commands (see 
 - `/brainstorm [topic]` — conversational ideation *(Plan mode on Claude, linear on Copilot)*
 - `/task "description"` — create a task and execute it with TDD
 - `/status` — show current task counts from TASKS.md
-- `/sdlc {plan_file}` — autonomous plan-to-PR pipeline *(Claude only)*
+- `/sdlc {plan_file}` — full pipeline (sanity → implement → evals → fix → validate → flowsim); leaves the validated changes for you to commit, no git writes
 - `/repo-onboarding` — regenerate project.json / AGENTS.md / GOTCHAS.md
 - `/repo-health` — read-only hygiene sweep with a score and a "next: ..." hint
 - `/test-check` — run configured tests + log audit

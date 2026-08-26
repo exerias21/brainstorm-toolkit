@@ -3,7 +3,9 @@ name: brainstorm
 description: >
   Interactive brainstorming and feature ideation skill. Guides the user through structured creative
   exploration: clarifying the idea, exploring codebase context, generating multiple
-  approaches, evaluating tradeoffs, and writing a concrete action plan to `plans/`. Use this skill whenever the
+  approaches, evaluating tradeoffs, and writing a concrete action plan to `plans/`. Asks focused
+  clarifying questions first whenever the seed is ambiguous, and stops to ask rather than guess
+  when a plan-shaping unknown surfaces later. Use this skill whenever the
   user says /brainstorm, mentions "brainstorm", "let's think through", "I have an idea", "what if we",
   "how should we approach", "let's explore", or otherwise wants to ideate on a feature, improvement,
   or architectural change before jumping into code. This is the conversational planning companion —
@@ -66,13 +68,33 @@ during Steps 1–7 — the discipline is a working agreement here, not a host-en
 Start by understanding what the user wants to explore. If they gave a topic with `/brainstorm`,
 use that as the seed. Otherwise, ask.
 
-Ask 2-3 focused clarifying questions. Good questions surface:
-- **The "why"** — What problem does this solve? What's the user feeling or frustrated by?
-- **The scope** — Is this a quick enhancement or a new module? Who uses it?
-- **The spark** — What inspired this? Was there a specific moment or observation?
+**Ask before you explore — the gate is objective, not a vibe.** Ask clarifying questions when
+**any** of these is true of the seed:
 
-Don't over-interview. Two good questions beat five mediocre ones. If the user's initial
-description is already detailed, skip straight to exploration.
+- it names a *problem* but no shape ("payments are a mess"), or a *shape* but no problem
+  ("let's add a queue");
+- who uses it, or what they do instead today, is not stated;
+- it would land in more than one surface and the seed doesn't say which is primary;
+- two readings of it would produce materially different plans;
+- it references a system, term, or constraint you cannot find in the repo.
+
+None of those true, and the seed is concrete? Skip straight to Step 2 and say you're skipping —
+don't interview someone who already told you.
+
+Ask **2–3 questions, in one message**, and make them the ones whose answers change the plan:
+- **The "why"** — what problem does this solve? What is the user working around today?
+- **The scope** — quick enhancement or new module? Who uses it, and how often?
+- **The spark** — what prompted this now? A specific moment usually carries the real constraint.
+
+Two good questions beat five mediocre ones. But **thin answers are a reason to ask again, once** —
+if the reply leaves a plan-shaping unknown open, name the unknown and ask rather than picking a
+reading and building on it.
+
+**This holds for the whole session, not just Step 1.** A plan-shaping ambiguity that surfaces at
+Step 3, 4, or 6 is a question, not an assumption: stop and ask. Everything else — anything a
+careful colleague would just decide — you decide, and note the call in the plan's Open Questions.
+Guessing at the top of a funnel is the most expensive mistake available here: every later stage,
+and the entire `/sdlc` run after it, compounds the wrong reading.
 
 ### Step 2: Explore for Context — ground in the live code
 

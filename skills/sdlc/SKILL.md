@@ -125,6 +125,18 @@ implementation step.
 reads `data.files_to_change` and `data.implementation_step_count` and cannot run
 without them.
 
+**Native task mirror (Claude only; skip silently elsewhere).** Once the stage list for this run
+is known, call `TaskCreate` once per stage that will actually run — the gates above have already
+decided which those are, so a review-off run creates no `review` task. Mark each `in_progress` on
+entry and `completed` on its sidecar write; a paused run leaves its stage `in_progress`, which is
+the correct reading.
+
+This is a **progress indicator, not state.** The durable record is `run.json` +
+`stage-outputs/`; `TASKS.md` is the durable backlog. The native list is session-scoped and
+Claude-only, so nothing may read it back — never let a decision depend on it. What it buys is a
+live view of a long run *outside* the context window: the stage narration it replaces is re-read
+by every later turn, the task list is not. That is why this is worth the calls.
+
 **Skill-repo detection** (automatic, no flag): if `.claude-plugin/marketplace.json`
 exists at repo root, the repo is itself a markdown-skill plugin — switch to the
 substitutions in **Skill-repo mode** below for the rest of the run.

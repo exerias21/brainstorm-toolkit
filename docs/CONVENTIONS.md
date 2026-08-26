@@ -4,7 +4,15 @@
 
 **Drafted**: 2026-04-25, dogfooded `/brainstorm` (4 lens agents in parallel — first principles, inversion, cross-domain k8s, constraint removal). See "Provenance" at the bottom.
 
-**Pre-requisite for**: Phase 1 (state envelope, `/pbi`, `/sdlc --inspect`, `/sdlc --resume`, profile filtering) and every phase after.
+**What is live here**: the naming rules — skill names, stage names, artifact IDs, and the
+**slug derivation algorithm**, which `/sdlc` Stage 0 and `state-schema.md` both cite and depend
+on. Those are load-bearing today.
+
+**What is not**: this document was drafted alongside a multi-phase roadmap, and still names
+skills and flags from it — `/pbi`, `/brd-ingest`, `/approve`, `/deploy`, `--inspect` and the
+`pbis/` and `delivery/` artifact trees. **None of those exist.** They are kept as the naming
+record for anything built later, not as a description of the toolkit. The shipped skill set is
+the table in `README.md`.
 
 ---
 
@@ -53,9 +61,9 @@ skills/<name>/SKILL.md   # name in frontmatter == directory name == slash-comman
 
 Examples (all current skills already comply):
 - `brainstorm`, `sdlc`, `task`, `status`, `gotcha`, `flowsim` — single-token
-- `repo-onboarding`, `test-check`, `e2e-loop`, `eval-harness`, `dead-code-review`, `data-source-pattern`, `logging-conventions`, `post-deploy-verify`, `brainstorm-team` — multi-token kebab
+- `repo-onboarding`, `test-check`, `dead-code-review`, `brainstorm-team`, `repo-health`, `code-tour`, `plan-html` — multi-token kebab
 
-Future Phase-1+ skills: `pbi`, `brd-ingest`, `pbi-decompose`, `approve`, `deploy`, `monitor`, `rollback`, `coverage`. All compliant.
+Never-built roadmap names, kept for reference only: `pbi`, `brd-ingest`, `pbi-decompose`, `approve`, `deploy`, `monitor`, `rollback`, `coverage`. All would comply.
 
 ### Stage names
 

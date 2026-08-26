@@ -1,14 +1,14 @@
 # brainstorm-toolkit
 
-Cross-tool plugin for **Claude Code + GitHub Copilot**: focused, low-token skills for brainstorming, SDLC, eval-driven development, and repo onboarding. Single AGENTS.md and TASKS.md contract so both agents work from the same source of truth.
+Cross-tool plugin for **Claude Code, GitHub Copilot and Codex**: focused, low-token skills for brainstorming, SDLC, eval-driven development, and repo onboarding. Single AGENTS.md and TASKS.md contract so both agents work from the same source of truth.
 
 ## Why this exists
 
 Most AI-agent task systems bolt on heavyweight task databases, multi-agent orchestrators, and inline templates that balloon every command to hundreds of lines. brainstorm-toolkit goes the other direction:
 
-- **One skill = one SKILL.md file**, deliberately short (37–250 lines each).
+- **One skill = one SKILL.md file**, deliberately short. The pipeline's shared stage bodies live once in `skills/sdlc/templates/`, and a stage that self-skips never opens the template it is skipping — a flag nobody passed costs nothing.
 - **Markdown-native contracts** — `AGENTS.md`, `TASKS.md`, `GOTCHAS.md`, `.claude/project.json` — so Claude Code, GitHub Copilot, Cursor, and friends all read the same files.
-- **No central registry**, no dual persistence, no ralph-loop autonomous runners by default. `/sdlc` is the heaviest thing in here and it's still one file. (Unattended looping exists but is strictly opt-in: `scripts/loop-runner.sh` only runs when you invoke it, and self-advancing requires setting `pipeline.loop.auto_continue: true`, which is off out of the box and never chains a `confirm` action.)
+- **No central registry**, no dual persistence, no ralph-loop autonomous runners by default. `/sdlc` is the heaviest thing in here and it's still one file plus the templates for the stages a given run actually reaches. (Unattended looping exists but is strictly opt-in: `scripts/loop-runner.sh` only runs when you invoke it, and self-advancing requires setting `pipeline.loop.auto_continue: true`, which is off out of the box and never chains a `confirm` action.)
 
 ## Install
 
@@ -158,9 +158,14 @@ on a tiny plan is closer to the low end, on a multi-module refactor the
 high end. Costs use 2026-04 list pricing: Opus $15 / $75, Sonnet $3 / $15,
 Haiku $1 / $5 per M tokens (input / output).
 
+**These numbers assume the current skill set.** The pipeline's instruction load is ~16k tokens
+per run after the 2026-08 consolidation (two pipeline skills merged into one, shared stage
+bodies split into templates, opt-in stages gated so they load nothing when off) — down from
+~26k. The fan-out below is unchanged; what shrank is what the orchestrator reads before it
+starts.
+
 | Skill | Orchestrator | Sub-agents (per run) | Tokens/run (rough) | Cost/run (rough) |
 |---|---|---|---|---|
-| `README.md` | host model | none — file I/O only | <1k | ~$0.00 |
 | `/status` | host model | none — reads `TASKS.md` | <1k | ~$0.00 |
 | `/gotcha` | host model | none — read/append `GOTCHAS.md` | <1k | ~$0.00 |
 | `/test-check` | host model | none — runs tests + log audit | 1k–3k | ~$0.01 |
@@ -170,12 +175,11 @@ Haiku $1 / $5 per M tokens (input / output).
 | `/flowsim` | host model | none — plan-vs-code grep | 10k–40k | $0.05–$0.40 |
 | `/test-check --loop` | host model | 1 × Sonnet per fix iteration | 10k–30k / iter | $0.05–$0.30 / iter |
 | `/repo-onboarding` | host model (Opus recommended) | 0–1 × Sonnet (pattern detection) | 20k–60k | $0.30–$1.00 |
-| `/brainstorm` (`light`) | host (Opus) | 3 × Haiku lens agents | 20k–50k | $0.10–$0.40 |
-| `/brainstorm` (`deep`) | host (Opus) | 3 × Haiku + 1 × Sonnet stress-test | 30k–70k | $0.20–$0.80 |
-| `/brainstorm` (`ultra`) | host (Opus) | 3 × Haiku + 1 × Sonnet + 2 × Opus | 60k–120k | $1.00–$3.00 |
 | `/brainstorm-team` | host (Opus) | 6 × Sonnet teammates (4 parallel, 2 sequential) | 60k–150k | $0.60–$2.00 |
-| `/dead-code-review` | host (Opus) | 3 × Haiku + 2 × Sonnet + 1 × Opus (parallel) | 80k–200k | $0.80–$2.50 |
-| `/repo-health` | host model | 2 × Haiku + 1 × Sonnet **per PBI batch** | scales with batch | $0.10–$1.00 / batch |
+| `/brainstorm` | host (Opus) | 4 × Sonnet wildcard lenses (parallel); `--vet` adds a review pass | 20k–60k | $0.10–$0.60 |
+| `/code-tour` | host model | none — AST script + docstring authoring | 20k–60k | $0.10–$0.60 |
+| `/dead-code-review` | host (Opus) | up to 5 lenses (2 × Haiku, 2 × Sonnet, 1 × Opus-tier), only those the repo has | 60k–180k | $0.60–$2.20 |
+| `/sdlc` | host (Opus) | 3 × Haiku (sanity) + 1 × Sonnet (implement) + 1 × Haiku (test-runner) + 1 × Sonnet (plan check); review stage opt-in | 90k–280k | $2.50–$9.00 |
 
 **Notes / caveats**:
 
@@ -223,15 +227,12 @@ flowchart LR
     A[/repo-onboarding/]:::setup --> B[AGENTS.md + TASKS.md<br/>project.json + GOTCHAS.md]
     B --> C[/brainstorm/]
     B --> D[/task/]
-    B --> E[/pbi/<br/>Phase 1D]
     C --> F[plans/brainstorm-*.md]
-    E --> G[plans/pbi-NNN-*.md]
     D --> H[inline TDD]
     F --> I[/sdlc {plan}/]:::core
-    G --> I
-    H --> J[PR]
+    H --> J[you commit]
     I --> J
-    J --> K[merge]
+    J --> K[PR + merge]
 
     subgraph "Anytime, in parallel"
       N[/repo-health/<br/>scored sweep]
@@ -256,12 +257,11 @@ Or in plain text:
           ├──► /brainstorm   ──► plan file
           │                          │
           │                          ▼
-          ├──► /pbi          ──► PBI + plan ──┐
+          ├──► /task         ──► TDD inline ──┬──► you commit ──► PR
           │                                    │
-          ├──► /task         ──► TDD inline ──┼──► PR
-          │                                    │
-          └──► /sdlc <plan>  ──► autonomous ──┘
-                                  implement → eval → test → flowsim → PR
+          └──► /sdlc <plan>  ──► full ────────┘
+                    sanity → implement → evals → fix → validate → flowsim
+                    (no git writes — it hands you a validated tree)
 
    Anytime:
      /repo-health    — scored hygiene sweep
@@ -295,7 +295,6 @@ Or in plain text:
   "models": {
     "cap": "sonnet",
     "sanity": null,
-    "implement": null,
     "code_review": "opus",
     "code_review_second_pass": "sonnet"
   },
@@ -367,7 +366,7 @@ printing it, so the loop self-advances. It never chains a `confirm: true` action
 | `/sdlc`, `/brainstorm-team`, `/dead-code-review` | `models.cap` (sub-agent tier ceiling) |
 | `/sdlc` | `models.sanity` + `agents.sanity_focuses` (Stage 1.5 pre-flight — never gated, so it runs every time) |
 | `/sdlc` | `models.code_review`, `models.code_review_second_pass`, `agents.code_review_*` (axis 2 — never capped) |
-| `/sdlc` | `pipeline.review_fix.*` — stage *behavior* only (`enabled`, `mode`, `blocking`, thresholds). Opt-in, permanently off by default |
+| `/sdlc` | `pipeline.review_fix.*` — stage *behavior* only (`enabled`, `mode`, `blocking`). Opt-in, permanently off by default |
 | `/sdlc` | `agents.decompose_min_tasks` (Stage 2 decompose gate) |
 | `/sdlc --queue`, `scripts/loop-runner.sh`, `scripts/hooks/next-action.sh` | `pipeline.loop.*` (`max_items`, `batch_size`, `max_hops`, `auto_continue`) |
 | `/sdlc` Stage 6 | `stack.up` / `stack.down` / `stack.rebuild` / `stack.url` — printed as the manual-verification line at hand-off, never auto-run |
@@ -378,6 +377,7 @@ printing it, so the loop self-advances. It never chains a `confirm: true` action
 
 - **`scripts/eval-runner.py`** — runs pytest + fixture-based pipeline evals. Auto-discovers features from `evals/*/`. See `skills/test-check/SKILL.md` step 6.
 - **`scripts/check_docker_logs.py`** — audits logs for errors/tracebacks. Accepts `--log-command` and `--services`. Works with Docker, kubectl, journalctl, or any log source.
+- **`scripts/ci/check_install_refs.py`** — CI guard: installs the toolkit into a scratch repo and fails the build if any template citation in a shipped skill does not resolve there. Runs in the `setup-roundtrip` workflow.
 - **`scripts/validate_skills.py`** — validates skill metadata, name-to-directory alignment, and Copilot-targeted skills against Claude-only capability leakage.
 - **`scripts/loop-runner.sh`** — batch-handoff queue runner for long backlogs. Drives `/sdlc --queue` in a **fresh headless process every `pipeline.loop.batch_size` completed items**, so context resets at a clean item boundary instead of growing all run. Batch size resolves `--queue X` flag > `pipeline.loop.batch_size` > `pipeline.loop.max_items` > 5. See `docs/LOOP-HYGIENE.md`.
 - **`scripts/hooks/next-action.sh`** — the Stop hook behind the `.next-action` seam. Reads the sentinel once, prints `Next: <command>`, deletes it. With `pipeline.loop.auto_continue: true` it instead **executes** a single non-`confirm` entry (`decision: block`), bounded by `pipeline.loop.max_hops`. See `docs/SEAM.md`.
