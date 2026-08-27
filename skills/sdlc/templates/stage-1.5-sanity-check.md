@@ -3,6 +3,12 @@
 Canonical for `/sdlc` Stage 1.5 — orchestration first, then the
 per-focus agent prompts.
 
+> **No sub-agent seam? (Copilot, Codex)** The dispatch instructions below describe the Claude
+> path. On a runtime without sub-agents, do the same work **inline in the session** and produce
+> the same structured result — but keep the discipline the dispatch existed to enforce: report
+> only the structured summary, never paste raw tool or runner output into your context. That
+> output is the single largest source of context bloat, and inline is exactly where it lands.
+
 ## Orchestration
 
 Before spending implementation tokens, verify the plan is actually
@@ -57,7 +63,6 @@ issues, `pass` with `auto_patched: true` if issues were auto-corrected,
 `paused` if critical issues forced a stop.
 
 ---
-
 
 Three Haiku agents launched in parallel. Substitute `{plan_file}` and
 `{feature_name}` before dispatch.

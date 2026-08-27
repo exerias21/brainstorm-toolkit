@@ -1,6 +1,12 @@
 # Stage 5 — Validate (shared)
 
-Canonical for `/sdlc`. One stage, one gate, one sidecar.
+Canonical for `/sdlc`.
+
+> **No sub-agent seam? (Copilot, Codex)** The dispatch instructions below describe the Claude
+> path. On a runtime without sub-agents, do the same work **inline in the session** and produce
+> the same structured result — but keep the discipline the dispatch existed to enforce: report
+> only the structured summary, never paste raw tool or runner output into your context. That
+> output is the single largest source of context bloat, and inline is exactly where it lands.
 
 One stage, one gate, one sidecar. It answers the two questions that matter after implement:
 **does it run, and is it what the plan asked for?**

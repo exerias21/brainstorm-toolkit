@@ -3,14 +3,19 @@
 Canonical for `/sdlc`. **Opt-in, permanently OFF by default** —
 do not load this file unless the stage is enabled (see the enablement rule below).
 
-**Opt-in, permanently OFF by default.** This stage activates only on an explicit
+> **No sub-agent seam? (Copilot, Codex)** The dispatch instructions below describe the Claude
+> path. On a runtime without sub-agents, do the same work **inline in the session** and produce
+> the same structured result — but keep the discipline the dispatch existed to enforce: report
+> only the structured summary, never paste raw tool or runner output into your context. That
+> output is the single largest source of context bloat, and inline is exactly where it lands.
+
+This stage activates only on an explicit
 `--review-model <name>` flag or an explicit `pipeline.review_fix.enabled: true` in
 `.claude/project.json`; `--no-review` always wins OFF. An absent or `enabled: false`
 `pipeline.review_fix` block means OFF — there is no default-on flip, now or later. When
 activated, two auto-off gates still apply: the diff is docs-only/touches no code surface (self-skip
 — **except in skill-repo mode, which never self-skips this gate**, since `.md` skill files *are*
 the code surface there and would otherwise silently disable the stage in the repo that dogfoods it).
-
 Runs after Stage 5, before Stage 6, once enabled and not auto-off'd. Fans out
 **one reviewer pass per configured lens** (parallel sub-agents on Claude; sequential inline passes
 on Copilot/Codex), each at the **reviewer** model — `models.code_review` / `--review-model`,

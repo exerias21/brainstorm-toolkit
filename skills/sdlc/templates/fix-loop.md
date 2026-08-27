@@ -3,9 +3,14 @@
 Canonical for every gate that fixes and retries — `/sdlc`
 Stage 5, and Stage 5.7/5.8 (which runs the same loop on its own separate budget).
 
+> **No sub-agent seam? (Copilot, Codex)** The dispatch instructions below describe the Claude
+> path. On a runtime without sub-agents, do the same work **inline in the session** and produce
+> the same structured result — but keep the discipline the dispatch existed to enforce: report
+> only the structured summary, never paste raw tool or runner output into your context. That
+> output is the single largest source of context bloat, and inline is exactly where it lands.
+
 Stage 5 and Stage 5.7/5.8 (which has its own separate budget) fix the same way, so the loop and
 its pause are specified once, here.
-
 **The loop.** On a gate failure: parse the structured results; for each failure extract test
 name, expected-vs-actual, file path, function; dispatch **one fix agent** — **Sonnet by default**
 (Opus only on `--model opus`), per `skills/sdlc/templates/models.md` — told to fix *only* those failures
