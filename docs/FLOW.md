@@ -31,13 +31,10 @@ flowchart TD
     PICK -->|"already have a plan"| PLAN["plans/brainstorm-*.md"]
     BS --> PLAN
 
-    PLAN --> DELIV{"How should it land?"}
-    DELIV -->|"full pipeline, you commit"| SDLC["/sdlc"]
-    DELIV -->|"you review + commit"| LITE["/sdlc"]
+    PLAN --> SDLC["/sdlc — full pipeline"]
     SDLC --> PIPE
-    LITE --> PIPE
 
-    subgraph PIPE ["Shared pipeline — same stages; one 3-iteration fix budget across 4/5/5.5/5.6"]
+    subgraph PIPE ["Pipeline — one 3-iteration fix budget across 4/5/5.5/5.6"]
       direction TB
       S1["1 · Parse plan"] --> S15["1.5 · Sanity check (3 Haiku, parallel)"]
       S15 --> S2["2 · Implement (Sonnet-first; auto single-agent OR decompose→lanes→converge)"]
@@ -47,9 +44,7 @@ flowchart TD
       S56 -. "planned — see REVIEW-FIX-STAGE.md" .-> S57["5.7 Review + 5.8 Fix (independent reviewer, opt-in)"]
     end
 
-    PIPE --> OUT{"Terminal step (the ONLY place the two differ)"}
-    OUT -->|"/sdlc"| PR["branch → commit → push → PR → /review"]
-    OUT -->|"/sdlc"| HO["validated working tree — you commit"]
+    PIPE --> HO["Stage 6 hand-off: validated working tree — you commit (no git writes)"]
     TASK --> DONE["row closed in TASKS.md"]
 ```
 
@@ -99,7 +94,7 @@ first, then the overlays — see [`../CLAUDE.md`](../CLAUDE.md).
 
 `/sdlc-status` (work queue) · `/gotcha` (log a project pitfall) · `/flowsim` (plan⇄code trace) ·
 `/test-check` (run configured tests + log audit) · `/plan-html` (render a plan as shareable HTML) ·
-`/repo-health` (read-only hygiene sweep) · `/dead-code-review` · `/review-pr`.
+`/repo-health` (read-only hygiene sweep) · `/dead-code-review`.
 
 ## Deeper references
 

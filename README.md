@@ -136,7 +136,7 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 | `/brainstorm` | Claude + Copilot + Codex † | Conversational feature ideation with lens-divergent wildcards (Plan mode on Claude, linear on Copilot) |
 | `/brainstorm-team` | Claude + Copilot + Codex † | 6-agent team for competitive + product research incl. a lateral-thinking agent (sequential on Copilot) |
 | `/task` | Claude + Copilot + Codex | Create one bounded task and execute it with TDD on the current branch — no flags, always TDD |
-| `/sdlc` | Claude + Copilot + Codex † | The full pipeline — sanity → implement → evals → fix → validate → plan-validate → flowsim, then **hands you the validated changes to commit yourself** (no commit, branch, push, or PR — only `/sdlc` touches git). Stage 2 auto-decomposes large multi-surface plans into focused per-lane subagents + a converge step; small / single-surface plans run a single agent unchanged. Takes a plan file, a task id, a task range (`1-5`), or an ad-hoc description. Use to run full discipline on work you want to review and commit onto an open PR's branch. Same optional Review→Fix stage as `/sdlc`, warn-only on surviving findings (consistent with its warn-only secret scan) rather than blocking handoff. Supports `--resume` (same envelope-resume as `/sdlc`; resume keys on the resolved slug) and `--queue [N]` (attended backlog loop: selects pending TASKS.md rows by priority, re-scans between items so mid-run additions join, parks on any paused/confirm item — no git writes). |
+| `/sdlc` | Claude + Copilot + Codex † | The full pipeline — sanity → implement → evals → fix → validate → plan-validate → flowsim, then **hands you the validated changes to commit yourself** — no commit, branch, push, or PR at any point. Stage 2 auto-decomposes large multi-surface plans into focused per-lane subagents + a converge step; small / single-surface plans run a single agent unchanged. Takes a plan file, a task id, a task range (`1-5`), or an ad-hoc description. Use to run full discipline on work you want to review and commit onto an open PR's branch. The optional Review→Fix stage is warn-only on surviving findings (consistent with its warn-only secret scan) rather than blocking the hand-off. Supports `--resume` (envelope-resume, keyed on the resolved slug) and `--queue [N]` (attended backlog loop: selects pending TASKS.md rows by priority, re-scans between items so mid-run additions join, parks on any paused/confirm item — no git writes). |
 | `/sdlc-status` | Claude + Copilot + Codex | Readout **and** recommendation in one command. Prints TASKS.md counts + the active task, surfaces any non-terminal pipeline run, then walks a 7-rung ladder to ONE recommended next command with a one-line rationale — joining run-state, the `.next-action` sentinel, TASKS.md, plans and git. For a paused run it names the failure class (flaky · code-defect · plan-wrong · config-missing) and the command that fixes it. Absorbed the former `/next` and `/triage`. Read-only — it recommends, never executes. |
 | `/repo-onboarding` | Claude + Copilot + Codex | Generate AGENTS.md + TASKS.md + project.json + GOTCHAS.md |
 | `/code-tour` | Claude + Copilot + Codex | Turn a codebase into teaching material — audit docstring coverage (bundled AST script), write why-focused docstrings that carry the reasoning and the rejected alternative, then generate a guided reading path (`TOUR.md`) with a cross-cutting pattern index, graded exercises, and an honest "what not to copy" section. Grounded in researched, source-cited standards (PEP 257, Google/NumPy styles, Diátaxis, ADRs) that separate genuine consensus from contested opinion. For onboarding, handover, or preparing a repo as a training module. Complements `/repo-onboarding` (which documents the repo at architecture level; this documents the code beneath it). |
@@ -258,7 +258,7 @@ Or in plain text:
           │                          │
           │                          ▼
           ├──► /task         ──► TDD inline ──┬──► you commit ──► PR
-          │                                    │
+          │                                   │
           └──► /sdlc <plan>  ──► full ────────┘
                     sanity → implement → evals → fix → validate → flowsim
                     (no git writes — it hands you a validated tree)
@@ -291,6 +291,7 @@ Or in plain text:
   },
   "gotchas_file": "GOTCHAS.md",
   "main_branch": "main",
+  "coauthor_trailer": false,
   "modules": ["api", "web", "worker"],
   "models": {
     "cap": "sonnet",
@@ -316,6 +317,15 @@ Or in plain text:
 }
 ```
 
+`coauthor_trailer` decides whether a commit message this toolkit writes or suggests ends with
+`Co-Authored-By: Claude <noreply@anthropic.com>`. It is **`false` unless you opt in** —
+attribution is a disclosure choice rather than a default, and some DCO / commit-lint setups
+reject unrecognized trailers. `/repo-onboarding` asks the question outright rather than
+guessing, and never infers consent from trailers already in `git log`. Only two surfaces read
+it, because they are the only two that touch commit text: `/task`, on the runs where you asked
+it to commit, and `/sdlc`'s Stage 6 hand-off, which *prints* a suggested commit and never runs
+one.
+
 **Every model and agent-count knob lives in `models` and `agents`.** Full contract:
 `skills/sdlc/templates/models.md`.
 
@@ -323,7 +333,7 @@ There are **two independent axes**, and conflating them is the classic mistake:
 
 | | Axis 1 — the fan-out ladder | Axis 2 — the adversarial reviewer |
 |---|---|---|
-| Keys | `models.cap`, `.sanity`, `.implement`¹ | `models.code_review`, `.code_review_second_pass` |
+| Keys | `models.cap`, `models.sanity` | `models.code_review`, `.code_review_second_pass` |
 | Values | `haiku` \| `sonnet` \| `opus` | `haiku` \| `sonnet` \| `opus` \| `fable` |
 | Capped? | yes — everything passes through the cap | **never** |
 
@@ -370,7 +380,9 @@ printing it, so the loop self-advances. It never chains a `confirm: true` action
 | `/sdlc` | `agents.decompose_min_tasks` (Stage 2 decompose gate) |
 | `/sdlc --queue`, `scripts/loop-runner.sh`, `scripts/hooks/next-action.sh` | `pipeline.loop.*` (`max_items`, `batch_size`, `max_hops`, `auto_continue`) |
 | `/sdlc` Stage 6 | `stack.up` / `stack.down` / `stack.rebuild` / `stack.url` — printed as the manual-verification line at hand-off, never auto-run |
-| `/task`, `/sdlc-status` | (none — read TASKS.md directly) |
+| `/sdlc` Stage 6 | `coauthor_trailer` — whether the *suggested* commit message carries the trailer (`/sdlc` prints it; it never commits) |
+| `/task` | `coauthor_trailer` (only when you ask it to commit); otherwise reads TASKS.md directly |
+| `/sdlc-status` | (none — reads TASKS.md and `.claude/pipeline/` directly) |
 | `/repo-onboarding` | writes all of the above |
 
 ## Supporting scripts

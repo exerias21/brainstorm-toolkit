@@ -22,7 +22,7 @@ command string.
 |---|---|
 | `cmd` (required) | the slash-command to surface / run |
 | `source` | the skill that wrote it (provenance; for dedup/debugging) |
-| `confirm` | `true` ⇒ a human must approve before running (anything that writes git history, e.g. `/sdlc`). A human reader can ignore it; a future auto-continue consumer **must** honor it. |
+| `confirm` | `true` ⇒ a human must approve before running: anything hard to reverse, such as a command that writes git history. A human reader can ignore it; a future auto-continue consumer **must** honor it. |
 
 **Backward compatibility:** a line that does not parse as a JSON object is treated as a bare
 `cmd` (the legacy single-slot format). Old writers and hand-written lines keep working.
@@ -37,7 +37,9 @@ command string.
   line='{"cmd":"/sdlc plans/foo.md","source":"brainstorm","confirm":false}'
   grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action
   ```
-- **Set `confirm:true`** for any command that writes git history (`/sdlc`). Default `false`.
+- **Set `confirm:true`** for any command that writes git history or is otherwise hard to
+  reverse. Default `false`. No toolkit skill writes git history unprompted — `/sdlc` stops at
+  the edge of git — so this mainly guards commands you add.
 - **Never write a bare, argument-less command** (e.g. a lone `/gotcha`) — always include the
   drafted argument.
 
@@ -61,8 +63,8 @@ grep -rlqs 'next-action' .claude/settings.json ~/.claude/settings.json .github/h
 - **The Stop hook is the ONLY consumer.** It prints every pending line as `Next: <cmd>` (with
   `(confirm before running)` appended when `confirm:true`), then deletes the whole file —
   fire-once, per file.
-- **Every other reader must PEEK** — read without deleting. `/next` and `/sdlc-status` inspect the
-  pending action to fold it into their output; if they consumed it, the hook would have
+- **Every other reader must PEEK** — read without deleting. `/sdlc-status` inspects the
+  pending action to fold it into its output; if it consumed the line, the hook would have
   nothing to surface at the next Stop. A second consumer eats the hint before the user sees it.
 
 ## Cross-tool
@@ -88,8 +90,8 @@ as its next instruction. The session becomes the loop; the sentinel is its progr
 
 Guardrails (all enforced in `next-action.sh`, all non-negotiable):
 1. **Opt-in** — unset knob ⇒ unchanged print behavior. Nothing auto-runs by default.
-2. **Never a `confirm:true` action** — anything that writes git history (`/sdlc`) always parks
-   to a printed hint. This is why every writer must set `confirm` honestly.
+2. **Never a `confirm:true` action** — anything hard to reverse (a git write, a deploy) always
+   parks to a printed hint. This is why every writer must set `confirm` honestly.
 3. **Single action only** — if more than one line is pending, the hook parks (prints). It
    never guesses which of several to execute.
 4. **Hop budget** — `pipeline.loop.max_hops` (default 5), tracked in

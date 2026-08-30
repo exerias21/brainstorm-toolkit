@@ -313,8 +313,8 @@ sentinel pointing at a missing plan is a bug.
 
 ```
 # Append ONE structured line (multi-slot seam — coexists with a gotcha entry;
-# see docs/SEAM.md). Default to the safe pipeline; substitute /sdlc with
-# "confirm":true if that's the established flow (it opens a PR).
+# see docs/SEAM.md). /sdlc does no git writes, so confirm stays false; set
+# "confirm":true only if you substitute a command that is hard to reverse.
 line='{"cmd":"/sdlc plans/brainstorm-<topic-slug>.md","source":"brainstorm","confirm":false}'
 grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action
 ```
@@ -337,10 +337,9 @@ The plan file exists on disk (Step 8.0). Continue:
    single-file HTML view the user or a stakeholder can scroll, for a
    shape-of-the-work read before delivery starts.
 2. **Continue into delivery** with the established flow, or `/sdlc` by
-   default — run the full pipeline. `/sdlc` hands back validated changes
-   for the user to commit (no git writes); `/sdlc` goes all the way to a PR.
-   **Because `/sdlc` opens a PR, confirm before taking that path** — but you do
-   not need to ask permission to continue with the safe `/sdlc` path.
+   default — run the full pipeline. It hands back validated changes for the
+   user to commit; it does no git writes, so it can't surprise them with a
+   commit or a PR, and you don't need permission to take that path.
 3. **Save for later** — if the user signals they're done for now, leave the
    plan file and skip the sentinel.
 

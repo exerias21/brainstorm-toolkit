@@ -21,23 +21,25 @@ is the *map*; `README.md` is the *menu*.
                              │
               ┌──────────────┴──────────────┐
               ▼                             ▼
-       /sdlc {plan}               /task "..."
-       /sdlc <X>                  (single-row TDD)
+         /sdlc <X>                    /task "..."
+      (full pipeline)               (single-row TDD)
               │                             │
               ▼                             ▼
-   sanity → implement → evals → fix         inline TDD
-   → validate
-   → [review → review-fix]  (opt-in)
+   sanity → implement → evals → fix    tests green
+   → validate                               │
+   → [review → review-fix]  (opt-in)        │
               │                             │
-        ┌─────┴─────┐                       │
-        ▼           ▼                       │
-   /sdlc: hand-off                    │
-                validated tree ─────────────┘
-                (you commit)
-                      │
-                   merged
-                      │
-                      ▼
+              ▼                             ▼
+      Stage 6 hand-off:               row closed
+      validated tree                  in TASKS.md
+      (no git writes)                       │
+              │                             │
+              └──────────────┬──────────────┘
+                             ▼
+                        you commit
+                             │
+                             ▼
+                          merged
 ```
 
 Back-edges — how a stalled or landed run re-enters:
@@ -47,17 +49,15 @@ Back-edges — how a stalled or landed run re-enters:
   "where was I?"     → /sdlc-status        → reads envelope + sentinel + TASKS.md
 ```
 
-Execution tiers — same pipeline in the middle, different ending:
+Execution tiers — how much process the ask deserves:
 
 ```
   /task "..."       → TDD red→green only. Commits only if you ask.
                       Fast path for a one-liner, util, or rename.
-  /sdlc <X>    → FULL pipeline, then HANDS YOU the validated changes
-                      to commit. No git writes.
+  /sdlc <X>         → FULL pipeline, then HANDS YOU the validated changes
+                      to commit. No git writes, ever.
                       <X> = plan file | task-id | range "1-5" | description
                             | --queue [N] (attended backlog loop)
-  /sdlc {plan} → FULL pipeline, then hands you the validated tree.
-                      The only tier that touches git history.
 
   Stage 2 (implement) auto-decomposes a large multi-surface plan (>=2
   disjoint surfaces, >=6 steps) into focused per-lane subagents + a
@@ -74,11 +74,13 @@ Cost control — two INDEPENDENT model axes. Keep them straight:
                    (precedence: flag > config > built-in default)
 
     The cap only ever LOWERS: Opus dispatches drop to it; Haiku is NOT
-    upgraded. Per-stage defaults live in models.sanity /
-    .implement — those are the ONLY way to RAISE a Haiku stage.
-    Governs sub-agents only — for full savings also set your session model.
+    upgraded. The per-stage key models.sanity is the ONLY way to RAISE
+    a Haiku stage. Governs sub-agents only — for full savings also set
+    your session model.
 
-    DEFAULT is Sonnet-first: /sdlc, /brainstorm --vet and the
+    DEFAULT is Sonnet-first: /sdlc, /brainstorm --vet and every other
+    fan-out dispatch run on Sonnet out of the box; --model opus is the
+    deliberate opt-up.
 
   AXIS 2 — the adversarial reviewer (Stage 5.7/5.8 only). NEVER capped.
     "models": { "code_review": "opus" }  or  --review-model <name>
@@ -95,10 +97,10 @@ Cost control — two INDEPENDENT model axes. Keep them straight:
 In parallel, runnable any time:
 
 ```
-  /sdlc-status        → "what should I do now?" — the canonical next-step ladder
-  /sdlc-status      → current pipeline run state at a glance
+  /sdlc-status      → "what should I do now?" — run state at a glance, the
+                      canonical next-step ladder, and a paused run's failure
+                      class → drafted fix → --resume re-entry
   /repo-health      → scored sweep, prints the highest-impact next command
-  /sdlc-status → classify a paused run → drafted fix → --resume re-entry
   /dead-code-review → deeper, multi-agent unused-code scan
   /flowsim {plan}   → trace claimed flows through code, flag drift
   /test-check       → run tests + log audit
@@ -112,8 +114,9 @@ In parallel, runnable any time:
 Ideation family — pick by ambiguity, not by topic:
 
 ```
-  /brainstorm [topic]      → fast conversational, low ambiguity
-                             + expectation contract) for ambiguous / high-stakes
+  /brainstorm [topic]      → fast conversational ideation → a plan file
+  /brainstorm --vet <mode> → adds a multi-lens vet pass (light|deep|ultra)
+                             for ambiguous / high-stakes plans
   /brainstorm-team [topic] → multi-agent product/competitive research team
 ```
 
@@ -132,9 +135,7 @@ Convention skills — load a house pattern before writing code:
 | `/brainstorm [topic]` | Conversational ideation → plan file | start of any feature |
 | `/sdlc <X>` | Full pipeline, hands you the changes to commit (no git writes) | full discipline, you commit (e.g. onto an open PR) |
 | `/task "..."` | One-row TDD task | a single bug or small change |
-| `/sdlc-status` | What to do now, from run state + sentinel + TASKS.md | after any interruption |
-| `/sdlc-status` | Classify a paused run, draft the fix | a pipeline run went red |
-| `/sdlc-status` | Current run state | mid-pipeline check-in |
+| `/sdlc-status` | What to do now, from run state + sentinel + TASKS.md; classifies a paused run and drafts the fix | after any interruption, a red run, or a mid-pipeline check-in |
 | `/repo-health` | Hygiene sweep + score | weekly, or pre-release |
 | `/test-check` | Run tests + log audit | before shipping |
 | `/flowsim {plan}` | Plan-vs-code drift check | post-merge sanity |
@@ -168,7 +169,7 @@ setting `disableSideloadFlags`); don't run it *and* the plugin together.
 | `TASKS.md` | You | Portable task tracker (markdown checkboxes). Toolkit reads and appends rows; you curate. |
 | `GOTCHAS.md` | You | Project-specific pitfalls. `/gotcha` appends; you curate. |
 | `.claude/project.json` | You | Test commands, log audit, eval runner, modules, plus the `models` / `agents` / `pipeline` blocks. Every key optional; skills skip gracefully when absent. Start from `.claude/project.json.example`. |
-| `.claude/pipeline/<slug>/` | Toolkit | Run journals (`run.json` + per-stage sidecars). Gitignored. Drives `--resume`, `/sdlc-status`, `/sdlc-status`. |
+| `.claude/pipeline/<slug>/` | Toolkit | Run journals (`run.json` + per-stage sidecars). Gitignored. Drives `--resume`, `/sdlc-status`, and `/repo-health`. |
 | `.claude/.next-action` | Toolkit | The seam: JSON-lines `{cmd, source, confirm}` the Stop hook surfaces as `Next: …` and then consumes. Gitignored. |
 
 ---

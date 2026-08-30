@@ -41,8 +41,8 @@ Ask **2–3 questions in one message** — the ones whose answers change the pla
 are a reason to ask again, **once**: name the unknown rather than picking a reading.
 
 **This holds all session.** A plan-shaping ambiguity at any later step is a question, not an
-assumption. Everything a careful colleague would just decide, decide — and note it under Open
-Questions.
+assumption. Everything else — anything a careful colleague would just decide — you decide, and
+note the call under Open Questions.
 
 ### Step 2: Explore for Context — ground in the live code
 

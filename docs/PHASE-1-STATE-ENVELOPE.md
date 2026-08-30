@@ -1,5 +1,11 @@
 # Phase 1 — Pipeline State Envelope (+ `/pbi`, `--inspect`)
 
+> **⚠ Historical design record — a point-in-time plan, not current state.** Several sub-phases
+> below are marked deferred and were never built, and the skill inventory it reasons over has
+> since changed (`/e2e-loop` and `/eval-harness` were folded into `/test-check`; `/status`
+> became `/sdlc-status`). The part that *did* ship is the state envelope itself — its live
+> contract is `skills/sdlc/templates/state-schema.md`.
+
 **Date drafted**: 2026-04-25
 **Source**: `BRAINSTORM-PIPELINE.md` Phase 1 + dogfood feedback from teacup
 SDLC runs (PRs #23–#25) and the architectural concern that Phase 1 not

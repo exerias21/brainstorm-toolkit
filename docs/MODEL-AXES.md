@@ -20,8 +20,9 @@ the default path — the exact failure this contract exists to prevent.
 | Agent definition frontmatter (`agents/*.md`) | **Yes** — `effort:` |
 | **Prose path (the default, and the only path on Copilot/Codex)** | **No** — the Agent tool exposes `model` but has no `effort` parameter |
 
-inherits the session effort there. If you need a stage to think harder today, **raise its
-tier** — that works on every path. Revisit if the Agent tool ever gains the parameter.
+A sub-agent dispatched from prose inherits the session effort. If you need a stage to think
+harder today, **raise its tier** — that works on every path. Revisit if the Agent tool ever
+gains the parameter.
 
 ---
 

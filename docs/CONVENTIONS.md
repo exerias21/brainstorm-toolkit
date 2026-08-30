@@ -252,7 +252,7 @@ wholesale, so a *tool-specific* runtime reference must live in that overlay's ow
 
 **Artifact IDs**: aliases supported indefinitely. `task-N` (legacy, no padding) is recognized as equivalent to `task-NNN` by any code that resolves task IDs. New artifacts use the canonical zero-padded form. No batch migration.
 
-**Flags**: aliases supported indefinitely in skills that still take flags. `/task` is zero-flag by design. `/sdlc` and `/sdlc` already ship `--model <tier>` (see `models.md`) and now also `--review-model <name>` / `--no-review` (see `models.md`) — both follow the `--no-X`/`--X <value>` forms above. Skills that do accept flags use `--no-X` for boolean negation; older `--skip-X` aliases are tolerated where they appear historically.
+**Flags**: aliases supported indefinitely in skills that still take flags. `/task` is zero-flag by design. `/sdlc` already ships `--model <tier>` (see `models.md`) and now also `--review-model <name>` / `--no-review` (see `models.md`) — both follow the `--no-X`/`--X <value>` forms above. Skills that do accept flags use `--no-X` for boolean negation; older `--skip-X` aliases are tolerated where they appear historically.
 
 **Paths**: forward-only. New artifacts land in canonical directories. Existing artifacts in old layouts stay where they are — moving them would break references in tracked plan files.
 

@@ -1,7 +1,7 @@
 # Resumption (`--resume`) — shared contract
 
-Canonical for `/sdlc`. `/sdlc` differs only in the terminal
-stage: a hand-off that writes `handoff.json`, never a PR.
+Canonical for `/sdlc`. Its terminal stage is a hand-off that writes
+`handoff.json`, never a PR.
 
 `/sdlc <plan> --resume` picks up a paused/failed prior run instead of restarting
 from Stage 1 — which would both re-spend every green stage and **overwrite the

@@ -1,8 +1,7 @@
 # Secret scan (shared)
 
-Canonical for `/sdlc` Stage 6 (gating posture: warn, never refuse) and `/sdlc`
-Stage 6 (warn-only, never blocks). Run it over the changed files before the terminal
-stage.
+Canonical for `/sdlc` Stage 6. Gating posture: **warn-only — it never blocks or
+refuses.** Run it over the changed files before the terminal stage.
 
 **Secret scan** the files about to be staged. Skip only if `pipeline.skip_secret_scan: true`
 in `.claude/project.json` (e.g., a security research repo where false positives dominate).
