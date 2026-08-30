@@ -44,6 +44,10 @@
 
   "gotchas_file": "GOTCHAS.md",
   "main_branch": "main",
+
+  "_coauthor_trailer_comment": "Optional, default false. When true, every commit message this toolkit writes or suggests ends with a 'Co-Authored-By: Claude <noreply@anthropic.com>' trailer (blank line before it), and so does any PR body a future step authors. Read by /task (the only skill that runs git commit, and only when you ask) and by /sdlc's Stage 6 suggested-commit hand-off (which prints the message for you to run -- /sdlc never commits). Absent or false = no trailer, ever. Default is false because attribution is a disclosure choice, not a default, and some DCO / commit-lint setups reject unrecognized trailers. /repo-onboarding asks and records your answer here.",
+  "coauthor_trailer": false,
+
   "modules": ["api", "web", "worker"],
 
   "_models_comment": "EVERY model-tier knob lives here -- canonical contract: skills/sdlc/templates/models.md. TWO INDEPENDENT AXES. Axis 1 (the fan-out ladder: cap/sanity; values haiku|sonnet|opus) is bounded by the cap. Axis 2 (code_review*; values haiku|sonnet|opus|fable) is NOT governed by the cap -- 'cap' never lowers a reviewer model. 'cap' is a CEILING that only ever LOWERS, so a stage whose built-in default is haiku CANNOT be raised by cap or --model; its per-stage key here is the only lever. Per-run overrides: --model <tier> (axis 1), --review-model <name> (axis 2).",
@@ -65,7 +69,7 @@
   },
 
   "migrations": {
-    "_comment": "Optional. Read by /repo-health Check 6 (static migration drift) and /post-deploy-verify. Omit entirely if the project has no migrations — the check self-skips.",
+    "_comment": "Optional. Read by /repo-health Check 6 (static migration drift). Omit entirely if the project has no migrations — the check self-skips.",
     "dir": "backend/migrations",
     "_applied_check_comment": "A shell command (or SQL via your DB CLI) that prints the highest applied migration version. /repo-health compares it to the highest file in 'dir' and warns if the repo is ahead (merged-but-unapplied). Without it, the check reports 'applied state unknown' rather than connecting to a DB.",
     "applied_check": "psql \"$DATABASE_URL\" -tAc \"select max(version) from schema_migrations\""

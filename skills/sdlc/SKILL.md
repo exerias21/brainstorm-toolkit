@@ -302,6 +302,9 @@ themselves.
      git add <files>
      git commit -m "feat: <title>"
    ```
+   **Co-author trailer**: only when `.claude/project.json` `coauthor_trailer` is `true`,
+   end the suggested message with a blank line and
+   `Co-Authored-By: Claude <noreply@anthropic.com>`. Absent or `false` ⇒ no trailer.
    **Range semantics**: process tasks in order; the changes from all tasks
    accumulate in the working tree. You decide how to slice commits (per task,
    or one bundle). Sanity-check (1.5) ran once up front; Stage 5's plan check and

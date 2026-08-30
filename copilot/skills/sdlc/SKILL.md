@@ -17,9 +17,8 @@ disable-model-invocation: true
 
 Sequential Copilot edition. The canonical skill uses parallel agent dispatch for
 the sanity-check on Claude; this overlay runs every stage inline, one at a time.
-Same stages, same shared templates; the only
-difference is Stage 6 — `/sdlc` does **no git writes** (it hands you a
-validated tree to commit), while `/sdlc` commits + opens a PR.
+Same stages, same shared templates, same Stage 6: **no git writes** — it hands
+you a validated tree to commit yourself.
 
 **Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/models.md`) is honored wherever sub-agents are dispatched. On this runtime every stage runs inline in the session model, so the cap is advisory here — set your session model to the cap tier for the savings.
 
@@ -170,6 +169,9 @@ push, PR, or `/review`. You review and commit.
      git add <files>
      git commit -m "feat: <title>"
    ```
+   **Co-author trailer**: only when `.claude/project.json` `coauthor_trailer` is
+   `true`, end the suggested message with a blank line and
+   `Co-Authored-By: Claude <noreply@anthropic.com>`. Absent or `false` ⇒ none.
    **Range**: changes from all tasks accumulate in the tree; you slice the
    commits when you review.
 3. **Capture at loop-exit + seam** — run the shared protocol in
@@ -213,7 +215,7 @@ committed** — the next move is yours.
 ## Gotchas
 
 - **Does no git writes.** No commit, branch, push, PR, or `/review`. Hands you
-  a validated tree; you commit. Only `/sdlc` touches git history.
+  a validated tree; you commit.
 - **Stage 5's plan check runs whenever there's a plan to check.**
   when there is no plan target — not behind a frontmatter knob.
 - **Don't fork the shared templates.** Stage bodies live once in

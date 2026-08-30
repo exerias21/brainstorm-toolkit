@@ -81,6 +81,11 @@ Build a draft `project.json` from what you found. Fill in:
 - `eval.features_dir` — `evals/` if dir exists, otherwise blank
 - `gotchas_file` — `GOTCHAS.md` (default)
 - `main_branch` — from git
+- `coauthor_trailer` — whether commit messages this toolkit writes or suggests carry a
+  `Co-Authored-By: Claude <noreply@anthropic.com>` trailer. **Detection cannot decide this
+  — ask (Step 3).** Default `false`. Do not infer it from existing history: a repo whose
+  log already shows the trailer may have been committed by a different tool or by a
+  contributor who wants it, and neither implies consent for this checkout.
 - `modules` — inferred from top-level code directories (`src/`, `api/`, `web/`, `packages/*`, etc.)
 - `models.cap` — the standing **sub-agent model-tier ceiling** for every fan-out
   skill (`/sdlc`, `/dead-code-review`, `/brainstorm-*`, …). A ceiling, not a swap:
@@ -99,20 +104,19 @@ Build a draft `project.json` from what you found. Fill in:
 gracefully — that's better than a wrong command. (Exception: `models.cap` — prefer
 proposing `sonnet` over omitting, per above.)
 
-### Step 3 — Show the proposal, then walk the model choices
+### Step 3 — Show the proposal, then walk the choices detection can't make
 
 First print the proposed `project.json` with a one-line rationale per detected key
 (`Detected Python + pytest → test.unit`; `docker-compose services [api, web] → logs.* + stack.*`;
 `no eval runner → eval.* left blank`; `main branch from origin HEAD`; …).
 
-**Then ask the model questions explicitly — do not bury them in "does this look right?".**
-Detection can't decide these, they are the main cost/quality levers, and a user who is
-never asked never discovers the key exists. Ask all four at once — prefer the host's **built-in
-interactive question UI** (the multiple-choice picker it already uses to ask you to choose an
-approach): one question per key, options as choices, recommended default first. Where the host has
-no such UI, print a numbered list and take the answers in a single reply. Default first so "just
-accept" is one
-keystroke, and state the cost direction in each option:
+**Then ask these questions explicitly — do not bury them in "does this look right?".**
+Detection can't decide any of them, they are the main cost/quality/policy levers, and a user
+who is never asked never discovers the key exists. Ask them in one batch — prefer the host's
+**built-in interactive question UI** (the multiple-choice picker it already uses to ask you to
+choose an approach): one question per key, options as choices, recommended default first. Where
+the host has no such UI, print a numbered list and take the answers in a single reply. Default
+first so "just accept" is one keystroke, and state the cost (or policy) direction in each option:
 
 | Ask | Key | Options (default first) |
 |---|---|---|
@@ -121,9 +125,10 @@ keystroke, and state the cost direction in each option:
 | **Enable the adversarial Review→Fix stage?** Off unless you say yes — it never runs by accident. | `pipeline.review_fix.enabled` / `.model` | `false` (default) · `true` + reviewer `opus` · `true` + reviewer `fable` (usage-billed, explicit opt-in) |
 | **How many review lenses?** Ask only if the stage was just enabled. One reviewer call per lens at the reviewer model, so this scales the stage's cost roughly linearly. | `agents.code_review_lenses` | omit → all four (`correctness`, `plan-alignment`, `config-env-docs`, `security`) · `["correctness", "security"]` (half cost; good default for app code) · `["correctness"]` (quarter cost; highest-yield single lens) |
 | **How do you bring this app up for manual verification?** Confirm or correct what was detected. | `stack.up` / `stack.rebuild` / `stack.url` | the detected compose/dev commands · corrected by the user · omit (skills then say which key is missing instead of guessing) |
+| **Should commit messages this toolkit writes or suggests credit Claude as a co-author?** Not a cost lever — a disclosure choice, so it is off unless the user says yes. Mention that it also lands in any PR body a future step authors, and that some DCO / commit-lint setups reject unrecognized trailers. | `coauthor_trailer` | `false` (default — no trailer) · `true` (append `Co-Authored-By: Claude <noreply@anthropic.com>`) |
 
 Explain the interaction once, because it surprises people: **`models.cap` is a ceiling, not a
-target** — it can only *lower* a stage's default tier, never raise it. So `plan_validate.model:
+target** — it can only *lower* a stage's default tier, never raise it. So `models.sanity:
 "opus"` under `models.cap: "sonnet"` still dispatches Sonnet. If a per-stage tier is meant to
 actually take effect, the cap must be at or above it. Close with the open catch-all: *"Anything
 else to add, remove, or correct?"*
@@ -241,4 +246,5 @@ Report what was written and suggest next steps:
 | Top-level dirs like `api/`, `web/`, `worker/` | `modules` list |
 | `.git/HEAD` or `origin` default | `main_branch` |
 | Always (standing policy) | `models.cap` = `"sonnet"` — Sonnet-first ceiling for sub-agent fan-out; propose `haiku` to squeeze cheap sweeps, omit for uncapped Opus |
+| Never detectable — always **ask** (Step 3) | `coauthor_trailer` — default `false`; existing `Co-Authored-By` lines in `git log` are **not** evidence of consent for this checkout |
 | Repo uses this toolkit | gitignore the local working state: `.claude/pipeline/`, `.claude/.next-action`, `.claude/.auto-continue-hops`, `.claude/project.json`, `TASKS.md`, `plans/`. Keep `.claude/project.json.example` tracked as the bootstrap template |
