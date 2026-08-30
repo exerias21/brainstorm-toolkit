@@ -217,7 +217,7 @@ Profile assignments (current and future):
 |---|---|---|
 | `/brainstorm`, `/brainstorm-team` | `core` | Ideation; universal |
 | `/sdlc` | `core` | Backbone; both worlds use it |
-| `/task`, `/status` | `core` | Lightweight authoring + readout |
+| `/task`, `/sdlc-status` | `core` | Lightweight authoring + readout |
 | `/repo-onboarding` | `core` | Bootstraps any repo |
 | `/test-check`, `/e2e-loop`, `/eval-harness` | `core` | Test infrastructure |
 | `/flowsim` | `core` | Plan-vs-code at file level |

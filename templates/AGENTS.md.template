@@ -32,7 +32,7 @@ After a skill finishes work, it may drop a one-line file at `.claude/.next-actio
 
 ## Pipeline state journal (`.claude/pipeline/`)
 
-When `/sdlc` runs, it writes a transparent state journal under `.claude/pipeline/<feature-slug>/` — a `run.json` plus per-stage sidecars under `stage-outputs/`. This is **local-only**, **gitignored** (added by `setup.sh`), and **never required reading** for any skill. It exists so future tooling (post-mortem dashboards, CI gates, `/sdlc --resume` and `/status`) can pick up where a run left off without each tool inventing its own storage. If you delete the directory, nothing breaks — the next `/sdlc` run recreates it. Schema: Claude `.claude/skills/sdlc/templates/state-schema.md`; Copilot `.github/skills/sdlc/templates/state-schema.md`.
+When `/sdlc` runs, it writes a transparent state journal under `.claude/pipeline/<feature-slug>/` — a `run.json` plus per-stage sidecars under `stage-outputs/`. This is **local-only**, **gitignored** (added by `setup.sh`), and **never required reading** for any skill. It exists so future tooling (post-mortem dashboards, CI gates, `/sdlc --resume` and `/sdlc-status`) can pick up where a run left off without each tool inventing its own storage. If you delete the directory, nothing breaks — the next `/sdlc` run recreates it. Schema: Claude `.claude/skills/sdlc/templates/state-schema.md`; Copilot `.github/skills/sdlc/templates/state-schema.md`.
 
 ## Build / test / run
 
@@ -95,7 +95,7 @@ This repo uses the **brainstorm-toolkit** plugin. Available slash commands (see 
 
 - `/brainstorm [topic]` — conversational ideation *(Plan mode on Claude, linear on Copilot)*
 - `/task "description"` — create a task and execute it with TDD
-- `/status` — show current task counts from TASKS.md
+- `/sdlc-status` — show current task counts from TASKS.md
 - `/sdlc {plan_file}` — full pipeline (sanity → implement → evals → fix → validate → flowsim); leaves the validated changes for you to commit, no git writes
 - `/repo-onboarding` — regenerate project.json / AGENTS.md / GOTCHAS.md
 - `/repo-health` — read-only hygiene sweep with a score and a "next: ..." hint

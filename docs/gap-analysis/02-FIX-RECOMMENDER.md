@@ -29,9 +29,9 @@ Note what's true in every row: **the evidence is already structured and on disk*
 The pipeline did the hard part — collecting machine-readable failure state — then hands the
 human a prose apology instead of a diagnosis.
 
-Detection downstream is also recommendation-free: `/status` flags the non-terminal run
+Detection downstream is also recommendation-free: `/sdlc-status` flags the non-terminal run
 ("reconcile"), `/repo-health` Check 7 flags it, the Stop hook warns about it — three flaggers,
-zero fixers. The only remediation that exists is destruction (`/status --prune-stale`).
+zero fixers. The only remediation that exists is destruction (`/sdlc-status --prune-stale`).
 
 ## Proposed shape: `/triage [<slug>]`
 
@@ -46,7 +46,7 @@ same selection rule continuity detection already uses).
 | **Real code defect** | eval/test failure with stable expected-vs-actual | drafted fix spec → a `/task` (or direct fix + resume) |
 | **Plan is wrong** | flowsim MISMATCH where the code is defensible; Stage 1.5 critical; UNCLEAR markers | drafted plan edit → `/brainstorm` revisit of the specific section, then resume |
 | **Config / prereq missing** | "no `eval.runner`", missing env var, unapplied migration | the one-line setup command, then resume |
-| **Abandoned** | work landed outside the pipeline (`base_commit` ancestor of HEAD, tree clean) | close the envelope (`/status --prune-stale`) |
+| **Abandoned** | work landed outside the pipeline (`base_commit` ancestor of HEAD, tree clean) | close the envelope (`/sdlc-status --prune-stale`) |
 
 **Step 2 — recommend ONE action** in the same output shape as `/next` (one command, one
 rationale, ≤2 alternatives). Where the class is "real code defect", *draft* the fix — the same

@@ -69,7 +69,7 @@ into `references/` — that ships it (installed once per tool — up to three id
 ## Unified contracts
 
 - **`AGENTS.md`** — repo-wide agent instructions. Consumer repos symlink (POSIX) or copy `CLAUDE.md` → `AGENTS.md`.
-- **`TASKS.md`** — markdown checkbox list at repo root; the portable, durable task tracker. It is the **only** cross-tool backlog: `/status`, `/repo-health`, the `--queue` loop and the Stop hooks all read it, and it survives the session. Claude Code's native task list (`TaskCreate`/`TaskUpdate`) is a **separate, session-scoped progress indicator** — `/task` mirrors its one item and `/sdlc` mirrors its stage list, both Claude-only and both skipped silently elsewhere. Never let a decision depend on the native list, and never treat it as a substitute for a `TASKS.md` row: it is a view, not a record.
+- **`TASKS.md`** — markdown checkbox list at repo root; the portable, durable task tracker. It is the **only** cross-tool backlog: `/sdlc-status`, `/repo-health`, the `--queue` loop and the Stop hooks all read it, and it survives the session. Claude Code's native task list (`TaskCreate`/`TaskUpdate`) is a **separate, session-scoped progress indicator** — `/task` mirrors its one item and `/sdlc` mirrors its stage list, both Claude-only and both skipped silently elsewhere. Never let a decision depend on the native list, and never treat it as a substitute for a `TASKS.md` row: it is a view, not a record.
 - **`GOTCHAS.md`** — project-specific pitfalls; consulted by `/gotcha` and the sanity-check stage of `/sdlc`.
 - **`.claude/project.json`** — optional per-project config (test commands, eval runner, modules list); every key is optional, missing keys are skipped.
 - **Gotcha flywheel** — the loop-exit capture protocol is centralized in `skills/gotcha/SKILL.md` ("Capture at loop-exit"). `/task` and `/sdlc` reference it and auto-draft a gotcha **only on an objective trigger** (a fix-loop that failed-then-recovered, or the user voicing surprise), routed through gotcha's dedup — never a vibe-gate. `/task` and `/sdlc` also drop a `/gotcha <text>` `.next-action` sentinel when capture is declined; the seam is Stop-hook-backed on all three runtimes (Claude `.claude/settings.json`, Copilot `.github/hooks/`, Codex `.codex/hooks.json` — Codex has a Stop hook with the same `decision:block` contract, shipped by the plugin/`setup.sh`); writers also print an inline `Next:` fallback for when no hook is wired/trusted yet. `/brainstorm` injects area-scoped gotchas at Step 2 (entry), not only at validation.
@@ -175,7 +175,7 @@ Frontmatter buys exactly three things nothing else can, and two of them are usua
 |---|---|---|
 | `description:` | auto-delegation — Claude picks the agent unprompted | **Dead** — every skill names its agent explicitly, and auto-delegation is unreliable in practice |
 | `tools:` | an **enforced** boundary; prose saying "you are read-only" is advisory | **The real win** — verified enforced: a declared allowlist omits Bash/Write entirely |
-| `model:` | pins a tier | **Usually hostile** — it bypasses the `--model` > `models.cap` ladder. Pin at the dispatch site instead, except where a skill has explicitly exempted the site (`/status`'s inline reads) |
+| `model:` | pins a tier | **Usually hostile** — it bypasses the `--model` > `models.cap` ladder. Pin at the dispatch site instead, except where a skill has explicitly exempted the site (`/sdlc-status`'s inline reads) |
 
 Also weigh, before adding one:
 

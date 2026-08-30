@@ -215,7 +215,7 @@ entered Plan mode against this skill's contract — write the canonical copy to
 that's concrete and bounded enough to stand alone, add a row to the `Active / Pending`
 section: `- [ ] (P2) <step title> — plans/brainstorm-[topic-slug].md`. If `TASKS.md`
 doesn't exist, create it from `templates/TASKS.md.template` (or with minimal sections).
-This gives both Claude's `/status`/`/task` flow and Copilot's TODO workflow a shared
+This gives both Claude's `/sdlc-status`/`/task` flow and Copilot's TODO workflow a shared
 entry point into the brainstorm's output.
 
 ### Step 6.5: Multi-agent Vet (mode-gated)
@@ -301,10 +301,10 @@ re-choose a flow they've already established this session:
   with **no git writes**, so it's the safe default — it can't surprise the user
   with a PR.
 
-> These continuity rules are a slice of `/status`'s **canonical decision ladder**
-> (rung 4 — a plan with no run; see `skills/status/SKILL.md`). `/status` is the source
+> These continuity rules are a slice of `/sdlc-status`'s **canonical decision ladder**
+> (rung 4 — a plan with no run; see `skills/sdlc-status/SKILL.md`). `/sdlc-status` is the source
 > of truth for "what's the next step"; this inline copy keeps `/brainstorm`
-> self-contained when the user hasn't got `/status` in mind.
+> self-contained when the user hasn't got `/sdlc-status` in mind.
 
 Drop a **next-action sentinel** naming that command so the Stop hook surfaces
 it. The plan file MUST already exist at `plans/brainstorm-<topic-slug>.md`

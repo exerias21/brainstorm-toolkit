@@ -1,10 +1,10 @@
 # Envelope staleness — shared scan
 
 Canonical procedure for "find non-terminal pipeline envelopes and decide which are stale."
-Loaded by `/status`, `/repo-health` (Check 7), `/sdlc`.
+Loaded by `/sdlc-status`, `/repo-health` (Check 7), `/sdlc`.
 
 It lives in one file because it was written out five times and **had already drifted**:
-`/sdlc`'s main-branch false-positive fix never reached `/status`. Five copies of a rule with
+`/sdlc`'s main-branch false-positive fix never reached `/sdlc-status`. Five copies of a rule with
 one copy fixed is worse than no rule.
 
 ## The scan
@@ -24,7 +24,7 @@ If a flagged run records `base_commit` and that commit is already an ancestor of
 (`git merge-base --is-ancestor <base_commit> HEAD`), the work landed outside the pipeline.
 Append: *"looks committed outside the pipeline — reconcile."*
 
-**Read-only.** Every caller surfaces this; none rewrites the envelope. `/status --prune-stale`
+**Read-only.** Every caller surfaces this; none rewrites the envelope. `/sdlc-status --prune-stale`
 is the one confirm-gated exception, and it deletes envelopes rather than editing them.
 
 ## False-positive guards — the part that drifted
@@ -50,6 +50,6 @@ The scan is identical everywhere; only the verb changes.
 
 | Caller | Uses it for |
 |---|---|
-| `/status` | one line per non-terminal run + the next-step ladder's rung 1 |
+| `/sdlc-status` | one line per non-terminal run + the next-step ladder's rung 1 |
 | `/repo-health` Check 7 | a scored finding + the reconcile hint |
 | `/sdlc` | continuity detection at Stage 0/1 — **prompt, never auto-act** |

@@ -214,7 +214,7 @@ After the project.json bootstrap, ask the user:
 Report what was written and suggest next steps:
    - "Try `/test-check` to see which steps run."
    - "Start a new feature with `/brainstorm [topic]` or `/task <description>`."
-   - "See current work queue with `/status`."
+   - "See current work queue with `/sdlc-status`."
 
 ## What NOT to do
 

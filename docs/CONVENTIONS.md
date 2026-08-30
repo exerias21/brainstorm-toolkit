@@ -60,8 +60,8 @@ skills/<name>/SKILL.md   # name in frontmatter == directory name == slash-comman
 ```
 
 Examples (all current skills already comply):
-- `brainstorm`, `sdlc`, `task`, `status`, `gotcha`, `flowsim` — single-token
-- `repo-onboarding`, `test-check`, `dead-code-review`, `brainstorm-team`, `repo-health`, `code-tour`, `plan-html` — multi-token kebab
+- `brainstorm`, `sdlc`, `task`, `gotcha`, `flowsim` — single-token
+- `repo-onboarding`, `test-check`, `dead-code-review`, `brainstorm-team`, `repo-health`, `code-tour`, `plan-html`, `sdlc-status` — multi-token kebab
 
 Never-built roadmap names, kept for reference only: `pbi`, `brd-ingest`, `pbi-decompose`, `approve`, `deploy`, `monitor`, `rollback`, `coverage`. All would comply.
 

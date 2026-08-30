@@ -61,7 +61,7 @@ grep -rlqs 'next-action' .claude/settings.json ~/.claude/settings.json .github/h
 - **The Stop hook is the ONLY consumer.** It prints every pending line as `Next: <cmd>` (with
   `(confirm before running)` appended when `confirm:true`), then deletes the whole file —
   fire-once, per file.
-- **Every other reader must PEEK** — read without deleting. `/next` and `/status` inspect the
+- **Every other reader must PEEK** — read without deleting. `/next` and `/sdlc-status` inspect the
   pending action to fold it into their output; if they consumed it, the hook would have
   nothing to surface at the next Stop. A second consumer eats the hint before the user sees it.
 

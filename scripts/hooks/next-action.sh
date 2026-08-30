@@ -115,7 +115,7 @@ if [ -d "$PIPE_DIR" ]; then
     [ -n "$(find "$rj" -mtime +1 2>/dev/null)" ] && stale=$((stale+1))
   done
   if [ "$stale" -gt 0 ]; then
-    msgs+=("⚠ ${stale} stale pipeline run(s) (in_progress/paused >1d). Run /status or /repo-health to reconcile.")
+    msgs+=("⚠ ${stale} stale pipeline run(s) (in_progress/paused >1d). Run /sdlc-status or /repo-health to reconcile.")
   fi
 fi
 
@@ -136,7 +136,7 @@ if [ -d "$PLANS_DIR" ]; then
     pending=$((pending+1))
   done
   if [ "$pending" -gt 0 ]; then
-    msgs+=("◆ ${pending} recent plan(s) awaiting a pipeline run. Run /status for the recommended next step.")
+    msgs+=("◆ ${pending} recent plan(s) awaiting a pipeline run. Run /sdlc-status for the recommended next step.")
   fi
 fi
 

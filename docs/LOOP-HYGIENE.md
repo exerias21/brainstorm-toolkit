@@ -149,7 +149,7 @@ bash scripts/loop-runner.sh [--queue X] [--fresh yes|no] [--engine claude|codex]
   `resume`s — both would reload the full prior transcript and defeat the clean context; state is passed
   by **path** in the prompt. Extra engine flags via `LOOP_RUNNER_EXTRA` (e.g. `--max-budget-usd 5`).
 - It makes **no git commits** (sdlc hands off a validated tree) and stops if a batch makes no
-  progress (parked/blocked items are left for `/status` → `/triage`).
+  progress (parked/blocked items are left for `/sdlc-status` → `/triage`).
 
 **⚠ It launches headless agents that edit files and run Bash unattended on the current repo** — review
 the allowlist and understand the scope before running. This is the Lever-C operational tradeoff; use it

@@ -64,7 +64,7 @@ regardless of verbosity — the per-dispatch `model:` line, gate verdicts, PAUSE
   priority (top `N` or `pipeline.loop.max_items`, default 5; `P1>P2>P3`, `[~]`
   first) and loop the pipeline over them, **re-scanning `TASKS.md` between items**
   so rows added mid-run join the loop. Stop conditions (`pipeline.loop.*`): a
-  `paused`/`failed` item **parks** the loop (write its `/status` hint to
+  `paused`/`failed` item **parks** the loop (write its `/sdlc-status` hint to
   `.claude/.next-action`), a `confirm:true` next action parks it, and
   `max_items` / `max_consecutive_failures` (default 2) bound it. **No git writes;
   every park is a written next-action, never a dead end.** Each item's envelope
@@ -86,7 +86,7 @@ Mark resolved rows `[~]`. Derive `slug` per `docs/CONVENTIONS.md`; initialize
 `.claude/pipeline/<slug>/` with the canonical `run.json` — **including the computed
 required fields that get dropped otherwise (DQ6):**
 `plan_hash: "sha256:$(sha256sum <plan> | cut -d' ' -f1)"`, `started_at` = `updated_at`
-= `"$(date -u +%Y-%m-%dT%H:%M:%SZ)"`. Omitting them breaks `--resume` + `/status`/`/repo-health` staleness.
+= `"$(date -u +%Y-%m-%dT%H:%M:%SZ)"`. Omitting them breaks `--resume` + `/sdlc-status`/`/repo-health` staleness.
 
 **`--resume`:** if `--resume` was passed, read the existing `run.json` instead of
 re-initializing — reject on a `plan_hash` mismatch, skip stages whose sidecar shows
@@ -199,7 +199,7 @@ Write `stage-outputs/handoff.json` =
 `{branch, files_changed[], committed: false, suggested_commit_msg}`.
 Set `run.json.status = "complete"`. Also set `run.json.next_action = {cmd, confirm}`
 (L8) to the proposed follow-up (`/repo-health` on complete;
-`/status` on pause) so `/status` recovers the handoff after the sentinel fires;
+`/sdlc-status` on pause) so `/sdlc-status` recovers the handoff after the sentinel fires;
 omit when there's none.
 
 ## Stage 7 — Report

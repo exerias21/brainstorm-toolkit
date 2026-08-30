@@ -29,7 +29,7 @@
         "./skills/repo-health",
         "./skills/repo-onboarding",
         "./skills/sdlc",
-        "./skills/status",
+        "./skills/sdlc-status",
         "./skills/task",
         "./skills/test-check"
       ]

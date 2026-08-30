@@ -112,4 +112,4 @@ plan.
 **Writes** `stage-outputs/validate.json` with `data.layers{logs,frontend,backend,e2e,eval}`,
 `data.new_failures[]`, `data.preexisting_failures[]`, `data.requirements[]`, `data.flow[]`,
 `data.flow_witnessed`. The former `plan-validate.json` and `flowsim-<slug>.json` sidecars are
-gone; `/status` and `/repo-health` read `validate.json` for all of it.
+gone; `/sdlc-status` and `/repo-health` read `validate.json` for all of it.

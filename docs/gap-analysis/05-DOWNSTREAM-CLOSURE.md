@@ -38,7 +38,7 @@ already maintains. At `/sdlc` Stage 6 (and `/sdlc` close-out), append conditiona
   lever just generalizes the mechanism).
 
 With gap 4's queue driver, these rows make the loop literally self-feeding: a delivery run
-enqueues its own verification run. Without it, they at least surface in `/status` and `/next`
+enqueues its own verification run. Without it, they at least surface in `/sdlc-status` and `/next`
 instead of living in nobody's memory. Cost: a few lines of prose in two skills + overlays
 (three-way-sync applies). No new artifacts, no new skills.
 

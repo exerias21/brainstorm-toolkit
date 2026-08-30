@@ -102,7 +102,7 @@ Four things worth knowing:
 - **`--delete` is scoped per skill directory**, never to `~/.claude/skills/` as a whole, so
   unrelated user skills installed by other tools are never pruned.
 - **Token weight.** A global sync makes all 13 skills resident in *every* repo, and several
-  (`/sdlc`, `/status`) assume the `AGENTS.md` / `.claude/project.json` contract.
+  (`/sdlc`, `/sdlc-status`) assume the `AGENTS.md` / `.claude/project.json` contract.
   Use `--skills` to install just the ones that travel well — `/brainstorm`, `/brainstorm-team`,
   `/gotcha` — and keep the pipeline skills per repo via
   `setup.sh`.
@@ -137,7 +137,7 @@ Every `project.json` key is optional — skills skip steps gracefully when confi
 | `/brainstorm-team` | Claude + Copilot + Codex † | 6-agent team for competitive + product research incl. a lateral-thinking agent (sequential on Copilot) |
 | `/task` | Claude + Copilot + Codex | Create one bounded task and execute it with TDD on the current branch — no flags, always TDD |
 | `/sdlc` | Claude + Copilot + Codex † | The full pipeline — sanity → implement → evals → fix → validate → plan-validate → flowsim, then **hands you the validated changes to commit yourself** (no commit, branch, push, or PR — only `/sdlc` touches git). Stage 2 auto-decomposes large multi-surface plans into focused per-lane subagents + a converge step; small / single-surface plans run a single agent unchanged. Takes a plan file, a task id, a task range (`1-5`), or an ad-hoc description. Use to run full discipline on work you want to review and commit onto an open PR's branch. Same optional Review→Fix stage as `/sdlc`, warn-only on surviving findings (consistent with its warn-only secret scan) rather than blocking handoff. Supports `--resume` (same envelope-resume as `/sdlc`; resume keys on the resolved slug) and `--queue [N]` (attended backlog loop: selects pending TASKS.md rows by priority, re-scans between items so mid-run additions join, parks on any paused/confirm item — no git writes). |
-| `/status` | Claude + Copilot + Codex | Readout **and** recommendation in one command. Prints TASKS.md counts + the active task, surfaces any non-terminal pipeline run, then walks a 7-rung ladder to ONE recommended next command with a one-line rationale — joining run-state, the `.next-action` sentinel, TASKS.md, plans and git. For a paused run it names the failure class (flaky · code-defect · plan-wrong · config-missing) and the command that fixes it. Absorbed the former `/next` and `/triage`. Read-only — it recommends, never executes. |
+| `/sdlc-status` | Claude + Copilot + Codex | Readout **and** recommendation in one command. Prints TASKS.md counts + the active task, surfaces any non-terminal pipeline run, then walks a 7-rung ladder to ONE recommended next command with a one-line rationale — joining run-state, the `.next-action` sentinel, TASKS.md, plans and git. For a paused run it names the failure class (flaky · code-defect · plan-wrong · config-missing) and the command that fixes it. Absorbed the former `/next` and `/triage`. Read-only — it recommends, never executes. |
 | `/repo-onboarding` | Claude + Copilot + Codex | Generate AGENTS.md + TASKS.md + project.json + GOTCHAS.md |
 | `/code-tour` | Claude + Copilot + Codex | Turn a codebase into teaching material — audit docstring coverage (bundled AST script), write why-focused docstrings that carry the reasoning and the rejected alternative, then generate a guided reading path (`TOUR.md`) with a cross-cutting pattern index, graded exercises, and an honest "what not to copy" section. Grounded in researched, source-cited standards (PEP 257, Google/NumPy styles, Diátaxis, ADRs) that separate genuine consensus from contested opinion. For onboarding, handover, or preparing a repo as a training module. Complements `/repo-onboarding` (which documents the repo at architecture level; this documents the code beneath it). |
 | `/repo-health` | Claude + Copilot + Codex | Read-only hygiene sweep (dead code + tests + deps + secrets + gotchas-currency); prints a scored report and the highest-impact next command. |
@@ -166,7 +166,7 @@ starts.
 
 | Skill | Orchestrator | Sub-agents (per run) | Tokens/run (rough) | Cost/run (rough) |
 |---|---|---|---|---|
-| `/status` | host model | none — reads `TASKS.md` | <1k | ~$0.00 |
+| `/sdlc-status` | host model | none — reads `TASKS.md` | <1k | ~$0.00 |
 | `/gotcha` | host model | none — read/append `GOTCHAS.md` | <1k | ~$0.00 |
 | `/test-check` | host model | none — runs tests + log audit | 1k–3k | ~$0.01 |
 | `/plan-html` | host model | none — markdown read → HTML write | 3k–10k | ~$0.01–$0.05 |
@@ -264,10 +264,10 @@ Or in plain text:
                     (no git writes — it hands you a validated tree)
 
    Anytime:
-     /repo-health    — scored hygiene sweep
-     /status         — what's active, what's left?
-     /flowsim        — verify a plan's claimed flows match the code
-     /gotcha         — capture a pitfall
+     /repo-health   — scored hygiene sweep
+     /sdlc-status   — what's active, what's left?
+     /flowsim       — verify a plan's claimed flows match the code
+     /gotcha        — capture a pitfall
 ```
 
 ## Config contract
@@ -370,7 +370,7 @@ printing it, so the loop self-advances. It never chains a `confirm: true` action
 | `/sdlc` | `agents.decompose_min_tasks` (Stage 2 decompose gate) |
 | `/sdlc --queue`, `scripts/loop-runner.sh`, `scripts/hooks/next-action.sh` | `pipeline.loop.*` (`max_items`, `batch_size`, `max_hops`, `auto_continue`) |
 | `/sdlc` Stage 6 | `stack.up` / `stack.down` / `stack.rebuild` / `stack.url` — printed as the manual-verification line at hand-off, never auto-run |
-| `/task`, `/status` | (none — read TASKS.md directly) |
+| `/task`, `/sdlc-status` | (none — read TASKS.md directly) |
 | `/repo-onboarding` | writes all of the above |
 
 ## Supporting scripts

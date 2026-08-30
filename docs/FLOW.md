@@ -97,7 +97,7 @@ first, then the overlays — see [`../CLAUDE.md`](../CLAUDE.md).
 
 ## Utilities (any time)
 
-`/status` (work queue) · `/gotcha` (log a project pitfall) · `/flowsim` (plan⇄code trace) ·
+`/sdlc-status` (work queue) · `/gotcha` (log a project pitfall) · `/flowsim` (plan⇄code trace) ·
 `/test-check` (run configured tests + log audit) · `/plan-html` (render a plan as shareable HTML) ·
 `/repo-health` (read-only hygiene sweep) · `/dead-code-review` · `/review-pr`.
 

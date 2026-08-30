@@ -53,7 +53,7 @@ machinery bridging skills is:
 2. **Prose "continue the flow" instructions** inside `/brainstorm` Step 8, `/brainstorm-deep`,
    `/brainstorm-team` — they keep momentum *within one session* but the logic lives in chat
    context, evaporates at session end, and exists nowhere as a reusable decision procedure.
-3. **Detection-only surfacing**: `/status`, `/repo-health` Check 7, and the Stop hook's stale-run
+3. **Detection-only surfacing**: `/sdlc-status`, `/repo-health` Check 7, and the Stop hook's stale-run
    warning all *flag* a stalled pipeline — none of them *recommends or performs* the
    reconciliation.
 
@@ -71,7 +71,7 @@ three places, executable by nobody:
   with `/sdlc`; else `/sdlc` is the safe default").
 - `/repo-health`'s "Suggested next" priority ladder (migration > dep HIGH > stale pipeline run
   > test failure > …).
-- `/status`'s "no active task — next up: <first pending>".
+- `/sdlc-status`'s "no active task — next up: <first pending>".
 
 Consolidating that scattered logic into one owned role is the single highest-leverage change
 this analysis proposes.
@@ -95,7 +95,7 @@ This analysis does not duplicate the existing design corpus — it plugs the hol
   envelope, shipped). But the envelope was, at the time of this analysis, **written far more
   than it was read** — the two consumers that would close the loop (`--resume` 1B, `--inspect`
   1C) were still deferred. State without a reader is a journal, not a loop. *(Both have since
-  shipped — `--resume` as L5, the inspect surface as `/status` + `/next`.)*
+  shipped — `--resume` as L5, the inspect surface as `/sdlc-status` + `/next`.)*
 - **`docs/REVIEW-FIX-STAGE.md`** was, at the time of this analysis, the designed-but-unbuilt
   fix-recommender for the **green** path — adversarial review of code that passed everything.
   The **red** path (a run that paused mid-pipeline) had no equivalent design anywhere;

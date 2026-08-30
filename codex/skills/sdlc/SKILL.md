@@ -71,7 +71,7 @@ regardless of verbosity — the per-dispatch `model:` line, gate verdicts, PAUSE
   priority (top `N` or `pipeline.loop.max_items`, default 5; `P1>P2>P3`, `[~]`
   first) and loop the pipeline over them, **re-scanning `TASKS.md` between items**
   so rows added mid-run join the loop. Stop conditions (`pipeline.loop.*`): a
-  `paused`/`failed` item **parks** the loop (write its `/status` hint to
+  `paused`/`failed` item **parks** the loop (write its `/sdlc-status` hint to
   `.claude/.next-action`), a `confirm:true` next action parks it, and
   `max_items` / `max_consecutive_failures` (default 2) bound it. **No git writes;
   every park is a written next-action, never a dead end.** Each item's envelope
@@ -218,10 +218,10 @@ Write `stage-outputs/handoff.json` =
 `{branch, files_changed[], committed: false, suggested_commit_msg}`. **Always
 set `run.json.status` to a terminal value** (`complete`, or `paused` if you
 stopped mid-pipeline) before exiting — never leave it `in_progress`, or
-`/repo-health` and `/status` will (correctly) flag it as a stale run. **Also set
+`/repo-health` and `/sdlc-status` will (correctly) flag it as a stale run. **Also set
 `run.json.next_action = {cmd, confirm}`** (L8) to the proposed follow-up
-(`/repo-health` on complete; `/status` on pause) so
-`/status` recovers the handoff after the sentinel fires; omit when there's none. This holds
+(`/repo-health` on complete; `/sdlc-status` on pause) so
+`/sdlc-status` recovers the handoff after the sentinel fires; omit when there's none. This holds
 for **retro / validation-only runs** too (Stage 2 skipped because the code
 already landed): advance `run.json.stage`/`stages_completed` as each validation
 sidecar is written, add `implement` to `stages_skipped`, and close on a terminal
