@@ -6,16 +6,12 @@ spec for all of them. A skill needs only a one-line pointer here plus the
 print-then-dispatch rule — never inline the syntax (keeps skills under their line
 ceilings).
 
-Supersedes the former `model-cap.md` and `review-model.md`, which were split across
-two files and left the per-stage tiers scattered under `pipeline.*`.
-
 ## The config surface
 
 ```json
 "models": {
   "cap": "sonnet",
   "sanity": null,
-  "implement": null,
   "code_review": "opus",
   "code_review_second_pass": "sonnet"
 },
@@ -28,9 +24,8 @@ two files and left the per-stage tiers scattered under `pipeline.*`.
 }
 ```
 
-Every key is optional; a missing key means the built-in default. There is **no
-back-compat with the old `pipeline.*.model` keys** — they are no longer read (see
-*Migration* at the end).
+Every key is optional; a missing key means the built-in default. The old `pipeline.*.model`
+keys are no longer read (see *Migration* at the end).
 
 ## Two axes — keep them mechanically separate
 
@@ -38,13 +33,10 @@ This is the one rule a future edit must not break.
 
 | | **Axis 1 — the fan-out ladder** | **Axis 2 — the adversarial reviewer** |
 |---|---|---|
-| Keys | `models.cap`, `models.sanity`, `models.implement` | `models.code_review`, `models.code_review_second_pass` |
+| Keys | `models.cap`, `models.sanity` | `models.code_review`, `models.code_review_second_pass` |
 | Values | `haiku` \| `sonnet` \| `opus` | `haiku` \| `sonnet` \| `opus` \| `fable` |
-| Capped? | **Yes** — everything passes through `capModel()` | **Never** — must not touch `capModel()` |
-| Stages | 1.5, 2, 5.5, and every other fan-out | 5.7 / 5.8 only |
+| Stages | 1.5, 2, and every other fan-out | 5.7 / 5.8 only |
 
-**`fable` must never be passed to `capModel()`.** It is not a fourth rung on the ladder;
-`capModel()` would silently no-op it back to the call site's default with zero error and
 zero log line. This is the highest-priority hazard in this file.
 
 ## Axis 1 — the cap is a CEILING, not a setting
@@ -64,7 +56,6 @@ it — both only lower. **The per-stage key is the only lever.** That is precise
 gated, so before these keys existed it ran at Haiku on every run with no escape hatch.
 
 **Sonnet-first default:** the effective cap defaults to `sonnet`
-(`MODEL_CAP = args?.model_cap ?? 'sonnet'`), so out of the box Opus sites run Sonnet.
 `--model opus` (cap = opus = no ceiling) is the deliberate opt-up.
 
 The cap governs **sub-agent dispatch only** — never the session orchestrator running the
@@ -75,15 +66,14 @@ skill. See *Session nudge*.
 | Key | Stage | Built-in default | Raise it when |
 |---|---|---|---|
 | `models.sanity` | 1.5 plan pre-flight | `haiku` (all focuses) | `completeness` is judging whether a plan hangs together — judgment work. Never gated, so this costs on **every** run |
-| `models.implement` | 2 implement / lanes | `sonnet` (effective) | **⚠ RESERVED — not yet wired.** Both Stage 2 dispatch sites hard-code `capModel('opus', cap)`, so this key is read by nothing today. Steer the implementer with `--model` / `models.cap` instead. The name is reserved so it stays stable when wired |
 
 Each replaces the built-in default for that stage, **then still passes through the cap**:
 default still dispatches Sonnet unless you also pass `--model opus`. These are defaults
 *within* Axis 1, never a new axis.
 
-**Wired today: `models.sanity` only.** `models.implement` is reserved
-(see the table). A key that parses but gates nothing is the exact failure this contract exists to
-prevent, so it is labelled rather than quietly listed alongside the working two.
+**Wired today: `models.sanity` only.** A key that parses but gates nothing is the exact failure
+this contract exists to prevent, so per-stage keys are added when a dispatch site reads them, not
+in advance.
 
 ### Resolution (Axis 1)
 
@@ -134,7 +124,6 @@ review: reviewer runs <model> on <n> lens(es) + verify + fix-planner. models.cap
         agents.code_review_max_lenses.
 ```
 
-A **log line only.** Never "fix" the interaction by routing the reviewer through `capModel()` —
 it silently no-ops back to the call site's default tier, with zero error and zero log line.
 
 Axis 2's cost is `(lenses + verify + fix-planner) x reviewer model`, and every one of those
@@ -157,21 +146,11 @@ one reviewer call.
 An unrecognized entry in any list is ignored with one warning — the lists are deliberately
 open so a repo can add its own.
 
-## Reasoning effort — partial support, stated honestly
+## Reasoning effort — not settable here
 
-Reasoning effort is **not uniformly settable**, so there is deliberately no
-`models.*_effort` config key. Adding one would create a knob that silently does nothing on
-the default path — the exact failure this contract exists to prevent.
-
-| Path | Effort settable? |
-|---|---|
-| Workflow `agent()` (ultracode only) | **Yes** — `opts.effort`: `low`\|`medium`\|`high`\|`xhigh`\|`max` |
-| Agent definition frontmatter (`agents/*.md`) | **Yes** — `effort:` |
-| **Prose path (the default, and the only path on Copilot/Codex)** | **No** — the Agent tool exposes `model` but has no `effort` parameter |
-
-Since the prose path is the source of truth and covers every non-ultracode run, effort
-inherits the session effort there. If you need a stage to think harder today, **raise its
-tier** — that works on every path. Revisit if the Agent tool ever gains the parameter.
+There is deliberately **no `models.*_effort` key** — the Agent tool exposes `model` but no
+`effort` parameter, so the key would silently do nothing. To make a stage think harder, **raise
+its tier**. Background: `docs/MODEL-AXES.md`.
 
 ## Prose dispatch rule (the DEFAULT path — this is what makes any of it real)
 
@@ -189,22 +168,12 @@ silent. `validate_skills.py` checks that fan-out skills point at this file.
 
 ## Runtime regimes
 
-- **Claude + ultracode** → `capModel()` at each `agent()` seam. Applied **per call**: an
-  `agent()` that omits `model` inherits the session tier and **bypasses the cap**, so every
-  dispatch must be wrapped.
-- **Claude, no ultracode** → the prose rule above.
-- **Copilot** → stages run inline in the session model; the cap is **advisory** (no
+- **Claude** → parallel sub-agents; the tier resolved below is passed at each dispatch.
+- **Copilot** → stages run inline in the session model; the cap is **advisory** (there is no
   sub-agent tier to lower). The `agents.*` counts still apply.
-- **Codex** → advisory too, but for a different reason worth keeping straight. Codex *does*
-  have native subagents (`.codex/agents/*.toml`, parallel, `max_threads`) — it is not
-  structurally inline-only like Copilot. What blocks tiering is that **per-subagent model
-  override is reported regressed upstream** (subagents inherit the parent model), so the
-  fan-out runs single-model.
-
-  > **Reported, not verified here** — from web research on 2026-07-13, not a hands-on Codex
-  > install, and an upstream bug that may already be fixed. Re-check before relying on the
-  > limitation *or* its absence. Describes Codex only; changes nothing about tier defaults
-  > or `capModel()` anywhere.
+- **Codex** → advisory too. Codex has native subagents, but per-subagent model override is
+  reported regressed upstream, so its fan-out runs single-model. Background and the caveat on
+  that report: `docs/MODEL-AXES.md`.
 
 ## Invalid input — fall through, never guess
 
@@ -227,22 +196,6 @@ Tool-agnostic wording — not `/model`, which is Claude-specific.
 
 ## Migration from the old keys
 
-The old keys are **no longer read** (clean break, 2026-07-26):
-
-| Old | New |
-|---|---|
-| `pipeline.sanity_check.model` | `models.sanity` |
-| `pipeline.sanity_check.focuses` | `agents.sanity_focuses` |
-| `pipeline.review_fix.model` | `models.code_review` |
-| `pipeline.review_fix.second_pass_model` | `models.code_review_second_pass` |
-| `pipeline.review_fix.lenses` | `agents.code_review_lenses` |
-| `pipeline.review_fix.passes` | `agents.code_review_passes` |
-| `pipeline.review_fix.max_fix_loops` | `agents.code_review_max_fix_loops` |
-| `pipeline.decompose_min_tasks` | `agents.decompose_min_tasks` |
-
-`pipeline.review_fix.enabled` / `.mode` / `.blocking` / `.confidence_threshold` /
-`.auto_approve_after` / `.max_diff_lines` / `.max_files` stay under `pipeline.review_fix` —
-they are stage *behavior*, not model or count selection.
-
-A repo still using an old key silently gets the built-in default. `/repo-onboarding`
-rewrites the block; `/repo-health` flags leftovers.
+The `pipeline.*` model keys were renamed to `models.*` / `agents.*` in a clean break. A repo
+still using an old key silently gets the built-in default; `/repo-onboarding` rewrites the
+block and `/repo-health` flags leftovers. Full mapping: `docs/MODEL-AXES.md`.

@@ -60,7 +60,7 @@ changes your approach from what they might expect.
 
 ## Capture at loop-exit (model-invoked) — the shared protocol
 
-The delivery skills (`/task`, `/sdlc-lite`, `/sdlc`) run this at the end of a
+The delivery skills (`/task`, `/sdlc`) run this at the end of a
 run. Goal: turn a hard-won trap into a durable entry **without capture fatigue**.
 
 **Objective trigger — auto-draft ONLY on hard evidence of a trap:**

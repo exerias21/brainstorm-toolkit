@@ -24,8 +24,8 @@ G = Copilot, X = Codex).
 | L7 | **`/triage <slug>` skill** (classify paused envelope → drafted fix action; REVIEW-FIX schema reuse) | ✅ shipped | gap 2 | **M** | L5 (for executable re-entry), L1 (derisks the table) | CGX | low |
 | L8 | **`next_action` in the envelope + condition-derived "plan with no run" warning** | ✅ shipped | gap 3 | **S/M** | L6 | CG (hook), X via `/next` | low — additive schema |
 | L9 | **Auto-continue Stop-hook mode** (`decision: block` chaining; opt-in knob, confirm-guard, hop budget) | ✅ shipped (opt-in, default off) | gaps 1+3+4 (the actual loop) | **M** | L4, L6; verify Copilot block-equivalent | **C** (G maybe, X no) | **medium — runaway-chain guardrails are the feature** |
-| L10 | **`/sdlc-lite --queue`** (state+priority selection, re-scan between items, stop conditions) | ✅ shipped | gap 4 | **M** | none (better after L4) | CGX | low — no git writes by construction |
-| L11 | **`/pr-followup <pr>`** (PR threads/CI → classified → `/sdlc-lite` on the branch) | ✅ shipped | gap 5 | **M/L** | L7's classification table | CGX (GitHub tooling varies) | medium — external-input handling |
+| L10 | **`/sdlc --queue`** (state+priority selection, re-scan between items, stop conditions) | ✅ shipped | gap 4 | **M** | none (better after L4) | CGX | low — no git writes by construction |
+| L11 | **`/pr-followup <pr>`** (PR threads/CI → classified → `/sdlc` on the branch) | ✅ shipped | gap 5 | **M/L** | L7's classification table | CGX (GitHub tooling varies) | medium — external-input handling |
 | L12 | **Unattended delivery worker** (AUTONOMOUS-DISCOVERY pattern over the task queue) | ⏳ **deferred** — `scripts/loop-runner.sh` covers the attended batch case; the daemon remains an opt-in docs pattern | gap 4 ceiling | **L** | L4, L5, L7, L10 + real attended usage | deployment, not a skill | high — keep as docs/ pattern, opt-in infra |
 | L13 | **Phase 6 `/deploy` / `/monitor` / `/rollback`** | ⏳ **deferred** | gap 5 ceiling | **L** | roadmap-scoped | — | as per BRAINSTORM-PIPELINE.md |
 
@@ -59,7 +59,7 @@ real usage; each is independently justifiable and none blocks the others.
   in `.claude-plugin/marketplace.json`; README table row; honest
   `metadata.brainstorm-toolkit-applies-to`; ≤100 lines for the utility skills; run
   `scripts/validate_skills.py` + the `setup.sh` round-trip.
-- **Every prose change to `/sdlc` / `/sdlc-lite` stage contracts** (L1, L2): prose first, then
+- **Every prose change to `/sdlc` / `/sdlc` stage contracts** (L1, L2): prose first, then
   `sdlc-pipeline.workflow.js`, then the four overlays — the three-way-sync contract. L1's
   pause-message change touches the workflow's pause strings too.
 - **Every new agent dispatch** (`/next`'s state-join, `/triage`'s classifier): Sonnet-first /

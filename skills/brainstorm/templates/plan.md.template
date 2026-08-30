@@ -1,0 +1,35 @@
+<!-- The plan file /brainstorm writes at Step 6, and the shape /sdlc parses at Stage 0.
+     Loaded by skills/brainstorm/SKILL.md Step 6. Keep the section headings stable: the
+     pipeline's plan parser looks for Direction, Conventions & reuse, Implementation Steps,
+     Cross-Module Touchpoints and Open Questions by name. -->
+
+## Brainstorm Result: [Feature Name]
+
+### Direction
+One paragraph summarizing the chosen approach and why. If the direction combines a
+conventional option with a wildcard, say so explicitly.
+
+### Conventions & reuse
+What this plan reuses from the existing codebase (from Step 2's recon), so
+implementation follows the repo instead of reinventing it:
+- Follow: <pattern> — see `path:line`
+- Reuse: <existing module/helper/type> for <purpose> — `path`
+- New (justified): <thing>, because <no existing pattern fits>
+- Doc drift: <AGENTS.md/CLAUDE.md says X but the code does Y>   (omit if none)
+
+### Implementation Steps
+Numbered list of concrete steps, each with:
+- What to do
+- Which files to create/modify
+- Key patterns to follow (reference existing code from the block above)
+
+### Cross-Module Touchpoints
+- Which other modules this connects to and how
+
+### Open Questions
+- Anything that still needs deciding (keep this short)
+
+### Appendix: Alternatives Considered
+Preserve every Conventional Approach and Wildcard generated in Step 4 — even the
+rejected ones — with a one-line "why not chosen" note. Future sessions (and the user
+revisiting later) often pick these back up.

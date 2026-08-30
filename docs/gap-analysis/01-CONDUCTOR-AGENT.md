@@ -2,7 +2,7 @@
 
 **Gap:** the toolkit has no owner for the question *"given everything on disk right now, what
 is the next step — and shall I start it?"* Every transition between skills is either a
-one-shot printed hint (`Next: /sdlc-lite plans/…`) or a prose instruction inside a skill that
+one-shot printed hint (`Next: /sdlc plans/…`) or a prose instruction inside a skill that
 only works while that skill's session is still alive.
 
 **Lever:** a small, cheap, cross-tool **`/next` skill** backed (on Claude) by a **conductor
@@ -17,7 +17,7 @@ agent definition** in `agents/`. Read-only by default; recommendation first, exe
 2. **The next-step decision procedure is written down three times, as prose, executable by
    nobody on demand:**
    - `skills/brainstorm/SKILL.md` Step 8 — flow-continuity rules (established-flow detection,
-     `/sdlc-lite` as the safe default, the vendored-skill mis-route guard, "confirm before the
+     `/sdlc` as the safe default, the vendored-skill mis-route guard, "confirm before the
      PR-writing path").
    - `skills/repo-health/SKILL.md` roll-up — a full priority ladder for "Suggested next"
      (unapplied migration > dep HIGH > stale pipeline run > test failure > stale gotcha > …).
@@ -51,8 +51,8 @@ agent definition** in `agents/`. Read-only by default; recommendation first, exe
 alternatives. Example:
 
 ```
-Next: /sdlc-lite plans/brainstorm-radius-refetch.md
-Why:  plan saved 20m ago; no pipeline run references it; sdlc-lite is the established flow.
+Next: /sdlc plans/brainstorm-radius-refetch.md
+Why:  plan saved 20m ago; no pipeline run references it; sdlc is the established flow.
 Also: /plan-html plans/brainstorm-radius-refetch.md (preview) · /status (full queue)
 ```
 
@@ -68,17 +68,17 @@ inline" rule):
 3. **Pending sentinel** → surface it verbatim (it is the most recent skill's own routing
    decision; don't second-guess it).
 4. **A plan file with no pipeline run** → recommend the pipeline, applying `/brainstorm`
-   Step 8's exact continuity + safety rules (`/sdlc-lite` default; `/sdlc` only with confirm;
+   Step 8's exact continuity + safety rules (`/sdlc` default; `/sdlc` only with confirm;
    vendored-skill guard).
-5. **`[~]` in-progress TASKS.md row** → recommend resuming it (`/sdlc-lite task-N`).
-6. **`[ ]` pending TASKS.md rows** → recommend the top one (`/task` if small, `/sdlc-lite N`
-   otherwise; a run of related rows → `/sdlc-lite N-M`).
+5. **`[~]` in-progress TASKS.md row** → recommend resuming it (`/sdlc task-N`).
+6. **`[ ]` pending TASKS.md rows** → recommend the top one (`/task` if small, `/sdlc N`
+   otherwise; a run of related rows → `/sdlc N-M`).
 7. **Nothing queued** → recommend ideation or hygiene: `/brainstorm` (if the session has an
    open thread) or `/repo-health` (if the last sweep is old / absent).
 
 **`--go`:** execute the top recommendation instead of printing it — with the same safety
 asymmetry the toolkit already enforces everywhere: anything that writes git history (`/sdlc`)
-still requires an explicit confirm; `/sdlc-lite`, `/task`, `/status` may proceed.
+still requires an explicit confirm; `/sdlc`, `/task`, `/status` may proceed.
 
 ### The conductor agent (Claude-only enhancement, `agents/conductor.md`)
 

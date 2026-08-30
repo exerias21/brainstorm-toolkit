@@ -1,7 +1,7 @@
 ---
 name: test-check
 description: >
-  Run all relevant tests and log audits after code changes. Reads `.claude/project.json`
+  Run all relevant tests, feature evals and log audits after code changes. Reads `.claude/project.json`
   for project-specific commands. Gracefully skips any steps whose commands are not
   configured. Use after implementing features, fixing bugs, or before marking work done.
 argument-hint: "[--loop]"
@@ -49,6 +49,10 @@ projects opt in to whichever layers apply.
   "logs": {
     "command": "...",     // e.g. "docker compose logs --tail 200"
     "services": [...]     // optional list of service names
+  },
+  "eval": {
+    "runner": "...",      // e.g. "python3 scripts/eval-runner.py"
+    "features_dir": "..." // where per-feature fixtures/expected live
   }
 }
 ```
@@ -113,11 +117,26 @@ Re-run the log audit to catch issues triggered by the tests themselves. Compare 
 Step 1 findings. Any NEW issues are likely caused by the test run and should be
 investigated.
 
+### 6. Feature evals (if `eval.runner` defined)
+
+Run the configured runner and read its structured result, never its raw output:
+
+```bash
+<eval.runner> --output json            # whole suite
+<eval.runner> --feature <slug> --output json   # one feature
+```
+
+The runner auto-discovers features from `<eval.features_dir>/*/`, so a new feature needs no
+registration. Report pass/fail per feature plus `min_pass_rate` if `eval.thresholds` is set;
+route failures through the same fix loop as the other suites. Authoring new evals is not this
+skill's job — that is the pipeline's Stage 3
+(`skills/sdlc/templates/stage-3-evals.md`).
+
 ## Rules
 
 - Always run Step 1 if `logs.command` is defined.
-- Run Steps 2-4 only if the corresponding key is defined AND files in the corresponding
-  area changed.
+- Run Steps 2-4 and 6 only if the corresponding key is defined AND files in the
+  corresponding area changed.
 - Always run Step 5 after tests complete, if Step 1 ran.
 - If ANY check fails, report the failure clearly and do NOT mark work as complete.
 - Summarize results at the end: which checks passed, which failed, what needs fixing.

@@ -47,20 +47,18 @@ VALID_TARGETS = {"claude", "copilot", "codex"}
 # pointer to that file so the cap rule is checkable, not just documented.
 MODEL_CAP_FAN_OUT_SKILLS = {
     "sdlc",
-    "sdlc-lite",
     "brainstorm",
-    "brainstorm-deep",
     "brainstorm-team",
     "dead-code-review",
 }
 MODEL_CAP_REF = "models.md"
 
-# D: the review-fix skills -- sdlc and sdlc-lite ship an adversarial Review->Fix
+# D: the review-fix skills -- sdlc and sdlc ship an adversarial Review->Fix
 # stage governed by the reviewer-model axis contract at
 # skills/sdlc/templates/models.md. Deliberately separate from
 # MODEL_CAP_FAN_OUT_SKILLS: different axis, and brainstorm*/dead-code-review
 # have no review stage.
-REVIEW_STAGE_SKILLS = {"sdlc", "sdlc-lite"}
+REVIEW_STAGE_SKILLS = {"sdlc"}
 REVIEW_MODEL_REF = "models.md"
 
 
@@ -352,7 +350,7 @@ def model_cap_pointer_warnings(skills_root: Path) -> list[str]:
 
 
 def review_model_pointer_warnings(skills_root: Path) -> list[str]:
-    """D: soft-warn when sdlc/sdlc-lite's canonical SKILL.md doesn't reference
+    """D: soft-warn when sdlc/sdlc's canonical SKILL.md doesn't reference
     the shared reviewer-model contract (`models.md`)."""
     warnings: list[str] = []
     for name in sorted(REVIEW_STAGE_SKILLS):

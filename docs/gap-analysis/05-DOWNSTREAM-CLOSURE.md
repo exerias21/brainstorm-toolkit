@@ -29,7 +29,7 @@ one unbuilt phase.
 ## Lever A — re-entry rows at Stage 6/close-out (prose-only, ship anytime)
 
 The cheapest closure is to make the pipeline **leave its own follow-up in the queue** it
-already maintains. At `/sdlc` Stage 6 (and `/sdlc-lite` close-out), append conditional rows:
+already maintains. At `/sdlc` Stage 6 (and `/sdlc` close-out), append conditional rows:
 
 - Always (PR path): `- [ ] (P2) verify PR #N of <slug> — merged & deployed → /post-deploy-verify plans/<slug>.md`
 - If the deploy-delta surface was touched (the changed-files gate already computes this for
@@ -50,8 +50,8 @@ A small skill that makes "react to what happened to my PR" a single command:
    GitHub tooling on the runtime — `gh` locally, MCP GitHub tools on hosted runtimes).
 2. Classify each open thread the way `/triage` classifies sidecars (gap 2): actionable code
    change / question needing a human answer / stale.
-3. Draft the fix batch and run it through **`/sdlc-lite` on the PR branch** — which is
-   *exactly* the use case `/sdlc-lite`'s own description already advertises ("full discipline
+3. Draft the fix batch and run it through **`/sdlc` on the PR branch** — which is
+   *exactly* the use case `/sdlc`'s own description already advertises ("full discipline
    on work you'll review + commit yourself, e.g. onto an open PR branch"). The skill is the
    missing connector between the PR and that advertised use.
 4. Close the loop in the envelope: the run's `run.json` records `pr_followup_of: <pr>`.

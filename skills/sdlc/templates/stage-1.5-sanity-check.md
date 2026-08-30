@@ -1,5 +1,69 @@
 # Stage 1.5 — Sanity-check agent prompts
 
+Canonical for `/sdlc` Stage 1.5 — orchestration first, then the
+per-focus agent prompts.
+
+> **No sub-agent seam? (Copilot, Codex)** The dispatch instructions below describe the Claude
+> path. On a runtime without sub-agents, do the same work **inline in the session** and produce
+> the same structured result — but keep the discipline the dispatch existed to enforce: report
+> only the structured summary, never paste raw tool or runner output into your context. That
+> output is the single largest source of context bloat, and inline is exactly where it lands.
+
+## Orchestration
+
+Before spending implementation tokens, verify the plan is actually
+correct. Launch the configured focus agents **in parallel** (single message) to
+check different dimensions. This is cheap insurance — catches wrong file paths,
+missing steps, and known gotchas before they become bugs.
+
+Use the per-focus prompts below (sections: `paths`,
+`completeness`, `gotchas`). Substitute `{plan_file}` and `{feature_name}`, then
+dispatch the selected agents in a single message — one Agent call per section.
+
+**Which focuses run — `agents.sanity_focuses`.** Read the array from
+`.claude/project.json`; absent means all three defaults. Setting fewer cuts this stage's
+cost roughly linearly (one agent per focus). `paths` is the cheapest and most mechanical
+(file existence); `completeness` is the judgment-heavy one; `gotchas` is only useful when
+a `GOTCHAS.md` exists. An unrecognized focus name is ignored with one warning.
+
+**Which tier — `models.sanity`.** Built-in default is `haiku` for every
+focus. `.claude/project.json` `models.sanity` (`haiku|sonnet|opus`)
+**replaces that default for all focuses** when set. Reach for it when this stage is
+reviewing *plans* rather than checking paths: `paths` is genuinely mechanical, but
+`completeness` is asking "does this plan hang together?", which is the kind of judgment a
+stronger reader does better. Raising it costs on **every** run that reaches Stage 1.5 —
+which is every run, since the stage is never gated.
+
+The resolved tier still passes through the **model cap** (`models.cap` / `--model`, see
+`skills/sdlc/templates/models.md`), which is a *ceiling* — it lowers a tier, never raises
+one. Note
+the consequence, because it is the whole reason this key exists — **the cap can only
+lower, so while the site default is `haiku` there is no way to raise this stage at all.**
+`models.cap: "opus"` does not raise it; `--model opus` does not raise it. Setting
+`sanity_check.model` is the only lever. Once set above `haiku`, the cap applies normally
+(a Sonnet-first cap pulls `opus` back to `sonnet` unless you also pass `--model opus`).
+
+This is **not** a new model axis — it sets a default *within* the fan-out axis and is
+still capped by it. Print `model: <tier> (cap: <cap|none>)` and the resolved focus list —
+`sanity focuses: <a, b, …> (N of 3 defaults)` — before dispatching.
+
+### Processing results
+
+1. Collect all 3 agent reports
+2. **If issues found**: auto-patch the plan file with corrections. Log a short
+   summary of what was fixed, then proceed to Stage 2 with the corrected plan.
+3. **If critical issues** (plan references nonexistent files, entire approach
+   is misguided): report to user and **STOP** — the plan needs human revision.
+4. **If all clean**: proceed to Stage 2.
+
+**State write**: write `stage-outputs/sanity-check.json` with
+`data.agents` (focus, status, issue_count for each), `data.auto_patched`
+(bool), and `data.issues`. Status is `pass` if all three agents reported no
+issues, `pass` with `auto_patched: true` if issues were auto-corrected,
+`paused` if critical issues forced a stop.
+
+---
+
 Three Haiku agents launched in parallel. Substitute `{plan_file}` and
 `{feature_name}` before dispatch.
 

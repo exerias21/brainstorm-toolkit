@@ -2,7 +2,8 @@
 name: brainstorm
 description: >
   Interactive brainstorming and feature ideation skill. Guides the user through structured creative
-  exploration: clarifying the idea, exploring codebase context, generating multiple approaches,
+  exploration: asking focused clarifying questions when the seed is ambiguous, exploring codebase
+  context, generating multiple approaches,
   evaluating tradeoffs, and producing a concrete action plan. Use this skill whenever the user says
   /brainstorm, mentions "brainstorm", "let's think through", "I have an idea", "what if we",
   "how should we approach", "let's explore", or otherwise wants to ideate on a feature, improvement,
@@ -20,28 +21,28 @@ An interactive ideation skill that walks through a structured brainstorming proc
 user. This is conversational — think out loud, ask questions, and iterate on ideas together with
 the user before producing an implementation plan.
 
-## When This Skill Triggers
-
-- User says `/brainstorm` or `/brainstorm [topic]`
-- User mentions brainstorming, ideating, or exploring an idea
-- User says things like "what if we...", "I have an idea for...", "how should we approach...",
-  "let's think through...", "let's explore..."
-- User wants to plan a feature but isn't ready to commit to a specific approach yet
-
 ## How It Works
 
 ### Step 1: Understand the Seed
 
-Start by understanding what the user wants to explore. If they gave a topic with `/brainstorm`,
-use that as the seed. Otherwise, ask.
+If the user gave a topic with `/brainstorm`, that's the seed; otherwise ask for one.
 
-Ask 2-3 focused clarifying questions. Good questions surface:
-- **The "why"** — What problem does this solve? What's the user feeling or frustrated by?
-- **The scope** — Is this a quick enhancement or a new module? Who uses it?
-- **The spark** — What inspired this? Was there a specific moment or observation?
+**Ask before you explore — the gate is objective.** Ask clarifying questions when **any** of
+these is true: the seed names a problem but no shape (or a shape but no problem); who uses it
+and what they do today is unstated; it spans more than one surface without saying which is
+primary; two readings would produce materially different plans; or it references something you
+cannot find in the repo.
 
-Don't over-interview. Two good questions beat five mediocre ones. If the user's initial
-description is already detailed, skip straight to exploration.
+None true and the seed is concrete? Skip to Step 2 and say you're skipping.
+
+Ask **2–3 questions in one message** — the ones whose answers change the plan: the **why**
+(what problem, what workaround today), the **scope** (enhancement or module, who uses it), the
+**spark** (what prompted it now — the moment usually carries the real constraint). Thin answers
+are a reason to ask again, **once**: name the unknown rather than picking a reading.
+
+**This holds all session.** A plan-shaping ambiguity at any later step is a question, not an
+assumption. Everything a careful colleague would just decide, decide — and note it under Open
+Questions.
 
 ### Step 2: Explore for Context — ground in the live code
 
@@ -271,22 +272,22 @@ If the plan passes, move to Step 8. Otherwise, revise it with the user.
 ### Step 8: Continue the flow
 
 Don't stop at the plan file — keep the momentum into delivery. Continue
-whichever pipeline flow has been used this session; default to `/sdlc-lite`
+whichever pipeline flow has been used this session; default to `/sdlc`
 (full pipeline, hands you the validated changes to commit — no git writes, so
 it can't surprise you with a PR).
 
 1. **Show what's being built** (optional) — `/plan-html plans/brainstorm-[topic-slug].md`
    renders the plan as a single-file HTML view for a shape-of-the-work read.
-2. **Continue into delivery** — `/sdlc-lite <plan>` by default (or `/sdlc <plan>`
-   if that's the established flow; confirm first since `/sdlc` opens a PR). For
-   a single tiny item, `/task` is the fast path.
+2. **Continue into delivery** — `/sdlc <plan>`. It runs the full pipeline and
+   leaves the validated changes for you to commit; it opens no PR. For a single
+   tiny item, `/task` is the fast path.
 3. **Save for later** — leave the plan at `plans/brainstorm-[topic-slug].md`
    (task items are already in `TASKS.md`).
 
 Write the next-action sentinel naming the chosen command so Copilot's Stop
 hook surfaces it — append ONE structured line (multi-slot seam; coexists with a gotcha
 entry, see `docs/SEAM.md`), deduped by `cmd`:
-`line='{"cmd":"/sdlc-lite plans/brainstorm-[topic-slug].md","source":"brainstorm","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action`
+`line='{"cmd":"/sdlc plans/brainstorm-[topic-slug].md","source":"brainstorm","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action`
 On Codex (as a fallback until its `.codex/hooks.json` Stop hook is wired+trusted), also print `Next: <command>` inline right after writing
 the sentinel, so the handoff degrades gracefully instead of vanishing. **No-hook
 nudge (SEAM2):** if no Stop hook is wired at all, the sentinel is inert — apply the

@@ -4,7 +4,15 @@
 
 **Drafted**: 2026-04-25, dogfooded `/brainstorm` (4 lens agents in parallel — first principles, inversion, cross-domain k8s, constraint removal). See "Provenance" at the bottom.
 
-**Pre-requisite for**: Phase 1 (state envelope, `/pbi`, `/sdlc --inspect`, `/sdlc --resume`, profile filtering) and every phase after.
+**What is live here**: the naming rules — skill names, stage names, artifact IDs, and the
+**slug derivation algorithm**, which `/sdlc` Stage 0 and `state-schema.md` both cite and depend
+on. Those are load-bearing today.
+
+**What is not**: this document was drafted alongside a multi-phase roadmap, and still names
+skills and flags from it — `/pbi`, `/brd-ingest`, `/approve`, `/deploy`, `--inspect` and the
+`pbis/` and `delivery/` artifact trees. **None of those exist.** They are kept as the naming
+record for anything built later, not as a description of the toolkit. The shipped skill set is
+the table in `README.md`.
 
 ---
 
@@ -53,9 +61,9 @@ skills/<name>/SKILL.md   # name in frontmatter == directory name == slash-comman
 
 Examples (all current skills already comply):
 - `brainstorm`, `sdlc`, `task`, `status`, `gotcha`, `flowsim` — single-token
-- `repo-onboarding`, `test-check`, `e2e-loop`, `eval-harness`, `dead-code-review`, `data-source-pattern`, `logging-conventions`, `post-deploy-verify`, `brainstorm-team` — multi-token kebab
+- `repo-onboarding`, `test-check`, `dead-code-review`, `brainstorm-team`, `repo-health`, `code-tour`, `plan-html` — multi-token kebab
 
-Future Phase-1+ skills: `pbi`, `brd-ingest`, `pbi-decompose`, `approve`, `deploy`, `monitor`, `rollback`, `coverage`. All compliant.
+Never-built roadmap names, kept for reference only: `pbi`, `brd-ingest`, `pbi-decompose`, `approve`, `deploy`, `monitor`, `rollback`, `coverage`. All would comply.
 
 ### Stage names
 
@@ -143,7 +151,7 @@ Algorithm:
 
 This is mechanical, predictable, and case-insensitive — the latter critical because case-mismatched slugs ("AddOrders" vs "addorders") are the exact bug the lowercase-FS rule defends against.
 
-**Queued per-item slugs (`/sdlc-lite --queue`).** A queue loops many `TASKS.md` rows that all reference *one* plan file — so the plan-file slug above is **shared** across them and can't identify a per-item envelope. A queued item therefore derives a **distinct** slug: `<plan-slug>-<row-id>` (the row's stable id, lowercased — e.g. plan `verify-queue` + row `Q1` → `verify-queue-q1`), or, when the row links a `plans/tasks/task-N-<slug>.md`, that task slug. Same row → same slug → resumable; different rows → different `.claude/pipeline/<slug>/` dirs → no collision.
+**Queued per-item slugs (`/sdlc --queue`).** A queue loops many `TASKS.md` rows that all reference *one* plan file — so the plan-file slug above is **shared** across them and can't identify a per-item envelope. A queued item therefore derives a **distinct** slug: `<plan-slug>-<row-id>` (the row's stable id, lowercased — e.g. plan `verify-queue` + row `Q1` → `verify-queue-q1`), or, when the row links a `plans/tasks/task-N-<slug>.md`, that task slug. Same row → same slug → resumable; different rows → different `.claude/pipeline/<slug>/` dirs → no collision.
 
 ### Command-line flags
 
@@ -244,7 +252,7 @@ wholesale, so a *tool-specific* runtime reference must live in that overlay's ow
 
 **Artifact IDs**: aliases supported indefinitely. `task-N` (legacy, no padding) is recognized as equivalent to `task-NNN` by any code that resolves task IDs. New artifacts use the canonical zero-padded form. No batch migration.
 
-**Flags**: aliases supported indefinitely in skills that still take flags. `/task` is zero-flag by design. `/sdlc` and `/sdlc-lite` already ship `--model <tier>` (see `models.md`) and now also `--review-model <name>` / `--no-review` (see `models.md`) — both follow the `--no-X`/`--X <value>` forms above. Skills that do accept flags use `--no-X` for boolean negation; older `--skip-X` aliases are tolerated where they appear historically.
+**Flags**: aliases supported indefinitely in skills that still take flags. `/task` is zero-flag by design. `/sdlc` and `/sdlc` already ship `--model <tier>` (see `models.md`) and now also `--review-model <name>` / `--no-review` (see `models.md`) — both follow the `--no-X`/`--X <value>` forms above. Skills that do accept flags use `--no-X` for boolean negation; older `--skip-X` aliases are tolerated where they appear historically.
 
 **Paths**: forward-only. New artifacts land in canonical directories. Existing artifacts in old layouts stay where they are — moving them would break references in tracked plan files.
 

@@ -7,7 +7,10 @@ description: >
   graded exercises. Use this whenever someone wants to document a codebase for
   humans rather than for an API reference — onboarding a new hire, handing a repo
   to another team, preparing a repo as a training or teaching module, "explain
-  this codebase", "add docstrings", "write documentation for all the code",
+  this codebase", "add docstrings", "write documentation for all the code", or after
+  /repo-onboarding when the architecture is mapped but the code itself is undocumented.
+  Distinct from its neighbours: /repo-onboarding generates the toolkit's contract files and
+  /repo-health is a read-only sweep — this one writes documentation into the source,
   "help someone learn this repo", or when /code-tour, /docstrings, /codetour, or
   /onboarding-docs is invoked. Also use it when documentation exists but only
   says WHAT the code does and the user wants the WHY captured before the people
@@ -35,22 +38,6 @@ That is what this skill produces. Two artifacts:
 The tour matters because docstrings alone do not teach. A reader landing in a
 30-file repo does not know which file to open first, and reading alphabetically
 teaches nothing. The tour supplies the order and the emphasis.
-
-## When triggered
-
-- `/code-tour`, `/docstrings`, `/codetour`, `/onboarding-docs`
-- "document all the Python in this repo", "add docstrings explaining why"
-- "I'm handing this repo to another team / using it to train people"
-- "write documentation someone could learn from"
-- After `/repo-onboarding`, when the architecture is mapped but the code itself
-  is undocumented
-
-Distinguish from neighbours: `/repo-onboarding` generates the toolkit's contract
-files (`AGENTS.md`, `TASKS.md`, `project.json`). `/repo-health` is a read-only
-hygiene sweep. This skill writes documentation *into the source*, plus one tour
-document. If the user wants architecture captured at repo level, run
-`/repo-onboarding` first — this skill assumes the architecture is already
-understood and documents the code beneath it.
 
 ## Ground yourself in the standards first
 

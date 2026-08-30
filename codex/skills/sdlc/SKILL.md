@@ -1,115 +1,121 @@
 ---
 name: sdlc
 description: >
-  Sequential plan-to-PR pipeline for Codex CLI. Takes a plan file, implements
-  it, generates and runs evals, validates with /test-check, and creates a PR
-  for human review. This is a Codex-adapted version of the full SDLC skill —
-  runs the same stages, but inline and sequentially (no parallel worker
-  spawning, no Plan mode). Use when you have a finalized plan in plans/ or
-  TASKS.md and want the pipeline to drive the delivery.
-argument-hint: "{plan_file} [--resume]"
+  Run the full SDLC pipeline on a plan file, task id, task range (e.g. "1-5"),
+  or an ad-hoc description: sanity-check -> implement -> evals -> fix ->
+  validate -> flowsim, then hand off the validated changes for you to commit.
+  No commit, no branch, no push, no PR. Codex overlay of the canonical skill --
+  every stage runs inline (sequential, no parallel sub-agents). Use /task instead for a
+  single small TDD fix with no plan.
+argument-hint: "<plan-file | task-id | task-range | description> [--resume] [--queue [N]]"
 metadata:
   brainstorm-toolkit-applies-to: codex
 disable-model-invocation: true
 ---
 
-# SDLC Pipeline (Codex Edition — Sequential)
+# sdlc (Codex Edition — Sequential)
 
-Sequential version of the SDLC pipeline. Unlike the Claude Code canonical (which spawns Haiku/Opus/Sonnet workers in parallel), this overlay executes every stage inline: Codex does the work itself, one stage at a time.
-
-Codex CLI's 2026 Agent Skills spec doesn't drive this toolkit's parallel sub-agent fan-out. (Codex has native subagents and its own plan mode; what it lacks is a usable per-subagent model override — see the cap note below. This overlay runs the stages inline regardless.) This overlay bootstraps from the Copilot overlay and tracks it closely; if Codex-specific behavior diverges, this file can be tuned independently.
+Sequential Codex edition. The canonical skill uses parallel agent dispatch for the
+sanity-check on Claude; this overlay runs every stage inline, because Codex CLI's 2026
+Agent Skills spec doesn't drive that fan-out. (Codex has native subagents and its own
+plan mode; what it lacks is a usable per-subagent model override — see the cap note
+below.) This overlay tracks the Copilot one closely; tune independently if Codex
+behavior diverges. Same stages, same shared templates, same terminal action: **no git
+writes** — it hands you a validated tree to commit.
 
 **Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/models.md`, a plugin-repo citation) is honored wherever sub-agents are dispatched. **The cap is advisory on this runtime** — set your session model to the cap tier for the savings.
 
 > **Why advisory here is a Codex-specific story.** Codex *does* have native subagents (`.codex/agents/*.toml`, parallel, `max_threads`) — it is not structurally inline-only the way Copilot is. What blocks tiering is that **per-subagent model override is reported regressed upstream** (subagents inherit the parent model), so the Haiku/Sonnet fan-out runs single-model: functional, but with none of the per-stage cost savings. Reported 2026-07-13 from research, **not verified against a real Codex install**, and it may already be fixed — see the Codex entry under *Runtime regimes* in `models.md` before relying on it either way.
 
+> **`skills/sdlc/templates/*` paths below are real, installed files on this runtime.**
+> `setup.sh` ships that shared template tree alongside the skills and rewrites the citation
+> prefix, so open the templates the stages name rather than relying on anything inlined here.
+
+## When to use
+
+| Skill | Input | Terminal action |
+|---|---|---|
+| `/task <description>` | ad-hoc ask | TDD red-green → commit only if you ask |
+| `/sdlc <plan \| task-id \| range \| desc>` | plan, task(s), or ask | full pipeline → validated changes left for you to commit |
+
+Stage bodies live once in the shared `skills/sdlc/templates/` tree; this overlay
+adds no new templates and no new schema beyond `run.json.pipeline = "sdlc"`
+and a `handoff.json` sidecar at Stage 6.
+
 ## Prerequisites
 
-- Plan file exists at the path you passed, OR you are pointing at TASKS.md.
-- Git working tree is clean.
-- `.claude/project.json` exists with at least `main_branch`; `test.*`, `logs.*`, and `eval.*` recommended so Stages 4–5 work.
+- You are on the branch the changes should land on. This skill never switches
+  branches and never commits.
+- `.claude/project.json` optional. The eval stage and Stage 5's plan check +
+  flowsim flow trace skip silently when their config or a plan target is absent.
 
 ## Output verbosity (default: quiet)
 
-**Default `quiet`.** Stage narration is re-read by every later turn in the same
-session, so it compounds. Print **one** line per stage —
-`<stage> · <verdict> · model: <tier> (cap: <cap|none>)` — and one summary table at
-the final report. No intermediate narration, no restating file contents, no
-echoing a review pass's full output. Detail already lives in the
-`stage-outputs/` sidecars, which are the durable record.
+**Read `skills/sdlc/templates/output-verbosity.md` now.** Same contract as every runtime:
+one line per stage, one summary table at the end, no intermediate narration. Always printed
+regardless of verbosity — the per-dispatch `model:` line, gate verdicts, PAUSE blocks, the
+`Next:` seam line, and warnings.
 
-**Always printed regardless of verbosity:** the per-dispatch `model:` line, every
-gate verdict, any PAUSE block, the `Next:` seam line, and warnings (config-presence,
-reviewer-axis cost note, session-model nudge).
+## Stage 0 — Resolve input
 
-`pipeline.output.verbosity: "normal"` in `.claude/project.json` restores full
-narration. A missing `project.json` means `quiet` — by design: the saving must not
-depend on a file the repo may never have created.
+- **Plan file** (path ending `.md` that exists) → use as the plan, like `/sdlc`.
+- **Task id** (`task-NNN` or a row number) → read that row + linked task file;
+  its `parent_plan:` becomes the Stage 5 plan target.
+- **Task range** (`N-M`, `task-N..task-M`, `tasks N-M`) → resolve every
+  `Active / Pending` row in range; execute as a batch (changes accumulate in the
+  working tree — see Stage 6 range semantics; this skill never commits). Record
+  the resolved ids in `run.json.data.task_range`.
+- **Ad-hoc description** → create a new row + task file via `/task`'s procedure.
+  No plan, so Stage 5's plan check self-skips.
+- **`--queue [N]`** (attended backlog loop) → select `Active / Pending` rows by
+  priority (top `N` or `pipeline.loop.max_items`, default 5; `P1>P2>P3`, `[~]`
+  first) and loop the pipeline over them, **re-scanning `TASKS.md` between items**
+  so rows added mid-run join the loop. Stop conditions (`pipeline.loop.*`): a
+  `paused`/`failed` item **parks** the loop (write its `/status` hint to
+  `.claude/.next-action`), a `confirm:true` next action parks it, and
+  `max_items` / `max_consecutive_failures` (default 2) bound it. **No git writes;
+  every park is a written next-action, never a dead end.** Each item's envelope
+  stays **canonical** (`state-schema.md`: `feature_slug`/`plan_file` keys, required
+  fields, canonical stage names — never `slug`/`plan` or `phase-*` stages; queue/phase
+  data goes in `data.*`) with a **distinct per-item slug** `<plan-slug>-<row-id>` (never
+  the shared plan slug — items would collide on one envelope dir). On park: set
+  `run.json.status = "paused"` + `run.json.next_action = {cmd, confirm}`, **and — mandatory,
+  don't skip it —** append the sentinel line:
+  `line='{"cmd":"/sdlc <plan> --queue","source":"sdlc","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action`
+  (plus a `confirm:true` line for the confirm action if it parked on one). The **sentinel is
+  the ONLY thing the Stop hook surfaces**; `run.json.next_action` alone is invisible, so a park
+  that sets only the envelope field leaves the loop dead.
+- **Long runs — context hygiene:** a many-hour loop accumulates context in the one orchestrator
+  session. Codex's `PostCompact` reseed hook (shipped via `.codex/hooks.json`) keeps auto-compaction
+  lossless for the loop; config knobs + the fresh-`codex exec`-per-item escalation are in
+  `docs/LOOP-HYGIENE.md` (plugin repo).
 
-**Config-presence check (once, at the first stage).** If `.claude/project.json` is
-absent while `.claude/project.json.example` is present, warn once — every gated
-setting (`models.cap`, `pipeline.*`, test commands) is silently inert.
+Mark resolved rows `[~]`. Derive `slug` per `docs/CONVENTIONS.md`. Capture
+`base_commit = git rev-parse HEAD` and initialize `.claude/pipeline/<slug>/`
+with `pipeline: "sdlc"`, `base_commit`, `status: "in_progress"`, **and the
+computed required fields that get dropped otherwise (DQ6):**
+`plan_hash: "sha256:$(sha256sum <plan> | cut -d' ' -f1)"`, `started_at` = `updated_at`
+= `"$(date -u +%Y-%m-%dT%H:%M:%SZ)"`. Omitting them breaks `--resume` + staleness detection.
 
-## Stage 1 — Parse the plan
+**`--resume`:** if `--resume` was passed, read the existing `run.json` instead of
+re-initializing — reject on a `plan_hash` mismatch, skip stages whose sidecar shows
+`status: "pass"`, and resume at the first non-passing one (follows `/sdlc`'s
+Resumption rules; error if there's no prior run).
 
-**`--resume`:** if `--resume` was passed, do NOT re-init a fresh envelope — read the
-existing `.claude/pipeline/<slug>/run.json`, reject if the plan's `plan_hash` changed
-since the paused run ("plan changed — start fresh"), skip every stage whose sidecar
-shows `status: "pass"`, and resume at the first non-passing stage (follows `/sdlc`'s
-canonical Resumption rules). If no prior run exists, error rather than starting fresh.
+**Continuity detection** (prompt, never auto) — same logic as `/sdlc`: **skip
+entirely on the `main_branch`** (merges make every run an ancestor there — pure
+noise). On a feature branch, take only the **single most-recently-updated** run
+whose `base_commit` is an ancestor of HEAD, and prompt **only** if it's
+non-terminal OR complete with HEAD advanced past its recorded `commit_sha`
+(a follow-up landed outside the pipeline). One prompt at most, or none.
 
-Read the plan file fully. Valid sources:
-- `plans/brainstorm-<slug>.md` with Direction / Implementation Steps.
-- `plans/tasks/task-N-<slug>.md` (a task file written by `/task`).
-- `TASKS.md` at repo root — treat each `[ ]` or `[~]` row in Active / Pending as one step, follow linked task files for detail.
+## Stage 1.5 — Sanity check
 
-Extract:
-- Feature name/slug (from filename or first heading).
-- Implementation steps (numbered lists with file paths, or checkbox rows).
-- Files to create or modify.
-- Acceptance criteria ("expected", "should", "must", "verify" language).
-- Cross-module touchpoints.
-
-Report scope:
-
-```
-## SDLC Pipeline — {feature_name}
-**Plan**: {plan_file}
-**Files to change**: {count}
-**Implementation steps**: {count}
-**Acceptance criteria**: {count}
-**Estimated complexity**: Small / Medium / Large
-```
-
-## Stage 1.5 — Sanity-check the plan (inline, sequential)
-
-Before committing time to implementation, run the configured checks yourself — one pass
-for each. `agents.sanity_focuses` in `.claude/project.json` selects which of the
-three run (default: all). `models.sanity` is advisory on this runtime —
-stages run inline in the session model, so set that instead.
-
-**Check A — File path reality.** For every file path mentioned in the plan:
-1. Verify the file exists (Glob or `ls`).
-2. If the plan references a specific function, class, or symbol, grep for it.
-3. If the plan says "follow the pattern in X", read X briefly and verify the description matches.
-Flag anything missing or inconsistent.
-
-**Check B — Completeness.** Look for common missing steps based on what the plan creates:
-- New DB migration → does the plan mention running/applying it?
-- New API endpoint → does it mention registering with the router / app?
-- New frontend component → does it mention importing it in a parent?
-- New config key or env var → documented?
-- New DB table → indexes mentioned?
-- New scheduled job → registered with the scheduler?
-
-Infer the project's patterns from its README, CLAUDE.md, AGENTS.md, and existing code before flagging. Only flag a miss if the project would actually need that step.
-
-**Check C — Gotchas.** Read `GOTCHAS.md` at repo root (path override in `gotchas_file` key of `.claude/project.json`). Cross-reference each plan step against every gotcha. For each step, flag any gotcha that applies with its prescribed fix.
-
-**Processing:**
-- If minor issues: auto-patch the plan inline (e.g., add a missing "run migration" step) and note what you corrected.
-- If critical (nonexistent files, wrong approach): stop and report to the user for revision.
-- If clean: proceed to Stage 2.
+Run `/sdlc` Stage 1.5 inline (sequential pre-flight). Not gated, not optional.
+For a range, run once over the combined set. Stop and report on a real blocker.
+`agents.sanity_focuses` selects which checks run (default all three); on this
+runtime `models.sanity` is advisory like every tier — set your session
+model instead.
 
 ## Stage 2 — Implement
 
@@ -122,206 +128,121 @@ short and hand off at stage boundaries (`docs/LOOP-HYGIENE.md`), because every f
 stays in your context for the rest of the run.
 
 
-**Ground in the live code first.** Before writing anything, follow `skills/sdlc/templates/convention-grounding.md`: the existing code is the source of truth (not `AGENTS.md` / `CLAUDE.md` — read those as hints, verify against code, follow the code when they disagree). Find the 2–3 closest existing implementations and reuse their patterns (layout, naming, error handling, the data-access seam, shared utilities) instead of inventing parallel ones. If the plan has a `## Conventions & reuse` block, honor it and re-verify it against current code.
+Run `/sdlc` Stage 2 inline, including its **auto-gate** (**read
+`skills/sdlc/templates/stage-2-gate.md` now**), preceded by **live-code grounding**.
 
-Stage 2 is **auto-gated** (no flag). Small / single-surface plans you implement in one pass; large multi-surface plans you implement **lane by lane in order**, then reconcile. You are always the implementation layer — there is no worker handoff — but the gate decides whether to split the work into focused lanes.
-
-### Gate
-
-From the parsed plan, compute:
-- `surfaces_touched` = distinct surfaces the planned files match (frontend: `*.tsx/jsx/vue/svelte/css/scss`; backend: `*.py/go/rb/java/ts` in server dirs; data: `migrations/`, `schema/`, `models/`, `*.sql`; docs: `*.md`, `docs/`).
-- `task_count` = number of implementation steps.
-- `DECOMPOSE_MIN_TASKS` = `6` by default (override via `agents.decompose_min_tasks` in `.claude/project.json`).
-
-**Decompose iff** `surfaces_touched >= 2` AND `task_count >= DECOMPOSE_MIN_TASKS` AND the per-surface file sets are disjoint (no file in two surfaces, not all in one). Otherwise implement single-pass. Note the decision and its inputs in your scope report — never decide silently.
-
-### Single-pass (default)
-
-Implement the plan steps yourself, in order:
-- Follow the steps in order; use the exact file paths.
-- Follow patterns from referenced existing files.
-- Do NOT add features beyond the plan; do NOT skip steps.
-
-### Decompose (large multi-surface plans) — sequential lanes
-
-1. **Decompose.** Classify the planned files by surface into disjoint **lanes** (data / backend / frontend / docs). For each lane note its files, its steps, which lanes it depends on, and the **interface contract** — the shared types, endpoint shapes, and seams other lanes must honor. If you cannot make the lanes file-disjoint, fall back to single-pass.
-2. **Implement each lane in dependency order** (default `data → backend → frontend`), one lane fully before the next. While in a lane, edit only that lane's files and code against the recorded contract — do not reach into another lane's files. Implementing downstream lanes against the fixed contract (instead of guessing) is what keeps the pieces consistent.
-3. **Converge.** After all lanes are done, reconcile across them: wire up imports, call sites, and shared types; sweep the changed files for unresolved imports or colliding symbols; fix any seam mismatch where a lane diverged from its contract.
-
-When decomposed, record the lane list and the gate decision in the run state (`stage2_decomposed`, `lanes`) and write `decompose.json` / one `implement-<lane>.json` per lane / `converge.json` instead of a single `implement.json`.
-
-After implementation (either path):
-- Run `git diff --stat` and confirm the expected files were created or modified.
-- If you hit an error or blocker, STOP and report — don't paper over it.
+**Live-code grounding** — **read `skills/sdlc/templates/convention-grounding.md` now** and follow it before writing any file. Scope the recon to the feature's target area, never the whole repo.
 
 ## Stage 3 — Generate evals
 
-Create test cases that verify the plan's INTENT, not just "does it compile."
+**Skip silently if no `eval.runner` is configured** — record
+`data.skipped_reason: "no eval.runner"` and move on. Otherwise **read
+`skills/sdlc/templates/stage-3-evals.md` now** and run it inline.
 
-**New Python pure functions** → `tests/eval/test_{feature_slug}_eval.py` with parameterized cases. Import via `tests/eval/conftest.py::load_script_module()` if that helper exists; otherwise import directly.
+## Shared fix loop
 
-**New scripts with `--input` fixtures** → create:
-- `<eval.features_dir>/{feature_slug}/fixtures/{scenario}.json` — input data.
-- `<eval.features_dir>/{feature_slug}/expected/{scenario}.json` — expected output.
-
-The runner discovers new features by scanning `<eval.features_dir>/*/` — no registration.
-
-**No testable surface** (pure config change, doc-only) → note and proceed.
-
-If no `eval.runner` is configured in `.claude/project.json`, skip Stages 3 and 4 (no eval surface to drive a fix loop) and proceed to Stage 5.
-
-## Shared fix loop (Stages 5 / 5.5 / 5.6)
-
-On a gate failure: parse the results, dispatch a fix for **only** those failures (no
-refactor), re-run the gate. Max **3 iterations, used by Stage 5**. On
-exhaustion, pause with the Diagnosis block from `/sdlc` (fastest path `/status`;
-or name the class — flaky · code-defect · plan-wrong · config-missing — and one command),
-then `--resume` reuses the green stages.
-
-**Stage 4 was deleted.** It ran `eval.runner`, then Stage 5 ran the same command again as
-its eval-regression layer — a strict prefix. Sharing this budget, its pause could halt a
-run on self-authored evals before the real suite was ever consulted. Stage 3 still authors
-the tests; Stage 5 runs them.
+At the first gate failure, **read `skills/sdlc/templates/fix-loop.md` now**: fix only the named
+failures (no refactor), re-run the gate, 3 iterations max, then emit its PAUSE block and set
+`run.json.status = "paused"`. Stage 5.7/5.8 has its own separate budget.
 
 ## Stage 5 — Validate (one stage)
 
-**Tests: report structure, not output.** The canonical `/sdlc` dispatches a Haiku `test-runner`
-sub-agent so raw suite output never enters the orchestrator's context. This runtime has no
-sub-agent seam, so you run the suites yourself — but report only
-`{layer, name, file, expected, actual}` per failure plus totals. Do not paste runner output
-into your narration: it is the largest single source of context bloat, and it stays in your
-context for the rest of the run.
+**Read `skills/sdlc/templates/stage-5-validate.md` now** and run it. Two runtime deltas: there
+is no `test-runner` sub-agent here, so run the configured suites yourself and report only the
+structured `{name, file, expected, actual}` per failure — never paste raw runner output into
+your context; and the plan check runs as one inline pass rather than a dispatch.
 
+Everything else is identical, including the rule that matters most here: **the flow axis gates
+only when witnessed.** With no test evidence from step 1, flow findings are advisory — they
+cannot fail the stage or open the fix loop. The requirements axis gates either way.
 
-Two parts, one gate, one `validate.json`:
+## Stages 5.7 / 5.8 — Adversarial review + fix loop
 
-1. **Run the suite** — `/test-check` over the touched surfaces; report only NEW failures as
-   failures, note pre-existing ones separately. Includes eval regression when `eval.runner` is
-   configured (the only place evals run).
-2. **Check against the plan** — one pass over the plan + diff reporting **requirements**
-   (met / partial / missing, each with a `file:line`) and **flow** (`MISMATCH` / `UNCLEAR` /
-   `MISSING`) *separately*. Skip this part when there is no plan target, and say so.
+**Opt-in, permanently OFF by default.** Activates only on an explicit `--review-model <name>`
+flag or an explicit `pipeline.review_fix.enabled: true`; `--no-review` always wins OFF. An
+absent or `enabled: false` block means OFF.
 
-Green iff no new failures AND no missing requirement AND no MISMATCH/MISSING flow step.
-Failures route through the shared fix loop. A MISMATCH where the code is right and the plan is
-stale is `plan-wrong` — pause and say so; never edit code to match a stale plan.
+Resolve that gate **before** opening anything. When it is OFF, append `review` to
+`run.json.stages_skipped` and go to Stage 6 — do not load the template. When it is ON, **read
+`skills/sdlc/templates/stage-5.7-review-fix.md` now** and run it with each lens as a sequential
+inline pass instead of a parallel dispatch. Everything else — lens selection, the reviewer-model
+axis, the verify pass, the circuit breaker, the `auto_fixable` rubric, the fix-loop modes and
+budget, the oscillation guard — is the same, including the sidecar shapes at the end of that file.
 
-This replaces the former Stages 5, 5.5 and 5.6, which asked the same question three ways.
+## Stage 6 — Hand off (no commit, no git writes)
 
+Run the full pipeline, then **stop at the edge of git**. No commit, branch,
+push, PR, or `/review`. You review and commit.
 
-## Stage 5.7 — Adversarial review (inline, sequential)
-
-**Opt-in, permanently — never runs by default.** Runs after Stage 5, before Stage 6,
-only when explicitly turned on this run (`--review-model <name>`, or an explicit
-`pipeline.review_fix.enabled: true`; default reviewer `opus` once enabled — see
-`skills/sdlc/templates/models.md`). An omitted `pipeline.review_fix` block, or
-`enabled` left unset, means OFF — there is no default-on flip. Skipped when not opted in,
-`--no-review` was passed, `pipeline.review_fix.enabled: false`, or the changed-files-gate reports a
-docs-only diff — **unless a `.claude-plugin/marketplace.json` exists at the repo root**, in which
-case this is a
-skill repo, `.md` skill files ARE the code surface (there is no separate `.env`/compose surface to
-gate on here), and this docs-only self-skip does not apply — Stage 5.7 runs, with the
-config/env/docs lens repointed to `skills/sdlc/templates/stage-5-skill-repo.md`'s structural checks in place of
-env/compose checks. (This mirrors D6 / plan §5.3 gate 1's exemption on the canonical/Workflow side;
-this overlay runtime has no other skill-repo detection of its own, so the marketplace-manifest
-check above IS its skill-repo signal.)
-
-**Cap the fan-out with `agents.code_review_max_lenses`** (default `4`, inert until set): it
-truncates the resolved list **in order** after circuit-breaker demotion, so `1` keeps
-`correctness`. A non-integer or non-positive value falls through to `4` — never `0`, which would
-silently disable the stage. Every lens runs at the **reviewer** model (`models.code_review`,
-default `opus`), which `models.cap` does **not** govern; when a cap is set and the reviewer
-outranks it, say so and point at `models.code_review` / `agents.code_review_max_lenses`.
-
-
-**No parallel sub-agents on this runtime.** Run each **configured** lens
-(`agents.code_review_lenses` in `.claude/project.json`; when the key is absent, all four
-defaults below. Setting fewer cuts this stage's cost roughly linearly — it is one pass per
-lens — so pick by what the diff risks; `correctness` is the highest-yield single lens. Print
-the resolved list before starting.) The defaults: correctness,
-plan⇌code alignment, config/env/docs consistency, security (checklists:
-`skills/sdlc/templates/review-correctness-checklist.md` + `skills/sdlc/templates/review-security-checklist.md`) — as one sequential inline pass over the
-diff, re-reading it fresh for each lens. If a genuinely separate reviewer integration is
-configured and reachable (e.g. an MCP tool exposing Fable), call it once per lens instead of
-self-reviewing; otherwise review under an adversarial persona in the session model itself and say
-explicitly in the Stage 7 report which mode ran.
-
-Collect findings (`{severity, file:line, defect, failure_scenario, fix}`), then run one
-adversarially-skeptical, evidence-required verify pass (default-refute: drop anything not
-independently confirmable from the diff). Write `stage-outputs/review.json`. Zero confirmed
-findings → skip Stage 5.8.
-
-**False-positive circuit breaker.** Even though this runtime reviews inline with no sub-agent seam,
-it still updates the same cross-run ledger, `.claude/pipeline/_review-stats.json`: after each run,
-append this run's raw/confirmed counts per lens and recompute demotion. A lens repeatedly producing
-unconfirmable findings is auto-demoted from dispatch (skipped, and recorded in
-`review.json.data.demoted_lenses`) until 5 consecutive runs at ≥60% confirmed-rate re-promote it.
-
-## Stage 5.8 — Fix-prompt generation + approve loop
-
-For confirmed findings, draft a structured fix spec per finding, applying the auto_fixable rubric
-(a bug fixing an explicit contract vs. a product/design decision — see
-`skills/sdlc/templates/models.md`). Per `pipeline.review_fix.mode` (default `interactive`):
-- **`interactive`**: present each fix spec for approve / edit / skip. Approved specs run through
-  the existing Stage 2/4 implement+fix machinery inline, then a fresh adversarial re-review of the
-  touched files (this loop iteration's own pass) decides whether another iteration is needed. Loop
-  until clean or `max_fix_loops` (own budget, separate from the shared fix budget).
-- **`auto`**: after `auto_approve_after` consecutive approvals, or confidence ≥
-  `confidence_threshold`, apply and continue — EXCEPT `auto_fixable: false` findings (design
-  decisions), which are always surfaced, never auto-applied.
-- **`off`**: report only.
-
-**Post-fix validation (once, after the loop exits — not per iteration):** if any fix was applied
-this run, re-run the Stage 5 `validate` gate exactly once before Stage 6. A regression there pauses
-the run for **both** `/sdlc` and `/sdlc-lite` — an objective test break, unlike the severity-gated
-review-finding blocking below, stops both modes rather than handing off broken code (see the
-canonical prose's "Post-fix validation").
-
-Write a single `stage-outputs/review-fix.json` with `data.loops[]` (one entry per pass) — never
-numbered `review-fix-<n>.json` files. `/sdlc` treats a surviving HIGH-severity confirmed finding as
-blocking Stage 6; stop and report rather than opening the PR.
-
-## Stage 6 — Create PR
-
-1. Create branch: `git checkout -b sdlc/{feature-slug}`.
-2. Stage specific files (never `git add .`):
+1. Secret scan the changed files (gitleaks if available, regex-fallback
+   otherwise). **Warn-only** — surface findings (file:line) but never block.
+   HIGH findings get a `⚠ HIGH:` prefix; worth scrubbing before you commit.
+2. **Report, don't commit.** Show `git diff --stat`, the files changed, and a
+   suggested commit message. Do NOT run `git add`, `git commit`,
+   `git checkout -b`, `git push`, `gh pr create`, or `/review`. Leave the tree
+   as the pipeline produced it.
    ```
-   git add <files touched during implementation>
+   Suggested (run yourself):
+     git add <files>
+     git commit -m "feat: <title>"
    ```
-3. Commit with a structured message:
-   ```
-   feat: {feature title from plan}
+   **Range**: changes from all tasks accumulate in the tree; you slice the
+   commits when you review.
+3. **Capture at loop-exit + seam** — run the shared protocol in
+   `.agents/skills/gotcha/SKILL.md` (canonical: `skills/gotcha/SKILL.md`).
+   Auto-draft a gotcha entry **only** on an objective trigger — a fix-loop
+   that **failed-then-recovered**, or the user voicing surprise — route it
+   through gotcha's dedup, one-tap confirm. A clean run stays silent (no
+   vibe-gating). If capture is **declined/deferred**, drop the seam
+   sentinel — append ONE structured line deduped by `cmd` (see `docs/SEAM.md`):
+   `line='{"cmd":"/gotcha <drafted text>","source":"sdlc","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action`
+   (never a bare `/gotcha`). Codex **does** have a Stop hook (`.codex/hooks.json`, shipped
+   by the plugin / `setup.sh`) that surfaces this — but until it's wired **and the `.codex/`
+   dir is trusted** (`/hooks`), also print an inline `Next: /gotcha <drafted text>` line in
+   the Stage 7 report as the fallback, so the suggestion isn't silently lost.
+4. Mark each resolved `TASKS.md` row `[x]`, move to `Done`, set
+   `status: completed` in the task file(s) — work is done and validated; only
+   the commit is left to you.
+5. **Leave re-entry rows** so the queue keeps the follow-up: when a
+   manifest/lockfile/Dockerfile changed (deploy-delta), append
+   `- [ ] (P1) rebuild <env> for {feature-slug} (dependency change — rebuild, not restart) — plans/{feature-slug}.md`;
+   and a `- [ ] (P2) verify {feature-slug} deployed — `/repo-health` plans/{feature-slug}.md`
+   row closes the loop the same way `/sdlc` Stage 6 does.
+   **Then print the manual-verification line** from `.claude/project.json` `stack.*` (all
+   keys optional): `stack.rebuild` on the deploy-delta case (a dependency changed, so a
+   plain restart runs stale code), otherwise `stack.up`; append `stack.url` when set.
+   **Printed, never auto-run** — you asked for a validated tree, not a running one. If a
+   needed key is absent, name the key instead of guessing a command.
 
-   Implemented via /sdlc pipeline from {plan_file}.
-
-   Evals: {passed}/{total} passing
-   Tests: {test-check summary}
-   Flowsim: {all-aligned | mismatches resolved}
-   ```
-4. Push: `git push -u origin sdlc/{feature-slug}`.
-5. Create PR via `gh pr create` with a body that includes: plan file link, eval results, test results, flowsim summary, files changed.
-6. Trigger a code review pass over the diff. On Copilot, invoke `/review` if available; otherwise summarize the diff yourself in the chat (severity-tagged: blocker / nit / question). Skip if `pipeline.skip_review: true` in `.claude/project.json`. The review stays in chat — post it as a PR comment via the GitHub MCP only if the user asked for team-visible review.
-7. **Capture at loop-exit** — run the shared protocol in `skills/gotcha/SKILL.md` (canonical: `skills/gotcha/SKILL.md`). Auto-draft a gotcha entry **only** on an objective trigger — a fix-loop (eval/test/flowsim) that **failed-then-recovered**, or the user voicing surprise — route it through gotcha's dedup check, and ask a single confirm. A clean run stays silent (no vibe-gating). `/sdlc` commits the capture with the run; it does not use the `.next-action` seam.
-
-8. **Leave re-entry rows** so the queue keeps the follow-up (a finished run seeds its own next step): always append `- [ ] (P2) verify PR #<n> of {feature-slug} merged & deployed — `/repo-health` plans/{feature-slug}.md`; when a manifest/lockfile/Dockerfile changed (deploy-delta), also `- [ ] (P1) rebuild <env> for {feature-slug} (dependency change — rebuild, not restart) — plans/{feature-slug}.md`. Also set `run.json.next_action = {"cmd": "`/repo-health` plans/{feature-slug}.md", "confirm": false}` (L8) so `/status` recovers the handoff after the sentinel fires.
-
-Do NOT switch back to `main` after the PR — leave the branch checked out so the user can inspect.
+Write `stage-outputs/handoff.json` =
+`{branch, files_changed[], committed: false, suggested_commit_msg}`. **Always
+set `run.json.status` to a terminal value** (`complete`, or `paused` if you
+stopped mid-pipeline) before exiting — never leave it `in_progress`, or
+`/repo-health` and `/status` will (correctly) flag it as a stale run. **Also set
+`run.json.next_action = {cmd, confirm}`** (L8) to the proposed follow-up
+(`/repo-health` on complete; `/status` on pause) so
+`/status` recovers the handoff after the sentinel fires; omit when there's none. This holds
+for **retro / validation-only runs** too (Stage 2 skipped because the code
+already landed): advance `run.json.stage`/`stages_completed` as each validation
+sidecar is written, add `implement` to `stages_skipped`, and close on a terminal
+`status` — never leave a `parse`-stage envelope `in_progress` with sidecars
+already on disk.
 
 ## Stage 7 — Report
 
-Summarize:
-- PR URL
-- Branch name
-- Eval pass/fail counts
-- Test-check summary
-- Flowsim status
-- Anything a human reviewer should know before merging
+Summarize: branch the changes sit on (uncommitted), files changed, suggested
+commit message, eval pass/fail, test-check summary, the Stage 5 plan check —
+requirements verdict plus the flowsim flow trace and whether it was witnessed or
+advisory (or "skipped — no plan target") — and anything left open. Make clear **nothing was
+committed** — the next move is yours.
 
-## Safety rules
+## Gotchas
 
-- Never push to `main`.
-- Never merge the PR yourself.
-- Always stage specific files — no blanket `git add .`.
-- Stop on ambiguity and report; don't guess at user intent mid-pipeline.
-- Fix only NEW failures, not pre-existing ones.
-- If any stage genuinely can't proceed (missing config, plan references nonexistent files, git conflict), stop and report — the user needs to resolve it.
+- **Does no git writes.** No commit, branch, push, PR, or `/review`. Hands you
+  a validated tree; you commit. Only `/sdlc` touches git history.
+- **Stage 5's plan check runs whenever there's a plan to check.**
+  when there is no plan target — not behind a frontmatter knob.
+- **Don't fork the shared templates.** Stage bodies live once in
+  `skills/sdlc/templates/`; edit the template, never copy it here.
+- **Range accumulates in the tree** — all tasks' changes land uncommitted
+  together; you slice the commits.

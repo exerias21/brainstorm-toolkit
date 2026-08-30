@@ -10,7 +10,7 @@ description: >
 
 # E2E Test Runner
 
-You run end-to-end tests in a fix loop, mirroring `/eval-harness`'s shape but for
+You run end-to-end tests in a fix loop, mirroring the eval runner's shape but for
 browser/UI failures instead of pytest ones. You're the loop counterpart to
 `/test-check` Step 4, which runs e2e once and reports.
 

@@ -18,13 +18,6 @@ disable-model-invocation: true
 
 Six review phases done in order. Unlike the Claude canonical (which spawns parallel workers, Sonnet-first and tiered by load), this version walks them yourself, one at a time. Slower but complete. The model-tier cap (`skills/sdlc/templates/models.md`) is **advisory** here — phases run inline in your session model, so set your session model for the savings.
 
-## When to invoke
-
-- User invokes `/dead-code-review`.
-- After a major feature or multi-file refactor.
-- Before a release or milestone.
-- When asked to "clean up", "remove dead code", or "audit the codebase".
-
 ## Scope flag
 
 | Scope | Phases run |

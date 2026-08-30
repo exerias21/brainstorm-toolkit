@@ -2,7 +2,7 @@
 
 A shared primitive for "did this change touch <surface>?" so stages don't each
 re-derive it. Consumed by `/sdlc` Stage 5 (e2e/visual trigger) and Stage 5
-(ui/data validator gating), and reusable by `/sdlc-lite`.
+(ui/data validator gating), and reusable by `/sdlc`.
 
 ## Source of truth
 
@@ -39,7 +39,7 @@ For each surface, compute `touched = any(changed_file matches a surface glob)`.
 A consuming stage uses `touched` to decide whether its check is **required**:
 
 - **frontend touched** → a visual/e2e check is expected before handoff/PR. If
-  none ran, that's a soft-stop candidate (see `/sdlc` "Soft-stop tier"), not a
+  none ran, that's a soft-stop candidate (see **Soft-stop tier** below), not a
   silent pass.
 - **data touched** → the migration-drift expectations apply (did the plan say
   to apply it? — Stage 1.5 completeness already asks; `/repo-health` Check 6
@@ -57,3 +57,24 @@ The gate never blocks on its own; it converts "the user has to remember to
 check the frontend / rebuild the image" into "the pipeline notices the
 frontend changed (or a dep was added) and says so." Data-driven off the diff,
 not the user's prompt.
+
+## Soft-stop tier (earn the interruption)
+
+Most pipeline gates are **warn-only** (the secret scan is the model: surface,
+never block — false positives shouldn't train users to disable a gate). One
+structural gap earns a **soft-stop**: a single "proceed anyway?" confirmation,
+never a hard refusal.
+
+- **Frontend files changed but no visual/e2e check ran** (this gate's frontend
+  surface matched, and `test.e2e` is unconfigured or was skipped).
+
+Soft-stop = ask once, proceed on confirmation, and log a one-line `TASKS.md`
+debt row if overridden. Keep the allowlist short; spending an interruption on a
+regex-level false positive is how gates get disabled.
+
+**Non-interactive runs (background job / CI / `--print`):** a soft-stop must
+**never** block waiting for an answer that can't come — that's a deadlock, not a
+gate. With no interactive channel, **proceed-and-document** instead of asking:
+take the safe path, state the soft-stop reason in the run's report, and add a
+`TASKS.md` debt row so the skipped check is visible and owned. When in doubt in a
+background/CI context, proceed-and-document rather than stall.

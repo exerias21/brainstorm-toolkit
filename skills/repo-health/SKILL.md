@@ -6,7 +6,9 @@ description: >
   single scored report. Use this when the user says /repo-health, asks
   for a "hygiene check", "weekly sweep", "is this repo healthy",
   "what should I clean up", or before a release. Read-only — produces a
-  report and a `.next-action` suggestion, never modifies code. Also flags
+  report and a `.next-action` suggestion, never modifies code. Run it after merges land, not
+  mid-implementation — a sweep is noisy while you're actively changing things. For a deep
+  dead-code investigation use /dead-code-review; for PR-scoped review use /sdlc's Stage 5. Also flags
   migration drift (migration files newer than the recorded applied version),
   stale pipeline run-state, and stale memory pointers.
 argument-hint: "[--no-dead-code] [--no-tests] [--no-deps] [--no-secrets] [--no-gotchas] [--no-migrations] [--no-pipeline-state] [--no-memory]"
@@ -23,7 +25,7 @@ next command. Never modifies code, never opens a PR.
 For deeper or more action-oriented variants:
 - Use `/dead-code-review` directly for a thorough multi-agent scan.
 - Use `/test-check` for the full test+log audit pipeline.
-- The future `/cleanup` skill will turn this report into mechanical PRs.
+- 
 
 ## Arguments
 
@@ -237,20 +239,3 @@ write nothing — clean repos shouldn't nag.
 Optionally cache the report at `.claude/pipeline/last-health.json` only if
 that cache location already exists or is already gitignored. This is
 best-effort — failing to write the cache never fails the run.
-
-## When this skill triggers
-
-- User types `/repo-health`
-- User asks "is this repo healthy", "weekly hygiene check", "what should
-  I clean up", "any tech debt I'm missing"
-- Pre-release sanity sweep
-- New maintainer inheriting an unfamiliar repo (run alongside
-  `/repo-onboarding`)
-
-## When NOT to use
-
-- Mid-implementation — health sweeps are noisy when you're actively
-  changing things. Run after merges land.
-- For a deep dead-code investigation — `/dead-code-review` is the
-  multi-agent thorough variant.
-- For PR-scoped review — use `/review` or `/sdlc`'s Stage 5 instead.

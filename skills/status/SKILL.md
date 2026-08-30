@@ -3,7 +3,7 @@ name: status
 description: >
   Show a quick readout of the current work queue: task counts by state, the active
   task, and the most recently completed task. Also surfaces any non-terminal
-  pipeline runs (so a stalled /sdlc or /sdlc-lite run can't hide). Reads
+  pipeline runs (so a stalled /sdlc run can't hide). Reads
   TASKS.md and .claude/pipeline/ directly — no subagents, no dashboards.
   Invoke via /status or when the user asks "what's left?", "current task?",
   "status". Read-only by default; `--prune-stale` is an opt-in, confirm-gated
@@ -61,7 +61,7 @@ metadata:
 After the summary, print **one** recommended next command with a one-line reason. Highest
 match wins; stop at the first hit:
 
-1. **Paused/failed run on this branch** → `/sdlc-lite <input> --resume`. Read the failing
+1. **Paused/failed run on this branch** → `/sdlc <input> --resume`. Read the failing
    stage's sidecar and name the class in the reason — **flaky** (a test flips across loops) ·
    **code-defect** (a consistent assertion failure) · **plan-wrong** (the failure contradicts
    a plan step) · **config-missing** (a command/env the runner needs). For a code defect,
@@ -70,9 +70,9 @@ match wins; stop at the first hit:
    `/status --prune-stale` to reconcile.
 3. **Pending sentinel** (`.claude/.next-action` non-empty) → surface each line's `cmd`
    verbatim. Never consume the sentinel here; this skill is read-only.
-4. **A plan file with no pipeline run** → `/sdlc-lite <plan>`.
-5. **`[~]` in-progress TASKS.md row** → `/sdlc-lite task-<N>`.
-6. **`[ ]` pending rows** → the top one: `/task` if small and bounded, `/sdlc-lite` if it
+4. **A plan file with no pipeline run** → `/sdlc <plan>`.
+5. **`[~]` in-progress TASKS.md row** → `/sdlc task-<N>`.
+6. **`[ ]` pending rows** → the top one: `/task` if small and bounded, `/sdlc` if it
    needs the full pipeline.
 7. **Nothing queued** → `/brainstorm` for ideation, or `/repo-health` for a hygiene sweep.
 

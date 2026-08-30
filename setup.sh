@@ -224,15 +224,15 @@ install_shared_templates() {
       hit=1
     fi
     # Seed templates only (*.template). A skill-local `templates/<x>.md` resolves relative to
-    # the skill dir already and MUST NOT be rewritten -- doing so would break brainstorm-deep
+    # the skill dir already and MUST NOT be rewritten -- doing so would break /brainstorm
     # and cheatsheet, which ship their own templates/ dirs.
     if grep -q '`templates/[A-Za-z0-9._-]*\.template`' "$f" 2>/dev/null; then
       sed -i.bak "s|\`templates/\([A-Za-z0-9._-]*\.template\)\`|\`$root/templates/\1\`|g" "$f" && rm -f "$f.bak"
       hit=1
     fi
     [[ "$hit" -eq 1 ]] && n=$((n+1))
-  done < <(find "$dest" -name 'SKILL.md' 2>/dev/null)
-  [[ "$n" -gt 0 ]] && echo "  retargeted template citations in $n skill file(s) under $root/"
+  done < <(find "$dest" \( -name 'SKILL.md' -o -path '*/templates/*.md' \) 2>/dev/null)
+  [[ "$n" -gt 0 ]] && echo "  retargeted template citations in $n file(s) under $root/"
   return 0
 }
 
@@ -251,6 +251,10 @@ fi
 if [[ -d "$PLUGIN_ROOT/scripts" && "$COPY_SCRIPTS" -eq 1 ]]; then
   echo "[3/7] Scripts"
   copy_tree_if_new "$PLUGIN_ROOT/scripts" "$TARGET/scripts"
+  # Plugin-repo-only tooling: scripts/ci/ tests THIS repo's installer and
+  # sync-global.sh installs FROM this repo. Neither has any use in a consumer,
+  # and both were shipping to every target.
+  rm -rf "$TARGET/scripts/ci" "$TARGET/scripts/sync-global.sh"
 elif [[ "$COPY_SCRIPTS" -eq 0 ]]; then
   echo "[3/7] Scripts (skipped: --no-copy-scripts)"
   echo "  Configure .claude/project.json to invoke from the plugin, e.g.:"

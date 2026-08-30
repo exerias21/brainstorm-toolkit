@@ -12,8 +12,8 @@ The file is **append-friendly**: one entry per line, each either a JSON object o
 command string.
 
 ```
-{"cmd": "/gotcha [Testing] eval fixture drift", "source": "sdlc-lite", "confirm": false}
-{"cmd": "/sdlc-lite plans/brainstorm-radius.md", "source": "brainstorm", "confirm": false}
+{"cmd": "/gotcha [Testing] eval fixture drift", "source": "sdlc", "confirm": false}
+{"cmd": "/sdlc plans/brainstorm-radius.md", "source": "brainstorm", "confirm": false}
 {"cmd": "/sdlc plans/big-feature.md",            "source": "brainstorm", "confirm": true}
 /gotcha [Legacy] a bare command line still works
 ```
@@ -34,14 +34,14 @@ command string.
   seam and a pipeline handoff now both land).
 - **Dedup by `cmd`** — append only if that exact line isn't already present:
   ```sh
-  line='{"cmd":"/sdlc-lite plans/foo.md","source":"brainstorm","confirm":false}'
+  line='{"cmd":"/sdlc plans/foo.md","source":"brainstorm","confirm":false}'
   grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action
   ```
 - **Set `confirm:true`** for any command that writes git history (`/sdlc`). Default `false`.
 - **Never write a bare, argument-less command** (e.g. a lone `/gotcha`) — always include the
   drafted argument.
 
-Current writers: `/brainstorm` (pipeline handoff), `/sdlc-lite` + `/task` (gotcha seam),
+Current writers: `/brainstorm` (pipeline handoff), `/sdlc` + `/task` (gotcha seam),
 `/repo-health` (highest-impact suggestion). Three-way-sync: the canonical skill, its
 copilot/codex overlays, and this page move together.
 

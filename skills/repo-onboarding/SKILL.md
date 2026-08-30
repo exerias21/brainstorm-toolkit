@@ -16,13 +16,7 @@ metadata:
 This skill inspects the current repository and generates the config files that
 the rest of the toolkit reads. Run this **once per repo** after dropping the
 toolkit's skills and scripts in place. After it finishes, `/test-check`,
-`/eval-harness`, and `/sdlc` should work with no further setup.
-
-## When triggered
-
-- User invokes `/repo-onboarding`, `/discovery`, `/onboard`, `/codelearn`, or `/init-toolkit`
-- User says "set this repo up for the toolkit", "onboard this repo", "analyze this codebase", "bootstrap AGENTS.md"
-- After the user runs `setup.sh` from the brainstorm-toolkit plugin
+`/test-check` and `/sdlc` should work with no further setup.
 
 ## Output
 
@@ -59,7 +53,7 @@ In the main context window (no subagents), survey the repo structure:
    - `vitest.config.*` / `jest.config.*` → unit test runner
 
 4. **Eval/fixtures (rare — toolkit-specific)**:
-   - `evals/` directory → already set up for eval-harness
+   - `evals/` directory → already set up for the eval runner
    - `tests/eval/` directory → already has eval tests
 
 5. **Branch info**:
@@ -123,7 +117,7 @@ keystroke, and state the cost direction in each option:
 | Ask | Key | Options (default first) |
 |---|---|---|
 | **Ceiling for every sub-agent fan-out — implementers, fix agents, sanity + review lenses.** The single biggest cost lever. | `models.cap` | `sonnet` (Sonnet-first standing default) · `haiku` (cheapest; fine for sweeps/monitoring) · `opus` (**no ceiling** — every stage runs at its own full default tier) · omit |
-| **Which model pre-flights your plan before any code is written** (Stage 1.5, never gated — it runs on *every* `/sdlc` and `/sdlc-lite` run). Say plainly that the built-in is Haiku and that **`models.cap` cannot raise it** — this key is the only lever. | `models.sanity` / `.focuses` | omit → 3 Haiku agents (`paths`, `completeness`, `gotchas`) · `sonnet` (better judgment on `completeness`, which asks whether the plan hangs together) · fewer focuses to cut cost (`paths` is mechanical; drop `gotchas` when there's no `GOTCHAS.md`) |
+| **Which model pre-flights your plan before any code is written** (Stage 1.5, never gated — it runs on *every* `/sdlc` run). Say plainly that the built-in is Haiku and that **`models.cap` cannot raise it** — this key is the only lever. | `models.sanity` / `.focuses` | omit → 3 Haiku agents (`paths`, `completeness`, `gotchas`) · `sonnet` (better judgment on `completeness`, which asks whether the plan hangs together) · fewer focuses to cut cost (`paths` is mechanical; drop `gotchas` when there's no `GOTCHAS.md`) |
 | **Enable the adversarial Review→Fix stage?** Off unless you say yes — it never runs by accident. | `pipeline.review_fix.enabled` / `.model` | `false` (default) · `true` + reviewer `opus` · `true` + reviewer `fable` (usage-billed, explicit opt-in) |
 | **How many review lenses?** Ask only if the stage was just enabled. One reviewer call per lens at the reviewer model, so this scales the stage's cost roughly linearly. | `agents.code_review_lenses` | omit → all four (`correctness`, `plan-alignment`, `config-env-docs`, `security`) · `["correctness", "security"]` (half cost; good default for app code) · `["correctness"]` (quarter cost; highest-yield single lens) |
 | **How do you bring this app up for manual verification?** Confirm or correct what was detected. | `stack.up` / `stack.rebuild` / `stack.url` | the detected compose/dev commands · corrected by the user · omit (skills then say which key is missing instead of guessing) |
@@ -169,7 +163,7 @@ After the user confirms (or adjusts):
    ```
 
    Why each:
-   - `.claude/pipeline/` — per-run `/sdlc` + `/sdlc-lite` envelopes; one dir per
+   - `.claude/pipeline/` — per-run `/sdlc` envelopes; one dir per
      run, pure churn if tracked.
    - `.claude/.next-action` / `.auto-continue-hops` — the seam's scratch files.
    - `.claude/project.json` — **machine-specific.** It holds test commands, paths
@@ -229,7 +223,7 @@ Report what was written and suggest next steps:
   propose, and ask.
 - **Do not infer commands that haven't been verified.** If you see `pytest.ini`
   but no actual tests pass, still propose the pytest command but flag it.
-- **Do not generate evals.** That's a separate skill (/eval-harness). This skill
+- **Do not generate evals.** That's the pipeline's Stage 3. This skill
   only sets up the config needed for evals to work if the user chooses to use them.
 
 ## Detection heuristics reference

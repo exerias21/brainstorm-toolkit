@@ -19,20 +19,17 @@ metadata:
 
 This is NOT a program simulator. It's a **structured code review** formatted as a narrative trace: "the plan claims X → grep/read the code → report what actually happens". LLMs are reliable at static analysis ("does this call exist", "what does this function return") when scoped to 2–3 hops. Flowsim keeps the scope tight on purpose.
 
-## When to use
-
-- User invokes `/flowsim <plan-file>` or `/flowsim task-3-add-orders`
-- Called automatically by `/sdlc` Stage 5 when a parent plan is available
-- User asks "does the plan actually match what we built?", "trace this flow", "walk through what happens when a user X"
-
 ## Inputs
+
+Also called inline by `/sdlc` Stage 5 (as its flow axis) whenever a parent plan
+is available.
 
 - **Plan source**: a `plans/brainstorm-<slug>.md` file, a `plans/tasks/task-N-<slug>.md` file, or a TASKS.md row. The plan must describe at least one flow: entry point → steps → outcome.
 - **Optional**: `--max-hops N` (default 3) — how many function/module jumps to follow per flow.
 - **Optional**: `--focus <module>` — restrict tracing to one module (useful for large features).
 - **Optional**: `--force` — ignore the prior-run cache (see Flow step 0) and re-trace every flow.
 - **Optional signal**: latest test results as corroborating evidence. Two sources, either counts:
-  - eval results at `<eval.features_dir>/<feature>/results.json` (script/eval-harness features), and/or
+  - eval results at `<eval.features_dir>/<feature>/results.json` (script/eval-runner features), and/or
   - **`test.unit` results** (app-package features whose coverage was routed to the project's native unit suite — see `/sdlc` Stage 3). A passing unit test exercising a traced flow corroborates it; a failing one is a pre-existing mismatch.
   Flowsim degrades to mostly-grep **only when neither source exists** — having unit results (not just eval results) keeps the trace meaningful for the common app-code feature.
 
@@ -114,33 +111,10 @@ Produce a markdown block:
 ### Flow 2: ...
 ```
 
-### 5. Emit structured output for /sdlc
-
-If invoked by `/sdlc`, also write a machine-readable summary to `plans/flowsim-<feature-slug>.json`:
-
-```json
-{
-  "feature": "add-orders",
-  "flows": [
-    {
-      "id": 1,
-      "description": "User submits order form",
-      "status": "MISMATCH",
-      "mismatches": [
-        {"step": 2, "anchor": "api/schemas/order.py:10", "detail": "Schema missing payment_method field"},
-        {"step": 3, "anchor": null, "detail": "OrderService class not found; logic inline in route"}
-      ]
-    }
-  ]
-}
-```
-
-This lets `/sdlc` feed findings into Stage 5's shared fix loop without re-parsing the markdown.
-
 ## Rules
 
 - **Three hops max by default.** Deeper chains get unreliable; if the plan implies a 5-hop flow, split it into two flows of 3 hops each.
 - **Every claim needs a `file:line` anchor** or an explicit `MISSING` marker. No "I think this is in the code somewhere".
 - **Don't invent flows the plan didn't claim.** If the plan is vague, say so and ask the user to clarify before tracing.
-- **Don't fix anything.** Flowsim is read-only. Handing fixes off to `/sdlc`'s fix loop or the user is the correct move.
+- **Don't fix anything.** Flowsim is read-only. Hand findings to the user (or, when running inside the pipeline, to Stage 5's fix loop).
 - **Cap output at ~60 lines of markdown** unless there are many flows. A 200-line flowsim report is a sign the plan is too ambitious for one feature.
