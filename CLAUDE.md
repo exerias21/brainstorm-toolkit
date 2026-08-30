@@ -82,6 +82,22 @@ into `references/` — that ships it (installed once per tool — up to three id
 - If a skill exists in both `skills/` (canonical) and `copilot/skills/` (override), changes may need to be reflected in both. The Copilot override is a separate file, not a patch.
 - Avoid adding Claude-only features to cross-tool skills unless the skill also has a Copilot override.
 
+### Renaming or deleting a skill — never `s|/old|/new|g`
+
+A global substitution rewrites every sentence that *talks about* the name, not just the
+name. It has silently corrupted this repo **six times**: a `FLOW.md` diagram showing `/sdlc`
+doing "branch → commit → push → PR" (it does no git writes), `` `sdlc`, `sdlc`, or `task` ``,
+and three table rows collapsing into one command are all artifacts of it. Nothing catches
+this — `validate_skills.py` and `check_install_refs.py` only prove *paths resolve*.
+
+Grep first, read every hit, edit by hand. Attribution sentences ("absorbed from the former
+X", "replaces X") must keep the OLD name — that is the whole point of the sentence. Then run
+two checks: one for the **same command named twice in one sentence** (the shape of a collapsed
+pair), and one for the **fact the rename invalidated** — after the pipeline merge that was
+`grep -rn "opens a PR\|touches git history"`, which found wrong-fact prose no token check
+could see. Both commands, with the six case studies, are written out under "Migration policy" in
+`docs/CONVENTIONS.md`.
+
 ## Execution model — prose only
 
 Every skill is prose. There is **one** expression of each pipeline stage (the canonical
