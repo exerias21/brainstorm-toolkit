@@ -215,7 +215,7 @@ entered Plan mode against this skill's contract — write the canonical copy to
 that's concrete and bounded enough to stand alone, add a row to the `Active / Pending`
 section: `- [ ] (P2) <step title> — plans/brainstorm-[topic-slug].md`. If `TASKS.md`
 doesn't exist, create it from `templates/TASKS.md.template` (or with minimal sections).
-This gives both Claude's `/status`/`/task` flow and Copilot's TODO workflow a shared
+This gives both Claude's `/sdlc-status`/`/task` flow and Copilot's TODO workflow a shared
 entry point into the brainstorm's output.
 
 ### Step 6.5: Multi-agent Vet (mode-gated)
@@ -301,10 +301,10 @@ re-choose a flow they've already established this session:
   with **no git writes**, so it's the safe default — it can't surprise the user
   with a PR.
 
-> These continuity rules are a slice of `/status`'s **canonical decision ladder**
-> (rung 4 — a plan with no run; see `skills/status/SKILL.md`). `/status` is the source
+> These continuity rules are a slice of `/sdlc-status`'s **canonical decision ladder**
+> (rung 4 — a plan with no run; see `skills/sdlc-status/SKILL.md`). `/sdlc-status` is the source
 > of truth for "what's the next step"; this inline copy keeps `/brainstorm`
-> self-contained when the user hasn't got `/status` in mind.
+> self-contained when the user hasn't got `/sdlc-status` in mind.
 
 Drop a **next-action sentinel** naming that command so the Stop hook surfaces
 it. The plan file MUST already exist at `plans/brainstorm-<topic-slug>.md`
@@ -313,8 +313,8 @@ sentinel pointing at a missing plan is a bug.
 
 ```
 # Append ONE structured line (multi-slot seam — coexists with a gotcha entry;
-# see docs/SEAM.md). Default to the safe pipeline; substitute /sdlc with
-# "confirm":true if that's the established flow (it opens a PR).
+# see docs/SEAM.md). /sdlc does no git writes, so confirm stays false; set
+# "confirm":true only if you substitute a command that is hard to reverse.
 line='{"cmd":"/sdlc plans/brainstorm-<topic-slug>.md","source":"brainstorm","confirm":false}'
 grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action
 ```
@@ -337,10 +337,9 @@ The plan file exists on disk (Step 8.0). Continue:
    single-file HTML view the user or a stakeholder can scroll, for a
    shape-of-the-work read before delivery starts.
 2. **Continue into delivery** with the established flow, or `/sdlc` by
-   default — run the full pipeline. `/sdlc` hands back validated changes
-   for the user to commit (no git writes); `/sdlc` goes all the way to a PR.
-   **Because `/sdlc` opens a PR, confirm before taking that path** — but you do
-   not need to ask permission to continue with the safe `/sdlc` path.
+   default — run the full pipeline. It hands back validated changes for the
+   user to commit; it does no git writes, so it can't surprise them with a
+   commit or a PR, and you don't need permission to take that path.
 3. **Save for later** — if the user signals they're done for now, leave the
    plan file and skip the sentinel.
 

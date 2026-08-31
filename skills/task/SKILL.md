@@ -95,7 +95,10 @@ Don't manufacture a hollow test, and don't punt the task to another skill.
    committed). Same never-fail rule as Section 1.
 5. Report a concise summary: files touched, tests that now pass (or "no testable surface"), anything left open.
 
-Commit only if the user asked for it, or if they have a durable "always commit finished tasks" instruction.
+Commit only if the user asked for it, or if they have a durable "always commit finished tasks"
+instruction. When you do commit, append a blank line and
+`Co-Authored-By: Claude <noreply@anthropic.com>` **only** if `.claude/project.json`
+`coauthor_trailer` is `true`; absent or `false` means no trailer.
 
 ## Gotchas
 

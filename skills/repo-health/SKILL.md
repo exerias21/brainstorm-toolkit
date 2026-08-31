@@ -224,9 +224,9 @@ Run again with --no-deps if dep audit is too slow on this repo.
 The "Suggested next" is the highest-impact actionable command (priority:
 unapplied migration > dep HIGH > stale pipeline run > test failure > stale
 gotcha > orphan file > skipped test > stale memory). This hygiene-priority
-ladder is the health-sweep specialization of `/status`'s **canonical decision
-ladder** (it feeds `/status` rung 7 — hygiene when nothing else is queued; `/status`
-is the source-of-truth readout, see `skills/status/SKILL.md`). Only
+ladder is the health-sweep specialization of `/sdlc-status`'s **canonical decision
+ladder** (it feeds `/sdlc-status` rung 7 — hygiene when nothing else is queued; `/sdlc-status`
+is the source-of-truth readout, see `skills/sdlc-status/SKILL.md`). Only
 append this command to `.claude/.next-action` if the repo is already set up
 for that integration (for example, the file already exists or `.gitignore`
 already covers `.claude/.next-action` or `.claude/`). Append ONE structured line,

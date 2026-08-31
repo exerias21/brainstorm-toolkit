@@ -1,9 +1,17 @@
-# Adversarial Review→Fix stage for `/sdlc` + `/sdlc`
+# Adversarial Review→Fix stage for `/sdlc`
 
-> **Target repo:** brainstorm-toolkit (this repo). Owns `skills/sdlc/`, `skills/sdlc/`,
-> `skills/sdlc/workflows/sdlc-pipeline.workflow.js`, `skills/sdlc/templates/*`, the four
-> Copilot/Codex overlays, `docs/CONVENTIONS.md`, `templates/project.json.example`, `README.md`,
-> and `CLAUDE.md`. This plan is implementation-ready: every claim below was checked against the
+> **⚠ Historical design record — read as a snapshot, not as current state.** This plan was
+> written when the repo had *two* pipeline skills (`/sdlc` and `/sdlc-lite`) and a
+> Workflow-backed execution path. Both are gone: the surviving skill took the `/sdlc` name,
+> and `skills/sdlc/workflows/sdlc-pipeline.workflow.js` was deleted along with every other
+> Workflow in the repo (see `CLAUDE.md` → *Execution model — prose only*). References below to
+> a second pipeline skill, to `skip_workflow`, or to `/brainstorm-deep` describe that older
+> shape. The stage itself shipped and is live — its current contract is
+> `skills/sdlc/templates/stage-5.7-review-fix.md`.
+>
+> **Target repo:** brainstorm-toolkit (this repo). Owns `skills/sdlc/`,
+> `skills/sdlc/templates/*`, the Copilot/Codex overlays, `docs/CONVENTIONS.md`,
+> `templates/project.json.example`, `README.md`, and `CLAUDE.md`. This plan is implementation-ready: every claim below was checked against the
 > live files, not assumed from the original Teacup-session write-up.
 >
 > **Status of this document:** synthesis of 7 independent grounding passes over the first draft.
@@ -58,7 +66,7 @@
 
 ## 1. Summary
 
-`/sdlc` and `/sdlc` gain two new optional pipeline stages — **Stage 5.7 (adversarial
+`/sdlc` and `/sdlc-lite` gain two new optional pipeline stages — **Stage 5.7 (adversarial
 review)** and **Stage 5.8 (fix loop)** — that run after Stage 5.6 flowsim and before Stage 6
 (deliver). They fan out N reviewer passes on distinct lenses (correctness, plan⇄code alignment,
 config/env/docs, security), verify findings adversarially (default-refute), and drive confirmed,
@@ -130,7 +138,7 @@ documentation describing a state the repo left behind when `--model` shipped. Th
 conventions in `docs/CONVENTIONS.md` §"Command-line flags", which remain valid and are followed
 here). As a **companion, low-risk fix** (bundled into this change since it corrects a
 self-contradiction in files this change already opens): update `docs/CONVENTIONS.md` line 232 to
-drop the false "zero-flag by design" claim for `/sdlc`/`/sdlc`, and fix
+drop the false "zero-flag by design" claim for `/sdlc`/`/sdlc-lite`, and fix
 `skills/sdlc/SKILL.md`'s "## Arguments" section to actually list `--model`, `--review-model`, and
 `--no-review` (see §6.4). `/task` keeps its zero-flag status untouched — this plan does not touch
 `/task`.
@@ -291,7 +299,7 @@ extended with a `loops[]` array carrying one entry per iteration. The canonical 
 `review-fix` is recorded **once** in `run.json.stages_completed` regardless of loop count — same
 pattern as `implement` being recorded once despite N `implement-<lane>.json` sidecars.
 
-**Blocking posture (the one place `/sdlc` and `/sdlc` diverge for this feature — same shape
+**Blocking posture (the one place `/sdlc` and `/sdlc-lite` diverge for this feature — same shape
 as their existing Stage 6 divergence, not a new branching mechanism):**
 - `/sdlc`: a surviving HIGH-severity confirmed finding (auto-fixable and unresolved after budget
   exhaustion, OR a HIGH-severity design decision) **blocks** — Stage 6 does not create a PR;
@@ -305,7 +313,7 @@ as their existing Stage 6 divergence, not a new branching mechanism):**
 review-fix loop edits code *after* Stages 4/5/5.5/5.6 already validated the tree once. If any fix
 was actually applied this run, re-run the Stage 5 `validate` gate **exactly once** before Stage 6
 — not a fresh budget, a single confirmation pass. A regression there pauses the run for **both**
-`/sdlc` and `/sdlc` (unlike the severity-gated review-finding blocking above, a validate
+`/sdlc` and `/sdlc-lite` (unlike the severity-gated review-finding blocking above, a validate
 regression is an objective break, not an adversarial opinion, so both modes stop rather than hand
 off broken code).
 
@@ -577,7 +585,7 @@ the existing `poka_yoke` key:
     "skip_review": false,
     "_decompose_min_tasks_comment": "Optional. Stage 2 fans out into per-surface lanes only when surfaces>=2 AND task_count>=this AND the file sets are disjoint. Default 6.",
     "decompose_min_tasks": 6,
-    "_skip_workflow_comment": "Claude-only off-switch for every Workflow-backed skill (/sdlc, /sdlc, and /brainstorm-deep Pass 3). When true, they use their prose path instead of the deterministic Workflow even when ultracode is on. Copilot/Codex always use the prose path (no Workflow tool).",
+    "_skip_workflow_comment": "Claude-only off-switch for every Workflow-backed skill (/sdlc, /sdlc-lite, and /brainstorm-deep Pass 3). When true, they use their prose path instead of the deterministic Workflow even when ultracode is on. Copilot/Codex always use the prose path (no Workflow tool).",
     "skip_workflow": false,
     "_poka_yoke_comment": "Claude-only. See AGENTS.md 'Hooks (Claude-only)'.",
     "poka_yoke": false,
@@ -904,7 +912,7 @@ pr-create          # Stage 6 step 3
 ```
 
 **Migration policy, line 232** — replace: *"`/sdlc`, `/task`, and `/sdlc` are zero-flag by
-design and recognize no aliases."* → *"`/task` is zero-flag by design. `/sdlc` and `/sdlc`
+design and recognize no aliases."* → *"`/task` is zero-flag by design. `/sdlc` and `/sdlc-lite`
 already ship `--model <tier>` (see `models.md`) and now also `--review-model <name>` /
 `--no-review` (see `models.md`) — both follow the `--no-X`/`--X <value>` forms below."* (See
 §3 — this corrects a pre-existing self-contradiction this plan's own additions would otherwise
@@ -969,7 +977,7 @@ one-line-pointer style:
 ## Reviewer model (Stage 5.7/5.8 only)
 
 Independent from **Model cap** above. See
-[`templates/models.md`](templates/models.md): `--review-model <name>` flag >
+[`skills/sdlc/templates/models.md`](../skills/sdlc/templates/models.md): `--review-model <name>` flag >
 `models.code_review` (project.json) > skill default `opus`. Never governed by
 `models.cap` / `--model`; none of `fable`/`opus`/`sonnet`/`haiku` on this axis is a member of the
 `haiku < sonnet < opus` cap rank. `fable` remains a valid, explicit opt-in (`--review-model
@@ -1458,7 +1466,7 @@ ${envelopeNote(slug, 'review-fix', `Write data.fix_loops_run=${loopN}, data.max_
 }
 ```
 
-Note the `/sdlc` vs `/sdlc` divergence is **not** a new branching mechanism — it reuses the
+Note the `/sdlc` vs `/sdlc-lite` divergence is **not** a new branching mechanism — it reuses the
 existing early-return `pauseOnBudget`-style pattern (matching lines 597/619/669/688), evaluated at
 the *end* of the Review phase. `phase('Deliver')` and the Stage 6 `if (MODE === 'sdlc') {...} else
 {...}` branch (lines 692–733) are **unchanged except for one injected note variable** — the same
@@ -1533,7 +1541,7 @@ if (args?.model_cap != null && !(args.model_cap in MODEL_TIER_RANK)) {
 With this in place, line 30's `args?.model_cap ?? 'sonnet'` now correctly falls through to
 `'sonnet'` (or the configured cap) for any unrecognized value, matching §5.2's rule exactly.
 
-### 7.4 Overlay edits (Copilot + Codex, `/sdlc` + `/sdlc` — four files, same rollout phase)
+### 7.4 Overlay edits (Copilot + Codex, `/sdlc` + `/sdlc-lite` — four files, same rollout phase)
 
 All four overlays already state up front that they "execute every stage inline... one stage at a
 time" — there is no parallel sub-agent dispatch and, absent a reachable external reviewer
@@ -1591,7 +1599,7 @@ For confirmed findings, draft a structured fix spec per finding, applying the au
 
 **Post-fix validation (once, after the loop exits — not per iteration):** if any fix was applied
 this run, re-run the Stage 5 `validate` gate exactly once before Stage 6. A regression there pauses
-the run for **both** `/sdlc` and `/sdlc` — an objective test break, unlike the severity-gated
+the run for **both** `/sdlc` and `/sdlc-lite` — an objective test break, unlike the severity-gated
 review-finding blocking below, stops both modes rather than handing off broken code (see the
 canonical prose's "Post-fix validation").
 
@@ -1685,7 +1693,7 @@ the two enablement precedence chains, the `auto_fixable` rubric, the schemas, D1
 §8, and the regression-corpus table from §11), and has `CLAUDE.md`/`README.md` reference *that*
 path, never `plans/...`.
 
-**"Workflow-backed skills" section** — append to the `/sdlc` + `/sdlc` bullet:
+**"Workflow-backed skills" section** — append to the `/sdlc` + `/sdlc-lite` bullet:
 
 > `sdlc-pipeline.workflow.js` mirrors every canonical prose stage, including the Review→Fix stage
 > (`review`/`review-fix`). Confirmed live: `agent({model:'fable'})` dispatches `claude-fable-5`
@@ -1694,7 +1702,7 @@ path, never `plans/...`.
 
 **"Model cap" paragraph** — append:
 
-> A second, independent axis exists for `/sdlc` and `/sdlc` only: the **reviewer-model axis**
+> A second, independent axis exists for `/sdlc` and `/sdlc-lite` only: the **reviewer-model axis**
 > (`models.code_review` / `--review-model`, default `opus`, canonical contract at
 > `skills/sdlc/templates/models.md`), which selects the adversarial Review→Fix stage's
 > reviewer. The stage is opt-in, permanently — it never runs unless explicitly enabled. `fable`
@@ -1712,9 +1720,9 @@ path, never `plans/...`.
   (README.md line 79) —
   the same pre-existing §3 drift as `docs/CONVENTIONS.md`/`SKILL.md`, third and last surface;
   without this, the appended `--no-review` text would sit in the same cell as "No flags".
-- `/sdlc` row: append " Same optional Review→Fix stage as `/sdlc`, warn-only on surviving
+- `/sdlc-lite` row: append " Same optional Review→Fix stage as `/sdlc`, warn-only on surviving
   findings (consistent with its warn-only secret scan) rather than blocking handoff."
-- project.json key-reference table: add a row — `` `/sdlc`, `/sdlc` | `pipeline.review_fix.*` (reviewer-model axis — independent of `models.cap`) ``.
+- project.json key-reference table: add a row — `` `/sdlc`, `/sdlc-lite` | `pipeline.review_fix.*` (reviewer-model axis — independent of `models.cap`) ``.
 - New "## Case studies" section (none currently exists — confirmed by grep) placed after the
   "Model & cost reference" table:
 
@@ -1915,10 +1923,10 @@ opt-in runs**, not a default-on burn-in (there is none — see above).
       surviving HIGH confirmed finding; `/sdlc` reports it in the handoff and proceeds.
 - [ ] **Post-fix validation**: a seeded fixture where the fix loop's own edit breaks an existing
       test causes exactly one re-run of the Stage 5 validate gate after the loop exits (not
-      per-iteration), and pauses **both** `/sdlc` and `/sdlc` — not the severity-gated
+      per-iteration), and pauses **both** `/sdlc` and `/sdlc-lite` — not the severity-gated
       review-finding path, a separate, unconditional-on-mode check (§4.2).
 - [ ] **Handoff/PR report threading**: a run with ≥1 surviving finding or design decision produces
-      a PR body (`/sdlc`) or handoff report (`/sdlc`) that names the count and points at
+      a PR body (`/sdlc`) or handoff report (`/sdlc-lite`) that names the count and points at
       `stage-outputs/review.json` — via the `reviewNote` variable injected into the Stage 6 prompt
       (§7.2), the same mechanism the existing `rebuildNote` uses.
 - [ ] **Cost bound**: a synthetic >1500-line diff triggers partitioned review (`data.partitioned:

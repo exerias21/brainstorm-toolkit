@@ -1,11 +1,11 @@
 ---
-name: status
+name: sdlc-status
 description: >
   Show a quick readout of the current work queue: task counts by state, the active
   task, and the most recently completed task. Also surfaces any non-terminal
   pipeline runs (so a stalled /sdlc run can't hide). Reads
   TASKS.md and .claude/pipeline/ directly — no subagents, no dashboards.
-  Invoke via /status or when the user asks "what's left?", "current task?",
+  Invoke via /sdlc-status or when the user asks "what's left?", "current task?",
   "status". Read-only by default; `--prune-stale` is an opt-in, confirm-gated
   cleanup of stale/orphaned pipeline envelopes.
 argument-hint: "[--prune-stale]"
@@ -67,7 +67,7 @@ match wins; stop at the first hit:
    a plan step) · **config-missing** (a command/env the runner needs). For a code defect,
    recommend `/task fix: <one-line failure>` first, then the resume.
 2. **Non-terminal run whose work looks landed** (`base_commit` is an ancestor of HEAD) →
-   `/status --prune-stale` to reconcile.
+   `/sdlc-status --prune-stale` to reconcile.
 3. **Pending sentinel** (`.claude/.next-action` non-empty) → surface each line's `cmd`
    verbatim. Never consume the sentinel here; this skill is read-only.
 4. **A plan file with no pipeline run** → `/sdlc <plan>`.
@@ -81,7 +81,7 @@ rung 1 are what the former `/triage` did — the diagnosis is a paragraph, not a
 
 ## `--prune-stale` (opt-in cleanup — the one write exception)
 
-Detection alone leaves stale envelopes flagged forever. `/status --prune-stale`
+Detection alone leaves stale envelopes flagged forever. `/sdlc-status --prune-stale`
 lets you actually clear them — confirm-gated, never automatic:
 
 1. Find pipeline runs that are **non-terminal** (`in_progress`/`paused`) **and**
@@ -95,12 +95,12 @@ lets you actually clear them — confirm-gated, never automatic:
    it's a synthetic/garbage envelope, remove the `.claude/pipeline/<slug>/`
    directory. Report what was pruned.
 
-Without `--prune-stale`, `/status` is **pure read** (default). The flag is the
+Without `--prune-stale`, `/sdlc-status` is **pure read** (default). The flag is the
 documented, confirm-gated exception — it's the only path that writes.
 
 ## Rules
 
-- **`/status` is both the readout and the recommendation.** It absorbed the former
+- **`/sdlc-status` is both the readout and the recommendation.** It absorbed the former
   `/next` ladder and `/triage` classes, so there is one command for "where am I" and
   "what next". It never executes — it recommends.
 

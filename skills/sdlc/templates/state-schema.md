@@ -1,7 +1,7 @@
 # State Envelope Schema
 
 `/sdlc` writes a state journal under `.claude/pipeline/<feature-slug>/` as it runs. This
-file is the on-disk contract its consumers read: `--resume`, `/status` and `/repo-health`.
+file is the on-disk contract its consumers read: `--resume`, `/sdlc-status` and `/repo-health`.
 
 Two rules bind at runtime. **State writes are best-effort** — on a full disk or unwritable
 directory, log one line (`[state-envelope] write failed: <error>; continuing`) and proceed;
@@ -73,7 +73,7 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
 | `plan_file` | string | yes | Path relative to repo root, as passed to `/sdlc`. |
 | `plan_hash` | string | yes | `sha256:<hex>` of the plan file's contents at Stage 1. Lets `--resume` detect plan edits (a mismatch rejects the resume). |
 | `args` | object | yes | Snapshot of run-time decisions. Snake_case keys. `/sdlc` is zero-flag — the only field currently recorded is `skill_repo` (auto-detected from `.claude-plugin/marketplace.json` presence at repo root). New additive fields are allowed. |
-| `pipeline` | string | optional | Which skill wrote this run: `sdlc`, `sdlc`, or `task`. Absent ⇒ assume `sdlc` (back-compat). Lets `/status`, `/repo-health`, and the Stop hook distinguish run types. |
+| `pipeline` | string | optional | Which skill wrote this run: `sdlc` or `task`. Absent ⇒ assume `sdlc` (back-compat). Lets `/sdlc-status`, `/repo-health`, and the Stop hook distinguish run types. |
 | `base_commit` | string | optional | `git rev-parse HEAD` captured at Stage 1, before any implementation commit. Powers **continuity detection** (is this branch's prior run an ancestor of HEAD?) and **reconciliation** (an `in_progress` run whose `base_commit` is already an ancestor of HEAD was almost certainly committed outside the pipeline). Additive; absent on older runs. |
 | `started_at` | ISO 8601 string | yes | UTC, second precision. |
 | `updated_at` | ISO 8601 string | yes | Refreshed on every stage transition. |
@@ -81,7 +81,7 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
 | `status` | enum | yes | One of `in_progress`, `complete`, `failed`, `paused`. `paused` means the pipeline stopped and `--resume` would pick it up. |
 | `stages_completed` | string array | yes | In execution order. Each name appears once. A stage is "completed" when its sidecar's status is `pass`. |
 | `stages_skipped` | string array | yes | Stages explicitly skipped (e.g., stages skipped because their config was absent, or skill-repo-mode skips). Distinct from "not yet run." |
-| `next_action` | object | optional | Additive (L8 — the pending handoff, durable). `{"cmd": "...", "confirm": bool}`, mirroring a `.next-action` sentinel line, recording the next step this run proposed when it finished/paused. Lets `/status` and `/status` recover the proposed handoff from the envelope even after the fire-once sentinel was consumed — the loop's "program counter" survives in a file, not just chat context. **This is a `/status` *fallback*, read on demand — it is NOT what the Stop hook auto-surfaces.** The `.next-action` **sentinel** is the only thing the hook reads; a park must write the sentinel too, never rely on this field alone (DQ5). Absent when the run proposed no next action. |
+| `next_action` | object | optional | Additive (L8 — the pending handoff, durable). `{"cmd": "...", "confirm": bool}`, mirroring a `.next-action` sentinel line, recording the next step this run proposed when it finished/paused. Lets `/sdlc-status` recover the proposed handoff from the envelope even after the fire-once sentinel was consumed — the loop's "program counter" survives in a file, not just chat context. **This is a `/sdlc-status` *fallback*, read on demand — it is NOT what the Stop hook auto-surfaces.** The `.next-action` **sentinel** is the only thing the hook reads; a park must write the sentinel too, never rely on this field alone (DQ5). Absent when the run proposed no next action. |
 | `data.stage2_decomposed` | bool | optional | Set at Stage 2a. `true` when the gate fanned Stage 2 into per-lane subagents; `false` (or absent) for the single-agent path. Absent on runs written before this field existed. |
 | `data.lanes` | string array | optional | Lane names from Stage 2a (e.g. `["data", "backend", "frontend"]`), in dependency dispatch order. `[]` when not decomposed. |
 
@@ -112,7 +112,7 @@ schema** — it does **not** invent a parallel shape. Concretely (dogfood-harden
   `data.max_items`. These are `data.*` extras, not top-level or stage fields.
 - On a park between batches: `status: "paused"` + `next_action` set (see the `next_action`
   row above) + the resume line written to the sentinel (`docs/SEAM.md`). A parked queue run
-  left `status:"in_progress"` is a bug (`/status`/`/repo-health` will flag it stale).
+  left `status:"in_progress"` is a bug (`/sdlc-status`/`/repo-health` will flag it stale).
 
 ---
 
@@ -139,13 +139,13 @@ Written when a stage finishes (or pauses, or fails). One file is written per sta
 | `stage` | string | yes | Canonical kebab name. Must match the filename. |
 | `status` | enum | yes | One of `pass`, `fail`, `paused`. `pass` means the stage completed and the pipeline may proceed. `fail` is terminal. `paused` means human intervention needed. |
 | `started_at` / `ended_at` | ISO 8601 strings | yes | UTC, second precision. |
-| `summary` | string | yes | One-line human summary, read by `/status`. |
+| `summary` | string | yes | One-line human summary, read by `/sdlc-status`. |
 | `prompt_hash` | string | optional | `sha256:<hex>` of the SKILL.md prompt template that drove this stage. Lets `--resume` detect toolkit upgrades that changed how a stage runs (per Open Question #3 in the plan: re-run any stage whose `prompt_hash` differs from the cached value). |
 | `data` | object | yes | Stage-specific payload. May be `{}` for stages with no structured output. Shape per stage below. |
 
 ### Per-stage `data` shapes
 
-Below is the shape each stage's `data` field is expected to take. These are the contracts `--resume` and `/status` rely on; new keys are additive and safe.
+Below is the shape each stage's `data` field is expected to take. These are the contracts `--resume` and `/sdlc-status` rely on; new keys are additive and safe.
 
 #### `parse`
 ```json

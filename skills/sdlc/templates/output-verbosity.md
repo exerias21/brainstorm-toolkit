@@ -1,6 +1,6 @@
 # Output verbosity — shared contract
 
-Canonical for `/sdlc` (and their Copilot/Codex overlays).
+Canonical for `/sdlc` (and its Copilot/Codex overlays).
 Loaded at Stage 0/1, before any stage prints.
 
 **Default `quiet`.** Stage narration is re-read by every later turn in the same session, so it

@@ -61,7 +61,7 @@ that way). Then:
   run" the same persistent way it warns about stale runs — the handoff survives the fired
   sentinel, session death, and even a different machine (envelope is local, but the plan file
   is committed; the *condition* is recomputable from tracked files).
-- `/next` and `/status` get the pending handoff for free.
+- `/next` and `/sdlc-status` get the pending handoff for free.
 
 This is the "the loop's program counter should live in files, not chat context" fix. Schema
 change is additive; `state-schema.md` gets one field.

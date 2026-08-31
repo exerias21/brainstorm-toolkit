@@ -302,6 +302,9 @@ themselves.
      git add <files>
      git commit -m "feat: <title>"
    ```
+   **Co-author trailer**: only when `.claude/project.json` `coauthor_trailer` is `true`,
+   end the suggested message with a blank line and
+   `Co-Authored-By: Claude <noreply@anthropic.com>`. Absent or `false` ⇒ no trailer.
    **Range semantics**: process tasks in order; the changes from all tasks
    accumulate in the working tree. You decide how to slice commits (per task,
    or one bundle). Sanity-check (1.5) ran once up front; Stage 5's plan check and
@@ -347,10 +350,10 @@ themselves.
 `{branch, files_changed[], committed: false, suggested_commit_msg}`. **Always
 set `run.json.status` to a terminal value** (`complete`, or `paused` if you
 stopped mid-pipeline) before exiting — never leave it `in_progress`, or
-`/repo-health` and `/status` will (correctly) flag it as a stale run. **Also set
+`/repo-health` and `/sdlc-status` will (correctly) flag it as a stale run. **Also set
 `run.json.next_action = {cmd, confirm}` (L8)** when the run proposes a follow-up —
-on pause the `/status` / `--resume` command, on complete the primary
-re-entry (e.g. `/repo-health`) — so `/status` recovers the
+on pause the `/sdlc-status` / `--resume` command, on complete the primary
+re-entry (e.g. `/repo-health`) — so `/sdlc-status` recovers the
 handoff after the fire-once sentinel; omit when there's none. This holds
 for **retro / validation-only runs** too (Stage 2 skipped because the code
 already landed): advance `run.json.stage`/`stages_completed` as each validation

@@ -17,9 +17,8 @@ disable-model-invocation: true
 
 Sequential Copilot edition. The canonical skill uses parallel agent dispatch for
 the sanity-check on Claude; this overlay runs every stage inline, one at a time.
-Same stages, same shared templates; the only
-difference is Stage 6 — `/sdlc` does **no git writes** (it hands you a
-validated tree to commit), while `/sdlc` commits + opens a PR.
+Same stages, same shared templates, same Stage 6: **no git writes** — it hands
+you a validated tree to commit yourself.
 
 **Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/models.md`) is honored wherever sub-agents are dispatched. On this runtime every stage runs inline in the session model, so the cap is advisory here — set your session model to the cap tier for the savings.
 
@@ -64,7 +63,7 @@ regardless of verbosity — the per-dispatch `model:` line, gate verdicts, PAUSE
   priority (top `N` or `pipeline.loop.max_items`, default 5; `P1>P2>P3`, `[~]`
   first) and loop the pipeline over them, **re-scanning `TASKS.md` between items**
   so rows added mid-run join the loop. Stop conditions (`pipeline.loop.*`): a
-  `paused`/`failed` item **parks** the loop (write its `/status` hint to
+  `paused`/`failed` item **parks** the loop (write its `/sdlc-status` hint to
   `.claude/.next-action`), a `confirm:true` next action parks it, and
   `max_items` / `max_consecutive_failures` (default 2) bound it. **No git writes;
   every park is a written next-action, never a dead end.** Each item's envelope
@@ -86,7 +85,7 @@ Mark resolved rows `[~]`. Derive `slug` per `docs/CONVENTIONS.md`; initialize
 `.claude/pipeline/<slug>/` with the canonical `run.json` — **including the computed
 required fields that get dropped otherwise (DQ6):**
 `plan_hash: "sha256:$(sha256sum <plan> | cut -d' ' -f1)"`, `started_at` = `updated_at`
-= `"$(date -u +%Y-%m-%dT%H:%M:%SZ)"`. Omitting them breaks `--resume` + `/status`/`/repo-health` staleness.
+= `"$(date -u +%Y-%m-%dT%H:%M:%SZ)"`. Omitting them breaks `--resume` + `/sdlc-status`/`/repo-health` staleness.
 
 **`--resume`:** if `--resume` was passed, read the existing `run.json` instead of
 re-initializing — reject on a `plan_hash` mismatch, skip stages whose sidecar shows
@@ -170,6 +169,9 @@ push, PR, or `/review`. You review and commit.
      git add <files>
      git commit -m "feat: <title>"
    ```
+   **Co-author trailer**: only when `.claude/project.json` `coauthor_trailer` is
+   `true`, end the suggested message with a blank line and
+   `Co-Authored-By: Claude <noreply@anthropic.com>`. Absent or `false` ⇒ none.
    **Range**: changes from all tasks accumulate in the tree; you slice the
    commits when you review.
 3. **Capture at loop-exit + seam** — run the shared protocol in
@@ -199,7 +201,7 @@ Write `stage-outputs/handoff.json` =
 `{branch, files_changed[], committed: false, suggested_commit_msg}`.
 Set `run.json.status = "complete"`. Also set `run.json.next_action = {cmd, confirm}`
 (L8) to the proposed follow-up (`/repo-health` on complete;
-`/status` on pause) so `/status` recovers the handoff after the sentinel fires;
+`/sdlc-status` on pause) so `/sdlc-status` recovers the handoff after the sentinel fires;
 omit when there's none.
 
 ## Stage 7 — Report
@@ -213,7 +215,7 @@ committed** — the next move is yours.
 ## Gotchas
 
 - **Does no git writes.** No commit, branch, push, PR, or `/review`. Hands you
-  a validated tree; you commit. Only `/sdlc` touches git history.
+  a validated tree; you commit.
 - **Stage 5's plan check runs whenever there's a plan to check.**
   when there is no plan target — not behind a frontmatter knob.
 - **Don't fork the shared templates.** Stage bodies live once in

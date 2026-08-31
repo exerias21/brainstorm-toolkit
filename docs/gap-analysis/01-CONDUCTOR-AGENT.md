@@ -21,9 +21,9 @@ agent definition** in `agents/`. Read-only by default; recommendation first, exe
      PR-writing path").
    - `skills/repo-health/SKILL.md` roll-up — a full priority ladder for "Suggested next"
      (unapplied migration > dep HIGH > stale pipeline run > test failure > stale gotcha > …).
-   - `skills/status/SKILL.md` — "no active task — next up: <first pending>".
+   - `skills/sdlc-status/SKILL.md` — "no active task — next up: <first pending>".
 3. **The state needed to decide is already durable and machine-readable** — that was Phase 1A's
-   whole point — but the only readers are humans running `/status`. The envelope records
+   whole point — but the only readers are humans running `/sdlc-status`. The envelope records
    `pipeline`, `stage`, `status`, `base_commit`, `stages_completed`, per-stage sidecars; the
    sentinel records a pending handoff; TASKS.md records the backlog; git records the branch and
    dirty tree. Nobody joins them.
@@ -53,7 +53,7 @@ alternatives. Example:
 ```
 Next: /sdlc plans/brainstorm-radius-refetch.md
 Why:  plan saved 20m ago; no pipeline run references it; sdlc is the established flow.
-Also: /plan-html plans/brainstorm-radius-refetch.md (preview) · /status (full queue)
+Also: /plan-html plans/brainstorm-radius-refetch.md (preview) · /sdlc-status (full queue)
 ```
 
 **The decision ladder** (highest first — this consolidates the three scattered prose versions
@@ -64,7 +64,7 @@ inline" rule):
    (`/triage <slug>`, see `02-FIX-RECOMMENDER.md`); until that exists, summarize the failing
    sidecar and recommend the concrete re-entry command.
 2. **Non-terminal (`in_progress`) run whose work looks landed** (`base_commit` ancestor of
-   HEAD) → recommend reconciliation (`/status --prune-stale`).
+   HEAD) → recommend reconciliation (`/sdlc-status --prune-stale`).
 3. **Pending sentinel** → surface it verbatim (it is the most recent skill's own routing
    decision; don't second-guess it).
 4. **A plan file with no pipeline run** → recommend the pipeline, applying `/brainstorm`
@@ -78,7 +78,7 @@ inline" rule):
 
 **`--go`:** execute the top recommendation instead of printing it — with the same safety
 asymmetry the toolkit already enforces everywhere: anything that writes git history (`/sdlc`)
-still requires an explicit confirm; `/sdlc`, `/task`, `/status` may proceed.
+still requires an explicit confirm; `/sdlc`, `/task`, `/sdlc-status` may proceed.
 
 ### The conductor agent (Claude-only enhancement, `agents/conductor.md`)
 
@@ -105,10 +105,10 @@ toolkit's own vendored skills?). Keep them layered:
   inline templates needed.
 - `metadata.brainstorm-toolkit-applies-to: claude copilot codex` — the reads are plain files;
   only the optional agent dispatch is Claude-only (same split `/brainstorm` Step 7 uses).
-- Read-only default matches `/status`'s posture; `--go` is the single documented exception,
+- Read-only default matches `/sdlc-status`'s posture; `--go` is the single documented exception,
   mirroring `--prune-stale`'s confirm-gated pattern.
 - Register in `.claude-plugin/marketplace.json`, README table, and update `/brainstorm` Step 8
-  / `/repo-health` roll-up / `/status` to **cite** the ladder instead of restating it (the
+  / `/repo-health` roll-up / `/sdlc-status` to **cite** the ladder instead of restating it (the
   same consolidation move the gotcha flywheel already made for capture-at-loop-exit).
 
 ## What this lever does NOT solve

@@ -19,7 +19,7 @@ the pattern `docs/AUTONOMOUS-DISCOVERY.md` already documents.
 | Capability | Exists? | Where |
 |---|---|---|
 | A durable queue with states (`[ ]`/`[~]`/`[x]`, priorities, blocked) | ✅ | TASKS.md contract + template |
-| Reading the queue | ✅ read-only | `/status` |
+| Reading the queue | ✅ read-only | `/sdlc-status` |
 | Executing one item | ✅ | `/task`, `/sdlc <task-id>` |
 | Executing a hand-picked batch | ✅ | `/sdlc N-M` (range semantics: accumulate in tree, close rows at the end) |
 | **Picking the next item automatically** | ❌ | `/next` ladder rungs 5–6 would (gap 1) |

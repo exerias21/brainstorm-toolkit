@@ -35,7 +35,7 @@ Remaining failures:
 
 ### Diagnosis
 
-**Fastest path: run `/status`** — it reads this sidecar, classifies the failure,
+**Fastest path: run `/sdlc-status`** — it reads this sidecar, classifies the failure,
 drafts the fix for a code defect, and hands back the `--resume` re-entry. Or triage inline:
 - **Class** (inferred from the failing stage's sidecar `data.remaining_failures[]`): one of
   **flaky** (a test flips pass/fail across loops) · **code-defect** (a consistent assertion

@@ -60,8 +60,8 @@ skills/<name>/SKILL.md   # name in frontmatter == directory name == slash-comman
 ```
 
 Examples (all current skills already comply):
-- `brainstorm`, `sdlc`, `task`, `status`, `gotcha`, `flowsim` — single-token
-- `repo-onboarding`, `test-check`, `dead-code-review`, `brainstorm-team`, `repo-health`, `code-tour`, `plan-html` — multi-token kebab
+- `brainstorm`, `sdlc`, `task`, `gotcha`, `flowsim` — single-token
+- `repo-onboarding`, `test-check`, `dead-code-review`, `brainstorm-team`, `repo-health`, `code-tour`, `plan-html`, `sdlc-status` — multi-token kebab
 
 Never-built roadmap names, kept for reference only: `pbi`, `brd-ingest`, `pbi-decompose`, `approve`, `deploy`, `monitor`, `rollback`, `coverage`. All would comply.
 
@@ -248,11 +248,30 @@ wholesale, so a *tool-specific* runtime reference must live in that overlay's ow
 
 ## Migration policy
 
-**Skill names**: NO renames, NO aliases. All current skill names already comply with RFC 1123 (the audit found zero non-compliant skills). The earlier flagged `/gotcha vs GOTCHAS.md` was a false alarm — the skill operates on the file; they correctly follow different conventions.
+**Skill names**: NO aliases — one name per skill, no back-compat shims. All current names comply with RFC 1123 (the audit found zero non-compliant skills). The earlier flagged `/gotcha vs GOTCHAS.md` was a false alarm — the skill operates on the file; they correctly follow different conventions.
+
+Renames are **rare but not forbidden** — `/sdlc-lite` → `/sdlc` (after the two pipeline skills merged) and `/status` → `/sdlc-status` (a collision with a pre-existing user skill) both happened. When one is unavoidable:
+
+> **Never run `s|/old|/new|g` across the repo.** A global substitution rewrites every sentence that *talks about* the name, not just the name, and the damage is silent — `validate_skills.py` and `check_install_refs.py` only prove that **paths resolve**, so none of it fails CI. Six corruptions have shipped this way: a `FLOW.md` diagram showing `/sdlc` doing "branch → commit → push → PR" (it does no git writes), `` `sdlc`, `sdlc`, or `task` ``, and three distinct table rows collapsing under one command.
+
+Instead: grep first, read every hit, edit by hand. **Attribution sentences keep the OLD name** ("absorbed from the former `/next`", "replaces `/codelearn`") — naming the old skill is the entire point of the sentence, and a blind replace turns it into a claim that the thing replaced itself.
+
+Then run two checks, because they catch different failures:
+
+1. **Collapsed pairs** — the same command named twice in one sentence. Needs `-P`
+   (backreference); `-E` is not enough, and ugrep rejects it outright:
+   ```bash
+   grep -rnP '`(/[a-z][a-z-]*)`[^`]{0,40}`\1`' --include='*.md' . \
+     | grep -v 'docs/archive/\|docs/gap-analysis/'
+   ```
+   It over-reports (a command legitimately repeated in one sentence is common), so read every hit — the list is short.
+2. **The fact the rename invalidated** — a token check cannot see this one. After the pipeline merge the load-bearing claim was "`/sdlc` does no git writes", so `grep -rn "opens a PR\|touches git history"` was the query that surfaced the wrong-fact prose.
+
+Exclude `docs/archive/` and `docs/gap-analysis/` from both: those are deliberate historical records, and a rename must **not** rewrite them.
 
 **Artifact IDs**: aliases supported indefinitely. `task-N` (legacy, no padding) is recognized as equivalent to `task-NNN` by any code that resolves task IDs. New artifacts use the canonical zero-padded form. No batch migration.
 
-**Flags**: aliases supported indefinitely in skills that still take flags. `/task` is zero-flag by design. `/sdlc` and `/sdlc` already ship `--model <tier>` (see `models.md`) and now also `--review-model <name>` / `--no-review` (see `models.md`) — both follow the `--no-X`/`--X <value>` forms above. Skills that do accept flags use `--no-X` for boolean negation; older `--skip-X` aliases are tolerated where they appear historically.
+**Flags**: aliases supported indefinitely in skills that still take flags. `/task` is zero-flag by design. `/sdlc` already ships `--model <tier>` (see `models.md`) and now also `--review-model <name>` / `--no-review` (see `models.md`) — both follow the `--no-X`/`--X <value>` forms above. Skills that do accept flags use `--no-X` for boolean negation; older `--skip-X` aliases are tolerated where they appear historically.
 
 **Paths**: forward-only. New artifacts land in canonical directories. Existing artifacts in old layouts stay where they are — moving them would break references in tracked plan files.
 

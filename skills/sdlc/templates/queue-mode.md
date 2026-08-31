@@ -5,7 +5,7 @@ flag first. The loop runs the normal pipeline once per item and adds selection, 
 conditions and the park protocol on top.
 
 `--queue` runs the pipeline over the pending backlog and **re-scans between items**,
-so work appended *during* the run (a `/status`-drafted fix, a brainstorm follow-up)
+so work appended *during* the run (a `/sdlc-status`-drafted fix, a brainstorm follow-up)
 joins the loop — that re-scan is what makes it a loop rather than a fixed batch.
 **No git writes** (it's `/sdlc`): the whole loop leaves validated changes in
 your tree for you to commit; it never opens a PR. The loop itself is
@@ -29,7 +29,7 @@ Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
    `plan_hash: "sha256:$(sha256sum <plan-file> | cut -d' ' -f1)"`,
    `started_at` / `updated_at: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"` (refresh `updated_at` on
    every stage transition). **Omitting `plan_hash` / `started_at` / `updated_at` silently
-   breaks `--resume`'s plan-edit guard and `/status` + `/repo-health` staleness detection.**
+   breaks `--resume`'s plan-edit guard and `/sdlc-status` + `/repo-health` staleness detection.**
    Plus `schema_version: 1`, `feature_slug`, `plan_file`, `base_commit`, `args`, and
    **canonical stage names** in `stage` / `stages_completed`
    (`implement`, `validate`, `handoff`, … — **never** phase labels like `phase-B-implement`
@@ -39,7 +39,7 @@ Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
 3. **Stop conditions** (checked after each item — *every stop is a parked
    next-action, never a dead end*):
    - `stop_on: pause` (**always on**) — item ends `paused`/`failed` → write its
-     `/status` hint to the seam and **park**. Never plow past a red run.
+     `/sdlc-status` hint to the seam and **park**. Never plow past a red run.
    - `stop_on: confirm` (**always on**) — the item's next action is `confirm: true`
      (would write git history) → park.
    - `max_items` (default `5`, or the `[N]` arg) — items consumed this invocation.
@@ -50,8 +50,8 @@ Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
 **On park**, which envelope work you do depends on *why* it parked:
 - **An item's own pipeline paused/failed** (`stop_on: pause`) → that **item's** envelope gets
   the full Stage 6 close-out: `status = "paused"` (**never leave it `in_progress`** — a parked
-  run left `in_progress` is flagged stale by `/status`/`/repo-health` after ~24h) +
-  `next_action = {cmd, confirm}` (the `/status` or `--resume`, L8). Then write the
+  run left `in_progress` is flagged stale by `/sdlc-status`/`/repo-health` after ~24h) +
+  `next_action = {cmd, confirm}` (the `/sdlc-status` or `--resume`, L8). Then write the
   queue-resume sentinel below.
 - **A queue-level stop** (`max_items` / `max_consecutive_failures` / a `confirm:true` action
   reached, with the current item already **complete**) → there is **no in-flight envelope to
@@ -61,7 +61,7 @@ Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
 **Then — ALWAYS, on every park — WRITE THE SENTINEL.** This is the step that keeps getting
 skipped (agents write only `run.json.next_action` and stop, which leaves the loop dead). Be
 exact about *why*: the `.claude/.next-action` **sentinel is the ONLY thing the Stop hook reads
-and auto-surfaces**; `run.json.next_action` is a durable *fallback* that `/status` reads **on
+and auto-surfaces**; `run.json.next_action` is a durable *fallback* that `/sdlc-status` reads **on
 demand** — it is **NOT** auto-surfaced. A park that sets only the envelope field is invisible
 and cannot self-continue. Run these exact appends (dedup + multi-slot, `docs/SEAM.md`):
 
