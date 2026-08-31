@@ -977,7 +977,7 @@ one-line-pointer style:
 ## Reviewer model (Stage 5.7/5.8 only)
 
 Independent from **Model cap** above. See
-[`templates/models.md`](templates/models.md): `--review-model <name>` flag >
+[`skills/sdlc/templates/models.md`](../skills/sdlc/templates/models.md): `--review-model <name>` flag >
 `models.code_review` (project.json) > skill default `opus`. Never governed by
 `models.cap` / `--model`; none of `fable`/`opus`/`sonnet`/`haiku` on this axis is a member of the
 `haiku < sonnet < opus` cap rank. `fable` remains a valid, explicit opt-in (`--review-model
