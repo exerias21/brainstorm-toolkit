@@ -18,7 +18,7 @@ If you use the Claude Code plugin system, add this repo as a marketplace source 
 
 ```bash
 # In Claude Code:
-/plugin marketplace add <this-repo-url>
+/plugin marketplace add exerias21/brainstorm-toolkit
 /plugin install brainstorm-toolkit
 ```
 
@@ -28,7 +28,7 @@ For Copilot users, or if you prefer file-based installs:
 
 ```bash
 # Clone this repo once, anywhere
-git clone <this-repo-url> ~/brainstorm-toolkit
+git clone https://github.com/exerias21/brainstorm-toolkit.git ~/brainstorm-toolkit
 
 # Inside any target repo:
 bash ~/brainstorm-toolkit/setup.sh --target . --tools both
@@ -68,7 +68,7 @@ the plugin route isn't available — an org policy that sets `disableSideloadFla
 `--plugin-dir`), a locked-down marketplace, or simply not wanting a plugin registration:
 
 ```bash
-git clone <this-repo-url> ~/brainstorm-toolkit
+git clone https://github.com/exerias21/brainstorm-toolkit.git ~/brainstorm-toolkit
 
 bash ~/brainstorm-toolkit/scripts/sync-global.sh --dry-run   # preview, writes nothing
 bash ~/brainstorm-toolkit/scripts/sync-global.sh             # apply
@@ -99,8 +99,11 @@ Four things worth knowing:
   in a project-scoped `.claude/settings.json` (which is what `setup.sh` writes), but as a
   **global** hook it fires in every repo and fails in each one lacking that file.
   `--prune-relative-hooks` cleans that up.
-- **`--delete` is scoped per skill directory**, never to `~/.claude/skills/` as a whole, so
-  unrelated user skills installed by other tools are never pruned.
+- **Pruning is scoped per skill directory.** The sync runs `rsync --delete` *inside each skill
+  directory it owns* — never against `~/.claude/skills/` as a whole — so a file you deleted
+  from a toolkit skill disappears on the next sync, while unrelated user skills installed by
+  other tools are never touched. (`--delete` here is rsync's flag, used internally; it is not
+  a `sync-global.sh` option. To remove what the script installed, use `--uninstall`.)
 - **Token weight.** A global sync makes all 13 skills resident in *every* repo, and several
   (`/sdlc`, `/sdlc-status`) assume the `AGENTS.md` / `.claude/project.json` contract.
   Use `--skills` to install just the ones that travel well — `/brainstorm`, `/brainstorm-team`,
@@ -155,8 +158,14 @@ All skills run on all three tools. † marks skills with a Copilot-optimized ove
 What each skill dispatches under the hood, and a rough order-of-magnitude
 cost. Token counts are **per typical run**, not worst-case — a `/sdlc` run
 on a tiny plan is closer to the low end, on a multi-module refactor the
-high end. Costs use 2026-04 list pricing: Opus $15 / $75, Sonnet $3 / $15,
-Haiku $1 / $5 per M tokens (input / output).
+high end. Costs use **2026-06 list pricing** per M tokens (input / output):
+Opus 5 $5 / $25, Sonnet 5 $2 / $10, Haiku 4.5 $1 / $5, and — for the
+reviewer axis only, where it is an explicit opt-in — Fable 5 $10 / $50.
+
+> Opus and Sonnet both got cheaper after this table was first written (Opus
+> was $15 / $75, Sonnet $3 / $15). The figures below are rescaled to current
+> pricing, so an older copy of this README overstates every Opus-orchestrated
+> row by roughly 3×. Re-check against current list pricing before quoting them.
 
 **These numbers assume the current skill set.** The pipeline's instruction load is ~16k tokens
 per run after the 2026-08 consolidation (two pipeline skills merged into one, shared stage
@@ -174,12 +183,12 @@ starts.
 | `/repo-health` | host model | 2 × Haiku (dead-code + gotchas-currency); 3 procedural checks | 5k–20k | $0.02–$0.10 |
 | `/flowsim` | host model | none — plan-vs-code grep | 10k–40k | $0.05–$0.40 |
 | `/test-check --loop` | host model | 1 × Sonnet per fix iteration | 10k–30k / iter | $0.05–$0.30 / iter |
-| `/repo-onboarding` | host model (Opus recommended) | 0–1 × Sonnet (pattern detection) | 20k–60k | $0.30–$1.00 |
-| `/brainstorm-team` | host (Opus) | 6 × Sonnet teammates (4 parallel, 2 sequential) | 60k–150k | $0.60–$2.00 |
-| `/brainstorm` | host (Opus) | 4 × Sonnet wildcard lenses (parallel); `--vet` adds a review pass | 20k–60k | $0.10–$0.60 |
+| `/repo-onboarding` | host model (Opus recommended) | 0–1 × Sonnet (pattern detection) | 20k–60k | $0.10–$0.35 |
+| `/brainstorm-team` | host (Opus) | 6 × Sonnet teammates (4 parallel, 2 sequential) | 60k–150k | $0.20–$0.70 |
+| `/brainstorm` | host (Opus) | 4 × Sonnet wildcard lenses (parallel); `--vet` adds a review pass | 20k–60k | $0.04–$0.20 |
 | `/code-tour` | host model | none — AST script + docstring authoring | 20k–60k | $0.10–$0.60 |
-| `/dead-code-review` | host (Opus) | up to 5 lenses (2 × Haiku, 2 × Sonnet, 1 × Opus-tier), only those the repo has | 60k–180k | $0.60–$2.20 |
-| `/sdlc` | host (Opus) | 3 × Haiku (sanity) + 1 × Sonnet (implement) + 1 × Haiku (test-runner) + 1 × Sonnet (plan check); review stage opt-in | 90k–280k | $2.50–$9.00 |
+| `/dead-code-review` | host (Opus) | up to 5 lenses (2 × Haiku, 2 × Sonnet, 1 × Opus-tier), only those the repo has | 60k–180k | $0.20–$0.75 |
+| `/sdlc` | host (Opus) | 3 × Haiku (sanity) + 1 × Sonnet (implement) + 1 × Haiku (test-runner) + 1 × Sonnet (plan check); review stage opt-in | 90k–280k | $0.85–$3.00 |
 
 **Notes / caveats**:
 
@@ -202,9 +211,9 @@ starts.
   repo size, plan complexity, and how much context the orchestrator has
   already accumulated when the skill fires.
 
-## Case studies
+## Case study — why the Review→Fix stage exists
 
-**Why the Review→Fix stage exists.** A `/sdlc` run reported everything green — 969→981
+ A `/sdlc` run reported everything green — 969→981
 tests passing, flowsim 7/7 match, plan-validate 8/8, clean container logs. Three independent
 adversarial review passes (a different model from the implementer, run manually) then found 6
 real bugs the green suite never caught — a double-decoded URL, an hourly in-memory state reset
@@ -346,8 +355,9 @@ out of the box `/sdlc` and `/brainstorm --vet ultra` run their fan-outs on Sonne
 
 **The consequence worth knowing:** because the cap only *lowers*, a stage whose built-in
 tier is `haiku` cannot be raised by `models.cap` or `--model` at all. The per-stage key is
-the only lever — which is why `models.sanity` exists. Stage 1.5 is
-never gated, so it runs on every single run.
+the only lever — which is why `models.sanity` exists. It governs the **sanity check, which is
+Stage 1.5** (Stage 1 is plan parsing, which dispatches nothing — that is why the shorthand
+above starts at "sanity"). Stage 1.5 is never gated, so it runs on every single run.
 
 `agents.*` sets **how many** agents each fan-out stage dispatches. Cost scales roughly
 linearly — one agent (or reviewer call) per entry — so trimming
