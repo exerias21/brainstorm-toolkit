@@ -296,7 +296,7 @@ by a live-data check. Total cost: ~240k tokens across 3 passes, each 1–6 minut
   python scripts/token-audit.py --session <uuid> --check-cap sonnet     # full breakdown
   ```
 
-  Use it before tuning cost; the intuitive levers are usually the wrong ones. On an audited run, **81% of tokens were the orchestrator's own context**, not the sub-agent fan-out: shell traffic ~53%, file bodies written into context instead of delegated ~18%, narration only ~7%. Lowering model tiers addressed the remaining 19%.
+  Use it before tuning cost; the intuitive levers are usually the wrong ones — see *Cost* above for the audited run that makes the case.
 
 ## Maintaining this repo
 
