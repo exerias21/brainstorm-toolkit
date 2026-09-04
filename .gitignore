@@ -17,6 +17,7 @@ __pycache__/
 
 # Consumer-side artifacts (this is a plugin repo, not a consumer)
 plans/
+!docs/plans/
 TASKS.md
 GOTCHAS.md
 CHEATSHEET.md
