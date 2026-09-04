@@ -37,6 +37,8 @@ This is the one rule a future edit must not break.
 | Values | `haiku` \| `sonnet` \| `opus` | `haiku` \| `sonnet` \| `opus` \| `fable` |
 | Stages | 1.5, 2, and every other fan-out | 5.7 / 5.8 only |
 
+Never route an Axis 2 value through the Axis 1 cap, and never let a dispatch omit `model`: a
+dispatch with no `model` inherits the session tier and bypasses the cap with zero error and
 zero log line. This is the highest-priority hazard in this file.
 
 ## Axis 1 — the cap is a CEILING, not a setting
@@ -55,7 +57,7 @@ it — both only lower. **The per-stage key is the only lever.** That is precise
 `models.sanity` exist: Stage 1.5 defaults to Haiku and is never
 gated, so before these keys existed it ran at Haiku on every run with no escape hatch.
 
-**Sonnet-first default:** the effective cap defaults to `sonnet`
+**Sonnet-first default:** the effective cap defaults to `sonnet`;
 `--model opus` (cap = opus = no ceiling) is the deliberate opt-up.
 
 The cap governs **sub-agent dispatch only** — never the session orchestrator running the
@@ -108,12 +110,22 @@ repeat — so a cheaper, different model is the point.
 back to the highest available of `opus`/`sonnet`/`haiku`, preferring `opus`, logged once.
 `fable` being billed is **not** an unavailability case.
 
+### Independence — observed, never enforced by re-tiering
+
+The reviewer should differ from the implementer's effective tier. When the two collide, the
+stage **still dispatches the value you configured** and marks `review.json.data.independence`
+`"degraded"` (findings surfaced, never auto-fixed), with one log line. It never bumps the
+reviewer to a higher tier on your behalf: the reviewer's default is already the ceiling, so a
+bump could only ever fire against an explicit `models.code_review` / `--review-model` value —
+which made `code_review: "sonnet"` unreachable under the default `cap: sonnet`. An explicit
+Axis 2 value is always the dispatched value.
+
 ### The cap interaction users misread — say it out loud
 
 `models.cap` does **not** govern Axis 2. That is deliberate (a capped reviewer collapses onto
 the implementer and defeats independence), but from outside it reads as a bug, and the
 independence check *hides* it: `cap: sonnet` puts the implementer on sonnet, which **satisfies**
-the same-tier check, so the reviewer stays at full `opus` and no bump/degrade line ever fires.
+the same-tier check, so the reviewer stays at full `opus` and no independence line ever fires.
 The user sees `cap: sonnet` next to N Opus agents with nothing connecting the two.
 
 So when a cap is set **and** the reviewer outranks it, emit once:
@@ -124,7 +136,8 @@ review: reviewer runs <model> on <n> lens(es) + verify + fix-planner. models.cap
         agents.code_review_max_lenses.
 ```
 
-it silently no-ops back to the call site's default tier, with zero error and zero log line.
+Both suggestions in that line are real: `models.code_review` is honored as written (see
+*Independence* above), and `agents.code_review_max_lenses` truncates the fan-out.
 
 Axis 2's cost is `(lenses + verify + fix-planner) x reviewer model`, and every one of those
 calls is at the reviewer model — so **fan-out width, not `models.cap`, is what bounds it.**
@@ -169,6 +182,11 @@ silent. `validate_skills.py` checks that fan-out skills point at this file.
 ## Runtime regimes
 
 - **Claude** → parallel sub-agents; the tier resolved below is passed at each dispatch.
+  Claude Code also has `CLAUDE_CODE_SUBAGENT_MODEL` (a default for dispatches that omit
+  `model`) and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` (v2.1.257+, overrides *every* dispatch,
+  frontmatter included). The former is a safe floor under this contract; the latter collapses
+  Axis 2 onto Axis 1 and defeats reviewer independence — do not set it on a repo that enables
+  the review stage.
 - **Copilot** → stages run inline in the session model; the cap is **advisory** (there is no
   sub-agent tier to lower). The `agents.*` counts still apply.
 - **Codex** → advisory too. Codex has native subagents, but per-subagent model override is

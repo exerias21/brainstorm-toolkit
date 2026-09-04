@@ -44,7 +44,7 @@ to `4`; it must never resolve to `0`, which would silently disable the stage rat
 *reviewer* model, plus one verify pass and one fix-planner at the same model. `models.cap` does
 **not** govern this axis, deliberately. The interaction is easy to misread: `cap: sonnet` puts
 the implementer on sonnet, which *satisfies* the independence check below, so the reviewer stays
-at full `opus` and no bump/degrade warning ever fires. When a cap is set and the reviewer
+at full `opus` and no independence warning ever fires. When a cap is set and the reviewer
 outranks it, emit:
 
 ```
@@ -123,10 +123,27 @@ Per `pipeline.review_fix.mode`:
   the whole bound.
 - **`off`**: emit findings to `review.json` only; Stage 5.8 does not run.
 
-**Independence enforcement:** the reviewer model must differ in effective tier from the
-implementer's effective tier (its default after the cap is applied); if they collide, the reviewer bumps
-one tier up, or — if already at the ceiling — the run is marked `data.independence = "degraded"`
-in `review.json` and every finding that run is surfaced only, never auto-fixed.
+**Independence enforcement — observe, never override.** Compare the reviewer's resolved
+value to the implementer's effective tier (its default after the cap is applied). When they
+differ (or the reviewer is `fable`, outside the ladder), `data.independence = "ok"`. When they
+collide, **dispatch the configured reviewer anyway** and mark the run
+`data.independence = "degraded"` in `review.json`: every finding that run is surfaced only,
+never auto-fixed (rubric criterion #4 above). Emit once, before dispatching:
+
+```
+review: reviewer (<model>) and implementer (<tier>) resolve to the same tier — independence
+        degraded; findings are surfaced, never auto-fixed. Set models.code_review to a
+        different tier (or fable) to restore it.
+```
+
+**The reviewer is never silently re-tiered.** An earlier version of this rule "bumped" a
+colliding reviewer one tier up. Because the reviewer's default is `opus` (the ceiling), that
+bump could only ever fire against an *explicit* `models.code_review` / `--review-model`
+value — so `models.code_review: "sonnet"` under the default `cap: sonnet` was unreachable, and
+the log line that told users to "lower it with `models.code_review`" advised a knob the bump
+then undid. The rule now records the collision instead of correcting it: an explicit value is
+always the dispatched value, and the cost of a same-tier reviewer is an honest `degraded` flag,
+not a surprise Opus bill.
 
 **Oscillation guard (fingerprint-based):** each confirmed finding gets a stable fingerprint —
 `file + ":" + lens + ":" + floor(line / 10)`. Persist `fixed_fingerprints[]` per loop iteration.

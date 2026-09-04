@@ -103,7 +103,9 @@ Skip if the key is missing.
 **`--loop` — fix e2e failures instead of only reporting them** (absorbed from the former
 `/test-check --loop`). With `--loop`, dispatch the `e2e-test-runner` agent (by type:
 `brainstorm-toolkit:e2e-test-runner`, or bare `e2e-test-runner` when vendored) rather than
-running the command inline. It separates flaky failures from real ones, re-runs each failure
+running the command inline — Sonnet by default, per `skills/sdlc/templates/models.md`; pass
+`model` explicitly, since the agent pins no tier and an omitted `model` inherits the session
+model. It separates flaky failures from real ones, re-runs each failure
 once before believing it, dispatches fixes, and re-runs until green or `test.e2e_max_fix_loops`
 (default 3) is hit. It also reads `test.e2e_patterns_file` and `test.e2e_rerun_failed_only`
 when set. Without `--loop`, this step stays one-shot: run, report, don't fix.

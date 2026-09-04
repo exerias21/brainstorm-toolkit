@@ -44,6 +44,33 @@ gains the parameter.
 
 ---
 
+## Independence: why the reviewer is never re-tiered (2026-09-04)
+
+Stage 5.7 compares the reviewer's resolved value to the implementer's effective tier. The
+original rule *corrected* a collision by bumping the reviewer one tier up, or marked the run
+`degraded` when already at the ceiling. Two facts made the bump a defect rather than a
+safeguard:
+
+1. The reviewer's default is `opus`, the ceiling. A bump can only fire when the reviewer is
+   *below* the ceiling — i.e. only when the user set `models.code_review` / `--review-model`
+   explicitly. The bump therefore never protected a default; it only overrode explicit config.
+2. Under the standing `cap: sonnet`, the implementer is `sonnet`, so `code_review: "sonnet"` —
+   the exact edit the stage's own cap-warning recommends — always collided and always ran
+   Opus. The log line advised a knob the rule then undid.
+
+The fix keeps the *observation* (a same-tier reviewer is weaker, so the run is `degraded` and
+nothing auto-fixes) and drops the *correction*. Consequence to keep in mind when editing either
+axis: an explicit Axis 2 value is always the dispatched value. If a repo wants a stronger
+reviewer, it says so; the toolkit never spends Opus on the user's behalf.
+
+Related harness knob, for the record: Claude Code's `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`
+(v2.1.257+) overrides every sub-agent dispatch, per-invocation `model` included. On a repo with
+the review stage enabled it collapses Axis 2 onto whatever it forces and defeats independence
+silently; `CLAUDE_CODE_SUBAGENT_MODEL` without `_FORCE` is only a default for dispatches that
+omit `model`, which this contract never does, so it is harmless here.
+
+---
+
 ## Migration from the old keys
 
 The old keys are **no longer read** (clean break, 2026-07-26):

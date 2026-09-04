@@ -50,7 +50,7 @@
 
   "modules": ["api", "web", "worker"],
 
-  "_models_comment": "EVERY model-tier knob lives here -- canonical contract: skills/sdlc/templates/models.md. TWO INDEPENDENT AXES. Axis 1 (the fan-out ladder: cap/sanity; values haiku|sonnet|opus) is bounded by the cap. Axis 2 (code_review*; values haiku|sonnet|opus|fable) is NOT governed by the cap -- 'cap' never lowers a reviewer model. 'cap' is a CEILING that only ever LOWERS, so a stage whose built-in default is haiku CANNOT be raised by cap or --model; its per-stage key here is the only lever. Per-run overrides: --model <tier> (axis 1), --review-model <name> (axis 2).",
+  "_models_comment": "EVERY model-tier knob lives here -- canonical contract: skills/sdlc/templates/models.md. TWO INDEPENDENT AXES. Axis 1 (the fan-out ladder: cap/sanity; values haiku|sonnet|opus) is bounded by the cap. Axis 2 (code_review*; values haiku|sonnet|opus|fable) is NOT governed by the cap -- 'cap' never lowers a reviewer model, and an explicit code_review value is always the dispatched value: if it lands on the implementer's tier the run is marked independence: degraded (findings surfaced, never auto-fixed) -- it is never silently bumped to a higher tier. 'cap' is a CEILING that only ever LOWERS, so a stage whose built-in default is haiku CANNOT be raised by cap or --model; its per-stage key here is the only lever. Per-run overrides: --model <tier> (axis 1), --review-model <name> (axis 2).",
   "models": {
     "cap": "sonnet",
     "sanity": null,

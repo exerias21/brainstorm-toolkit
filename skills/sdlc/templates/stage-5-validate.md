@@ -38,8 +38,11 @@ as failures; `preexisting[]` is noted separately and does not gate.
 - Backend unit tests (if `test.unit` configured **and** the backend surface was touched)
 - **E2E / visual check** — dispatch the `e2e-test-runner` agent (by type:
   `brainstorm-toolkit:e2e-test-runner`, or bare `e2e-test-runner` when vendored) if `test.e2e`
-  is configured **and** the frontend surface was touched. It runs its own bounded fix loop with
-  a flaky-test guard; its iterations count toward the shared budget. If the frontend surface was
+  is configured **and** the frontend surface was touched — **Sonnet by default** (Opus only on
+  `--model opus`), per `skills/sdlc/templates/models.md`, and pass `model` explicitly: the agent
+  definition pins no tier, so an omitted `model` inherits the session model and bypasses the
+  cap. It runs its own bounded fix loop with a flaky-test guard; its iterations count toward
+  the shared budget. If the frontend surface was
   touched and no `test.e2e` is configured, raise a **soft-stop candidate** ("frontend changed
   but no visual check ran") — never pass silently. Its semantics (ask once, proceed on
   confirmation, proceed-and-document when non-interactive) are the **Soft-stop tier** section of
