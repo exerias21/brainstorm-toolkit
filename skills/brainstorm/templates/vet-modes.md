@@ -30,11 +30,13 @@ Skip Step 6.5 entirely. Step 7 (single validator) runs alone.
 Reuse the three prompts at `skills/sdlc/templates/stage-1.5-sanity-check.md`
 (`paths`, `completeness`, `gotchas`) so vetting language is consistent across
 skills. Substitute `{plan_file}` = the saved plan path from Step 6 and
-`{feature_name}` = the topic slug. Dispatch all three Haiku agents in a single
-message. Cost: ~3 small agents, ~30s.
+`{feature_name}` = the topic slug. Haiku by default (`models.sanity` raises it), resolved per
+`skills/sdlc/templates/models.md`; print `model: <tier> (cap: <cap|none>)`, then dispatch all
+three in a single message. Cost: ~3 small agents, ~30s.
 
 #### `deep` — `light` + 1 Sonnet stress-test agent
-After the 3 Haiku agents return, dispatch one Sonnet agent with this prompt:
+After the 3 agents return, dispatch one agent — Sonnet by default, resolved per
+`skills/sdlc/templates/models.md`; print the `model:` line first — with this prompt:
 
 > Read the plan at {plan_file}. Try to find a way it would fail. Apply
 > inversion: assume the plan is wrong, and identify the single most likely

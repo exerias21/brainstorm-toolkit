@@ -8,7 +8,7 @@ description: >
   /brainstorm, mentions "brainstorm", "let's think through", "I have an idea", "what if we",
   "how should we approach", "let's explore", or otherwise wants to ideate on a feature, improvement,
   or architectural change before jumping into code. This is the conversational planning companion —
-  for heavy autonomous multi-agent product research, use /brainstorm-team (Claude Code only).
+  for heavy autonomous multi-agent product research, use /brainstorm-team.
 argument-hint: "[topic] [--vet light|deep|ultra|none] - optional: topic + multi-pass vet mode"
 disable-model-invocation: true
 metadata:

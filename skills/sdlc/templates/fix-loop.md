@@ -14,14 +14,8 @@ its pause are specified once, here.
 **The loop.** On a gate failure: parse the structured results; for each failure extract test
 name, expected-vs-actual, file path, function; dispatch **one fix agent** — **Sonnet by default**
 (Opus only on `--model opus`), per `skills/sdlc/templates/models.md` — told to fix *only* those failures
-with no refactor; re-run the gate. Repeat to a maximum of **3 iterations, shared across Stages
-5/5.5/5.6** (Stage 5.7 has its own separate budget — see there for why sharing it is wrong).
-
-**Stage 4 no longer exists.** It ran `eval.runner` and then Stage 5 ran the same command again as
-its eval-regression layer, so its gate was a strict prefix of Stage 5's. Sharing this budget, its
-pause could halt a run on **self-authored** evals before the project's real suite was ever
-consulted — a weak oracle pre-empting the strong one. Stage 3 still authors the tests; Stage 5
-runs them. See `plans/brainstorm-post-merge-cleanup.md` (D2).
+with no refactor; re-run the gate. Repeat to a maximum of **3 iterations, shared across Stage
+5's gates** (Stage 5.7/5.8 has its own separate budget).
 
 **The pause.** On budget exhaustion, emit this block, inferring the class from *the failing
 stage's own* sidecar (`validate.json`, `review.json`):

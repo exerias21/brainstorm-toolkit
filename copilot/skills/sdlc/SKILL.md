@@ -57,35 +57,46 @@ regardless of verbosity — the per-dispatch `model:` line, gate verdicts, PAUSE
 - **Task id** (`task-NNN` or a row number) → read that row + linked task file;
   its `parent_plan:` becomes the Stage 5 plan target.
 - **Task range** (`N-M`, `task-N..task-M`, `tasks N-M`) → resolve every
-  `Active / Pending` row in range; execute as a batch (one commit per task).
+  `Active / Pending` row in range; execute as a batch (changes accumulate in the
+  working tree — see Stage 6 range semantics; this skill never commits). Record
+  the resolved ids in `run.json.data.task_range`.
 - **Ad-hoc description** → create a new row + task file via `/task`'s procedure.
-- **`--queue [N]`** (attended backlog loop) → select `Active / Pending` rows by
-  priority (top `N` or `pipeline.loop.max_items`, default 5; `P1>P2>P3`, `[~]`
-  first) and loop the pipeline over them, **re-scanning `TASKS.md` between items**
-  so rows added mid-run join the loop. Stop conditions (`pipeline.loop.*`): a
-  `paused`/`failed` item **parks** the loop (write its `/sdlc-status` hint to
-  `.claude/.next-action`), a `confirm:true` next action parks it, and
-  `max_items` / `max_consecutive_failures` (default 2) bound it. **No git writes;
-  every park is a written next-action, never a dead end.** Each item's envelope
-  stays **canonical** (`state-schema.md`: `feature_slug`/`plan_file` keys, required
-  fields, canonical stage names — never `slug`/`plan` or `phase-*` stages; queue/phase
-  data goes in `data.*`) with a **distinct per-item slug** `<plan-slug>-<row-id>` (never
-  the shared plan slug — items would collide on one envelope dir). On park: set
-  `run.json.status = "paused"` + `run.json.next_action = {cmd, confirm}`, **and — mandatory,
-  don't skip it —** append the sentinel line:
-  `line='{"cmd":"/sdlc <plan> --queue","source":"sdlc","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action`
-  (plus a `confirm:true` line for the confirm action if it parked on one). The **sentinel is
-  the ONLY thing the Stop hook surfaces**; `run.json.next_action` alone is invisible, so a park
-  that sets only the envelope field leaves the loop dead.
-- **Long runs — context hygiene:** a many-hour loop accumulates context in the one orchestrator
-  session. Config knobs + the fresh-process-per-item escalation (Copilot has no compaction/reseed
-  hook) are in `docs/LOOP-HYGIENE.md` (plugin repo).
+  No plan, so Stage 5's plan check self-skips.
+- **`--queue [N]`** → resolve this flag first; on any other input skip without opening the
+  template. When it *is* `--queue`, **read `skills/sdlc/templates/queue-mode.md` now** and run
+  it (selection, per-item slug, stop conditions, re-scan, park protocol and its mandatory
+  sentinel). Copilot has no compaction/reseed hook, so a many-hour loop
+  needs the fresh-session-per-item escalation in `docs/LOOP-HYGIENE.md` (plugin repo).
 
-Mark resolved rows `[~]`. Derive `slug` per `docs/CONVENTIONS.md`; initialize
-`.claude/pipeline/<slug>/` with the canonical `run.json` — **including the computed
-required fields that get dropped otherwise (DQ6):**
-`plan_hash: "sha256:$(sha256sum <plan> | cut -d' ' -f1)"`, `started_at` = `updated_at`
-= `"$(date -u +%Y-%m-%dT%H:%M:%SZ)"`. Omitting them breaks `--resume` + `/sdlc-status`/`/repo-health` staleness.
+Mark resolved rows `[~]`. Derive `slug`: the plan filename minus its extension, minus a leading
+`brainstorm-` / `team-brainstorm-` / `pbi-NNN-` / `task-NNN-` prefix, lowercased, every character
+outside `[a-z0-9-]` replaced with `-`, runs collapsed, ends trimmed; it must match
+`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$` or the run stops with a clear error (maintainer record:
+`docs/CONVENTIONS.md`). Capture `base_commit = git rev-parse HEAD` and
+initialize `.claude/pipeline/<slug>/` with the canonical `run.json` — `pipeline: "sdlc"`,
+`base_commit`, `status: "in_progress"`, **and the computed required fields that get dropped
+otherwise (DQ6):** `plan_hash: "sha256:$(sha256sum <plan> | cut -d' ' -f1)"`, `started_at` =
+`updated_at` = `"$(date -u +%Y-%m-%dT%H:%M:%SZ)"`. Omitting them breaks `--resume` and
+`/sdlc-status`/`/repo-health` staleness detection.
+
+**Then parse the plan.** Read the resolved plan/task file(s) fully and extract the feature
+name, the implementation steps (numbered lists with file paths, or checkbox rows), the files to
+create or modify, the acceptance criteria ("expected"/"should"/"must"/"verify" language) and
+cross-module touchpoints. **Write `stage-outputs/parse.json`** with `data.feature_name`,
+`data.files_to_change`, `data.implementation_step_count`, `data.acceptance_criteria_count` and
+append `parse` to `run.json.stages_completed` — Stage 2's gate reads it and cannot run without it.
+
+**Skill-repo detection** (automatic): if `.claude-plugin/marketplace.json` exists at repo root,
+switch to **Skill-repo mode** below for the rest of the run. **Vendored-skill guard:** if it is
+absent but the plan's changed files target `.claude/skills/**`, `.github/skills/**` or
+`.agents/skills/**`, **stop and report** — those edits belong upstream in the canonical toolkit
+repo, not in a consumer's pipeline.
+
+**Continuity detection** (prompt, never auto) — the shared scan in
+`skills/sdlc/templates/envelope-staleness.md`: skip entirely on the `main_branch`; on a feature
+branch take only the single most-recently-updated run whose `base_commit` is an ancestor of
+HEAD, and prompt only if it is non-terminal or complete with HEAD advanced past that
+`base_commit`. One prompt at most, or none.
 
 **`--resume`:** if `--resume` was passed, read the existing `run.json` instead of
 re-initializing — reject on a `plan_hash` mismatch, skip stages whose sidecar shows
@@ -188,9 +199,8 @@ push, PR, or `/review`. You review and commit.
    the commit is left to you.
 5. **Leave re-entry rows** so the queue keeps the follow-up: when a
    manifest/lockfile/Dockerfile changed (deploy-delta), append
-   `- [ ] (P1) rebuild <env> for {feature-slug} (dependency change — rebuild, not restart) — plans/{feature-slug}.md`;
-   and a `- [ ] (P2) verify {feature-slug} deployed — `/repo-health` plans/{feature-slug}.md`
-   row closes the loop the same way `/sdlc` Stage 6 does.
+   `- [ ] (P1) rebuild <env> for <slug> (dependency change — rebuild, not restart) — plans/<slug>.md`;
+   and a `- [ ] (P2) verify <slug> deployed — /repo-health` row closes the loop.
    **Then print the manual-verification line** from `.claude/project.json` `stack.*` (all
    keys optional): `stack.rebuild` on the deploy-delta case (a dependency changed, so a
    plain restart runs stale code), otherwise `stack.up`; append `stack.url` when set.
@@ -212,11 +222,29 @@ requirements verdict plus the flowsim flow trace and whether it was witnessed or
 advisory (or "skipped — no plan target") — and anything left open. Make clear **nothing was
 committed** — the next move is yours.
 
+## Skill-repo mode (auto-detected)
+
+Active when `.claude-plugin/marketplace.json` exists at repo root. A skill repo has no test
+surface, so three stages change; every other stage runs unmodified.
+
+| Stage | Skill-repo behavior |
+|---|---|
+| Stage 3 — Generate evals | **skip** — append `generate-evals` to `run.json.stages_skipped` |
+| Stage 5 — Validate | **substitute** `skills/sdlc/templates/stage-5-skill-repo.md` (validator, marketplace registration, template-reference resolution, setup.sh dry install; soft: line ceilings, README drift, overlay parity). Writes `validate.json` with `data.mode = "skill-repo"` |
+| Stage 5.7 — Adversarial review | **adapt, never self-skip** — a docs-only diff is the code surface here |
+
+## Safety rules
+
+- **Stop on ambiguity** — unclear plan steps: pause and ask.
+- **Stop on repeated failures** — a fix loop that exhausts its budget reports rather than grinding.
+- **Don't fix pre-existing failures** — only what this run introduced; `preexisting[]` is reported, never gated on.
+- **Autonomy overrides interactive output styles** — the explicit invocation wins; run autonomously.
+
 ## Gotchas
 
 - **Does no git writes.** No commit, branch, push, PR, or `/review`. Hands you
   a validated tree; you commit.
-- **Stage 5's plan check runs whenever there's a plan to check.**
+- **Stage 5's plan check runs whenever there's a plan to check.** It skips only
   when there is no plan target — not behind a frontmatter knob.
 - **Don't fork the shared templates.** Stage bodies live once in
   `skills/sdlc/templates/`; edit the template, never copy it here.

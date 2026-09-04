@@ -18,6 +18,7 @@ ceilings).
 "agents": {
   "sanity_focuses": ["paths", "completeness", "gotchas"],
   "code_review_lenses": ["correctness", "plan-alignment", "config-env-docs", "security"],
+  "code_review_max_lenses": 4,
   "code_review_passes": 1,
   "code_review_max_fix_loops": 3,
   "decompose_min_tasks": 6
@@ -54,7 +55,7 @@ on the expensive calls without upgrading the cheap ones.
 **The consequence that surprises everyone:** a stage whose built-in tier is `haiku` cannot
 be raised by the cap. `models.cap: "opus"` does not raise it; `--model opus` does not raise
 it — both only lower. **The per-stage key is the only lever.** That is precisely why
-`models.sanity` exist: Stage 1.5 defaults to Haiku and is never
+`models.sanity` exists: Stage 1.5 defaults to Haiku and is never
 gated, so before these keys existed it ran at Haiku on every run with no escape hatch.
 
 **Sonnet-first default:** the effective cap defaults to `sonnet`;
@@ -65,17 +66,12 @@ skill. See *Session nudge*.
 
 ### Per-stage tiers (Axis 1)
 
-| Key | Stage | Built-in default | Raise it when |
-|---|---|---|---|
-| `models.sanity` | 1.5 plan pre-flight | `haiku` (all focuses) | `completeness` is judging whether a plan hangs together — judgment work. Never gated, so this costs on **every** run |
-
-Each replaces the built-in default for that stage, **then still passes through the cap**:
-default still dispatches Sonnet unless you also pass `--model opus`. These are defaults
-*within* Axis 1, never a new axis.
-
-**Wired today: `models.sanity` only.** A key that parses but gates nothing is the exact failure
-this contract exists to prevent, so per-stage keys are added when a dispatch site reads them, not
-in advance.
+**Wired today: `models.sanity` only** — Stage 1.5 plan pre-flight, built-in default `haiku` for
+every focus; raise it when `completeness` must judge whether a plan hangs together (never gated,
+so it costs on every run). It replaces the built-in default **then still passes through the cap**:
+`models.sanity: "opus"` under `cap: "sonnet"` dispatches Sonnet unless you also pass `--model
+opus`. A key that parses but gates nothing is the failure this contract exists to prevent, so
+per-stage keys are added when a dispatch site reads them, not in advance.
 
 ### Resolution (Axis 1)
 
@@ -120,27 +116,14 @@ bump could only ever fire against an explicit `models.code_review` / `--review-m
 which made `code_review: "sonnet"` unreachable under the default `cap: sonnet`. An explicit
 Axis 2 value is always the dispatched value.
 
-### The cap interaction users misread — say it out loud
+### The cap interaction — say it out loud
 
-`models.cap` does **not** govern Axis 2. That is deliberate (a capped reviewer collapses onto
-the implementer and defeats independence), but from outside it reads as a bug, and the
-independence check *hides* it: `cap: sonnet` puts the implementer on sonnet, which **satisfies**
-the same-tier check, so the reviewer stays at full `opus` and no independence line ever fires.
-The user sees `cap: sonnet` next to N Opus agents with nothing connecting the two.
-
-So when a cap is set **and** the reviewer outranks it, emit once:
-
-```
-review: reviewer runs <model> on <n> lens(es) + verify + fix-planner. models.cap (<cap>) does
-        NOT govern this axis — lower it with models.code_review, or cut the fan-out with
-        agents.code_review_max_lenses.
-```
-
-Both suggestions in that line are real: `models.code_review` is honored as written (see
-*Independence* above), and `agents.code_review_max_lenses` truncates the fan-out.
-
-Axis 2's cost is `(lenses + verify + fix-planner) x reviewer model`, and every one of those
-calls is at the reviewer model — so **fan-out width, not `models.cap`, is what bounds it.**
+`models.cap` does **not** govern Axis 2 (a capped reviewer collapses onto the implementer and
+defeats independence). From outside it reads as a bug: `cap: sonnet` next to N Opus lenses with
+nothing connecting the two. So when a cap is set **and** the reviewer outranks it, Stage 5.7
+emits its cap-interaction line once — the literal text lives in `stage-5.7-review-fix.md`, the
+file open at emit time. Axis 2's cost is `(lenses + verify + fix-planner) x reviewer model`, so
+**fan-out width, not `models.cap`, is what bounds it.**
 
 ## Agent counts (`agents.*`)
 

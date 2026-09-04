@@ -111,10 +111,8 @@ Produce a markdown block:
 ### Flow 2: ...
 ```
 
-## Rules
+## Output limits
 
 - **Three hops max by default.** Deeper chains get unreliable; if the plan implies a 5-hop flow, split it into two flows of 3 hops each.
-- **Every claim needs a `file:line` anchor** or an explicit `MISSING` marker. No "I think this is in the code somewhere".
-- **Don't invent flows the plan didn't claim.** If the plan is vague, say so and ask the user to clarify before tracing.
 - **Don't fix anything.** Flowsim is read-only. Hand findings to the user (or, when running inside the pipeline, to Stage 5's fix loop).
 - **Cap output at ~60 lines of markdown** unless there are many flows. A 200-line flowsim report is a sign the plan is too ambitious for one feature.

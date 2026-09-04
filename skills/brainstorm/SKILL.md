@@ -22,13 +22,6 @@ user. Unlike `/brainstorm-team` (which launches autonomous agents to produce a
 research document), this skill is conversational — it thinks out loud, asks questions, and iterates
 on ideas together with the user before producing an implementation plan.
 
-**This skill does not use Plan mode.** It writes its plan directly to
-`plans/brainstorm-<topic-slug>.md` in the repo. Plan mode's approve-and-proceed gate adds a
-second, redundant approval on top of the conversational convergence this skill already does
-with the user, and its sandbox blocks the repo-root write that every downstream skill
-(`/sdlc`, `/flowsim`, `/repo-health`) depends on. The plan file on disk
-is the artifact — not a plan-mode proposal.
-
 ## Subagent Usage During Brainstorming
 
 The conversational loop stays in the **main context window** — you and the user share
@@ -48,7 +41,8 @@ Do not delegate general exploration or ideation to subagents outside these two p
 ### Step 0: Set the frame (no Plan mode)
 
 **Do NOT call `EnterPlanMode`.** This skill runs in the normal conversational mode and
-persists its output as a file.
+persists its output as a file: plan mode's approve gate would duplicate the conversational
+convergence below, and its sandbox blocks the repo-root write every downstream skill reads.
 
 Say in one line that this is an exploration session, not an implementation session: you'll
 think out loud, explore the codebase, generate options, and iterate with the user to
@@ -205,9 +199,7 @@ target — Write creates parent dirs automatically).
 Do this **before** Step 7 (validation) — the validation agent reads the plan from
 this path.
 
-Because this skill never enters Plan mode (Step 0), the write goes straight to the
-repo root with no sandbox in the way and no re-persist step. If you find yourself
-holding a transient host plan path (`~/.claude/plans/<random>.md`), something
+If you find yourself holding a transient host plan path (`~/.claude/plans/<random>.md`), something
 entered Plan mode against this skill's contract — write the canonical copy to
 `plans/brainstorm-<topic-slug>.md` and continue from there.
 
@@ -294,22 +286,15 @@ skill copies; editing them here diverges from canonical).` This is the
 pipeline is exactly the mis-route to avoid. (Authoring a *new app feature*
 proceeds normally below.)
 
-**Otherwise, pick the next command by flow continuity** — don't make the user
-re-choose a flow they've already established this session:
-- `/sdlc` is the delivery path either way — it runs the full pipeline and hands
-  back validated changes
-  with **no git writes**, so it's the safe default — it can't surprise the user
-  with a PR.
+**Otherwise the next command is `/sdlc`** — it runs the full pipeline and hands back
+validated changes with **no git writes**, so it is safe to take without asking.
 
 > These continuity rules are a slice of `/sdlc-status`'s **canonical decision ladder**
 > (rung 4 — a plan with no run; see `skills/sdlc-status/SKILL.md`). `/sdlc-status` is the source
 > of truth for "what's the next step"; this inline copy keeps `/brainstorm`
 > self-contained when the user hasn't got `/sdlc-status` in mind.
 
-Drop a **next-action sentinel** naming that command so the Stop hook surfaces
-it. The plan file MUST already exist at `plans/brainstorm-<topic-slug>.md`
-before writing the sentinel — Step 6 wrote it and Step 8.0 confirms it. A
-sentinel pointing at a missing plan is a bug.
+Drop a **next-action sentinel** naming that command so the Stop hook surfaces it.
 
 ```
 # Append ONE structured line (multi-slot seam — coexists with a gotcha entry;
@@ -330,16 +315,13 @@ plugin or run `setup.sh`/`/repo-onboarding` (else the `Next:` hint silently neve
 appears). Skip the sentinel only if the user explicitly chose "save for later" with no
 intent to ship.
 
-The plan file exists on disk (Step 8.0). Continue:
+Continue:
 
 1. **Show what's being built** (optional, cheap) — offer
    `/plan-html plans/brainstorm-<topic-slug>.md` to render the plan as a
    single-file HTML view the user or a stakeholder can scroll, for a
    shape-of-the-work read before delivery starts.
-2. **Continue into delivery** with the established flow, or `/sdlc` by
-   default — run the full pipeline. It hands back validated changes for the
-   user to commit; it does no git writes, so it can't surprise them with a
-   commit or a PR, and you don't need permission to take that path.
+2. **Continue into delivery** — `/sdlc plans/brainstorm-<topic-slug>.md`.
 3. **Save for later** — if the user signals they're done for now, leave the
    plan file and skip the sentinel.
 
@@ -348,7 +330,7 @@ criteria, proceed with delivery (option 2). If it's exploratory or has
 ambiguous tradeoffs, pause for the user to review (offer option 1's HTML view
 first).
 
-Transition conversationally — there is no planning-mode exit to perform.
+Transition conversationally.
 
 ## Tone and Style
 

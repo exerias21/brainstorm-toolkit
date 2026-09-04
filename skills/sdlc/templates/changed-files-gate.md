@@ -1,8 +1,8 @@
 # Changed-files gate
 
 A shared primitive for "did this change touch <surface>?" so stages don't each
-re-derive it. Consumed by `/sdlc` Stage 5 (e2e/visual trigger) and Stage 5
-(ui/data validator gating), and reusable by `/sdlc`.
+re-derive it. Consumed by `/sdlc` Stage 5 — both the e2e/visual trigger and the
+plan-validator gating — and by Stage 2's decompose gate.
 
 ## Source of truth
 
@@ -48,7 +48,7 @@ A consuming stage uses `touched` to decide whether its check is **required**:
 - **deploy-delta touched** → a dependency manifest / lockfile / Dockerfile
   changed, which means **"code committed" ≠ "running environment reflects
   it."** The deployed app needs a **rebuild, not just a restart**. Emit a
-  `⚙ rebuild required (not restart)` note in the PR body and the Stage-7 test
+  `⚙ rebuild required (not restart)` note in the Stage 7 report and its test
   checklist. (Containerized test runners with a baked test dir may also need
   new test files copied/rebuilt before they're visible — flag that too.) The
   pipeline validates the diff; this flags the deploy delta the diff implies.

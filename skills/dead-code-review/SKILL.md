@@ -91,12 +91,8 @@ Provide a summary table:
 
 ## Rules
 
-- Use the tiered assignments in `references/lenses.md` (Haiku / Sonnet / Opus) — do NOT promote everything to Opus.
-  The fan-out is **Sonnet-first**, so the Opus tier is an explicit opt-up (`--model opus`); each agent's
-  tier is chosen based on reasoning load and blast radius of a wrong
-  call. If a specific run genuinely needs deeper analysis (e.g., the database agent flags ambiguous
+- If a specific run genuinely needs deeper analysis (e.g., the database agent flags ambiguous
   cross-module references), promote that single agent — not the whole fleet.
-- Agents do NOT use subagents — each does all its own work
 - Never commit during the review — the user decides when to commit
 - Always run tests before AND after to verify zero regressions
 - Only remove code at HIGH confidence unless the user explicitly approves MEDIUM items

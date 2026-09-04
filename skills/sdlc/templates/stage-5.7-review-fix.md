@@ -136,14 +136,8 @@ review: reviewer (<model>) and implementer (<tier>) resolve to the same tier —
         different tier (or fable) to restore it.
 ```
 
-**The reviewer is never silently re-tiered.** An earlier version of this rule "bumped" a
-colliding reviewer one tier up. Because the reviewer's default is `opus` (the ceiling), that
-bump could only ever fire against an *explicit* `models.code_review` / `--review-model`
-value — so `models.code_review: "sonnet"` under the default `cap: sonnet` was unreachable, and
-the log line that told users to "lower it with `models.code_review`" advised a knob the bump
-then undid. The rule now records the collision instead of correcting it: an explicit value is
-always the dispatched value, and the cost of a same-tier reviewer is an honest `degraded` flag,
-not a surprise Opus bill.
+**The reviewer is never re-tiered on your behalf** — an explicit `models.code_review` /
+`--review-model` value is always the dispatched value (why: `docs/MODEL-AXES.md`).
 
 **Oscillation guard (fingerprint-based):** each confirmed finding gets a stable fingerprint —
 `file + ":" + lens + ":" + floor(line / 10)`. Persist `fixed_fingerprints[]` per loop iteration.
@@ -156,9 +150,10 @@ original fix + regression side by side (same shape as Stage 5's persistent-misma
 `loops[]` array carrying one entry per iteration. `review-fix` is recorded once in
 `run.json.stages_completed` regardless of loop count.
 
-**Blocking posture:** a surviving HIGH-severity confirmed finding (auto-fixable and unresolved
-after budget exhaustion, or a HIGH-severity design decision) **blocks** — Stage 6 does not create
-a PR; `run.json.status = "paused"`, same shape as an eval max-loops pause.
+**Posture on a surviving HIGH finding (unresolved after budget, or a HIGH design decision):**
+it does **not** block — `/sdlc` does no git writes, so there is nothing to gate. List it first in
+the Stage 7 report and leave `run.json.status` as the run's own verdict; the human decides before
+committing.
 
 **Post-fix validation:** if any fix was actually applied this run, re-run the Stage 5 `validate`
 gate exactly once before Stage 6 (a single confirmation pass, not a fresh budget). A regression
@@ -270,14 +265,13 @@ field reports the result of the re-review that ran immediately *after* the fix, 
 An id is only ever meaningful paired with the pass that minted it -- there is no guaranteed stable
 identity for "the same defect" across loops; the oscillation guard uses a content fingerprint for
 that instead. Persisted `fix_specs`/`decisions` are **id-keyed** (`finding_id`), never index-keyed
--- the fix-planner's agent-return shape is index-keyed, but the JS maps each `finding_index` to its
+-- the fix-planner's agent-return shape is index-keyed, but the orchestrator maps each `finding_index` to its
 confirmed finding's `finding_id` when interpolating the fix agent's envelope payload, so raw indices
 never reach the sidecar.
 
-**`reverify` is never written by the fix agent itself, on either path.** The fix agent runs
-*before* its own loop's re-review exists, so it cannot know that result.reason` is always `"workflow auto-apply"` (there
-is no human channel there) rather than `null` -- the `null` shown in the example above is the
-prose-path, human-interactive-approval case.
+**`reverify` is never written by the fix agent itself.** The fix agent runs *before* its own
+loop's re-review exists, so it cannot know that result; the orchestrator fills `reverify` after
+the re-review.
 
 ## `.claude/pipeline/_review-stats.json` — review circuit breaker (cross-run ledger)
 
@@ -310,11 +304,5 @@ file per repo, keyed by lens. It backs the Review→Fix stage's false-positive c
 - `review.json.data.demoted_lenses` is this run's *view* of which lenses were skipped because
   `_review-stats.json` already marked them demoted going in — the two files are consistent by
   construction (one reads what the other most recently wrote).
-- This mechanism (the sidecar, the writer-side update, and the demotion-aware lens filter) is
-  **active**: the per-lens ledger in `_review-stats.json` backs live lens demotion (a lens whose
-  confirmed-rate drops under 40% is demoted; 5 consecutive runs at ≥60% re-promote it, capped at the
-  last 20 runs per lens). `REVIEW_LENSES` filters out demoted lenses from dispatch on every run, and
-  `review.json.data.demoted_lenses` records which lenses were skipped because this ledger already
-  marked them demoted going in.
 
 ---

@@ -19,9 +19,8 @@
   },
 
   "stack": {
-    "_comment": "Optional. How to bring this project's runnable stack up/down for MANUAL verification — the hand-off at the end of /sdlc, or an ad-hoc 'get it running so I can click through'. Every key optional; a missing key means that action is unavailable and skills say so instead of guessing. These are NEVER run automatically: a skill may print the command, and only runs one when you ask.",
+    "_comment": "Optional. How to bring this project's runnable stack up for MANUAL verification — the hand-off at the end of /sdlc, or an ad-hoc 'get it running so I can click through'. Every key optional; a missing key means that action is unavailable and skills say so instead of guessing. These are NEVER run automatically: a skill may print the command, and only runs one when you ask.",
     "up": "docker compose up -d --build",
-    "down": "docker compose down",
     "_rebuild_comment": "Clean rebuild — used when a dependency manifest changed (see discipline.deploy_delta_globs), where a plain restart would silently run stale code.",
     "rebuild": "docker compose up -d --build --force-recreate",
     "_url_comment": "Where to look once it is up. Printed in the hand-off so you don't have to remember the port.",
@@ -81,7 +80,7 @@
     "_globs_comment": "Override the changed-files-gate surface globs (see skills/sdlc/templates/changed-files-gate.md). Defaults cover the common cases; set these only for non-standard layouts.",
     "frontend_globs": ["**/*.tsx", "**/*.jsx", "**/*.vue", "**/*.svelte", "**/*.css", "**/*.scss"],
     "data_globs": ["**/migrations/**", "**/schema/**", "**/models/**", "**/*.sql"],
-    "_deploy_delta_comment": "Dependency manifests/lockfiles/Dockerfiles. When the diff touches one, /sdlc flags 'rebuild required (not restart)' in the PR body + Stage-7 checklist — code committed != running env reflects it.",
+    "_deploy_delta_comment": "Dependency manifests/lockfiles/Dockerfiles. When the diff touches one, /sdlc flags 'rebuild required (not restart)' in the Stage 7 report + checklist — code committed != running env reflects it.",
     "deploy_delta_globs": ["requirements.txt", "pyproject.toml", "poetry.lock", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "go.mod", "Cargo.toml", "Gemfile.lock", "Dockerfile", "**/Dockerfile"],
     "_memory_index_comment": "Optional path to a REPO-LOCAL memory/knowledge index for /repo-health Check 8. Leave unset to skip — the check NEVER reads the user-global ~/.claude memory dir.",
     "memory_index": null
@@ -111,8 +110,6 @@
       "enabled": false,
       "mode": "interactive",
       "_mode_comment": "One of 'interactive' (default: each confirmed finding's fix spec is presented for approve/edit/skip, then the run pauses before Stage 6 with anything remaining surfaced), 'auto' (auto-approve every confirmed auto_fixable:true finding, bounded by agents.code_review_max_fix_loops -- design-decision findings, auto_fixable:false, are NEVER auto-approved in any mode), 'off' (report only, Stage 5.8 does not run). There is no confidence or consecutive-approval throttle: the auto_fixable rubric and the loop budget are the whole bound.",
-      "blocking": true,
-      "_blocking_comment": "Whether a surviving HIGH-severity confirmed finding blocks Stage 6. Defaults true (matches /sdlc's PR-gate posture); /sdlc treats this as false-equivalent regardless of the value here (warn-and-handoff is its posture by design, consistent with its warn-only secret scan).",
       "_cost_bound_comment": "Diff size is NOT bounded here -- every lens reviews the whole diff. The levers that exist are agents.code_review_lenses and agents.code_review_max_lenses (fan-out width). See skills/sdlc/templates/models.md for the removed-key record."
     },
 

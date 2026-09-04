@@ -184,77 +184,12 @@ Below is the shape each stage's `data` field is expected to take. These are the 
 }
 ```
 
-#### `decompose` (Stage 2a — only when the gate fans out)
-```json
-{
-  "gate_inputs": {
-    "surfaces_touched": ["data", "backend", "frontend"],
-    "surface_count": 3,
-    "task_count": 15,
-    "decompose_min_tasks": 6,
-    "files_disjoint": true
-  },
-  "gate_decision": "decompose",
-  "lanes": [
-    {
-      "lane": "data",
-      "files": ["migrations/0007_orders.sql", "models/order.py"],
-      "steps": ["add orders table", "add Order model"],
-      "depends_on": [],
-      "model": "sonnet",
-      "contract": "Order(id, user_id, total_cents, status); table `orders` with index on (user_id, status)."
-    },
-    {
-      "lane": "backend",
-      "files": ["api/routes/orders.py", "api/schemas/order.py"],
-      "steps": ["POST /orders", "GET /orders/{id}"],
-      "depends_on": ["data"],
-      "model": "sonnet",
-      "contract": "POST /orders -> 201 {id}; GET /orders/{id} -> 200 OrderOut. Uses Order model from the data lane."
-    }
-  ]
-}
-```
-`gate_decision` is `decompose` or `single-agent`. When `single-agent`, no
-`decompose.json` is written at all — the gate inputs that produced a
-no-decompose decision are still summarized in the `implement.json` `summary`.
-Each lane's `model` is `sonnet` (default) or `opus` (lane flagged
-high-complexity in 2a). `depends_on` lists lane names that must complete first;
-2b dispatches in a dependency-respecting order.
-
-#### `implement-<lane>` (one per lane — only when decomposed)
-Same shape as `implement` (above), plus a `lane` discriminator:
-```json
-{
-  "lane": "backend",
-  "agent_model": "claude-sonnet-4-5",
-  "files_changed": [
-    { "path": "api/routes/orders.py", "added": 42, "removed": 0 }
-  ],
-  "total_added": 42,
-  "total_removed": 0,
-  "blockers_reported": []
-}
-```
-The filename embeds the lane (`implement-backend.json`); the canonical stage
-name in `run.json.stages_completed` is still `implement` (recorded once after
-2c, not per lane).
-
-#### `converge` (Stage 2c — only when decomposed)
-```json
-{
-  "merged_files": ["api/routes/orders.py", "models/order.py", "..."],
-  "integration_fixes": [
-    { "file": "api/routes/orders.py", "fix": "import Order from models.order" }
-  ],
-  "import_check": { "status": "pass", "unresolved": [] },
-  "symbol_collisions": []
-}
-```
-`import_check.status` is `pass` or `fail`; `unresolved` lists imports/symbols
-that could not be resolved across the union of lane edits. `symbol_collisions`
-lists any name defined by more than one lane. A non-empty `unresolved` or
-`symbol_collisions` that 2c cannot fix is fed into Stage 5's shared fix loop.
+#### `decompose` / `implement-<lane>` / `converge` (decomposed path only)
+Shapes are the agent output contracts in `stage-2a-decompose.md`, `stage-2b-dispatch.md` and
+`stage-2c-converge.md`. Two rules live here: on the `single-agent` path no `decompose.json` is
+written — the gate inputs are summarized in `implement.json`'s `summary`; and the canonical
+stage name in `run.json.stages_completed` is `implement`, recorded once after 2c, never per
+lane.
 
 #### `generate-evals`
 ```json

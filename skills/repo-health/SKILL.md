@@ -25,7 +25,6 @@ next command. Never modifies code, never opens a PR.
 For deeper or more action-oriented variants:
 - Use `/dead-code-review` directly for a thorough multi-agent scan.
 - Use `/test-check` for the full test+log audit pipeline.
-- 
 
 ## Arguments
 

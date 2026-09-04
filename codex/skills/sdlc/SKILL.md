@@ -15,17 +15,11 @@ disable-model-invocation: true
 
 # sdlc (Codex Edition — Sequential)
 
-Sequential Codex edition. The canonical skill uses parallel agent dispatch for the
-sanity-check on Claude; this overlay runs every stage inline, because Codex CLI's 2026
-Agent Skills spec doesn't drive that fan-out. (Codex has native subagents and its own
-plan mode; what it lacks is a usable per-subagent model override — see the cap note
-below.) This overlay tracks the Copilot one closely; tune independently if Codex
-behavior diverges. Same stages, same shared templates, same terminal action: **no git
-writes** — it hands you a validated tree to commit.
+Sequential Codex edition — every stage runs inline rather than as a parallel dispatch. Same
+stages, same shared templates, same terminal action: **no git writes** — it hands you a
+validated tree to commit.
 
-**Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/models.md`, a plugin-repo citation) is honored wherever sub-agents are dispatched. **The cap is advisory on this runtime** — set your session model to the cap tier for the savings.
-
-> **Why advisory here is a Codex-specific story.** Codex *does* have native subagents (`.codex/agents/*.toml`, parallel, `max_threads`) — it is not structurally inline-only the way Copilot is. What blocks tiering is that **per-subagent model override is reported regressed upstream** (subagents inherit the parent model), so the Haiku/Sonnet fan-out runs single-model: functional, but with none of the per-stage cost savings. Reported 2026-07-13 from research, **not verified against a real Codex install**, and it may already be fixed — see the Codex entry under *Runtime regimes* in `models.md` before relying on it either way.
+**Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/models.md`) is honored wherever sub-agents are dispatched. **The cap is advisory on this runtime** (why: *Runtime regimes* in `models.md`) — set your session model to the cap tier for the savings.
 
 > **`skills/sdlc/templates/*` paths below are real, installed files on this runtime.**
 > `setup.sh` ships that shared template tree alongside the skills and rewrites the citation
@@ -67,35 +61,36 @@ regardless of verbosity — the per-dispatch `model:` line, gate verdicts, PAUSE
   the resolved ids in `run.json.data.task_range`.
 - **Ad-hoc description** → create a new row + task file via `/task`'s procedure.
   No plan, so Stage 5's plan check self-skips.
-- **`--queue [N]`** (attended backlog loop) → select `Active / Pending` rows by
-  priority (top `N` or `pipeline.loop.max_items`, default 5; `P1>P2>P3`, `[~]`
-  first) and loop the pipeline over them, **re-scanning `TASKS.md` between items**
-  so rows added mid-run join the loop. Stop conditions (`pipeline.loop.*`): a
-  `paused`/`failed` item **parks** the loop (write its `/sdlc-status` hint to
-  `.claude/.next-action`), a `confirm:true` next action parks it, and
-  `max_items` / `max_consecutive_failures` (default 2) bound it. **No git writes;
-  every park is a written next-action, never a dead end.** Each item's envelope
-  stays **canonical** (`state-schema.md`: `feature_slug`/`plan_file` keys, required
-  fields, canonical stage names — never `slug`/`plan` or `phase-*` stages; queue/phase
-  data goes in `data.*`) with a **distinct per-item slug** `<plan-slug>-<row-id>` (never
-  the shared plan slug — items would collide on one envelope dir). On park: set
-  `run.json.status = "paused"` + `run.json.next_action = {cmd, confirm}`, **and — mandatory,
-  don't skip it —** append the sentinel line:
-  `line='{"cmd":"/sdlc <plan> --queue","source":"sdlc","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action`
-  (plus a `confirm:true` line for the confirm action if it parked on one). The **sentinel is
-  the ONLY thing the Stop hook surfaces**; `run.json.next_action` alone is invisible, so a park
-  that sets only the envelope field leaves the loop dead.
-- **Long runs — context hygiene:** a many-hour loop accumulates context in the one orchestrator
-  session. Codex's `PostCompact` reseed hook (shipped via `.codex/hooks.json`) keeps auto-compaction
-  lossless for the loop; config knobs + the fresh-`codex exec`-per-item escalation are in
-  `docs/LOOP-HYGIENE.md` (plugin repo).
+- **`--queue [N]`** → resolve this flag first; on any other input skip without opening the
+  template. When it *is* `--queue`, **read `skills/sdlc/templates/queue-mode.md` now** and run
+  it (selection, per-item slug, stop conditions, re-scan, park protocol and its mandatory
+  sentinel). Codex's `PostCompact` reseed hook (`.codex/hooks.json`) keeps
+  auto-compaction lossless for a long loop; escalations in `docs/LOOP-HYGIENE.md` (plugin repo).
 
-Mark resolved rows `[~]`. Derive `slug` per `docs/CONVENTIONS.md`. Capture
+Mark resolved rows `[~]`. Derive `slug`: the plan filename minus its extension, minus a leading
+`brainstorm-` / `team-brainstorm-` / `pbi-NNN-` / `task-NNN-` prefix, lowercased, every character
+outside `[a-z0-9-]` replaced with `-`, runs collapsed, ends trimmed; it must match
+`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$` or the run stops with a clear error (maintainer record:
+`docs/CONVENTIONS.md`). Capture
 `base_commit = git rev-parse HEAD` and initialize `.claude/pipeline/<slug>/`
 with `pipeline: "sdlc"`, `base_commit`, `status: "in_progress"`, **and the
 computed required fields that get dropped otherwise (DQ6):**
 `plan_hash: "sha256:$(sha256sum <plan> | cut -d' ' -f1)"`, `started_at` = `updated_at`
 = `"$(date -u +%Y-%m-%dT%H:%M:%SZ)"`. Omitting them breaks `--resume` + staleness detection.
+
+**Then parse the plan.** Read the resolved plan/task file(s) fully and extract the feature
+name, the implementation steps (numbered lists with file paths, or checkbox rows), the files to
+create or modify, the acceptance criteria ("expected"/"should"/"must"/"verify" language) and
+cross-module touchpoints. **Write `stage-outputs/parse.json`** with `data.feature_name`,
+`data.files_to_change`, `data.implementation_step_count`, `data.acceptance_criteria_count` and
+append `parse` to `run.json.stages_completed` — Stage 2's gate reads it and cannot run without it.
+
+**Skill-repo detection** (automatic): if `.claude-plugin/marketplace.json` exists at repo root,
+switch to **Skill-repo mode** below for the rest of the run. **Vendored-skill guard:** if it is
+absent but the plan's changed files target `.claude/skills/**`, `.github/skills/**` or
+`.agents/skills/**`, **stop and report** — those edits belong upstream in the canonical toolkit
+repo, not in a consumer's pipeline.
+
 
 **`--resume`:** if `--resume` was passed, read the existing `run.json` instead of
 re-initializing — reject on a `plan_hash` mismatch, skip stages whose sidecar shows
@@ -106,7 +101,7 @@ Resumption rules; error if there's no prior run).
 entirely on the `main_branch`** (merges make every run an ancestor there — pure
 noise). On a feature branch, take only the **single most-recently-updated** run
 whose `base_commit` is an ancestor of HEAD, and prompt **only** if it's
-non-terminal OR complete with HEAD advanced past its recorded `commit_sha`
+non-terminal OR complete with HEAD advanced past its recorded `base_commit`
 (a follow-up landed outside the pipeline). One prompt at most, or none.
 
 ## Stage 1.5 — Sanity check
@@ -208,9 +203,8 @@ push, PR, or `/review`. You review and commit.
    the commit is left to you.
 5. **Leave re-entry rows** so the queue keeps the follow-up: when a
    manifest/lockfile/Dockerfile changed (deploy-delta), append
-   `- [ ] (P1) rebuild <env> for {feature-slug} (dependency change — rebuild, not restart) — plans/{feature-slug}.md`;
-   and a `- [ ] (P2) verify {feature-slug} deployed — `/repo-health` plans/{feature-slug}.md`
-   row closes the loop the same way `/sdlc` Stage 6 does.
+   `- [ ] (P1) rebuild <env> for <slug> (dependency change — rebuild, not restart) — plans/<slug>.md`;
+   and a `- [ ] (P2) verify <slug> deployed — /repo-health` row closes the loop.
    **Then print the manual-verification line** from `.claude/project.json` `stack.*` (all
    keys optional): `stack.rebuild` on the deploy-delta case (a dependency changed, so a
    plain restart runs stale code), otherwise `stack.up`; append `stack.url` when set.
@@ -239,11 +233,29 @@ requirements verdict plus the flowsim flow trace and whether it was witnessed or
 advisory (or "skipped — no plan target") — and anything left open. Make clear **nothing was
 committed** — the next move is yours.
 
+## Skill-repo mode (auto-detected)
+
+Active when `.claude-plugin/marketplace.json` exists at repo root. A skill repo has no test
+surface, so three stages change; every other stage runs unmodified.
+
+| Stage | Skill-repo behavior |
+|---|---|
+| Stage 3 — Generate evals | **skip** — append `generate-evals` to `run.json.stages_skipped` |
+| Stage 5 — Validate | **substitute** `skills/sdlc/templates/stage-5-skill-repo.md` (validator, marketplace registration, template-reference resolution, setup.sh dry install; soft: line ceilings, README drift, overlay parity). Writes `validate.json` with `data.mode = "skill-repo"` |
+| Stage 5.7 — Adversarial review | **adapt, never self-skip** — a docs-only diff is the code surface here |
+
+## Safety rules
+
+- **Stop on ambiguity** — unclear plan steps: pause and ask.
+- **Stop on repeated failures** — a fix loop that exhausts its budget reports rather than grinding.
+- **Don't fix pre-existing failures** — only what this run introduced; `preexisting[]` is reported, never gated on.
+- **Autonomy overrides interactive output styles** — the explicit invocation wins; run autonomously.
+
 ## Gotchas
 
 - **Does no git writes.** No commit, branch, push, PR, or `/review`. Hands you
   a validated tree; you commit.
-- **Stage 5's plan check runs whenever there's a plan to check.**
+- **Stage 5's plan check runs whenever there's a plan to check.** It skips only
   when there is no plan target — not behind a frontmatter knob.
 - **Don't fork the shared templates.** Stage bodies live once in
   `skills/sdlc/templates/`; edit the template, never copy it here.

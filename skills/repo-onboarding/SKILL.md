@@ -16,7 +16,7 @@ metadata:
 This skill inspects the current repository and generates the config files that
 the rest of the toolkit reads. Run this **once per repo** after dropping the
 toolkit's skills and scripts in place. After it finishes, `/test-check`,
-`/test-check` and `/sdlc` should work with no further setup.
+`/repo-health` and `/sdlc` should work with no further setup.
 
 ## Output
 
@@ -71,8 +71,8 @@ Build a draft `project.json` from what you found. Fill in:
 - `test.e2e` — if Playwright/Cypress/etc. was detected
 - `logs.command` — from detected orchestration (docker / kubectl / file tail)
 - `logs.services` — from compose services or k8s deployments
-- `stack.up` / `stack.down` / `stack.rebuild` — how to bring the runnable stack up and
-  down for **manual verification**; propose only from a detected orchestrator, never
+- `stack.up` / `stack.rebuild` — how to bring the runnable stack up for **manual
+  verification**; propose only from a detected orchestrator, never
   invent one (see the detection table). `rebuild` is the force-recreate variant used
   when a dependency manifest changed.
 - `stack.url` — the local URL to open once it is up, if a port is discoverable from
@@ -88,17 +88,10 @@ Build a draft `project.json` from what you found. Fill in:
   contributor who wants it, and neither implies consent for this checkout.
 - `modules` — inferred from top-level code directories (`src/`, `api/`, `web/`, `packages/*`, etc.)
 - `models.cap` — the standing **sub-agent model-tier ceiling** for every fan-out
-  skill (`/sdlc`, `/dead-code-review`, `/brainstorm-*`, …). A ceiling, not a swap:
-  tiers rank `haiku (1) < sonnet (2) < opus (3)` and `effective = min(default, cap)`
-  — the cap only ever *lowers*, so `cap: "sonnet"` runs Opus sites at Sonnet while
-  Haiku/Sonnet sites are untouched. Governs **sub-agent dispatch only**, never the
-  session orchestrator. Valid values: exactly `haiku`, `sonnet`, `opus`; absent =
-  no cap (skills still default Sonnet-first, but a written cap makes it enforced
-  policy). Full contract: `skills/sdlc/templates/models.md`. **Default the
-  proposal to `{ "cap": "sonnet" }`** — it's the right ceiling for almost every
-  repo (keeps quality on review/verify stages while cutting Opus cost); propose
-  `haiku` only if the user wants to squeeze the cheap mechanical sweeps, or omit
-  it only if they explicitly want uncapped Opus fan-out.
+  skill. Valid values: exactly `haiku`, `sonnet`, `opus`; absent = no cap. **Default
+  the proposal to `{ "cap": "sonnet" }`**; propose `haiku` only to squeeze the cheap
+  mechanical sweeps, omit only for an explicitly uncapped Opus fan-out. Contract (and
+  the ceiling-only semantics explained to the user in Step 3): `skills/sdlc/templates/models.md`.
 
 **When unsure, leave the key out.** A missing key causes skills to skip that step
 gracefully — that's better than a wrong command. (Exception: `models.cap` — prefer
@@ -121,8 +114,8 @@ first so "just accept" is one keystroke, and state the cost (or policy) directio
 | Ask | Key | Options (default first) |
 |---|---|---|
 | **Ceiling for every sub-agent fan-out — implementers, fix agents, sanity + review lenses.** The single biggest cost lever. | `models.cap` | `sonnet` (Sonnet-first standing default) · `haiku` (cheapest; fine for sweeps/monitoring) · `opus` (**no ceiling** — every stage runs at its own full default tier) · omit |
-| **Which model pre-flights your plan before any code is written** (Stage 1.5, never gated — it runs on *every* `/sdlc` run). Say plainly that the built-in is Haiku and that **`models.cap` cannot raise it** — this key is the only lever. | `models.sanity` / `.focuses` | omit → 3 Haiku agents (`paths`, `completeness`, `gotchas`) · `sonnet` (better judgment on `completeness`, which asks whether the plan hangs together) · fewer focuses to cut cost (`paths` is mechanical; drop `gotchas` when there's no `GOTCHAS.md`) |
-| **Enable the adversarial Review→Fix stage?** Off unless you say yes — it never runs by accident. | `pipeline.review_fix.enabled` / `.model` | `false` (default) · `true` + reviewer `opus` · `true` + reviewer `fable` (usage-billed, explicit opt-in) |
+| **Which model pre-flights your plan before any code is written** (Stage 1.5, never gated — it runs on *every* `/sdlc` run). Say plainly that the built-in is Haiku and that **`models.cap` cannot raise it** — this key is the only lever. | `models.sanity` / `agents.sanity_focuses` | omit → 3 Haiku agents (`paths`, `completeness`, `gotchas`) · `sonnet` (better judgment on `completeness`, which asks whether the plan hangs together) · fewer focuses to cut cost (`paths` is mechanical; drop `gotchas` when there's no `GOTCHAS.md`) |
+| **Enable the adversarial Review→Fix stage?** Off unless you say yes — it never runs by accident. | `pipeline.review_fix.enabled` / `models.code_review` | `false` (default) · `true` + reviewer `opus` · `true` + reviewer `fable` (usage-billed, explicit opt-in) |
 | **How many review lenses?** Ask only if the stage was just enabled. One reviewer call per lens at the reviewer model, so this scales the stage's cost roughly linearly. | `agents.code_review_lenses` | omit → all four (`correctness`, `plan-alignment`, `config-env-docs`, `security`) · `["correctness", "security"]` (half cost; good default for app code) · `["correctness"]` (quarter cost; highest-yield single lens) |
 | **How do you bring this app up for manual verification?** Confirm or correct what was detected. | `stack.up` / `stack.rebuild` / `stack.url` | the detected compose/dev commands · corrected by the user · omit (skills then say which key is missing instead of guessing) |
 | **Should commit messages this toolkit writes or suggests credit Claude as a co-author?** Not a cost lever — a disclosure choice, so it is off unless the user says yes. Mention that it also lands in any PR body a future step authors, and that some DCO / commit-lint setups reject unrecognized trailers. | `coauthor_trailer` | `false` (default — no trailer) · `true` (append `Co-Authored-By: Claude <noreply@anthropic.com>`) |
@@ -238,7 +231,7 @@ Report what was written and suggest next steps:
 | `package.json` with `"test"` script | `test.unit` or `test.frontend` = `npm test` (or pnpm/yarn equivalent) |
 | `pyproject.toml` with `[tool.pytest]` | `test.unit` = `pytest` |
 | `playwright.config.*` at root | `test.e2e` = `npx playwright test` |
-| `docker-compose.yml` | `logs.command` = `docker compose logs {service} --tail={tail}`, `logs.services` from compose services; `stack.up` = `docker compose up -d --build`, `stack.down` = `docker compose down`, `stack.rebuild` = `docker compose up -d --build --force-recreate`; `stack.url` from the first published host port |
+| `docker-compose.yml` | `logs.command` = `docker compose logs {service} --tail={tail}`, `logs.services` from compose services; `stack.up` = `docker compose up -d --build`, `stack.rebuild` = `docker compose up -d --build --force-recreate`; `stack.url` from the first published host port |
 | Kubernetes manifests | `logs.command` = `kubectl logs deploy/{service} --tail={tail}`; leave `stack.*` unset — a cluster is not a local up/down |
 | `package.json` with a `dev`/`start` script and no compose file | `stack.up` = that script (`npm run dev`); no `stack.rebuild` unless a build step is separate |
 | `go.mod` | `test.unit` = `go test ./...` |

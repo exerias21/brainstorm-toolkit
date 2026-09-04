@@ -23,8 +23,8 @@ Six review phases done in order. Unlike the Claude canonical (which spawns paral
 | Scope | Phases run |
 |---|---|
 | `full` (default) | All 6 |
-| `backend` | 1, 3, 6 |
-| `frontend` | 2, 6 |
+| `backend` | 1, 3 |
+| `frontend` | 2 |
 | `database` | 3 |
 | `docs` | 4, 5 |
 

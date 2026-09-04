@@ -56,7 +56,7 @@ metadata:
    A non-terminal pipeline run is the one thing worth making loud — it's how a
    skipped/abandoned pipeline becomes visible instead of lingering in JSON.
 
-## Next step (absorbed from the former `/next`)
+## Next step (absorbed from the former `/next` and `/triage`)
 
 After the summary, print **one** recommended next command with a one-line reason. Highest
 match wins; stop at the first hit:
@@ -76,8 +76,7 @@ match wins; stop at the first hit:
    needs the full pipeline.
 7. **Nothing queued** → `/brainstorm` for ideation, or `/repo-health` for a hygiene sweep.
 
-Print it as `Next: <command>  — <reason>`. **Recommend only; never execute.** The classes in
-rung 1 are what the former `/triage` did — the diagnosis is a paragraph, not a skill.
+Print it as `Next: <command>  — <reason>`. **Recommend only; never execute.**
 
 ## `--prune-stale` (opt-in cleanup — the one write exception)
 
@@ -95,14 +94,7 @@ lets you actually clear them — confirm-gated, never automatic:
    it's a synthetic/garbage envelope, remove the `.claude/pipeline/<slug>/`
    directory. Report what was pruned.
 
-Without `--prune-stale`, `/sdlc-status` is **pure read** (default). The flag is the
-documented, confirm-gated exception — it's the only path that writes.
-
 ## Rules
-
-- **`/sdlc-status` is both the readout and the recommendation.** It absorbed the former
-  `/next` ladder and `/triage` classes, so there is one command for "where am I" and
-  "what next". It never executes — it recommends.
 
 - Pure read by default, no file writes. The sole exception is `--prune-stale`
   above, which is explicit and confirm-gated.

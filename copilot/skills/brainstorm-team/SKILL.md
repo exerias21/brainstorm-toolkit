@@ -1,12 +1,12 @@
 ---
 name: brainstorm-team
 description: >
-  Sequential product-strategy brainstorm for Copilot. Walk through five research
-  passes (competitive landscape → codebase map → UX critique → ranked features →
-  implementation blueprints) inline, producing a single strategy document. Use
+  Sequential product-strategy brainstorm for Copilot. Walk through six research
+  passes (competitive landscape → codebase map → UX critique → lateral lenses →
+  ranked features → implementation blueprints) inline, producing a single strategy document. Use
   for "what should we build next", "competitive analysis", or product review
   sessions. Copilot-adapted version of the canonical — sequential instead of
-  5 parallel workers.
+  parallel workers.
 metadata:
   brainstorm-toolkit-applies-to: copilot
 disable-model-invocation: true

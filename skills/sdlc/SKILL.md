@@ -22,9 +22,7 @@ metadata:
 | `/task <description>` | ad-hoc ask | TDD red→green only | commit only if you ask |
 | `/sdlc <plan \| task-id \| range \| desc>` | plan, task(s), or ask | **full** (sanity→implement→evals→validate→flowsim) | **validated changes left in your working tree — you commit** |
 
-**It does no git writes, ever** — no commit, branch, push, PR, or `/review`. It
-hands you a validated, ready-to-commit working tree; the commit is yours. Stage
-bodies live in `skills/sdlc/templates/` (a shared template tree, not a skill);
+Stage bodies live in `skills/sdlc/templates/` (a shared template tree, not a skill);
 each stage below names the one it loads.
 
 ## Prerequisites
@@ -105,8 +103,11 @@ Detect the argument shape:
    stop conditions — see **Queue mode** below (that re-scan is what makes it a loop,
    not a one-shot range).
 
-Mark resolved rows `[~]` (in-progress). Derive `slug` per the algorithm in
-`docs/CONVENTIONS.md`. Capture `base_commit` = `git rev-parse HEAD` and
+Mark resolved rows `[~]` (in-progress). Derive `slug`: the plan filename minus its extension, minus a leading
+`brainstorm-` / `team-brainstorm-` / `pbi-NNN-` / `task-NNN-` prefix, lowercased, every character
+outside `[a-z0-9-]` replaced with `-`, runs collapsed, ends trimmed; it must match
+`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$` or the run stops with a clear error (maintainer record:
+`docs/CONVENTIONS.md`). Capture `base_commit` = `git rev-parse HEAD` and
 initialize the state envelope at `.claude/pipeline/<slug>/` with
 `pipeline: "sdlc"`, `base_commit`, `status: "in_progress"`.
 
@@ -176,7 +177,7 @@ the long-run context-hygiene note.
 agents on Claude; sequential on the overlays). It carries the orchestration and the per-focus
 prompts. This is full SDLC discipline — it is **not** gated or optional. The default is 3 Haiku
 agents; `models.sanity` and `agents.sanity_focuses` tune it, and because the cap only *lowers*,
-`sanity_check.model` is the only way to raise this stage.
+`models.sanity` is the only way to raise this stage.
 For a task range, run it once over the combined set before the implement loop.
 
 If the sanity check surfaces a blocker (plan references nonexistent files,
@@ -186,15 +187,11 @@ contradictory steps), stop and report rather than implementing on a bad premise.
 
 **Delegation is mandatory. During this stage you do not call Write or Edit.** Dispatch the
 implement agent(s) below and receive `git diff --numstat` back; the file bodies stay in the
-agent's context, not yours. This is the single most expensive rule in the pipeline to break:
-on an audited run the orchestrator made 183 Write/Edit calls against 8 dispatches, parking
-~131k tokens of file content in its own context and driving the peak that forced five
-context resets. If a change is too small to be worth an agent, it is too small for
-`/sdlc` — use `/task`.
+agent's context, not yours — every file body you take directly is context you carry for the
+rest of the run. If a change is too small to be worth an agent, it is too small for `/sdlc` —
+use `/task`.
 
-**Read `skills/sdlc/templates/stage-2-implement.md` now**, before dispatching — not "reuse"
-it, open it. A pointer that is never opened silently resolves to nothing, which is exactly
-how the delegation rule above stopped reaching the model in the first place.
+**Read `skills/sdlc/templates/stage-2-implement.md` now**, before dispatching.
 
 Then apply the **live-code grounding** (follow `skills/sdlc/templates/convention-grounding.md`
 — reuse existing patterns, treat AGENTS.md/CLAUDE.md as stale-able hints, honor any
@@ -249,44 +246,25 @@ first failure; 3-iteration budget). Writes one `validate.json`.
 
 ## Stage 5.7 — Adversarial review
 
-**Opt-in, permanently OFF by default — resolve the gate before loading anything.** Same
-opt-in-only enablement (`--review-model <name>` flag or
-`pipeline.review_fix.enabled: true`; `--no-review` always wins OFF; omitted/absent means
-permanently OFF, no default-on flip), same auto-off gates (docs-only/no-surface diff self-skips
-except in skill-repo mode, which adapts rather than skips), same **configurable** lens fan-out
-(`agents.code_review_lenses`; defaults to all four —
-`correctness`/`plan-alignment`/`config-env-docs`/`security` — and setting fewer cuts the stage's
-cost roughly linearly, one reviewer call per lens), capped by `agents.code_review_max_lenses`
-(default `4`; set `1` for a single-reviewer run, truncating in list order after circuit-breaker
-demotion), same verify pass, optional second pass, and false-positive circuit breaker. Print the
-resolved list before dispatching, per the template. Same cap caveat: every lens runs at the
-**reviewer** model, which `models.cap` does not govern — warn when a cap is set and the reviewer
-outranks it. Runs after Stage 5, before Stage 6 hand-off. Writes
-`stage-outputs/review.json`; self-skips append `review` to `run.json.stages_skipped`.
-
-When (and only when) the stage is enabled, **read
-`skills/sdlc/templates/stage-5.7-review-fix.md` now** and run it. When it is OFF, do not load
-that file — append `review` to `run.json.stages_skipped` and go to Stage 6.
+**Opt-in, permanently OFF by default — resolve the gate before loading anything.** ON only on an
+explicit `--review-model <name>` flag or `pipeline.review_fix.enabled: true`; `--no-review` always
+wins OFF. When OFF, do not load the template — append `review` to `run.json.stages_skipped` and go
+to Stage 6. When ON, **read `skills/sdlc/templates/stage-5.7-review-fix.md` now** and run it: it
+carries the lens fan-out and its cost knobs, the reviewer-model axis and its cap caveat, the verify
+pass and the circuit breaker. Runs after Stage 5, before Stage 6; writes `stage-outputs/review.json`.
 
 ## Stage 5.8 — Fix loop
 
-Specified in that same template — same `auto_fixable` rubric, same `pipeline.review_fix.mode`
-(interactive/auto/off) machinery, same independence enforcement and oscillation guard, same
-cumulative `stage-outputs/review-fix.json`, and the same separate fix-loop budget
-(`agents.code_review_max_fix_loops`, independent of Stage 5's shared budget). One divergence,
-matching `/sdlc`'s existing warn-vs-block posture at Stage 6: a surviving HIGH-severity
-confirmed finding does **not** block here — it is listed prominently in the Stage 7 handoff report
-and the human decides whether to fix before committing, consistent with `/sdlc`'s existing
-warn-only secret-scan posture. **Post-fix validation still applies unconditionally**: if any fix
-was applied this run, re-run the Stage 5 `validate` gate exactly once before Stage 6; a regression
-there pauses the run for `/sdlc` too (an objective break, not an adversarial opinion).
+Specified in that same template, on its own budget (`agents.code_review_max_fix_loops`). A
+surviving HIGH-severity confirmed finding does **not** block the hand-off — it is listed first in
+the Stage 7 report for the human to decide. **Post-fix validation applies unconditionally**: if any
+fix was applied, re-run the Stage 5 `validate` gate exactly once before Stage 6; a regression there
+pauses the run (an objective break, not an adversarial opinion).
 
 ## Stage 6 — Hand off (no commit, no git writes)
 
-`/sdlc` runs the full pipeline and then **stops at the edge of git**. It
-does not commit, stage-and-commit, branch, push, open a PR, or invoke
-`/review`. The user reviews the validated working tree and commits it
-themselves.
+`/sdlc` runs the full pipeline and then **stops at the edge of git**; the user reviews
+the validated working tree and commits it themselves.
 
 1. **Secret scan** the changed files — **read `skills/sdlc/templates/secret-scan.md` now**
    and run it. **Warn-only**: surface findings (file:line) but never block. HIGH findings
