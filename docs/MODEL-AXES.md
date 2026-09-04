@@ -63,6 +63,13 @@ nothing auto-fixes) and drops the *correction*. Consequence to keep in mind when
 axis: an explicit Axis 2 value is always the dispatched value. If a repo wants a stronger
 reviewer, it says so; the toolkit never spends Opus on the user's behalf.
 
+**Deterministic enforcement (2026-09-04).** `scripts/hooks/enforce-model-cap.sh` is a
+PreToolUse(Agent) hook, opt-in via `pipeline.enforce_cap`. It is verification-shaped, like the
+poka-yoke secret hook: it does not decide the tier, it clamps a `model` that exceeds the cap and
+fills one that is missing. It distinguishes Axis 2 by the `review:` description prefix that
+stage-5.7 requires on every reviewer dispatch. It cannot see `--model`, which is why it is
+opt-in rather than default.
+
 Related harness knob, for the record: Claude Code's `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`
 (v2.1.257+) overrides every sub-agent dispatch, per-invocation `model` included. On a repo with
 the review stage enabled it collapses Axis 2 onto whatever it forces and defeats independence

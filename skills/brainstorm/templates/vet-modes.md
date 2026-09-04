@@ -3,6 +3,10 @@
 Loaded by `skills/brainstorm/SKILL.md` **only when a vet mode is explicitly requested**. The
 default run skips this stage without opening this file — that is the point of the split.
 
+> **No sub-agent seam? (Copilot, Codex)** Run each pass below inline in the session, one after
+> another, and keep only the structured findings — never paste a pass's raw output back into
+> your context.
+
 Before the single-agent validator in Step 7, optionally run a multi-lens vet
 using the `--vet [light|deep|ultra|none]` flag. Multiple agents catch issues
 one validator misses.

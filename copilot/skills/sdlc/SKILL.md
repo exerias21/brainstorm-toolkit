@@ -7,7 +7,7 @@ description: >
   No commit, no branch, no push, no PR. Copilot overlay of the canonical skill --
   every stage runs inline (no parallel sub-agents, no Plan mode). Use /task instead for a
   single small TDD fix with no plan.
-argument-hint: "<plan-file | task-id | task-range | description> [--resume] [--queue [N]]"
+argument-hint: "plan-file | task-id | task-range | description  [--resume] [--queue N]"
 metadata:
   brainstorm-toolkit-applies-to: copilot
 disable-model-invocation: true

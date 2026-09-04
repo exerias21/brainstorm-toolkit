@@ -22,6 +22,10 @@ on Copilot/Codex), each at the **reviewer** model — `models.code_review` / `--
 default `opus`, resolved per `skills/sdlc/templates/models.md`. That axis is separate from the
 `haiku < sonnet < opus` cap ladder and `models.cap` never lowers it.
 
+**Every Axis 2 dispatch — each lens, the verify pass, the fix-planner — sets the Agent
+`description` to start with `review:`** (e.g. `review: correctness`). That prefix is how the
+opt-in model-cap hook (`pipeline.enforce_cap`) knows to leave the reviewer tier alone.
+
 **Which lenses run — `agents.code_review_lenses`.** Read the array from `.claude/project.json`;
 when the key is absent, use all four defaults below. **Set fewer to cut the stage's cost roughly
 linearly** — the fan-out is one reviewer call per lens at the reviewer model (Opus by default), so

@@ -83,6 +83,13 @@ per-stage keys are added when a dispatch site reads them, not in advance.
 `--model <tier>` is a per-run escape hatch that wins **both directions** — it may raise a
 standing `sonnet` config for one run, because you asked explicitly.
 
+**Enforcement (Claude, opt-in).** Prose is the default enforcement surface. With
+`pipeline.enforce_cap: true`, a PreToolUse hook on the Agent tool rewrites any dispatch `model`
+above the cap down to it and fills in a missing `model` (a pinned agent definition keeps its
+pin). Axis 2 is exempt by a marker: every reviewer dispatch's `description` starts `review:`.
+The hook cannot see `--model`, so under enforcement the config cap is policy — raise it in
+`project.json` for a run that needs Opus. Each rewrite is reported as a `systemMessage`.
+
 ## Axis 2 — the reviewer
 
 ```

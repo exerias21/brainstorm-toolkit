@@ -106,6 +106,21 @@ copy_tree_if_new() {
   done
 }
 
+install_overlay() {
+  # install_overlay <overlay_dir> <canonical_dir> <dest>
+  # The overlay's SKILL.md replaces the canonical one, but the canonical skill's runtime
+  # resources (templates/, references/, scripts/, assets/) still ship unless the overlay
+  # carries its own copy of that directory. Overlays therefore cite the same
+  # `skills/<name>/templates/<file>` paths the canonical does instead of inlining the bodies.
+  local overlay="$1" canon="$2" dest="$3" sub
+  copy_tree_if_new "$overlay" "$dest"
+  for sub in templates references scripts assets; do
+    if [[ -d "$canon/$sub" && ! -d "$overlay/$sub" ]]; then
+      copy_tree_if_new "$canon/$sub" "$dest/$sub"
+    fi
+  done
+}
+
 delete_if_exists() {
   # delete <path> if present
   local path="$1"
@@ -155,7 +170,7 @@ for skill_dir in "$PLUGIN_ROOT"/skills/*/; do
     # Overlay pattern: prefer copilot/skills/<name>/ if it exists (Copilot-optimized version)
     copilot_override="$PLUGIN_ROOT/copilot/skills/$name"
     if [[ -d "$copilot_override" ]]; then
-      copy_tree_if_new "$copilot_override" "$TARGET/.github/skills/$name"
+      install_overlay "$copilot_override" "$skill_dir" "$TARGET/.github/skills/$name"
     else
       copy_tree_if_new "$skill_dir" "$TARGET/.github/skills/$name"
     fi
@@ -172,9 +187,9 @@ for skill_dir in "$PLUGIN_ROOT"/skills/*/; do
     codex_override="$PLUGIN_ROOT/codex/skills/$name"
     copilot_override="$PLUGIN_ROOT/copilot/skills/$name"
     if [[ -d "$codex_override" ]]; then
-      copy_tree_if_new "$codex_override" "$TARGET/.agents/skills/$name"
+      install_overlay "$codex_override" "$skill_dir" "$TARGET/.agents/skills/$name"
     elif [[ -d "$copilot_override" ]]; then
-      copy_tree_if_new "$copilot_override" "$TARGET/.agents/skills/$name"
+      install_overlay "$copilot_override" "$skill_dir" "$TARGET/.agents/skills/$name"
     else
       copy_tree_if_new "$skill_dir" "$TARGET/.agents/skills/$name"
     fi
@@ -394,6 +409,45 @@ install_stop_hook_claude() {
   fi
 }
 
+# Install the PreToolUse(Agent) model-cap hook into the consumer's Claude settings. The
+# script is inert until project.json sets pipeline.enforce_cap: true, so wiring it is safe by
+# default. Same idempotent jq merge as the Stop hook, keyed on the exact command string.
+install_pretooluse_hook_claude() {
+  local script="enforce-model-cap.sh"
+  local settings="$TARGET/.claude/settings.json"
+  local cmd
+  if [[ "$COPY_SCRIPTS" -eq 1 ]]; then
+    cmd="bash scripts/hooks/$script"
+  else
+    local hook_path_escaped
+    printf -v hook_path_escaped '%q' "$PLUGIN_ROOT/scripts/hooks/$script"
+    cmd="bash $hook_path_escaped"
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "  skip: jq not installed — add this manually to $settings if you want cap enforcement:"
+    echo "        {\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Agent\",\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\"}]}]}}"
+    return
+  fi
+  mkdir -p "$(dirname "$settings")"
+  [[ -f "$settings" ]] || echo '{}' > "$settings"
+  if jq -e --arg cmd "$cmd" 'any(.hooks.PreToolUse[]?.hooks[]?; .command == $cmd)' "$settings" >/dev/null 2>&1; then
+    echo "  skip: Claude PreToolUse model-cap hook already wired ($cmd)"
+    return
+  fi
+  local tmp; tmp="$(mktemp)"
+  if jq --arg cmd "$cmd" '
+    .hooks //= {} |
+    .hooks.PreToolUse //= [] |
+    .hooks.PreToolUse += [{ "matcher": "Agent", "hooks": [{ "type": "command", "command": $cmd }] }]
+  ' "$settings" > "$tmp" && mv "$tmp" "$settings"; then
+    echo "  wrote: $settings (added PreToolUse model-cap hook; inert until pipeline.enforce_cap: true)"
+  else
+    rm -f "$tmp"
+    echo "  error: failed to update $settings with the PreToolUse hook" >&2
+    return 1
+  fi
+}
+
 # Install the Copilot Stop hook as a standalone file under .github/hooks/.
 # Copilot reads any *.json under .github/hooks/, so a fresh file is the
 # simplest install — no merging required. Skip-on-exist (refresh with --force).
@@ -601,6 +655,8 @@ if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
     echo "[hooks] Claude SessionStart reseed hook"
     install_reseed_hook_claude
     install_stop_hook_claude run-cost-report.sh run-cost-report
+    echo "[hooks] Claude PreToolUse model-cap hook"
+    install_pretooluse_hook_claude
   fi
   if [[ "$want_copilot" -eq 1 ]]; then
     echo "[hooks] Copilot Stop hook"

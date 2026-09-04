@@ -8,7 +8,7 @@ description: >
   Use when you want full SDLC discipline on work you will review and commit
   yourself, e.g. onto an open PR's branch. Use /task instead for a single small
   TDD fix with no plan.
-argument-hint: "<plan-file | task-id | task-range | description> [--resume] [--queue [N]]"
+argument-hint: "plan-file | task-id | task-range | description  [--resume] [--queue N]"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
 ---

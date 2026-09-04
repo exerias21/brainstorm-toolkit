@@ -1,20 +1,15 @@
 ---
 name: code-tour
 description: >
-  Turn an existing codebase into teaching material: audit docstring coverage,
-  write why-focused docstrings that explain the reasoning behind each design
-  decision, and generate a guided reading path (TOUR.md) with a pattern index and
-  graded exercises. Use this whenever someone wants to document a codebase for
-  humans rather than for an API reference — onboarding a new hire, handing a repo
-  to another team, preparing a repo as a training or teaching module, "explain
-  this codebase", "add docstrings", "write documentation for all the code", or after
-  /repo-onboarding when the architecture is mapped but the code itself is undocumented.
-  Distinct from its neighbours: /repo-onboarding generates the toolkit's contract files and
-  /repo-health is a read-only sweep — this one writes documentation into the source.
-  Also use it for "help someone learn this repo", or when /code-tour, /docstrings,
-  /codetour, or /onboarding-docs is invoked. Also use it when documentation exists but only
-  says WHAT the code does and the user wants the WHY captured before the people
-  who know it leave.
+  Turn an existing codebase into teaching material: audit docstring coverage, write
+  why-focused docstrings that capture the reasoning behind each design decision, and
+  generate a guided reading path (TOUR.md) with a pattern index and graded exercises.
+  Use it whenever someone wants a codebase documented for humans rather than for an API
+  reference — onboarding a new hire, handing a repo to another team, "explain this
+  codebase", "add docstrings", "help someone learn this repo", when docs say WHAT but
+  not WHY, or after /repo-onboarding has mapped the architecture. Triggers on /code-tour,
+  /docstrings, /codetour, /onboarding-docs. Unlike /repo-onboarding (contract files) and
+  /repo-health (read-only sweep), this one writes documentation into the source.
 metadata:
    brainstorm-toolkit-applies-to: claude copilot codex
 ---

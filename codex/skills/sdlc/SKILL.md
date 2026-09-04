@@ -7,7 +7,7 @@ description: >
   No commit, no branch, no push, no PR. Codex overlay of the canonical skill --
   every stage runs inline (sequential, no parallel sub-agents). Use /task instead for a
   single small TDD fix with no plan.
-argument-hint: "<plan-file | task-id | task-range | description> [--resume] [--queue [N]]"
+argument-hint: "plan-file | task-id | task-range | description  [--resume] [--queue N]"
 metadata:
   brainstorm-toolkit-applies-to: codex
 disable-model-invocation: true

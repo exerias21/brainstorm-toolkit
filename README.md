@@ -156,9 +156,10 @@ bash ~/brainstorm-toolkit/setup.sh --target . --tools both
 - `templates/CHEATSHEET.md.template` → `<target>/CHEATSHEET.md` if missing. This is the printable companion to `README.md`; once present, setup leaves user edits alone.
 - `templates/project.json.example` → `<target>/.claude/project.json.example` (left for you to rename and edit).
 
-It also wires two hooks (skip with `--no-hooks`; the Claude-plugin install in Option A gets them automatically):
+It also wires three hooks (skip with `--no-hooks`; the Claude-plugin install in Option A gets them automatically):
 
 - a **Stop** hook running `scripts/hooks/next-action.sh`, which surfaces the `.next-action` seam as `Next: <command>` (Claude `.claude/settings.json`, Copilot `.github/hooks/`, Codex `.codex/hooks.json`);
+- a **model-cap** hook running `scripts/hooks/enforce-model-cap.sh` on Claude's `PreToolUse` for the Agent tool. Inert until `.claude/project.json` sets `pipeline.enforce_cap: true`; then a sub-agent dispatch above `models.cap` is rewritten to the cap (reviewer dispatches, prefixed `review:`, are exempt) and you see each rewrite as a system message. Makes the cap deterministic instead of prose-enforced.
 - a **reseed** hook running `scripts/hooks/reseed-context.sh`, wired as Claude `SessionStart` (matcher `compact|clear`) and Codex `PostCompact`. It re-points the session at the loop's on-disk state after a compaction, so long `--queue` runs survive auto-compaction. Merged into existing hook config with `jq` and deduped by command string, so re-running is idempotent; without `jq` installed setup skips it and prints the entry to add by hand.
 
 Re-running `setup.sh` is safe: it skips existing files unless you pass `--force`. Install only for one tool with `--tools claude` or `--tools copilot`.
