@@ -5,7 +5,8 @@ description: >
   TASKS.md, writes a task file at plans/tasks/task-N-<slug>.md, and runs a write-test
   → implement → verify loop. Use for small to medium items that are too concrete for
   /brainstorm and too small to justify the full /sdlc pipeline. Invoke via /task or
-  when the user asks to "just do X" with a clear, bounded ask.
+  when the user asks to "just do X", "quick fix", "small change", or names one concrete,
+  bounded ask with no plan behind it.
 argument-hint: "<description>"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex

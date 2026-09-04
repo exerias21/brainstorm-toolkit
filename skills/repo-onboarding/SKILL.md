@@ -4,8 +4,10 @@ description: >
   Inspect a repository and generate the cross-tool contract files this toolkit's
   skills rely on: `AGENTS.md` (architecture + agent instructions), `TASKS.md`
   (work queue), `.claude/project.json` (runner config), and `GOTCHAS.md` (pitfalls).
-  Use when onboarding a new repo to the workflow toolkit, or when /onboard,
-  /discovery, /codelearn, or /init-toolkit is invoked. Replaces the separate
+  Use when onboarding a new repo to the workflow toolkit, when the user says "set up
+  this repo for the toolkit", "generate AGENTS.md", "create project.json", or asks how
+  the codebase is laid out, or when /onboard, /discovery, /codelearn, or /init-toolkit
+  is invoked. Replaces the separate
   /codelearn skill — architecture discovery is part of onboarding here.
 metadata:
    brainstorm-toolkit-applies-to: claude copilot codex

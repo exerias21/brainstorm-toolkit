@@ -1,9 +1,12 @@
 ---
 name: test-check
 description: >
-  Run all relevant tests, feature evals and log audits after code changes. Reads `.claude/project.json`
-  for project-specific commands. Gracefully skips any steps whose commands are not
-  configured. Use after implementing features, fixing bugs, or before marking work done.
+  Run all relevant tests, feature evals and log audits after code changes, in a Haiku
+  sub-agent so raw output never lands in your context. Reads `.claude/project.json` for
+  the project's commands and skips any step whose command is not configured. Use it after
+  implementing a feature or fixing a bug, before marking work done, or whenever the user
+  says /test-check, "run the tests", "did I break anything", "check the logs", or
+  "is it green". `--loop` also fixes failing e2e tests instead of only reporting them.
 argument-hint: "[--loop]"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
