@@ -1,15 +1,12 @@
 ---
 name: code-tour
 description: >
-  Turn an existing codebase into teaching material: audit docstring coverage, write
-  why-focused docstrings that capture the reasoning behind each design decision, and
-  generate a guided reading path (TOUR.md) with a pattern index and graded exercises.
-  Use it whenever someone wants a codebase documented for humans rather than for an API
-  reference — onboarding a new hire, handing a repo to another team, "explain this
-  codebase", "add docstrings", "help someone learn this repo", when docs say WHAT but
-  not WHY, or after /repo-onboarding has mapped the architecture. Triggers on /code-tour,
-  /docstrings, /codetour, /onboarding-docs. Unlike /repo-onboarding (contract files) and
-  /repo-health (read-only sweep), this one writes documentation into the source.
+  Turn a codebase into teaching material: audit docstring coverage, write why-focused
+  docstrings, and generate a guided reading path (TOUR.md). Use whenever someone wants a
+  codebase documented for humans, not an API reference — onboarding a new hire, "explain this
+  codebase", "add docstrings", "help someone learn this repo", or when docs say WHAT but not
+  WHY. Triggers on /code-tour, /docstrings, /codetour, /onboarding-docs. Unlike /repo-onboarding
+  (contract files) and /repo-health (read-only sweep), this writes documentation into the source.
 metadata:
    brainstorm-toolkit-applies-to: claude copilot codex
 ---
@@ -29,10 +26,6 @@ That is what this skill produces. Two artifacts:
 2. **A guided tour** (`TOUR.md` or `PYTHON-TOUR.md`) — a dependency-ordered
    reading path with what to look for at each stop, a cross-cutting pattern
    index, graded exercises, and an honest list of what readers should *not* copy.
-
-The tour matters because docstrings alone do not teach. A reader landing in a
-30-file repo does not know which file to open first, and reading alphabetically
-teaches nothing. The tour supplies the order and the emphasis.
 
 Conventions come from `references/standards.md` (read at Step 4, before the first docstring is
 written); `references/tour-structure.md` at Step 6; `references/language-notes.md` if the
@@ -68,10 +61,8 @@ python3 <skill-dir>/scripts/docstring_audit.py <path> --json       # machine-rea
 python3 <skill-dir>/scripts/docstring_audit.py <path> --include-tests
 ```
 
-It parses with `ast` (never imports, so it works on code that cannot run here),
-reports symbol coverage and module coverage separately, lists every missing
-symbol with a qualified name and line number, and exits non-zero below
-`--min` so it doubles as a CI gate.
+It parses with `ast` (never imports the code) and exits non-zero below `--min`,
+so it doubles as a CI gate.
 
 Report the numbers to the user before starting. "187 of 267 symbols documented;
 the gaps cluster in private helpers and CLI entry points" is a plan. It also
@@ -147,9 +138,6 @@ Judgement calls worth getting right:
 - **Length follows consequence, not line count.** A one-line function guarding a
   security boundary may deserve fifteen lines of docstring; a thirty-line
   data-shuffling function may need two. Ask what a reader loses by not knowing.
-  (Note some sources call "docstring longer than the function" a smell — see
-  `references/standards.md`. It is contested opinion, not a standard, and
-  consequence is the better test.)
 - **Private helpers and nested functions often deserve the most** — for a
   learning audience. They exist because someone extracted them for a reason, and
   that reason is recorded nowhere else. Be aware this is a *deliberate deviation*
@@ -228,10 +216,6 @@ Include a setup section that gets a reader to a passing test run in a few
 minutes. A reader who can run the tests can experiment; one who cannot will only
 read passively.
 
-Newcomers' top barrier is "finding a way to start", not difficulty — so the ordered path is
-the point. Documentation alone does not close that gap: if this repo is being prepared for
-onboarding, recommend pairing the tour with a named human contact.
-
 ### Step 7 — Offer to gate it in CI
 
 Optional, and worth proposing rather than doing unasked — a coverage gate that
@@ -268,15 +252,3 @@ Report at the end:
   feature, not an admission. It is where the institutional knowledge that only
   lives in someone's head gets surfaced.
 - Confirmation that the test suite still passes.
-
-## Reference files
-
-- `references/standards.md` — researched, source-cited documentation standards:
-  PEP 257, Google/NumPy styles, docstrings vs comments, type-hint duplication,
-  Diátaxis and docs-as-code. Read before Step 4.
-- `references/tour-structure.md` — the tour template with a worked example.
-  Read at Step 6.
-- `references/tooling.md` — linters, coverage tools, doc generators, CI configs.
-  Read at Step 7, or when the user asks about enforcement.
-- `references/language-notes.md` — applying the workflow to non-Python codebases.
-- `scripts/docstring_audit.py` (inside this skill's directory) — the AST coverage auditor used in Steps 2 and 5.

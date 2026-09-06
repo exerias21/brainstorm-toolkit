@@ -64,6 +64,20 @@ In the main context window (no subagents), survey the repo structure:
 6. **Existing docs**:
    - `README.md`, `CLAUDE.md` → skim for existing commands and conventions
 
+7. **Sweep the whole repo, then account for every key.** The fingerprints above are the
+   common cases, not the contract. Walk the actual tree (honour `.gitignore`; skip
+   `.git/`, `node_modules/`, `venv/`, build output) and also read `Makefile` / `Justfile`
+   / `Taskfile.*` targets, `.github/workflows/*` (where the real test/lint/build commands
+   are usually written down), `.env.example`, `Procfile`, `pytest.ini` / `tox.ini` /
+   `setup.cfg`, `migrations/` / `alembic/` / `prisma/`, workspace globs, published ports.
+
+   Then **drive the proposal from the key registry, not from what you happened to
+   notice**: open `.claude/project.json.example` (in the plugin repo itself, the same file
+   lives under its templates dir) and put **every** key in one bucket — `detected` (evidence),
+   `not applicable` (with why), or `unknown` (ambiguous). That list is what makes the scan
+   exhaustive rather than best-effort, and it is the only way a key nobody thought to look
+   for gets noticed. Carry it into Step 2; report the `unknown` ones in Step 6.
+
 ### Step 2 — Propose the config
 
 Build a draft `project.json` from what you found. Fill in:
@@ -101,9 +115,41 @@ proposing `sonnet` over omitting, per above.)
 
 ### Step 3 — Show the proposal, then walk the choices detection can't make
 
+**Interactive sessions only.** When there is nobody to answer — a headless `claude -p`
+run, a CI job, any non-interactive invocation — **do not ask and do not stop.** Take each
+row's documented default (`models.cap: "sonnet"`, review off, `coauthor_trailer: false`,
+`stack.*` as detected or omitted), then go straight to Steps 4–5 so the repo is actually
+onboarded, naming every assumed value in the Step 6 report so it is one edit to correct.
+
 First print the proposed `project.json` with a one-line rationale per detected key
 (`Detected Python + pytest → test.unit`; `docker-compose services [api, web] → logs.* + stack.*`;
 `no eval runner → eval.* left blank`; `main branch from origin HEAD`; …).
+
+**Then interview the repo's owner about the stack and the architecture — read first, ask
+second, and ask as many rounds as it takes.** Step 1 read the code; this is where you find
+out what the code cannot tell you. There is no question cap: keep going until you could
+write `AGENTS.md` without inventing anything. Ground every question in something you
+actually saw — "I see `api/` and `worker/` but no queue client; how does work reach the
+worker?" beats "describe your architecture", because the first proves you read the repo and
+gives them something concrete to correct. Cover at least:
+
+- **Stack beyond the manifests** — the datastore and why it, the cache, the queue, external
+  services and which are load-bearing, anything running in production that has no file in
+  this repo.
+- **Architecture and request flow** — entry point through to persistence, which modules own
+  which responsibility, where the seams are, what talks to what. Draw back what you inferred
+  from the scan and ask what is wrong; a correction is faster to give than a description.
+- **What is deliberately unusual** — every repo has a decision that reads as a mistake and
+  isn't. Ask for it directly; it is the highest-value thing you can put in `AGENTS.md`, and
+  it is invisible to a scan.
+- **Where the bodies are** — the flaky area, the module nobody touches, the migration that
+  must run in a certain order. These become `GOTCHAS.md` entries, not architecture prose.
+- **How work actually ships** — branch and review conventions, what must pass before merge,
+  what is enforced by CI versus by habit.
+
+Take the answers into Step 4 (`AGENTS.md`) and into `GOTCHAS.md`; anything that resolves a
+config key goes into the proposal above. Skip this interview entirely when non-interactive,
+per the rule at the top of this step.
 
 **Then ask these questions explicitly — do not bury them in "does this look right?".**
 Detection can't decide any of them, they are the main cost/quality/policy levers, and a user
@@ -141,7 +187,9 @@ Keep each section terse. AGENTS.md is read by every agent, every session — bre
 
 ### Step 5 — Write the files
 
-After the user confirms (or adjusts):
+After the user confirms or adjusts — or immediately, with the recorded defaults, when
+Step 3 was skipped as non-interactive. **This step always runs.** Reaching Step 5 and
+writing nothing is a failed onboarding, not a cautious one:
 
 1. Write `.claude/project.json` (create `.claude/` if missing).
 2. Write `AGENTS.md` at repo root. If `CLAUDE.md` is also missing, symlink it to `AGENTS.md` on POSIX, else copy.
@@ -162,27 +210,9 @@ After the user confirms (or adjusts):
    plans/
    ```
 
-   Why each:
-   - `.claude/pipeline/` — per-run `/sdlc` envelopes; one dir per
-     run, pure churn if tracked.
-   - `.claude/.next-action` / `.auto-continue-hops` — the seam's scratch files.
-   - `.claude/project.json` — **machine-specific.** It holds test commands, paths
-     and runner invocations that differ per checkout. The committed template is
-     `.claude/project.json.example`; a fresh clone copies it and edits locally.
-   - `TASKS.md` — a personal work queue, rewritten constantly.
-   - `plans/` — personal planning artifacts.
-
-   **Ignoring these does not break the cross-tool contract.** Copilot and Codex
-   read these files off disk in the working copy; `.gitignore` governs what gets
-   *shared*, not what gets *read*. The contract is per-checkout, and it still holds.
-
    **Keep tracked:** `.claude/project.json.example` (the bootstrap template),
    `.claude/settings.json` (hook wiring the team does share), `AGENTS.md`,
    `GOTCHAS.md`, and any committed agent/skill definitions.
-
-   Note the knock-on: with `project.json` ignored, a fresh clone has the example
-   but not the real file, so `/repo-health` Check 9 will flag "config inert" until
-   someone copies it. That is the intended nudge, not a false positive.
 
 ### Step 5.5 — Offer secret-blocking PreToolUse hook (Claude only)
 
@@ -225,6 +255,11 @@ Report what was written and suggest next steps:
   but no actual tests pass, still propose the pytest command but flag it.
 - **Do not generate evals.** That's the pipeline's Stage 3. This skill
   only sets up the config needed for evals to work if the user chooses to use them.
+- **Do not stop at a proposal.** Scanning, printing a config and not writing it is this
+  skill's most likely failure, because the analysis *looks* like the deliverable. It
+  isn't — on a from-scratch repo the written files are. With nobody to confirm, assume
+  the defaults and write (Step 3). The one exception stays the first rule above: an
+  **existing** `project.json` still needs explicit confirmation to overwrite.
 
 ## Detection heuristics reference
 
@@ -240,6 +275,3 @@ Report what was written and suggest next steps:
 | `Cargo.toml` | `test.unit` = `cargo test` |
 | Top-level dirs like `api/`, `web/`, `worker/` | `modules` list |
 | `.git/HEAD` or `origin` default | `main_branch` |
-| Always (standing policy) | `models.cap` = `"sonnet"` — Sonnet-first ceiling for sub-agent fan-out; propose `haiku` to squeeze cheap sweeps, omit for uncapped Opus |
-| Never detectable — always **ask** (Step 3) | `coauthor_trailer` — default `false`; existing `Co-Authored-By` lines in `git log` are **not** evidence of consent for this checkout |
-| Repo uses this toolkit | gitignore the local working state: `.claude/pipeline/`, `.claude/.next-action`, `.claude/.auto-continue-hops`, `.claude/project.json`, `TASKS.md`, `plans/`. Keep `.claude/project.json.example` tracked as the bootstrap template |

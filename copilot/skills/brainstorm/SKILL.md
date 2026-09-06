@@ -1,16 +1,12 @@
 ---
 name: brainstorm
 description: >
-  Interactive brainstorming and feature ideation skill. Guides the user through structured creative
-  exploration: asking focused clarifying questions when the seed is ambiguous, exploring codebase
-  context, generating multiple approaches,
-  evaluating tradeoffs, and producing a concrete action plan. Use this skill whenever the user says
-  /brainstorm, mentions "brainstorm", "let's think through", "I have an idea", "what if we",
-  "how should we approach", "let's explore", or otherwise wants to ideate on a feature, improvement,
-  or architectural change before jumping into code. This is the conversational planning companion —
-  for heavy autonomous multi-agent product research, use /brainstorm-team.
-argument-hint: "[topic] [--vet light|deep|ultra|none] - optional: topic + multi-pass vet mode"
-disable-model-invocation: true
+  Interactive brainstorming and feature ideation skill: clarifies the idea, explores codebase
+  context, generates multiple approaches, evaluates tradeoffs, and writes an action plan to
+  `plans/`. Use whenever the user says /brainstorm, mentions "brainstorm", "let's think through",
+  "I have an idea", "what if we", "how should we approach", "let's explore", or wants to ideate
+  on a feature or change before jumping into code. This is the conversational planning companion
+  — for heavy autonomous multi-agent product research, use /brainstorm-team instead.
 metadata:
   brainstorm-toolkit-applies-to: copilot
 ---
@@ -159,10 +155,20 @@ doesn't exist.
 Do this **before** Step 7 (validation) — the validation checklist references
 this path.
 
+**Group implementation steps into phases past ~6 steps, or a real ordering dependency**
+(phase 2 needs phase 1 landed first) — `#### Phase N — <title>` headings under
+`### Implementation Steps`, per the template. A flat list stays one implicit phase; nothing
+downstream requires phases.
+
 **Also append action items to `TASKS.md`** (at repo root). For each implementation step
 that's concrete and bounded enough to stand alone, add a row to the `Active / Pending`
-section: `- [ ] (P2) <step title> — plans/brainstorm-[topic-slug].md`. If `TASKS.md`
-doesn't exist, create it from `templates/TASKS.md.template` (or with minimal sections).
+section: `- [ ] (P2) <step title> — plans/brainstorm-[topic-slug].md _plan: [topic-slug]_`
+(append `· _phase: N_` when the step sits under a `#### Phase N` heading). **The `_plan:_`
+value is `[topic-slug]` alone, never `brainstorm-[topic-slug]`** — `/sdlc` Stage 0 derives
+its slug by stripping the leading `brainstorm-` from the plan filename, so tagging the row
+with the full filename stem would make the "deterministic" key never match at Stage 6
+close-out. If `TASKS.md` doesn't exist, create it from `templates/TASKS.md.template` (or
+with minimal sections).
 
 ### Step 6.5: Multi-pass Vet (mode-gated)
 
@@ -210,7 +216,8 @@ entry, see `docs/SEAM.md`), deduped by `cmd`:
 `line='{"cmd":"/sdlc plans/brainstorm-[topic-slug].md","source":"brainstorm","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action`
 On Codex (as a fallback until its `.codex/hooks.json` Stop hook is wired+trusted), also print `Next: <command>` inline right after writing
 the sentinel, so the handoff degrades gracefully instead of vanishing. **No-hook
-nudge (SEAM2):** if no Stop hook is wired at all, the sentinel is inert — apply the
-best-effort check in `docs/SEAM.md` and tell the user to enable the plugin (it ships
-the hook, SEAM1) or run `setup.sh`/`/repo-onboarding`.
+nudge (SEAM2):** if no Stop hook is wired at all, the sentinel is inert — check for one:
+`grep -rlqs 'next-action' .claude/settings.json ~/.claude/settings.json .github/hooks/
+~/.claude/plugins/ 2>/dev/null` — and if that finds nothing, tell the user to enable the
+plugin (it ships the hook, SEAM1) or run `setup.sh`/`/repo-onboarding`.
 (substitute `/sdlc` if that's the established flow). Skip only on "save for later".

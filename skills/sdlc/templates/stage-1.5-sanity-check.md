@@ -3,12 +3,6 @@
 Canonical for `/sdlc` Stage 1.5 — orchestration first, then the
 per-focus agent prompts.
 
-> **No sub-agent seam? (Copilot, Codex)** The dispatch instructions below describe the Claude
-> path. On a runtime without sub-agents, do the same work **inline in the session** and produce
-> the same structured result — but keep the discipline the dispatch existed to enforce: report
-> only the structured summary, never paste raw tool or runner output into your context. That
-> output is the single largest source of context bloat, and inline is exactly where it lands.
-
 ## Orchestration
 
 Before spending implementation tokens, verify the plan is actually
@@ -34,17 +28,11 @@ reviewing *plans* rather than checking paths: `paths` is genuinely mechanical, b
 stronger reader does better. Raising it costs on **every** run that reaches Stage 1.5 —
 which is every run, since the stage is never gated.
 
-The resolved tier still passes through the **model cap** (`models.cap` / `--model`, see
-`skills/sdlc/templates/models.md`), which is a *ceiling* — it lowers a tier, never raises
-one. Note
-the consequence, because it is the whole reason this key exists — **the cap can only
-lower, so while the site default is `haiku` there is no way to raise this stage at all.**
-`models.cap: "opus"` does not raise it; `--model opus` does not raise it. Setting
-`models.sanity` is the only lever. Once set above `haiku`, the cap applies normally
-(a Sonnet-first cap pulls `opus` back to `sonnet` unless you also pass `--model opus`).
+The resolved tier then passes through the **model cap** (`models.cap` / `--model`) as usual —
+see `skills/sdlc/templates/models.md` for the ceiling rule and why `models.sanity` is the only
+way to raise this stage above its `haiku` default.
 
-This is **not** a new model axis — it sets a default *within* the fan-out axis and is
-still capped by it. Print `model: <tier> (cap: <cap|none>)` and the resolved focus list —
+Print `model: <tier> (cap: <cap|none>)` and the resolved focus list —
 `sanity focuses: <a, b, …> (N of 3 defaults)` — before dispatching.
 
 ### Processing results

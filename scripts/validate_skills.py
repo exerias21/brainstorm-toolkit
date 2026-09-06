@@ -454,6 +454,22 @@ def validate_agents(repo_root: Path) -> tuple[list[str], list[str], int]:
             else None
         )
 
+        # An agent definition is earned by an ENFORCED tools: restriction (CLAUDE.md,
+        # "When adding a sub-agent -- usually: don't"). Without one the file buys nothing
+        # an inline role prompt wouldn't: description-driven auto-delegation is unused
+        # here (every dispatch names its agent), and agents/ ships to Claude only.
+        # e2e-test-runner is the one recorded exception -- it needs the full tool set to
+        # drive a browser suite, so there is no boundary to enforce.
+        TOOLS_EXEMPT = {"e2e-test-runner"}
+        if tools is None and agent_file.stem not in TOOLS_EXEMPT:
+            warnings.append(
+                f"{agent_file}: no `tools:` restriction. A definition file is earned by an "
+                f"ENFORCED boundary; without one, prefer a role prompt in templates/ plus "
+                f"`subagent_type: general-purpose` and an explicit `model:` at the dispatch "
+                f"site. If this agent genuinely needs every tool, add it to TOOLS_EXEMPT "
+                f"here and record why in CLAUDE.md alongside e2e-test-runner"
+            )
+
         # The defect this check exists for: prose asserts a tier the frontmatter
         # doesn't pin, so the agent silently inherits the parent session's model.
         if model is None and AGENT_SELF_DESC_RE.search(body):

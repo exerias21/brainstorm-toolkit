@@ -47,6 +47,51 @@ the overlay does not carry from the canonical skill (`install_overlay`). So an o
 `skills/<name>/templates/<file>` paths the canonical does and never inlines a body; it ships its own
 copy of a directory only when the content must genuinely differ for that tool.
 
+### Rationale prose — two kinds, one of which ships
+
+The house style attaches a reason to most rules. That is deliberate and it stays.
+But two very different things wear the same coat, and only one of them earns a
+place in a file that loads on every run:
+
+- **Failure-mode rationale — KEEP.** It names what the *model* will do wrong and
+  why, and it is the enforcement. "You will be tempted to run the tests inline —
+  shell traffic was ~53% of main-thread tokens on an audited run"; "this is the
+  step that keeps getting skipped, which leaves the loop dead"; "guessing here
+  compounds through the entire `/sdlc` run"; "a dispatch with no `model` bypasses
+  the cap with zero log line". Strip the reason from any of these and the rule
+  reads as a preference the model overrides the first time it is inconvenient.
+- **Design-history rationale — MOVE to `docs/`.** It records what the design used
+  to be or why a maintainer chose it. "This replaces the former Stages 5, 5.5 and
+  5.6"; "it now coexists instead of racing"; "the dogfood showed exactly this";
+  the `/sdlc-lite` merge changelog; the Workflow autopsy. Every one of these is
+  true, useful to a maintainer, and paid for on every consumer run. `docs/` is
+  not shipped by `setup.sh`, so a citation there costs nothing.
+
+**The test:** does the sentence change what the model *does on this run*, or does
+it explain to a person why the file looks like this? The second belongs in
+`docs/LOOP-HYGIENE.md`, `docs/MODEL-AXES.md`, `docs/PROSE-FIDELITY.md`,
+`docs/CONFIG.md`, or `docs/CONVENTIONS.md` (Migration policy) — all of which
+already exist for exactly this.
+
+**Two corollaries, both already violated at least once:**
+
+- **A skill must not restate a template it also tells the model to read now.**
+  If the line says `**Read skills/sdlc/templates/<x>.md now**`, the paragraph
+  after it is a gate, not a summary. This is the same "gate in the skill, body
+  in the template" rule stated from the reader's side.
+- **A runtime note addressed to Copilot/Codex belongs in the Copilot/Codex
+  overlay, not in a shared template.** A shared template is read by all three
+  runtimes; a "no sub-agent seam?" callout in one is dead text on Claude and
+  costs on every run. The overlay `SKILL.md` is the only file guaranteed loaded
+  on the runtime that needs it — `--resume` can skip any given template.
+
+**What is NOT a violation:** the same rule stated in several skills that never
+load each other (`Sonnet by default` appears across ~20 files). Progressive
+disclosure means a rule stated once in a file nobody else opens propagates
+nowhere. Each of those sites should be a one-line pointer to
+`skills/sdlc/templates/models.md`, not a re-derivation of the contract — but the
+repetition itself is required, not redundant.
+
 ## Skill authoring rules
 
 1. **Frontmatter must include toolkit routing metadata** under `metadata.brainstorm-toolkit-applies-to`. Use `claude` for Claude-only skills or `claude copilot` for dual-tool skills. Example:
@@ -59,22 +104,92 @@ copy of a directory only when the content must genuinely differ for that tool.
    ---
    ```
    `setup.sh` uses this metadata to decide whether the skill is copied to `.github/skills/<name>/` (Copilot) in addition to `.claude/skills/<name>/` (Claude). The installer still accepts the legacy top-level `applies-to:` key for backward compatibility, but new edits in this repo should use `metadata`.
-2. **Claude-only features** (Plan mode, sub-agents via the Agent tool, hooks) → mark the skill `claude` only in `skills/`. If the skill is still useful on Copilot in a simplified form, create a Copilot-optimized override in `copilot/skills/<name>/SKILL.md` (see rule 8).
-3. **Keep each SKILL.md tight.** Target ceilings: small utility skills ≤100 lines, larger orchestration skills ≤250 lines. If a skill grows beyond this, split it or move embedded content into `templates/`.
-4. **No inline templates or long checklists.** Reference `templates/*.template` files instead.
-5. **Graceful skip on missing config** — read `.claude/project.json` keys with fallbacks; skills must work with an empty or missing `project.json`.
-6. **Copilot uses Agent Skills, not prompt-file shims.** Consumer repos should receive `.github/skills/<name>/SKILL.md`, including any bundled resources referenced by the skill.
-7. **Claude helper agents stay in `.claude/agents/`.** VS Code can discover Claude-format agents there, so this repo does not maintain a duplicate `.github/agents/` tree for the current Claude-only helper agents.
-8. **Copilot overlay pattern.** `copilot/skills/<name>/SKILL.md` overrides the canonical `skills/<name>/SKILL.md` for Copilot distribution. Use this when a skill needs Claude-specific features (Plan mode, agents) in its canonical version but can still provide value as a simplified Copilot slash command. `setup.sh` prefers the override when it exists; otherwise falls through to the canonical version. Overrides must set `metadata.brainstorm-toolkit-applies-to: copilot` and pass `validate_skills.py` independently.
+2. **Claude-only features** (Plan mode, sub-agents via the Agent tool, hooks) → mark the skill `claude` only in `skills/`. If the skill is still useful on Copilot in a simplified form, create a Copilot-optimized override in `copilot/skills/<name>/SKILL.md` (see rule 9).
+3. **Keep each SKILL.md tight — and know which ceiling you are under.** Two
+   different numbers get cited as "the limit" and they are not the same rule:
+
+   - **Upstream (Anthropic / the open Agent Skills spec): 500 lines.** A hard
+     ceiling. Nothing in this repo is close to it.
+   - **This repo's house rule: ≤100 lines for a utility skill, ≤300 for an
+     orchestration skill.** Stricter than upstream on purpose, because a skill
+     here ships to three runtimes and its stage bodies already have a home in
+     `templates/`. Treat it as a soft target with real slack: a few lines over
+     is not worth a restructure, and buying a line back is only worth it when
+     the line was not earning its place anyway. Past ~300, ask whether a stage
+     body belongs in `templates/` instead — that is the actual signal, not the
+     count.
+
+   Cite the house rule as the house rule. Do not justify it as "Anthropic's
+   guidance" — the upstream number is looser, and the mismatch has been used to
+   argue both directions.
+
+   Three named exceptions, decided and not reopened each time they are re-measured:
+
+   | Skill | Ceiling | Why |
+   |---|---|---|
+   | `sdlc` | ~330 lines | Orchestration surface; every stage body is already in `templates/`. What remains is gate + contract, and it is 15 stages' worth. |
+   | `brainstorm` | ~320 lines | A conversational flow; splitting mid-flow costs more in comprehension than it saves in tokens. Grew deliberately when the question-asking ceiling was removed — an interview that stops early is the expensive failure here. |
+   | `code-tour` | no line ceiling | Its prose **is** the product — the fabrication warnings and the "what bad output looks like" rubric are the output spec, not a wrapper around a template. Judge it on duplication, not length. |
+
+   A skill over its ceiling without an entry in that table is a finding.
+   **Adding a row is a deliberate decision, not a way to close the finding.**
+
+4. **Frontmatter `description` — a hard budget, because it is always resident.**
+   Every skill's name + description loads into every session on every turn,
+   whether or not the skill ever fires, on all three runtimes. Codex caps the
+   whole discovery listing at **8,000 characters** (or 2% of context) and
+   silently shortens descriptions from the end — dropping skills entirely when
+   over. Claude Code truncates each description at 1,536 chars and caps the
+   listing at ~1% of context. `setup.sh` installs the full 13-skill set, so this
+   repo's descriptions are measured against those ceilings **as a set**.
+
+   - Target **≤550 characters** per description; 600 is the ceiling.
+   - Keep the whole set under **7,500 characters** (measured, not estimated —
+     parse the frontmatter, don't `grep -c`).
+   - **Front-load trigger keywords in the first ~15 words.** Codex truncates
+     from the end; a description whose distinctive phrases are in its last
+     sentence loses them first, silently.
+   - Explanation, neighbour-routing and "what this skill is NOT" belong in the
+     body, never the description. `gotcha` (464 chars) is the reference shape:
+     what it does + one clear when.
+5. **No inline templates or long checklists.** Reference `templates/*.template` files instead.
+6. **Graceful skip on missing config** — read `.claude/project.json` keys with fallbacks; skills must work with an empty or missing `project.json`.
+7. **Copilot uses Agent Skills, not prompt-file shims.** Consumer repos should receive `.github/skills/<name>/SKILL.md`, including any bundled resources referenced by the skill.
+8. **Claude helper agents stay in `.claude/agents/`.** VS Code can discover Claude-format agents there, so this repo does not maintain a duplicate `.github/agents/` tree for the current Claude-only helper agents.
+9. **Copilot overlay pattern.** `copilot/skills/<name>/SKILL.md` overrides the canonical `skills/<name>/SKILL.md` for Copilot distribution. Use this when a skill needs Claude-specific features (Plan mode, agents) in its canonical version but can still provide value as a simplified Copilot slash command. `setup.sh` prefers the override when it exists; otherwise falls through to the canonical version. Overrides must set `metadata.brainstorm-toolkit-applies-to: copilot` and pass `validate_skills.py` independently.
+10. **Portable frontmatter subset.** The Agent Skills spec GitHub Copilot and OpenAI Codex document is `name`, `description`, `license`, `metadata`, `compatibility`, `allowed-tools` only — a strict consumer hard-errors on any other key. Claude-only keys (`argument-hint`, `disable-model-invocation`, ...) may appear on the canonical `skills/<name>/SKILL.md` (the Claude install source); `setup.sh` strips them for the `.github/skills/` and `.agents/skills/` installs. `copilot/skills/<name>/SKILL.md` and `codex/skills/<name>/SKILL.md` overlays must never declare them by hand — `check_contracts.py`'s `portable-frontmatter` check enforces this.
 
 ## Unified contracts
 
 - **`AGENTS.md`** — repo-wide agent instructions. Consumer repos symlink (POSIX) or copy `CLAUDE.md` → `AGENTS.md`.
-- **`TASKS.md`** — markdown checkbox list at repo root; the portable, durable task tracker. It is the **only** cross-tool backlog: `/sdlc-status`, `/repo-health`, the `--queue` loop and the Stop hooks all read it, and it survives the session. Claude Code's native task list (`TaskCreate`/`TaskUpdate`) is a **separate, session-scoped progress indicator** — `/task` mirrors its one item and `/sdlc` mirrors its stage list, both Claude-only and both skipped silently elsewhere. Never let a decision depend on the native list, and never treat it as a substitute for a `TASKS.md` row: it is a view, not a record.
+- **`TASKS.md`** — markdown checkbox list at repo root; the portable, durable task tracker. It is the **only** cross-tool backlog: `/sdlc-status`, the `--queue` loop and the Stop hooks all read it, and it survives the session (`/repo-health` does not read it today). Claude Code's native task list (`TaskCreate`/`TaskUpdate`) is a **separate, session-scoped progress indicator** — `/task` mirrors its one item and `/sdlc` mirrors its stage list, both Claude-only and both skipped silently elsewhere. Never let a decision depend on the native list, and never treat it as a substitute for a `TASKS.md` row: it is a view, not a record.
 - **`GOTCHAS.md`** — project-specific pitfalls; consulted by `/gotcha` and the sanity-check stage of `/sdlc`.
 - **`.claude/project.json`** — optional per-project config (test commands, eval runner, modules list); every key is optional, missing keys are skipped.
-- **Gotcha flywheel** — the loop-exit capture protocol is centralized in `skills/gotcha/SKILL.md` ("Capture at loop-exit"). `/task` and `/sdlc` reference it and auto-draft a gotcha **only on an objective trigger** (a fix-loop that failed-then-recovered, or the user voicing surprise), routed through gotcha's dedup — never a vibe-gate. `/task` and `/sdlc` also drop a `/gotcha <text>` `.next-action` sentinel when capture is declined; the seam is Stop-hook-backed on all three runtimes (Claude `.claude/settings.json`, Copilot `.github/hooks/`, Codex `.codex/hooks.json` — Codex has a Stop hook with the same `decision:block` contract, shipped by the plugin/`setup.sh`); writers also print an inline `Next:` fallback for when no hook is wired/trusted yet. `/brainstorm` injects area-scoped gotchas at Step 2 (entry), not only at validation.
-- **Model cap** — `.claude/project.json` `models.cap` (or the per-run `--model <tier>` flag) is a **ceiling** on sub-agent model tier for the fan-out skills (`/sdlc`, `/brainstorm*`). The fan-out is **Sonnet-first by default** — every prose dispatch site says "Sonnet by default"; Opus is an explicit opt-up via `--model opus`. Keep it that way when adding a fan-out dispatch (default Sonnet, not Opus). Canonical contract: `skills/sdlc/templates/models.md`. Prose is the default enforcement surface — each fan-out dispatch resolves the tier (`--model` > `models.cap` > default) and prints `model: <tier> (cap: <cap|none>)` before dispatching; the opt-in `pipeline.enforce_cap` PreToolUse hook (`scripts/hooks/enforce-model-cap.sh`, Claude only) makes it deterministic by rewriting a dispatch `model` above the cap, exempting dispatches whose `description` starts `review:`; `validate_skills.py` soft-warns if a fan-out skill drops the `models.md` pointer. Adding/rewording a fan-out dispatch means updating both legs (prose, overlays). A second, independent axis exists for `/sdlc` only: the **reviewer-model axis** (`models.code_review` / `--review-model`, default `opus`, canonical contract at `skills/sdlc/templates/models.md`), which selects the adversarial Review→Fix stage's reviewer. The stage is opt-in, permanently — it never runs unless explicitly enabled. `fable` remains a valid, explicit opt-in value (usage-billed since Claude Fable 5's 2026-07-07 promotional-access sunset), never the default. This axis is NOT a value on the `haiku < sonnet < opus` ladder, is NOT subject to the Sonnet-first default, and `models.cap` never lowers it. Keep the two axes mechanically separate in any future edit. Because `models.cap` cannot bound Axis 2, the review stage's cost is bounded by its **fan-out width** instead: `agents.code_review_lenses` selects which lenses, `agents.code_review_max_lenses` (default `4`) caps how many, applied after circuit-breaker demotion and in list order. When a cap is set and the reviewer outranks it, the stage must say so out loud rather than let the user read `cap: sonnet` next to N Opus agents — a log line only, never a `capModel()` call. The reverse also holds: an explicit `models.code_review` is always the dispatched value — a reviewer that lands on the implementer's tier marks the run `independence: degraded`, it is never bumped to a higher tier (the bump could only ever fire against an explicit value, which made `code_review: "sonnet"` unreachable under the default cap).
+- **Gotcha flywheel** — the loop-exit capture protocol is centralized in `skills/gotcha/SKILL.md` ("Capture at loop-exit"). `/task` and `/sdlc` auto-draft a gotcha **only on an objective trigger** (a fix-loop that failed-then-recovered, or the user voicing surprise), routed through gotcha's dedup — never a vibe-gate. When capture is declined, both drop a `/gotcha <text>` `.next-action` sentinel; the seam is Stop-hook-backed on all three runtimes, with an inline `Next:` fallback for when no hook is wired/trusted yet — full contract at `docs/SEAM.md` (also the home of the separate `stop-gate.sh` test-rerun hook and its mutual-exclusion rule with the sentinel). `/brainstorm` injects area-scoped gotchas at Step 2 (entry), not only at validation.
+- **Model tiers — two independent axes, canonical contract in
+  `skills/sdlc/templates/models.md`.** Read it before touching any dispatch
+  site; do not restate it here.
+  - **Axis 1 (fan-out tier):** `--model <tier>` > `.claude/project.json`
+    `models.cap` > default. `models.cap` is a **ceiling, never a target**. The
+    fan-out is **Sonnet-first by default** everywhere — Opus is an explicit
+    opt-up. Keep it that way when adding a dispatch.
+  - **Axis 2 (reviewer model, `/sdlc` only):** `models.code_review` /
+    `--review-model`, default `opus`, stage permanently opt-in. **Not on the
+    haiku<sonnet<opus ladder; `models.cap` never lowers it.** Its cost is
+    bounded by fan-out width (`agents.code_review_lenses`,
+    `agents.code_review_max_lenses`, default 4) instead. An explicit
+    `models.code_review` is always the dispatched value — a reviewer that lands
+    on the implementer's tier marks the run `independence: degraded` rather
+    than being bumped to a higher tier.
+  - **Keep the two axes mechanically separate in any future edit.** Prose is
+    the default enforcement surface: each dispatch resolves its tier and
+    prints `model: <tier> (cap: <cap|none>)` before dispatching. The opt-in
+    `pipeline.enforce_cap` PreToolUse hook (`scripts/hooks/enforce-model-cap.sh`,
+    Claude only) makes Axis 1 deterministic by rewriting an over-cap dispatch
+    `model`, exempting `review:`-prefixed dispatches (Axis 2).
+  - Adding or rewording a fan-out dispatch is a **two-leg edit**: canonical
+    prose, then the Copilot/Codex overlays. `validate_skills.py` soft-warns if a
+    fan-out skill drops the `models.md` pointer.
 
 ## When modifying skills
 
@@ -104,17 +219,10 @@ could see. Both commands, with the six case studies, are written out under "Migr
 Every skill is prose. There is **one** expression of each pipeline stage (the canonical
 `skills/<name>/SKILL.md`) plus per-tool overlays where a runtime genuinely differs.
 
-`skills/sdlc/workflows/sdlc-pipeline.workflow.js` — 1,398 lines of JS mirroring the prose —
-was **deleted**. It ran only when "ultracode" was explicitly enabled, it could not do
-`--resume` or interactive review approval, it carried two features the prose described as real
-but marked unimplemented, and the prose↔Workflow sync leg had **no automated guard** (CLAUDE.md
-said so outright: "keeping them in sync is on the author"). In the audited session it was
-invoked zero times; the Workflow tool *was* called five times and every call passed an inline
-ad-hoc script instead. It was the least capable of the three expressions and the most expensive
-to maintain. `/brainstorm-deep` carried the last remaining Workflow (205 lines, one fan-out);
-it was deleted too, so **nothing in this repo runs a Workflow any more**. Do not add one back:
-a Workflow is a second expression of a stage with no automated guard keeping it in sync with
-the prose, and every attempt at that here has ended the same way.
+**Nothing in this repo runs a Workflow.** The one that existed (`sdlc-pipeline.workflow.js`,
+1,398 lines mirroring the prose, plus a smaller one in `/brainstorm-deep`) was deleted because
+the prose↔Workflow sync leg had no automated guard and drifted. Do not add one back for the
+same reason — see `docs/PROSE-FIDELITY.md` for the full case history.
 
 **So a stage-contract change is now a two-leg edit:** the canonical prose, then the
 Copilot/Codex overlays (which have no Workflow and never did — the prose is all they run).
@@ -147,17 +255,9 @@ Two rules follow, and both are load-bearing:
   decide that *without* opening the template it is skipping. That is where most of the
   saving comes from: a default run never loads `stage-5.7-review-fix.md` at all.
 
-**There was once a second pipeline skill.** `/sdlc` opened a PR; `/sdlc-lite` stopped at
-the edge of git. They duplicated every stage, and the lite one deferred to the other's
-prose 15 times, so a lite run loaded all 1,069 lines of it. The PR-opening variant was
-deleted, what mattered was folded in, and the survivor took the `/sdlc` name back — it
-does **no git writes** and hands you a validated tree.
-
-Folded in, each closing a gap that existed on its own: Stage 1 plan parsing (the decompose
-gate reads `parse.json` and the lite path had no writer for it), skill-repo mode (this repo
-*is* a skill repo), the vendored-skill guard, the soft-stop tier (now in
-`changed-files-gate.md`) and four safety rules. Dropped: branch/commit/push/`gh pr create`,
-the `pr-create.json` sidecar and `pipeline.skip_review`.
+**`/sdlc` absorbed the former `/sdlc-lite`** — the two duplicated every stage, so keeping both
+cost more than the merge did. The survivor took the `/sdlc` name, does **no git writes**, and
+hands you a validated tree; see `docs/FLOW.md` for what each side of the merge contributed.
 
 Two flags gate whole templates rather than sections — `--queue` (`queue-mode.md`) and the
 review stage's opt-in. Keep it that way: a flag nobody passed should cost nothing.
@@ -176,7 +276,7 @@ Sub-agent definitions are a **different artifact from skills**, with their own f
 An earlier four-agent set went almost entirely undispatched: every dispatch site named
 `subagent_type: general-purpose` and pasted the role prompt in from a template, so the agent
 files sat there costing maintenance and buying nothing. The three that survive
-(`test-runner`, `e2e-test-runner`, `ux-plan-validator`) are each named at a real dispatch
+(`test-runner`, `e2e-test-runner`, `plan-conformance-validator`) are each named at a real
 site — check that before adding a fourth.
 
 **The rule:**
@@ -192,18 +292,37 @@ Frontmatter buys exactly three things nothing else can, and two of them are usua
 |---|---|---|
 | `description:` | auto-delegation — Claude picks the agent unprompted | **Dead** — every skill names its agent explicitly, and auto-delegation is unreliable in practice |
 | `tools:` | an **enforced** boundary; prose saying "you are read-only" is advisory | **The real win** — verified enforced: a declared allowlist omits Bash/Write entirely |
-| `model:` | pins a tier | **Usually hostile** — it bypasses the `--model` > `models.cap` ladder. Pin at the dispatch site instead, except where a skill has explicitly exempted the site (`/sdlc-status`'s inline reads) |
+| `model:` | pins a default tier | **A default, not an override** — since **v2.1.251** the dispatch site's per-invocation `model` outranks frontmatter (order: per-invocation > frontmatter > `CLAUDE_CODE_SUBAGENT_MODEL` > session). So it does NOT bypass the ladder. Still prefer pinning at the dispatch site — that is where the `--model` > `models.cap` resolution is printed and auditable — but a frontmatter tier is a safe floor for an agent that must never run hot (`test-runner` pins `haiku`) |
 
 Also weigh, before adding one:
 
 - **Cross-tool blindness.** `setup.sh` copies `agents/` for **Claude only**. Copilot and Codex
   have no agent-definition concept, so anything encoded in frontmatter is invisible to two of
   three runtimes.
-- **A restart tax.** The agent registry loads at session start, so a new or edited agent file
-  does nothing until the session restarts. An inline role prompt takes effect immediately.
+- **Restart, but only sometimes.** Claude Code *watches* `.claude/agents/` and picks up an
+  added or edited file within seconds, no restart needed. Three cases still need one, and the
+  first is the one that bites a consumer: creating a scope's **first** agent file in a **new**
+  `agents/` directory (i.e. a fresh `setup.sh` install), an agents dir under `--add-dir`, and a
+  session started with `--disable-slash-commands`. Editing an existing agent is live.
 - **`tools:` is an allowlist the harness tops up.** Treat it as "no Write/Edit", not as an
-  exact set. Command-scoped forms like `Bash(git log:*)` are **not** a documented value here —
-  if the agent needs git, it needs plain `Bash`.
+  exact set. Accepts a comma- or space-separated string or a YAML list. Command-scoped forms
+  like `Bash(git log:*)` are **not** a documented value here — if the agent needs git, it needs
+  plain `Bash`. The one documented scoped form is `Agent(type-a, type-b)`, restricting which
+  subagents may be spawned. A misspelled tool name is **silently dropped**; if every entry
+  resolves to nothing the dispatch fails outright with "would be spawned with zero tools".
+- **Plugin agents ignore three fields.** `hooks`, `mcpServers` and `permissionMode` are dropped
+  when an agent loads from a plugin — which is how this repo ships. Don't encode behaviour in
+  them. Plugin agents are addressed `brainstorm-toolkit:<name>`; the bare name works only for a
+  **vendored** copy (a project agent under `.claude/agents/`), which is why the dispatch sites
+  say "or bare `<name>` when vendored".
+
+**The one standing exception, recorded rather than hidden:** `e2e-test-runner` declares no
+`tools:` and no `model:`, so by the rule above it earns nothing and should be an inline role
+prompt. It needs the full tool set to run a browser suite and apply fixes, so there is no
+boundary to enforce. It is kept because it is dispatched by name at two real sites and its
+prompt is long enough to be worth a file — but it is the exception, not the pattern. A fourth
+agent without a `tools:` restriction should be an inline role prompt instead;
+`scripts/validate_skills.py` warns on one.
 
 If you do add or edit one: `name` must match the filename stem, register it in
 `.claude-plugin/marketplace.json` under `plugins[].agents`, and never let the prose claim a
@@ -212,12 +331,24 @@ checks all of this.
 
 ## Testing changes
 
-There is no automated test suite for the skills themselves (they are prompts, not code). Verify manually by:
+This repo runs three tiers of testing, cheapest first — see `docs/EVALS.md`: static
+prose/contract checks (below, free, every push), `scripts/eval-runner.py`'s fixture-based
+pytest evals, and `scripts/ci/skill-eval.py`'s headless outcome evals on a fixture repo
+(costs real money — nightly/on-demand only, never per push). Verify manually by:
 1. Running `python scripts/validate_skills.py` from the repo root — this covers skills
    **and** `agents/` frontmatter (missing `name`/`description`, a prose model-tier or
    read-only claim the frontmatter doesn't enforce, marketplace registration drift).
-2. Running `bash setup.sh --target /tmp/test-repo --tools both` against a scratch repo.
-3. Invoking the changed skill in both Claude Code and Copilot when the skill targets both tools.
-4. Confirming the skill runs without referencing removed files or broken paths.
+2. Running `python scripts/ci/check_contracts.py` — proves the prose and the config
+   agree: every `project.json` key a skill names exists in
+   `templates/project.json.example`, every repo-path citation resolves, no forbidden
+   (rename-invalidated) phrase survives, and no sentence names the same command twice.
+   `--self-test` exercises the four checks against a synthetic tree.
+3. Running `bash scripts/ci/test-hooks.sh` — the regression harness for the hooks that make
+   policy deterministic instead of prose-enforced (`scripts/hooks/enforce-model-cap.sh`,
+   `scripts/hooks/stop-gate.sh`): scratch project dirs, sample stdin JSON, assertions on
+   stdout. Exits 1 on the first failing case.
+4. Running `bash setup.sh --target /tmp/test-repo --tools both` against a scratch repo.
+5. Invoking the changed skill in both Claude Code and Copilot when the skill targets both tools.
+6. Confirming the skill runs without referencing removed files or broken paths.
 
 For the Python helpers in `scripts/`, run them against the examples or a known input and check output.

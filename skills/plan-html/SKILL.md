@@ -1,17 +1,11 @@
 ---
 name: plan-html
 description: >
-  Render a markdown plan file as a self-contained, shareable HTML page. Use it whenever
-  the user says /plan-html, "render the plan", "make this plan viewable", "HTML version
-  of the plan", or wants to send a plan to someone who won't read markdown.
-  Zero external assets (no CDN, no JS framework), embedded CSS with
-  light/dark mode, anchored TOC at top, every section open by default,
-  and auto-generated inline-SVG visuals (effort×impact map, phase flow)
-  when the plan's structure warrants — no flag, data-driven. Composes
-  with any plan — brainstorm output, SDLC plans, refactor docs, threat
-  models. Use when you want to share a plan with a stakeholder,
-  scroll-engage with a long plan in a browser, or hand off a roadmap.
-  Output is throwaway: the .md remains canonical.
+  Render a markdown plan file as a self-contained, shareable HTML page. Use it whenever the user
+  says /plan-html, "render the plan", "make this plan viewable", "HTML version of the plan", or
+  wants to send a plan to someone who won't read markdown, share a plan with a stakeholder, or
+  hand off a roadmap. Composes with any plan — brainstorm output, SDLC plans, refactor docs,
+  threat models. Output is throwaway: the .md remains canonical.
 argument-hint: "<plan-file>"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex

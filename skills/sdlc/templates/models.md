@@ -6,6 +6,20 @@ spec for all of them. A skill needs only a one-line pointer here plus the
 print-then-dispatch rule — never inline the syntax (keeps skills under their line
 ceilings).
 
+## Contents
+
+- [The config surface](#the-config-surface)
+- [Two axes — keep them mechanically separate](#two-axes--keep-them-mechanically-separate)
+- [Axis 1 — the cap is a CEILING, not a setting](#axis-1--the-cap-is-a-ceiling-not-a-setting)
+- [Axis 2 — the reviewer](#axis-2--the-reviewer)
+- [Agent counts (`agents.*`)](#agent-counts-agents)
+- [Reasoning effort — not settable here](#reasoning-effort--not-settable-here)
+- [Prose dispatch rule (the DEFAULT path)](#prose-dispatch-rule-the-default-path--this-is-what-makes-any-of-it-real)
+- [Runtime regimes](#runtime-regimes)
+- [Invalid input — fall through, never guess](#invalid-input--fall-through-never-guess)
+- [Session nudge](#session-nudge)
+- [Migration from the old keys](#migration-from-the-old-keys)
+
 ## The config surface
 
 ```json
@@ -118,10 +132,8 @@ back to the highest available of `opus`/`sonnet`/`haiku`, preferring `opus`, log
 The reviewer should differ from the implementer's effective tier. When the two collide, the
 stage **still dispatches the value you configured** and marks `review.json.data.independence`
 `"degraded"` (findings surfaced, never auto-fixed), with one log line. It never bumps the
-reviewer to a higher tier on your behalf: the reviewer's default is already the ceiling, so a
-bump could only ever fire against an explicit `models.code_review` / `--review-model` value —
-which made `code_review: "sonnet"` unreachable under the default `cap: sonnet`. An explicit
-Axis 2 value is always the dispatched value.
+reviewer to a higher tier on your behalf — an explicit Axis 2 value is always the dispatched
+value.
 
 ### The cap interaction — say it out loud
 
@@ -204,6 +216,5 @@ Tool-agnostic wording — not `/model`, which is Claude-specific.
 
 ## Migration from the old keys
 
-The `pipeline.*` model keys were renamed to `models.*` / `agents.*` in a clean break. A repo
-still using an old key silently gets the built-in default; `/repo-onboarding` rewrites the
-block and `/repo-health` flags leftovers. Full mapping: `docs/MODEL-AXES.md`.
+The `pipeline.*` model keys were renamed to `models.*` / `agents.*`. A repo still using an old
+key silently gets the built-in default. Full mapping: `docs/MODEL-AXES.md`.

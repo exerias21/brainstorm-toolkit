@@ -1,16 +1,12 @@
 ---
 name: repo-health
 description: >
-  Read-only repo hygiene sweep. Runs dead-code, tests, dependency audit,
-  secret scan, and gotchas-currency in parallel; rolls findings into a
-  single scored report. Use this when the user says /repo-health, asks
-  for a "hygiene check", "weekly sweep", "is this repo healthy",
-  "what should I clean up", or before a release. Read-only — produces a
-  report and a `.next-action` suggestion, never modifies code. Run it after merges land, not
-  mid-implementation — a sweep is noisy while you're actively changing things. For a deep
-  dead-code investigation use /dead-code-review; for PR-scoped review use /sdlc's Stage 5. Also flags
-  migration drift (migration files newer than the recorded applied version),
-  stale pipeline run-state, and stale memory pointers.
+  Read-only repo hygiene sweep: runs dead-code, tests, dependency audit, secret scan, and
+  gotchas-currency in parallel, rolling findings into a single scored report. Use when the user
+  says /repo-health, asks for a "hygiene check", "weekly sweep", "is this repo healthy", "what
+  should I clean up", or before a release. Never modifies code — produces a report and a
+  `.next-action` suggestion. Run after merges land, not mid-implementation. For a deep dead-code
+  investigation use /dead-code-review; for PR-scoped review use /sdlc's Stage 5.
 argument-hint: "[--no-dead-code] [--no-tests] [--no-deps] [--no-secrets] [--no-gotchas] [--no-migrations] [--no-pipeline-state] [--no-memory]"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
@@ -21,10 +17,6 @@ metadata:
 Composes existing checks into one weekly-sweep workflow. Read-only: produces
 a scored report and drops a `.claude/.next-action` with the highest-impact
 next command. Never modifies code, never opens a PR.
-
-For deeper or more action-oriented variants:
-- Use `/dead-code-review` directly for a thorough multi-agent scan.
-- Use `/test-check` for the full test+log audit pipeline.
 
 ## Arguments
 
@@ -39,7 +31,10 @@ For deeper or more action-oriented variants:
 ## Procedure
 
 Launch all enabled checks **in parallel** on Claude Code (single message,
-multiple tool calls). On Copilot, run sequentially. Each check returns a
+multiple tool calls). On Copilot and Codex — neither has a sub-agent seam — run each check **inline in this
+session, sequentially**, and report only the structured result per check; never paste raw
+tool output into your context. Every 'dispatch a ... agent' below means that inline on
+those runtimes. Each check returns a
 small structured result that the rollup composes.
 
 ### Check 1 — Dead code (Haiku agent)
@@ -172,8 +167,7 @@ Fix: cp .claude/project.json.example .claude/project.json  (then trim to taste)
 
 This is worth a check of its own because the failure is **silent by design**: skills
 graceful-skip on missing config, so an unread `project.json` is indistinguishable from a
-deliberate no-config run. An audited repo ran the full pipeline for three days with
-`models.cap` set in the *example* file and never loaded, reporting `cap: none` throughout.
+deliberate no-config run.
 
 If both files exist, or neither does, → `pass`.
 
@@ -181,21 +175,48 @@ If both files exist, or neither does, → `pass`.
 `agents.code_review_max_lenses` *and* sets `models.cap`, note that the adversarial review
 stage's reviewer is not governed by `models.cap` (see `skills/sdlc/templates/models.md`).
 
-**Token-cost follow-up (pointer, never run here).** This skill does not measure spend — it is a
-hygiene sweep, and a token audit reads the transcript store rather than the repo. When Check 9
-reports a finding, or when the user asks where their tokens went, point at:
+**Token-cost follow-up (pointer, never run here).** When Check 9 reports a finding, or when the
+user asks where their tokens went, point at:
 
 ```
 python scripts/token-audit.py --list
 python scripts/token-audit.py --session <uuid> --check-cap <tier>
 ```
 
-It reports the main-thread vs sub-agent split, per-tier cost, and a context-drag verdict. Name it;
-don't run it as part of the sweep.
+Name it; don't run it as part of the sweep.
+
+### Check 10 — Rules drift (Sonnet agent)
+
+Skip with reason `no AGENTS.md/CLAUDE.md` when neither exists at repo root. Otherwise diff the
+rules file's claims against `git diff --name-only <main_branch>...HEAD` (empty → fall back to
+the last 20 commits on `main_branch` itself); empty either way → skip with reason `no diff`.
+
+Dispatch one agent, Sonnet by default per `skills/sdlc/templates/models.md` (print the `model:`
+line):
+
+```
+Read AGENTS.md/CLAUDE.md and the changed-file list. For every rule or "where things live"
+pointer this change makes FALSE, emit a Fix row with the minimal edit. For a new durable
+invariant this change establishes, emit at most three Add rows of one line each. List what was
+checked and is still true. Report {"fix": [{rule, edit}], "add": [line], "checked_ok": [claim]}.
+Cap each list at 10. CLAUDE.md and AGENTS.md are byte-identical in this repo -- a Fix or Add row
+touching one must mirror the same edit into the other and say so in the row.
+```
+
+### Check 11 — Backlog drift (procedural, cheap)
+
+**New reader:** this check is the first thing in `/repo-health` to read `TASKS.md`.
+Skip with reason `no TASKS.md` or `no .claude/pipeline/` when either is absent, and
+`no close-tasks.sh` when the script did not install (`--no-copy-scripts`).
+
+Run `bash scripts/close-tasks.sh reconcile --file TASKS.md` — read-only, never pass
+`--apply` here (`/repo-health` is read-only by contract; `/sdlc-status --reconcile` owns
+the write). Report `drift_count` and up to 10 findings, each with its line and type.
+The fix command is `/sdlc-status --reconcile`.
 
 ## Roll-up
 
-Compute a score: `100 - min(60, 10*high_findings + 5*high_deps + 4*unapplied_migrations + 3*stale_gotchas + 2*test_failures + 2*stale_pipeline_runs + 1*orphan_files + 1*skipped_tests + 1*stale_memory + 5*config_inert)`. Floor at 40 — a single bad metric shouldn't drive the score to zero.
+Compute a score: `100 - min(60, 10*high_findings + 5*high_deps + 4*unapplied_migrations + 3*stale_gotchas + 3*rules_drift_fixes + 3*backlog_drift + 2*test_failures + 2*stale_pipeline_runs + 1*orphan_files + 1*skipped_tests + 1*stale_memory + 5*config_inert)`. Floor at 40 — a single bad metric shouldn't drive the score to zero.
 
 Print the report:
 
@@ -212,6 +233,8 @@ Score: 87 / 100  (▼ 5 from last sweep if .claude/pipeline/last-health.json exi
   ⚠ Migrations:    repo @ 232, applied @ 231 — 1 unapplied (run migrations)
   ⚠ Pipeline:      1 stale run ("todos-multi-notes" in_progress 3d; committed outside)
   ✓ Memory:        no repo-local index (skipped)
+  ✓ Config:        project.json present, matches project.json.example
+  ⚠ Rules:         1 fix ("AGENTS.md still says Stage 6 opens a PR")
 
 Suggested next: apply pending migration 232 (the highest-blast finding)
                 /sdlc to fix the dep vuln
@@ -222,10 +245,7 @@ Run again with --no-deps if dep audit is too slow on this repo.
 
 The "Suggested next" is the highest-impact actionable command (priority:
 unapplied migration > dep HIGH > stale pipeline run > test failure > stale
-gotcha > orphan file > skipped test > stale memory). This hygiene-priority
-ladder is the health-sweep specialization of `/sdlc-status`'s **canonical decision
-ladder** (it feeds `/sdlc-status` rung 7 — hygiene when nothing else is queued; `/sdlc-status`
-is the source-of-truth readout, see `skills/sdlc-status/SKILL.md`). Only
+gotcha > orphan file > skipped test > stale memory). Only
 append this command to `.claude/.next-action` if the repo is already set up
 for that integration (for example, the file already exists or `.gitignore`
 already covers `.claude/.next-action` or `.claude/`). Append ONE structured line,

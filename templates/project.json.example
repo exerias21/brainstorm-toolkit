@@ -64,7 +64,11 @@
     "_code_review_max_lenses_comment": "Optional, default 4 (= today's behavior, so this key is inert until changed). Caps HOW MANY Stage 5.7 lenses fan out; code_review_lenses above picks WHICH. Applied AFTER circuit-breaker demotion, truncating in list order -- so 1 keeps 'correctness', the highest-yield lens. Set 1 for a single-reviewer run without needing the lens names. NOTE: each lens is one call at the REVIEWER model (models.code_review, default opus, cap-exempt), so this knob -- not models.cap -- is what bounds review-stage cost. Any non-integer or non-positive value falls through to 4.",
     "code_review_passes": 1,
     "code_review_max_fix_loops": 3,
-    "decompose_min_tasks": 6
+    "decompose_min_tasks": 6,
+    "cleanup_lenses": ["over-engineering", "docstring-currency"],
+    "_cleanup_lenses_comment": "Optional, default both (= the array above). Which Stage 5.9 cleanup lenses fan out -- see skills/sdlc/templates/stage-5.9-cleanup.md. An unrecognized entry is ignored with one warning.",
+    "cleanup_max_lenses": 2,
+    "_cleanup_max_lenses_comment": "Optional, default 2 (= today's behavior, so this key is inert until changed). Caps HOW MANY Stage 5.9 lenses fan out; cleanup_lenses above picks WHICH. Truncates in list order, same convention as code_review_max_lenses. Any non-integer or non-positive value falls through to 2; never 0."
   },
 
   "migrations": {
@@ -79,7 +83,9 @@
     "staleness_hours": 24,
     "_globs_comment": "Override the changed-files-gate surface globs (see skills/sdlc/templates/changed-files-gate.md). Defaults cover the common cases; set these only for non-standard layouts.",
     "frontend_globs": ["**/*.tsx", "**/*.jsx", "**/*.vue", "**/*.svelte", "**/*.css", "**/*.scss"],
+    "backend_globs": ["**/*.py", "**/*.go", "**/*.rb", "**/*.java", "**/*.ts"],
     "data_globs": ["**/migrations/**", "**/schema/**", "**/models/**", "**/*.sql"],
+    "docs_globs": ["**/*.md", "docs/**"],
     "_deploy_delta_comment": "Dependency manifests/lockfiles/Dockerfiles. When the diff touches one, /sdlc flags 'rebuild required (not restart)' in the Stage 7 report + checklist — code committed != running env reflects it.",
     "deploy_delta_globs": ["requirements.txt", "pyproject.toml", "poetry.lock", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "go.mod", "Cargo.toml", "Gemfile.lock", "Dockerfile", "**/Dockerfile"],
     "_memory_index_comment": "Optional path to a REPO-LOCAL memory/knowledge index for /repo-health Check 8. Leave unset to skip — the check NEVER reads the user-global ~/.claude memory dir.",
@@ -94,6 +100,10 @@
     "poka_yoke": false,
     "_enforce_cap_comment": "Claude-only, default false. When true, the PreToolUse(Agent) hook scripts/hooks/enforce-model-cap.sh (wired by setup.sh / the plugin) makes models.cap deterministic: a dispatch whose model ranks above the cap is rewritten to the cap, and a dispatch that omits model gets the cap unless its agent definition pins a tier. Dispatches whose description starts 'review:' (the Axis 2 reviewer) are exempt. Trade-off: the hook cannot see a per-run --model flag, so with enforcement on the config cap is policy and --model opus is clamped -- raise models.cap for that run instead. Each rewrite is shown to you as a systemMessage; it never blocks.",
     "enforce_cap": false,
+    "_stop_gate_comment": "Claude/Codex only (Copilot gets no wiring), default \"off\". Set \"tests\" to make the Stop hook scripts/hooks/stop-gate.sh re-run test.unit whenever an /sdlc run's envelope is in_progress and block the handoff (decision:block) on a red result, bounded by pipeline.loop.max_hops consecutive failures before it stands down. Inert (zero output) unless stop_gate is \"tests\" AND an in_progress envelope exists AND test.unit is configured. It never blocks when test.unit is missing on PATH, and it stands down for stop_hook_active or a pending .claude/.next-action sentinel so it is never a second Stop-hook blocker -- see docs/SEAM.md.",
+    "stop_gate": "off",
+    "_stop_gate_timeout_comment": "Seconds before stop-gate.sh gives up on test.unit (timeout(1)). Default 300.",
+    "stop_gate_timeout": 300,
 
     "output": {
       "_comment": "Optional. Stage-narration verbosity for /sdlc. DEFAULT IS 'quiet' -- this block exists to opt OUT, not in. Narration is re-read by every later turn in the same session, so it compounds. Detail is never lost: it is already written to the stage sidecars under .claude/pipeline/<slug>/stage-outputs/. MEASURED CAVEAT: on an audited run narration was only ~2% of main-thread tokens -- do this for signal-to-noise, not for savings. The real drivers were shell traffic (~53%) and the orchestrator writing files into its own context instead of delegating (~18%).",
@@ -113,6 +123,13 @@
       "mode": "interactive",
       "_mode_comment": "One of 'interactive' (default: each confirmed finding's fix spec is presented for approve/edit/skip, then the run pauses before Stage 6 with anything remaining surfaced), 'auto' (auto-approve every confirmed auto_fixable:true finding, bounded by agents.code_review_max_fix_loops -- design-decision findings, auto_fixable:false, are NEVER auto-approved in any mode), 'off' (report only, Stage 5.8 does not run). There is no confidence or consecutive-approval throttle: the auto_fixable rubric and the loop budget are the whole bound.",
       "_cost_bound_comment": "Diff size is NOT bounded here -- every lens reviews the whole diff. The levers that exist are agents.code_review_lenses and agents.code_review_max_lenses (fan-out width). See skills/sdlc/templates/models.md for the removed-key record."
+    },
+
+    "cleanup": {
+      "_comment": "Optional, OFF by default. Stage 5.9 cleanup pass for /sdlc -- an opt-in, quality-only lens fan-out (over-engineering, docstring-currency) scoped to implement.json data.files_changed[], that runs after Stage 5.8 and only once Stage 5 is green with real test evidence. See skills/sdlc/templates/stage-5.9-cleanup.md. Bug-hunting is out of scope by design (that's Stage 5.7's correctness lens), and this stage never calls /simplify (a Claude Code CLI built-in, absent on Copilot/Codex). Omit this whole block to accept the defaults below (stage stays OFF). OPT-IN, PERMANENTLY: an explicit --cleanup flag or an explicit enabled:true here is required to activate the stage; omitted, absent, or enabled:false all mean OFF, and --no-cleanup always wins OFF.",
+      "enabled": false,
+      "mode": "interactive",
+      "_mode_comment": "One of 'interactive' (default: the full findings list is shown once, then a single confirm to apply the safe_to_apply findings -- not per-finding approve/edit/skip), 'auto' (apply every confirmed safe_to_apply finding without prompting), 'off' (report only, nothing is applied -- git diff is identical before and after this stage). A finding is safe_to_apply only if it is a deletion, a docstring edit, or a rename with every call site named; anything else is report-only regardless of mode."
     },
 
     "loop": {

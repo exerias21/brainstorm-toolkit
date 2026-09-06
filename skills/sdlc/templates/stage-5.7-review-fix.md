@@ -3,11 +3,16 @@
 Canonical for `/sdlc`. **Opt-in, permanently OFF by default** —
 do not load this file unless the stage is enabled (see the enablement rule below).
 
-> **No sub-agent seam? (Copilot, Codex)** The dispatch instructions below describe the Claude
-> path. On a runtime without sub-agents, do the same work **inline in the session** and produce
-> the same structured result — but keep the discipline the dispatch existed to enforce: report
-> only the structured summary, never paste raw tool or runner output into your context. That
-> output is the single largest source of context bloat, and inline is exactly where it lands.
+## Contents
+
+- [Enablement and gate](#enablement-and-gate)
+- [Lens fan-out and cost knobs](#lens-fan-out-and-cost-knobs)
+- [Verify pass and false-positive circuit breaker](#verify-pass-and-false-positive-circuit-breaker)
+- [Stage 5.8 — Fix loop](#stage-58--fix-loop)
+- [Sidecar shapes (this stage only)](#sidecar-shapes-this-stage-only)
+- [`.claude/pipeline/_review-stats.json` — review circuit breaker (cross-run ledger)](#claudepipeline_review-statsjson--review-circuit-breaker-cross-run-ledger)
+
+## Enablement and gate
 
 This stage activates only on an explicit
 `--review-model <name>` flag or an explicit `pipeline.review_fix.enabled: true` in
@@ -25,6 +30,8 @@ default `opus`, resolved per `skills/sdlc/templates/models.md`. That axis is sep
 **Every Axis 2 dispatch — each lens, the verify pass, the fix-planner — sets the Agent
 `description` to start with `review:`** (e.g. `review: correctness`). That prefix is how the
 opt-in model-cap hook (`pipeline.enforce_cap`) knows to leave the reviewer tier alone.
+
+## Lens fan-out and cost knobs
 
 **Which lenses run — `agents.code_review_lenses`.** Read the array from `.claude/project.json`;
 when the key is absent, use all four defaults below. **Set fewer to cut the stage's cost roughly
@@ -72,6 +79,8 @@ Each lens returns structured findings (`REVIEW_FINDING_SCHEMA`, defined in
 sidecar shape, not the schema itself): `{severity, file, line, defect, failure_scenario, fix}`.
 `auto_fixable` is set later by the fix-planner (Stage 5.8) and merged in at that point — the lens
 itself never returns or claims it.
+
+## Verify pass and false-positive circuit breaker
 
 **Verify pass (adversarial, evidence-required, default-refute):** one more call, same reviewer
 model, that must attach a fresh falsifiable artifact to each finding it confirms — a re-read

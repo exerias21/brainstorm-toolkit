@@ -1,15 +1,12 @@
 ---
 name: brainstorm
 description: >
-  Interactive brainstorming and feature ideation skill. Guides the user through structured creative
-  exploration: clarifying the idea, exploring codebase context, generating multiple
-  approaches, evaluating tradeoffs, and writing a concrete action plan to `plans/`. Asks focused
-  clarifying questions first whenever the seed is ambiguous, and stops to ask rather than guess
-  when a plan-shaping unknown surfaces later. Use this skill whenever the
-  user says /brainstorm, mentions "brainstorm", "let's think through", "I have an idea", "what if we",
-  "how should we approach", "let's explore", or otherwise wants to ideate on a feature, improvement,
-  or architectural change before jumping into code. This is the conversational planning companion —
-  for heavy autonomous multi-agent product research, use /brainstorm-team instead.
+  Interactive brainstorming and feature ideation skill: clarifies the idea, explores codebase
+  context, generates multiple approaches, evaluates tradeoffs, and writes an action plan to
+  `plans/`. Use whenever the user says /brainstorm, mentions "brainstorm", "let's think through",
+  "I have an idea", "what if we", "how should we approach", "let's explore", or wants to ideate
+  on a feature or change before jumping into code. This is the conversational planning companion
+  — for heavy autonomous multi-agent product research, use /brainstorm-team instead.
 argument-hint: "[topic] [--vet light|deep|ultra|none] - optional: topic + multi-agent vet mode"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
@@ -22,21 +19,10 @@ user. Unlike `/brainstorm-team` (which launches autonomous agents to produce a
 research document), this skill is conversational — it thinks out loud, asks questions, and iterates
 on ideas together with the user before producing an implementation plan.
 
-## Subagent Usage During Brainstorming
-
-The conversational loop stays in the **main context window** — you and the user share
-one thread. Read files, grep code, and think out loud directly during Steps 1–3, 5, and 6.
-
-Subagents are used at exactly two points, and both are scoped:
-
-- **Step 4b — Lens Divergence.** Four lateral-thinking lens agents run in parallel to
-  push past the obvious. Their outputs land in a clearly-labeled `Wildcards` section so
-  you and the user can compare them to the conventional options, not silently absorb them.
-- **Step 7 — Validation.** A fresh-context validator stress-tests the finalized plan.
-
-Do not delegate general exploration or ideation to subagents outside these two points.
-
 ## How It Works
+
+The conversational loop stays in the **main context window** for Steps 1–3, 5, and 6. Do not
+delegate exploration or ideation to subagents outside Step 4b and Step 7.
 
 ### Step 0: Set the frame (no Plan mode)
 
@@ -67,14 +53,22 @@ use that as the seed. Otherwise, ask.
 None of those true, and the seed is concrete? Skip straight to Step 2 and say you're skipping —
 don't interview someone who already told you.
 
-Ask **2–3 questions, in one message**, and make them the ones whose answers change the plan:
+Ask in **one message per round**, and make every question one whose answer changes the plan:
 - **The "why"** — what problem does this solve? What is the user working around today?
 - **The scope** — quick enhancement or new module? Who uses it, and how often?
 - **The spark** — what prompted this now? A specific moment usually carries the real constraint.
 
-Two good questions beat five mediocre ones. But **thin answers are a reason to ask again, once** —
-if the reply leaves a plan-shaping unknown open, name the unknown and ask rather than picking a
-reading and building on it.
+**Scale the count to the ambiguity, and keep going until the plan-shaping unknowns are
+closed.** A concrete seed needs 2–3; a vague one ("payments are a mess") needs as many as it
+takes, across as many rounds as it takes — there is no cap, and stopping early to look decisive
+is the expensive move. Two good questions beat five mediocre ones, but two good questions also
+beat one good question and a guess. Each round: name what is still unknown, ask, and stop when
+you could write the plan without inventing anything. If a round's answers are thin, say which
+unknown is still open and ask again rather than picking a reading and building on it.
+
+Prefer the host's **built-in interactive question UI** (the multiple-choice picker) where it
+exists, one question per unknown with a recommended default first — a user who is never offered
+an option never discovers the choice existed. Fall back to a numbered list answered in one reply.
 
 **This holds for the whole session, not just Step 1.** A plan-shaping ambiguity that surfaces at
 Step 3, 4, or 6 is a question, not an assumption: stop and ask. Everything else — anything a
@@ -94,8 +88,7 @@ context window. Follow the procedure in
 - **Check `GOTCHAS.md` for the touched area** (scoped injection): read the
   configured `gotchas_file` if it exists and surface only entries matching the
   idea's area/keywords — cap at the top few, never inline the whole file. Skip
-  silently when the file is absent. This puts hard-won pitfalls in front of the
-  idea *before* it's shaped, not only at Step 7 validation.
+  silently when the file is absent.
 - **Find the 2–3 closest existing implementations** to the idea (same layer,
   same kind of thing) and note the patterns they follow with `path:line`
   citations — layout, naming, error handling, the data-access seam, shared
@@ -173,10 +166,6 @@ Follow their lead. This is a conversation, not a presentation. If they're leanin
 approach, help them stress-test it: "The one thing I'd want to think through is..." or
 "That approach is strong — the main risk is..."
 
-If the user wants deeper architectural analysis on a specific approach, read the relevant
-files directly — don't delegate to subagents. Keeping everything in the main context window
-means you and the user share the same understanding as you iterate.
-
 ### Step 6: Produce the Action Plan
 
 Once the user has converged on a direction, produce a concrete plan. Structure it as:
@@ -187,28 +176,30 @@ Cross-Module Touchpoints, Open Questions, Appendix: Alternatives Considered) and
 what belongs in each. Keep the headings verbatim: `/sdlc`'s Stage 0 parser finds
 implementation steps and files-to-change by those names.
 
-**Use the `Write` tool** to save this to `plans/brainstorm-[topic-slug].md` at the
-**repo root** (the consumer project's working directory) — NOT under `.claude/`.
-
-The persistent plan **must** live at `<repo-root>/plans/<slug>.md` — that is the
-only location downstream skills (`/sdlc`, `/flowsim`,
-`/repo-health`, validators) read. If the `plans/` directory doesn't exist,
-create it first (use a Bash `mkdir -p plans` or include the directory in the Write
-target — Write creates parent dirs automatically).
-
-Do this **before** Step 7 (validation) — the validation agent reads the plan from
-this path.
+**Use the `Write` tool** to save this to `plans/brainstorm-[topic-slug].md` at the **repo
+root** (not under `.claude/`) — the only location downstream skills (`/sdlc`, `/flowsim`,
+`/repo-health`, validators) read, and Step 7's validation agent reads it too, so do this
+before Step 7. Create `plans/` first if it doesn't exist (Write creates parent dirs
+automatically).
 
 If you find yourself holding a transient host plan path (`~/.claude/plans/<random>.md`), something
 entered Plan mode against this skill's contract — write the canonical copy to
 `plans/brainstorm-<topic-slug>.md` and continue from there.
 
+**Group implementation steps into phases past ~6 steps, or a real ordering dependency**
+(phase 2 needs phase 1 landed first) — `#### Phase N — <title>` headings under
+`### Implementation Steps`, per the template. A flat list stays one implicit phase; nothing
+downstream requires phases.
+
 **Also append action items to `TASKS.md`** (at repo root). For each implementation step
 that's concrete and bounded enough to stand alone, add a row to the `Active / Pending`
-section: `- [ ] (P2) <step title> — plans/brainstorm-[topic-slug].md`. If `TASKS.md`
-doesn't exist, create it from `templates/TASKS.md.template` (or with minimal sections).
-This gives both Claude's `/sdlc-status`/`/task` flow and Copilot's TODO workflow a shared
-entry point into the brainstorm's output.
+section: `- [ ] (P2) <step title> — plans/brainstorm-[topic-slug].md _plan: [topic-slug]_`
+(append `· _phase: N_` when the step sits under a `#### Phase N` heading). **The `_plan:_`
+value is `[topic-slug]` alone, never `brainstorm-[topic-slug]`** — `/sdlc` Stage 0 derives
+its slug by stripping the leading `brainstorm-` from the plan filename, so tagging the row
+with the full filename stem would make the "deterministic" key never match at Stage 6
+close-out. If `TASKS.md` doesn't exist, create it from `templates/TASKS.md.template` (or
+with minimal sections).
 
 ### Step 6.5: Multi-agent Vet (mode-gated)
 
@@ -248,25 +239,18 @@ Then print, once:
 plan size: <n> steps across <m> files, <k> surface(s) — <one execution session | splittable>
 ```
 
-**"Splittable" is information, not an instruction.** A large run is not automatically waste:
-if the work genuinely needs that much state, let it cook — a 1M window holds it and cache
-reads are cheap per token. Recommend a split only when the steps are **independent**, because
-then a second session costs nothing but re-reading the plan, and each slice starts clean.
-Never split a sequentially-dependent chain to hit a number; that trades real working context
-for a metric.
+**"Splittable" is information, not an instruction.** Recommend a split only when the steps
+are **independent**, because then a second session costs nothing but re-reading the plan,
+and each slice starts clean. Never split a sequentially-dependent chain to hit a number;
+that trades real working context for a metric.
 
-What *does* waste tokens at any plan size is junk in the orchestrator's context — shell
-output and file bodies a sub-agent should have held. That is Stage 2's delegation rule's job,
-not the plan's. Do not try to fix it here.
-
-If the user has run a pipeline before, `run-cost-report.sh` printed what the last one actually
-cost. That measured number beats this estimate — prefer it when sizing.
+If the user shares the last run's cost report, prefer its measured number over this
+estimate.
 
 ### Step 8: Continue the flow
 
-A brainstorm that ends at a file the user has to manually pick up is a
-**dropped flow**. Default posture: keep the momentum — continue into the
-delivery pipeline rather than stopping at the plan.
+Default posture: keep the momentum — continue into the delivery pipeline rather than
+stopping at the plan.
 
 **Step 8.0 — confirm the plan file exists before routing.** There is no plan mode
 to exit (Step 0), so this is a one-line check rather than a state transition:
@@ -289,11 +273,6 @@ proceeds normally below.)
 **Otherwise the next command is `/sdlc`** — it runs the full pipeline and hands back
 validated changes with **no git writes**, so it is safe to take without asking.
 
-> These continuity rules are a slice of `/sdlc-status`'s **canonical decision ladder**
-> (rung 4 — a plan with no run; see `skills/sdlc-status/SKILL.md`). `/sdlc-status` is the source
-> of truth for "what's the next step"; this inline copy keeps `/brainstorm`
-> self-contained when the user hasn't got `/sdlc-status` in mind.
-
 Drop a **next-action sentinel** naming that command so the Stop hook surfaces it.
 
 ```
@@ -305,15 +284,17 @@ grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.ne
 ```
 
 The Stop hook — **shipped by the plugin** (auto-wired when the plugin is enabled,
-SEAM1) or installed by `setup.sh` (`.claude/settings.json` / `.github/hooks/next-action.json`)
-— reads the file once, prints `Next: <command>`, and deletes it. **On Codex (no Stop
-hook), also print `Next: <command>` inline** right after writing the sentinel, so the
-flagship handoff degrades gracefully instead of vanishing. **No-hook nudge (SEAM2):** if
-no hook is wired at all, the sentinel is inert — after writing it, run the best-effort
-check in `docs/SEAM.md` and, if nothing will surface it, tell the user to enable the
-plugin or run `setup.sh`/`/repo-onboarding` (else the `Next:` hint silently never
-appears). Skip the sentinel only if the user explicitly chose "save for later" with no
-intent to ship.
+SEAM1) or installed by `setup.sh` (`.claude/settings.json` / `.github/hooks/next-action.json`
+/ `.codex/hooks.json`) — reads the file once, prints `Next: <command>`, and deletes it.
+Codex **does** have a Stop hook shipped the same way; until the Codex hook is wired and
+`.codex/` is trusted (`/hooks`), also print `Next:` inline right after writing the
+sentinel, so the handoff degrades gracefully instead of vanishing. **No-hook nudge
+(SEAM2):** if no hook is wired at all, the sentinel is inert — after writing it, check for
+one: `grep -rlqs 'next-action' .claude/settings.json ~/.claude/settings.json
+.github/hooks/ ~/.claude/plugins/ 2>/dev/null` — and if that finds nothing, tell the user
+to enable the plugin or run `setup.sh`/`/repo-onboarding` (else the `Next:` hint silently
+never appears). Skip the sentinel only if the user explicitly chose "save for later" with
+no intent to ship.
 
 Continue:
 
@@ -334,17 +315,5 @@ Transition conversationally.
 
 ## Tone and Style
 
-- Think out loud. Share your reasoning, not just conclusions.
-- Be genuinely curious about the user's ideas — build on them, don't just evaluate them.
-- Use plain language. "This would need a new database table" not "This requires a migration
-  to add a new relation to the schema."
-- Keep momentum. Don't let the conversation stall in analysis paralysis.
-- Be opinionated when you have a view, but hold it loosely. "I'd lean toward approach 2
-  because... but I could see 3 working if you want tighter [X] integration."
-
-## What This Skill Is NOT
-
-- **Not a research tool** — for competitive research and multi-agent product strategy,
-  use `/brainstorm-team`
-- **Not a code generator** — this produces plans, not code. Implementation comes after.
-- **Not a requirements doc** — keep it conversational and lightweight, not formal.
+Think out loud, stay curious about the user's ideas, use plain language over jargon, and
+keep momentum rather than stalling in analysis paralysis.

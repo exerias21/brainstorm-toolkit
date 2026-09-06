@@ -104,7 +104,9 @@ Skip if the key is missing.
 Skip if the key is missing.
 
 **`--loop` — fix e2e failures instead of only reporting them** (absorbed from the former
-`/e2e-loop`). With `--loop`, dispatch the `e2e-test-runner` agent (by type:
+`/e2e-loop`). With `--loop`, dispatch the `e2e-test-runner` agent — and on a runtime with no sub-agent
+seam (Copilot / Codex) **you are the loop**: run, triage flaky vs real, fix, re-run, bounded by
+the same budget, reporting only the structured summary. Dispatch the `e2e-test-runner` agent (by type:
 `brainstorm-toolkit:e2e-test-runner`, or bare `e2e-test-runner` when vendored) rather than
 running the command inline — Sonnet by default, per `skills/sdlc/templates/models.md`; pass
 `model` explicitly, since the agent pins no tier and an omitted `model` inherits the session

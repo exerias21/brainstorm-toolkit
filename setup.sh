@@ -121,6 +121,22 @@ install_overlay() {
   done
 }
 
+# Agent Skills portable subset is name/description/license/metadata/compatibility/
+# allowed-tools. Claude-only keys are kept for the Claude install and stripped here,
+# because a strict Copilot/Codex consumer rejects unknown frontmatter keys outright.
+# Idempotent: on a file that's already stripped, neither awk condition matches, so the
+# file is rewritten byte-for-byte identical (safe to call on skip-on-exist paths too).
+strip_nonportable_frontmatter() {
+  local f="$1"
+  [[ -f "$f" ]] || return 0
+  local tmp; tmp="$(mktemp)"
+  awk '
+    /^---[[:space:]]*$/ { fence++ ; print ; next }
+    fence == 1 && /^(argument-hint|disable-model-invocation):/ { next }
+    { print }
+  ' "$f" > "$tmp" && mv "$tmp" "$f"
+}
+
 delete_if_exists() {
   # delete <path> if present
   local path="$1"
@@ -174,6 +190,9 @@ for skill_dir in "$PLUGIN_ROOT"/skills/*/; do
     else
       copy_tree_if_new "$skill_dir" "$TARGET/.github/skills/$name"
     fi
+    # Copilot documents only the portable frontmatter subset; a strict consumer
+    # hard-errors on Claude-only keys (argument-hint, disable-model-invocation).
+    strip_nonportable_frontmatter "$TARGET/.github/skills/$name/SKILL.md"
   fi
 
   if [[ "$want_codex" -eq 1 ]] && applies_to_includes "$skill_dir" codex; then
@@ -193,6 +212,9 @@ for skill_dir in "$PLUGIN_ROOT"/skills/*/; do
     else
       copy_tree_if_new "$skill_dir" "$TARGET/.agents/skills/$name"
     fi
+    # Same portable-subset rule as the Copilot install above -- Codex documents
+    # only name/description/license/metadata/compatibility/allowed-tools.
+    strip_nonportable_frontmatter "$TARGET/.agents/skills/$name/SKILL.md"
   fi
 done
 
@@ -552,6 +574,48 @@ install_context_watch_codex() {
   fi
 }
 
+# Install the Codex stop-gate Stop hook by jq-MERGING a third entry into
+# .codex/hooks.json's Stop array. Same pattern as install_context_watch_codex (that
+# one can't be reused: it skips-on-exist and writes the whole file, so it would never
+# add a THIRD hook to an existing Stop array). Idempotent by command string. Inert
+# unless pipeline.stop_gate: "tests" is set -- see scripts/hooks/stop-gate.sh.
+install_stop_gate_codex() {
+  local hook_file="$TARGET/.codex/hooks.json"
+  local cmd
+  if [[ "$COPY_SCRIPTS" -eq 1 ]]; then
+    cmd='bash "$(git rev-parse --show-toplevel)/scripts/hooks/stop-gate.sh"'
+  else
+    local sg_path_escaped
+    printf -v sg_path_escaped '%q' "$PLUGIN_ROOT/scripts/hooks/stop-gate.sh"
+    cmd="bash $sg_path_escaped"
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "  skip: jq not installed — add a stop-gate Stop hook manually to $hook_file:"
+    echo "        {\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\",\"timeout\":310}]}]}}"
+    return
+  fi
+  mkdir -p "$(dirname "$hook_file")"
+  [[ -f "$hook_file" ]] || echo '{}' > "$hook_file"
+  if jq -e --arg cmd "$cmd" '
+        any(.hooks.Stop[]?.hooks[]?; .command == $cmd)
+      ' "$hook_file" >/dev/null 2>&1; then
+    echo "  skip: Codex stop-gate hook already wired ($cmd)"
+    return
+  fi
+  local tmp; tmp="$(mktemp)"
+  if jq --arg cmd "$cmd" '
+    .hooks //= {} |
+    .hooks.Stop //= [] |
+    .hooks.Stop += [{ "hooks": [{ "type": "command", "command": $cmd, "timeout": 310 }] }]
+  ' "$hook_file" > "$tmp" && mv "$tmp" "$hook_file"; then
+    echo "  wrote: $hook_file (added stop-gate Stop hook; inert until pipeline.stop_gate: \"tests\")"
+  else
+    rm -f "$tmp"
+    echo "  error: failed to update $hook_file with Codex stop-gate hook" >&2
+    return 1
+  fi
+}
+
 # Install the Codex PostCompact reseed hook by jq-MERGING a PostCompact array into
 # .codex/hooks.json. Separate from install_stop_hook_codex (which skips-on-exist,
 # writing the whole file) so an EXISTING Codex install that only had `Stop` still
@@ -655,6 +719,7 @@ if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
     echo "[hooks] Claude SessionStart reseed hook"
     install_reseed_hook_claude
     install_stop_hook_claude run-cost-report.sh run-cost-report
+    install_stop_hook_claude stop-gate.sh stop-gate
     echo "[hooks] Claude PreToolUse model-cap hook"
     install_pretooluse_hook_claude
   fi
@@ -668,6 +733,7 @@ if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
     install_stop_hook_codex
     install_reseed_hook_codex
     install_context_watch_codex
+    install_stop_gate_codex
   fi
 else
   echo "[hooks] skipped (--no-hooks)"

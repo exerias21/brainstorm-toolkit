@@ -84,6 +84,7 @@ plan-validate      # Stage 5.5 (api/ui/data validators)
 flowsim            # Stage 5.6
 review             # Stage 5.7 (adversarial N-lens review; skipped when the reviewer-model axis resolves off)
 review-fix         # Stage 5.8 (fix loop over confirmed findings; single cumulative sidecar, see state-schema.md)
+cleanup            # Stage 5.9 (opt-in quality-only lens pass; see stage-5.9-cleanup.md)
 secret-scan        # Stage 6 step 2
 pr-create          # Stage 6 step 3
 report             # Stage 7
@@ -268,6 +269,13 @@ Then run two checks, because they catch different failures:
 2. **The fact the rename invalidated** — a token check cannot see this one. After the pipeline merge the load-bearing claim was "`/sdlc` does no git writes", so `grep -rn "opens a PR\|touches git history"` was the query that surfaced the wrong-fact prose.
 
 Exclude `docs/archive/` and `docs/gap-analysis/` from both: those are deliberate historical records, and a rename must **not** rewrite them.
+
+Both manual greps above, plus the config-key and citation checks that catch the class of bug
+a rename or a design decision otherwise leaves behind, are now automated by
+`scripts/ci/check_contracts.py` (runs in the `setup-roundtrip` workflow). Running it by hand
+after a rename is a useful sanity check, but it is not a substitute for reading every hit —
+a command legitimately repeated in one sentence still needs a human judgment call, which the
+script surfaces as an allowlist entry with a reason, not a silent skip.
 
 **Artifact IDs**: aliases supported indefinitely. `task-N` (legacy, no padding) is recognized as equivalent to `task-NNN` by any code that resolves task IDs. New artifacts use the canonical zero-padded form. No batch migration.
 

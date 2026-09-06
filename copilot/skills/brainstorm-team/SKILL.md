@@ -9,7 +9,6 @@ description: >
   parallel workers.
 metadata:
   brainstorm-toolkit-applies-to: copilot
-disable-model-invocation: true
 ---
 
 # Brainstorm Team (Copilot Edition — Sequential)
@@ -111,3 +110,10 @@ Assemble everything into `plans/team-brainstorm-<topic-slug>.md` with sections:
 Sections 7 and 8 (Wild Cards and Lens Divergence) are both preserved — they come from different prompts (opportunistic vs. structured lenses) and the comparison is often illuminating.
 
 If any Pass generated meaningfully more content than fits a single section, split into sub-sections — don't cut depth to fit a template.
+
+## Continue the flow
+
+Once the strategy document is written, say what comes next rather than stopping at a file:
+offer `/plan-html <doc>` to render it for sharing, and hand a chosen blueprint to
+`/sdlc <plan>` to implement it. A research document nobody routes into the pipeline is
+where this skill's value leaks out.

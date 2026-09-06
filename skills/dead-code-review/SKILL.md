@@ -1,16 +1,12 @@
 ---
 name: dead-code-review
 description: >
-  Launches a parallel fan-out of review agents (tiered by load, Sonnet-first — capped per
-  project.json models.cap / --model) to find dead code, dead docs, and dead plans, then removes
-  them and runs the test suite before and after to verify zero regressions. THIS IS THE SKILL FOR
-  "launch a few agents to review everything for dead code / anything no longer needed" — use it
-  instead of hand-composing an ad-hoc agent fan-out. Scans whatever surfaces the repo actually has — server code,
-  client code, data/migrations, documentation, scripts — for unused imports, dead functions,
-  orphaned components, stale plans, and redundant migrations. Use when the user says /dead-code-review,
-  "what can be deleted", "what's no longer needed", "what docs are worth keeping vs getting rid
-  of", "clean this up", "look for dead code", or asks to sweep the repo after a feature lands, a
-  refactor, or before a release.
+  Launches a parallel fan-out of review agents to find dead code, dead docs, and dead plans,
+  then removes them and runs the test suite before and after to verify zero regressions.
+  THIS IS THE SKILL FOR "launch a few agents to review everything for dead code / anything no
+  longer needed" — use it instead of hand-composing an ad-hoc agent fan-out. Use when the user
+  says /dead-code-review, "what can be deleted", "what's no longer needed", "clean this up",
+  "look for dead code", or asks to sweep the repo before a release or after a refactor.
 argument-hint: "[scope] - optional: 'backend', 'frontend', 'database', 'docs', 'full' (default: full)"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex

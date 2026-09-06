@@ -1,0 +1,33 @@
+{
+  "name": "tasks-closeout",
+  "prompt": "/sdlc plans/two-step.md",
+  "max_budget_usd": 2.5,
+  "assertions": [
+    {
+      "type": "tasks_row_state",
+      "file": "TASKS.md",
+      "row": "Add GET /health",
+      "state": "x",
+      "section": "Done",
+      "_why": "the in-scope row must be BOTH flipped and moved -- checking only the checkbox is how the original bug survived"
+    },
+    {
+      "type": "tasks_row_state",
+      "file": "TASKS.md",
+      "row": "Unrelated backlog item",
+      "state": " ",
+      "section": "Active / Pending",
+      "_why": "over-closure guard: a row with a different _plan: key must be untouched"
+    },
+    {
+      "type": "json_path",
+      "file": ".claude/pipeline/two-step/stage-outputs/handoff.json",
+      "path": "data.tasks.closed",
+      "_why": "the close-out must be auditable, not merely claimed",
+      "min_length": 1
+    },
+    {
+      "type": "git_head_unchanged"
+    }
+  ]
+}
