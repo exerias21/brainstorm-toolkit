@@ -1,0 +1,22 @@
+{
+  "name": "task-health-endpoint",
+  "prompt": "/task add a GET /health endpoint returning {\"ok\": true}",
+  "max_budget_usd": 1.5,
+  "assertions": [
+    {
+      "type": "tasks_row_added",
+      "file": "TASKS.md",
+      "count": 1
+    },
+    {
+      "type": "glob_exists",
+      "pattern": "plans/tasks/task-*-*.md"
+    },
+    {
+      "type": "pytest_green"
+    },
+    {
+      "type": "git_head_unchanged"
+    }
+  ]
+}

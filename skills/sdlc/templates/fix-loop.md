@@ -1,27 +1,14 @@
 # Shared fix loop + pause shape
 
 Canonical for every gate that fixes and retries — `/sdlc`
-Stage 5, and Stage 5.7/5.8 (which runs the same loop on its own separate budget).
+Stage 5, and Stage 5.7/5.8.
 
-> **No sub-agent seam? (Copilot, Codex)** The dispatch instructions below describe the Claude
-> path. On a runtime without sub-agents, do the same work **inline in the session** and produce
-> the same structured result — but keep the discipline the dispatch existed to enforce: report
-> only the structured summary, never paste raw tool or runner output into your context. That
-> output is the single largest source of context bloat, and inline is exactly where it lands.
-
-Stage 5 and Stage 5.7/5.8 (which has its own separate budget) fix the same way, so the loop and
-its pause are specified once, here.
+Stage 5 and Stage 5.7/5.8 fix the same way, so the loop and its pause are specified once, here.
 **The loop.** On a gate failure: parse the structured results; for each failure extract test
 name, expected-vs-actual, file path, function; dispatch **one fix agent** — **Sonnet by default**
 (Opus only on `--model opus`), per `skills/sdlc/templates/models.md` — told to fix *only* those failures
-with no refactor; re-run the gate. Repeat to a maximum of **3 iterations, shared across Stages
-5/5.5/5.6** (Stage 5.7 has its own separate budget — see there for why sharing it is wrong).
-
-**Stage 4 no longer exists.** It ran `eval.runner` and then Stage 5 ran the same command again as
-its eval-regression layer, so its gate was a strict prefix of Stage 5's. Sharing this budget, its
-pause could halt a run on **self-authored** evals before the project's real suite was ever
-consulted — a weak oracle pre-empting the strong one. Stage 3 still authors the tests; Stage 5
-runs them. See `plans/brainstorm-post-merge-cleanup.md` (D2).
+with no refactor; re-run the gate. Repeat to a maximum of **3 iterations, shared across Stage
+5's gates** (Stage 5.7/5.8 has its own separate budget).
 
 **The pause.** On budget exhaustion, emit this block, inferring the class from *the failing
 stage's own* sidecar (`validate.json`, `review.json`):

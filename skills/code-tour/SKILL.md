@@ -1,20 +1,12 @@
 ---
 name: code-tour
 description: >
-  Turn an existing codebase into teaching material: audit docstring coverage,
-  write why-focused docstrings that explain the reasoning behind each design
-  decision, and generate a guided reading path (TOUR.md) with a pattern index and
-  graded exercises. Use this whenever someone wants to document a codebase for
-  humans rather than for an API reference — onboarding a new hire, handing a repo
-  to another team, preparing a repo as a training or teaching module, "explain
-  this codebase", "add docstrings", "write documentation for all the code", or after
-  /repo-onboarding when the architecture is mapped but the code itself is undocumented.
-  Distinct from its neighbours: /repo-onboarding generates the toolkit's contract files and
-  /repo-health is a read-only sweep — this one writes documentation into the source,
-  "help someone learn this repo", or when /code-tour, /docstrings, /codetour, or
-  /onboarding-docs is invoked. Also use it when documentation exists but only
-  says WHAT the code does and the user wants the WHY captured before the people
-  who know it leave.
+  Turn a codebase into teaching material: audit docstring coverage, write why-focused
+  docstrings, and generate a guided reading path (TOUR.md). Use whenever someone wants a
+  codebase documented for humans, not an API reference — onboarding a new hire, "explain this
+  codebase", "add docstrings", "help someone learn this repo", or when docs say WHAT but not
+  WHY. Triggers on /code-tour, /docstrings, /codetour, /onboarding-docs. Unlike /repo-onboarding
+  (contract files) and /repo-health (read-only sweep), this writes documentation into the source.
 metadata:
    brainstorm-toolkit-applies-to: claude copilot codex
 ---
@@ -35,21 +27,9 @@ That is what this skill produces. Two artifacts:
    reading path with what to look for at each stop, a cross-cutting pattern
    index, graded exercises, and an honest list of what readers should *not* copy.
 
-The tour matters because docstrings alone do not teach. A reader landing in a
-30-file repo does not know which file to open first, and reading alphabetically
-teaches nothing. The tour supplies the order and the emphasis.
-
-## Ground yourself in the standards first
-
-Before writing anything, read `references/standards.md`. It carries the
-researched, source-cited position on docstring conventions (PEP 257, Google and
-NumPy styles), what belongs in a docstring versus a comment, whether to repeat
-type information, and how documentation frameworks like Diátaxis classify what
-you are about to write. It separates genuine consensus from contested opinion, so
-you can follow a real standard rather than inventing house style.
-
-Read `references/tour-structure.md` when you reach the tour-writing step, and
-`references/language-notes.md` if the codebase is not Python.
+Conventions come from `references/standards.md` (read at Step 4, before the first docstring is
+written); `references/tour-structure.md` at Step 6; `references/language-notes.md` if the
+codebase is not Python.
 
 ## Procedure
 
@@ -75,15 +55,14 @@ own paraphrase destroys information and reads as churn in the diff.
 Run the bundled audit to find the real gap:
 
 ```bash
-python3 scripts/docstring_audit.py <path>              # per-file gaps + coverage
-python3 scripts/docstring_audit.py <path> --json       # machine-readable
-python3 scripts/docstring_audit.py <path> --include-tests
+# the script ships inside this skill's directory (e.g. .claude/skills/code-tour/scripts/)
+python3 <skill-dir>/scripts/docstring_audit.py <path>              # per-file gaps + coverage
+python3 <skill-dir>/scripts/docstring_audit.py <path> --json       # machine-readable
+python3 <skill-dir>/scripts/docstring_audit.py <path> --include-tests
 ```
 
-It parses with `ast` (never imports, so it works on code that cannot run here),
-reports symbol coverage and module coverage separately, lists every missing
-symbol with a qualified name and line number, and exits non-zero below
-`--min` so it doubles as a CI gate.
+It parses with `ast` (never imports the code) and exits non-zero below `--min`,
+so it doubles as a CI gate.
 
 Report the numbers to the user before starting. "187 of 267 symbols documented;
 the gaps cluster in private helpers and CLI entry points" is a plan. It also
@@ -104,12 +83,9 @@ removed, and a docstring that describes behaviour the function does not have is
 worse than no docstring: it is a confident lie that readers will trust and
 maintainers will not notice.
 
-**Read in dependency order** — leaves first, entry points last. Two payoffs: it
-gives you the tour's structure for free, and it measurably reduces fabrication.
-Research on automated documentation (DocAgent, arXiv:2504.08725) found that
-traversing a codebase in dependency order, so the model never documents code
-before seeing that code's dependencies, is one of the main defences against
-hallucinated descriptions. You are subject to the same failure mode.
+**Read in dependency order** — leaves first, entry points last. It gives you the tour's
+structure for free, and never documenting code before its dependencies is the main defence
+against fabricated descriptions (evidence: `references/standards.md`).
 
 Watch for these while reading; they become the best docstrings and the tour's
 "look for" notes:
@@ -133,6 +109,10 @@ docstring ("unclear why this ordering matters; changing it breaks
 invented rationale, and it flags the question for whoever does know.
 
 ### Step 4 — Write docstrings that carry the reasoning
+
+**Read `references/standards.md` now** — it separates genuine standards (PEP 257, Google/NumPy
+styles, docstring vs comment, type-hint duplication) from contested opinion, so you follow a
+real convention instead of inventing house style.
 
 The shape that works, in rough priority order. Not every docstring needs every
 part — a two-line pure function needs one sentence:
@@ -158,9 +138,6 @@ Judgement calls worth getting right:
 - **Length follows consequence, not line count.** A one-line function guarding a
   security boundary may deserve fifteen lines of docstring; a thirty-line
   data-shuffling function may need two. Ask what a reader loses by not knowing.
-  (Note some sources call "docstring longer than the function" a smell — see
-  `references/standards.md`. It is contested opinion, not a standard, and
-  consequence is the better test.)
 - **Private helpers and nested functions often deserve the most** — for a
   learning audience. They exist because someone extracted them for a reason, and
   that reason is recorded nowhere else. Be aware this is a *deliberate deviation*
@@ -189,17 +166,9 @@ reasoning.
 
 ### Step 5 — Verify every claim you make
 
-Documentation asserting things that are not true is the failure mode of this
-entire exercise, and this is not a hypothetical risk — it is the documented,
-measured weakness of LLM-authored documentation. Research motivating tools like
-DocAgent notes that naive generation "hallucinate[s] non-existent components,
-especially in large or proprietary repositories"; CASCADE (arXiv:2604.19400)
-found real, previously-unreported doc/code mismatches in production open source
-by generating tests from docstring prose and running them.
-
-There is a compounding reason to care: docstrings now steer downstream LLM coding
-assistants, so a fabricated explanation propagates into generated code and
-reviews rather than merely misleading one human reader.
+Documentation asserting things that are not true is the failure mode of this entire
+exercise — the measured weakness of LLM-authored documentation — and docstrings now steer
+downstream coding assistants, so a fabricated explanation propagates into generated code.
 
 Treat this step as mandatory, not as polish:
 
@@ -247,14 +216,6 @@ Include a setup section that gets a reader to a passing test run in a few
 minutes. A reader who can run the tests can experiment; one who cannot will only
 read passively.
 
-The ordered-path idea has real evidence behind it. A peer-reviewed review of
-newcomer barriers in open source (Steinmacher et al., OSS 2014) found **"finding
-a way to start"** among the top barriers, alongside documentation gaps — meaning
-the bottleneck is frequently orientation rather than difficulty. That same
-research is why you should tell the user something a document cannot fix:
-documentation alone does not close the onboarding gap. If this repo is being
-prepared for onboarding, recommend pairing the tour with a named human contact.
-
 ### Step 7 — Offer to gate it in CI
 
 Optional, and worth proposing rather than doing unasked — a coverage gate that
@@ -291,15 +252,3 @@ Report at the end:
   feature, not an admission. It is where the institutional knowledge that only
   lives in someone's head gets surfaced.
 - Confirmation that the test suite still passes.
-
-## Reference files
-
-- `references/standards.md` — researched, source-cited documentation standards:
-  PEP 257, Google/NumPy styles, docstrings vs comments, type-hint duplication,
-  Diátaxis and docs-as-code. Read before Step 4.
-- `references/tour-structure.md` — the tour template with a worked example.
-  Read at Step 6.
-- `references/tooling.md` — linters, coverage tools, doc generators, CI configs.
-  Read at Step 7, or when the user asks about enforcement.
-- `references/language-notes.md` — applying the workflow to non-Python codebases.
-- `scripts/docstring_audit.py` — the AST coverage auditor used in Steps 2 and 5.

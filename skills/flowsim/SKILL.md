@@ -17,7 +17,7 @@ metadata:
 
 ## Framing
 
-This is NOT a program simulator. It's a **structured code review** formatted as a narrative trace: "the plan claims X → grep/read the code → report what actually happens". LLMs are reliable at static analysis ("does this call exist", "what does this function return") when scoped to 2–3 hops. Flowsim keeps the scope tight on purpose.
+This is NOT a program simulator. It's a **structured code review** formatted as a narrative trace: "the plan claims X → grep/read the code → report what actually happens". Flowsim keeps the scope tight on purpose.
 
 ## Inputs
 
@@ -50,19 +50,14 @@ If it exists and `--force` was NOT passed:
    re-trace from scratch in step 2.
 
 This trims re-runs after a fix loop — flows whose code paths were not touched
-by the fix do not need to be re-walked. Typical savings: 40–60% of trace work
-on subsequent runs of `/sdlc` Stage 5 against the same feature.
+by the fix do not need to be re-walked.
 
 If `plans/flowsim-<feature-slug>.json` does not exist, proceed normally — no
 cache, every flow is traced fresh.
 
 ### 1. Extract claimed flows
 
-From the plan, identify each distinct **flow** — a user/system action and its claimed path. Examples:
-- "User submits order form → POST /api/orders → OrderService.create → Stripe.charge → db.orders.insert"
-- "Cron runs → worker/discovery.py → fetch(source_url) → parse → upsert into `deals` table"
-- "User clicks 'Export' → GET /api/reports/export.csv → stream assembled from db"
-
+From the plan, identify each distinct **flow** — a user/system action and its claimed path.
 List each flow as a numbered item. Stop here and ask the user to confirm if the plan is vague enough that you'd be guessing at the flows — do not invent flows that the plan didn't claim.
 
 ### 2. Trace each flow through the code
@@ -75,7 +70,7 @@ For every other flow, walk through up to `--max-hops` steps. At each hop, record
 - **Status**: `MATCH` / `MISMATCH` / `UNCLEAR` / `MISSING`.
 
 Rules:
-- **Every anchor must be a real `file:line` reference.** If you can't find one, mark `MISSING` — do not hallucinate.
+- **Every anchor must be a real `file:line` reference.** If you can't find one, mark `MISSING`.
 - **Follow the actual call chain**, not what the plan hopes for. If the plan says A→B→C but the code does A→D→C, report A→D→C and flag `MISMATCH` at step 2.
 - **Stop at `--max-hops`** even if the chain continues. Note this as "truncated at hop N — continue manually if needed".
 
@@ -99,22 +94,15 @@ Produce a markdown block:
 
 | # | Claimed | Anchor | Actual | Status |
 |---|---------|--------|--------|--------|
-| 1 | User POSTs /api/orders | `api/routes/orders.py:42` `create_order()` | Matches | MATCH |
 | 2 | Validates payload via OrderSchema | `api/schemas/order.py:10` `OrderSchema` | Schema exists but missing `payment_method` field | **MISMATCH** |
-| 3 | OrderService.create | (MISSING) | No `OrderService` class found; inline logic in route handler | **MISMATCH** |
 
-**Eval coverage**: `evals/orders/` has 3 fixtures, 2 pass, 1 fail (`missing-payment-method.json`).
-**Test coverage**: `tests/test_orders.py` exists with 4 cases; none exercise Flow 1 end-to-end.
-
-**Summary**: Flow 1 deviates from the plan at steps 2 and 3. Step 2 mismatch is corroborated by a failing eval. Step 3 suggests the plan's service-layer separation was not implemented.
+**Summary**: Flow 1 deviates from the plan at step 2, corroborated by a failing eval.
 
 ### Flow 2: ...
 ```
 
-## Rules
+## Output limits
 
-- **Three hops max by default.** Deeper chains get unreliable; if the plan implies a 5-hop flow, split it into two flows of 3 hops each.
-- **Every claim needs a `file:line` anchor** or an explicit `MISSING` marker. No "I think this is in the code somewhere".
-- **Don't invent flows the plan didn't claim.** If the plan is vague, say so and ask the user to clarify before tracing.
+- **Three hops max by default.** If the plan implies a 5-hop flow, split it into two flows of 3 hops each.
 - **Don't fix anything.** Flowsim is read-only. Hand findings to the user (or, when running inside the pipeline, to Stage 5's fix loop).
 - **Cap output at ~60 lines of markdown** unless there are many flows. A 200-line flowsim report is a sign the plan is too ambitious for one feature.

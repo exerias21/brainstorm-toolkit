@@ -8,10 +8,8 @@ description: >
   "what can be deleted", "what's no longer needed", or "what docs are worth keeping
   vs getting rid of". Copilot-adapted version of the canonical — sequential instead
   of parallel.
-argument-hint: "[scope] - optional: 'backend', 'frontend', 'database', 'docs', 'full' (default: full)"
 metadata:
   brainstorm-toolkit-applies-to: copilot
-disable-model-invocation: true
 ---
 
 # Dead Code Review (Copilot Edition — Sequential)
@@ -23,8 +21,8 @@ Six review phases done in order. Unlike the Claude canonical (which spawns paral
 | Scope | Phases run |
 |---|---|
 | `full` (default) | All 6 |
-| `backend` | 1, 3, 6 |
-| `frontend` | 2, 6 |
+| `backend` | 1, 3 |
+| `frontend` | 2 |
 | `database` | 3 |
 | `docs` | 4, 5 |
 
@@ -64,7 +62,9 @@ Scan migration files and query live schema if available:
 ## Phase 4 — Docs & plans
 
 Scan markdown files in `docs/`, `plans/`, and root:
-- Completed plans (feature fully shipped → delete).
+- Completed plans (feature fully shipped). **Prefer moving a genuinely historical document
+  to an archive directory with a dated header over deleting it outright** — delete only what
+  is both stale AND unreferenced. Full lens detail: `skills/dead-code-review/references/lenses.md`.
 - Stale root markdown (one-time setup guides, old debugging notes).
 - Outdated docs that conflict with current CLAUDE.md / AGENTS.md.
 - Empty directories left from prior cleanup.

@@ -109,10 +109,10 @@ printing it, so the loop self-advances. It never chains a `confirm: true` action
 | `/sdlc`, `/brainstorm-team`, `/dead-code-review` | `models.cap` (sub-agent tier ceiling) |
 | `/sdlc` | `models.sanity` + `agents.sanity_focuses` (Stage 1.5 pre-flight; never gated, so it runs every time) |
 | `/sdlc` | `models.code_review`, `models.code_review_second_pass`, `agents.code_review_*` (axis 2; never capped) |
-| `/sdlc` | `pipeline.review_fix.*`: stage *behavior* only (`enabled`, `mode`, `blocking`). Opt-in, permanently off by default |
+| `/sdlc` | `pipeline.review_fix.*`: stage *behavior* only (`enabled`, `mode`). Opt-in, permanently off by default. (`blocking` was removed 2026-09: `/sdlc` does no git writes, so a HIGH finding is reported first in Stage 7, never gated) |
 | `/sdlc` | `agents.decompose_min_tasks` (Stage 2 decompose gate) |
 | `/sdlc --queue`, `scripts/loop-runner.sh`, `scripts/hooks/next-action.sh` | `pipeline.loop.*` (`max_items`, `batch_size`, `max_hops`, `auto_continue`) |
-| `/sdlc` Stage 6 | `stack.up` / `stack.down` / `stack.rebuild` / `stack.url`: printed as the manual-verification line at hand-off, never auto-run |
+| `/sdlc` Stage 6 | `stack.up` / `stack.rebuild` / `stack.url`: printed as the manual-verification line at hand-off, never auto-run |
 | `/sdlc` Stage 6 | `coauthor_trailer`: whether the *suggested* commit message carries the trailer (`/sdlc` prints it; it never commits) |
 | `/task` | `coauthor_trailer` (only when you ask it to commit); otherwise reads TASKS.md directly |
 | `/sdlc-status` | (none; reads TASKS.md and `.claude/pipeline/` directly) |

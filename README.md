@@ -22,7 +22,7 @@ Most AI-agent task systems bolt on heavyweight task databases, multi-agent orche
 | `/sdlc-status` | Claude + Copilot + Codex | Readout **and** recommendation: task counts, the active task, any stalled pipeline run, then one recommended next command. Read-only. |
 | `/repo-onboarding` | Claude + Copilot + Codex | Generate AGENTS.md + TASKS.md + project.json + GOTCHAS.md |
 | `/code-tour` | Claude + Copilot + Codex | Turn a codebase into teaching material: why-focused docstrings plus a guided reading path (`TOUR.md`) with exercises. |
-| `/repo-health` | Claude + Copilot + Codex | Read-only hygiene sweep (dead code + tests + deps + secrets + gotchas-currency); prints a scored report and the highest-impact next command. |
+| `/repo-health` | Claude + Copilot + Codex | Read-only hygiene sweep (dead code + tests + deps + secrets + gotchas-currency + rules drift); prints a scored report and the highest-impact next command. |
 | `/test-check` | Claude + Copilot + Codex | Run configured tests + log audit after changes (one-shot, no fix loop) |
 | `/test-check --loop` | Claude + Copilot + Codex † | Run e2e/browser tests in a fix loop with flaky-test guard (dispatches `e2e-test-runner` agent on Claude, inline on Copilot). Reach for this instead of hand-composing a Playwright agent fan-out; it fixes what it finds. |
 | `/gotcha` | Claude + Copilot + Codex | View/append project pitfalls. Auto-drafted at loop-exit by `/task`, `/sdlc` on real traps (objective trigger), and injected at `/brainstorm` start |
@@ -37,7 +37,7 @@ All skills run on all three tools. † marks skills with a Copilot-optimized ove
 `/sdlc` is the heaviest thing in the toolkit and the reason most of the rest exists.
 
 ```
-sanity → implement → evals → fix → validate → plan-validate → flowsim → hand-off
+sanity → implement → evals → fix → validate → plan-validate → flowsim → [review] → [cleanup] → hand-off
 ```
 
 **It does no git writes.** No commit, no branch, no push, no PR, at any stage. It hands back a
@@ -156,10 +156,12 @@ bash ~/brainstorm-toolkit/setup.sh --target . --tools both
 - `templates/CHEATSHEET.md.template` → `<target>/CHEATSHEET.md` if missing. This is the printable companion to `README.md`; once present, setup leaves user edits alone.
 - `templates/project.json.example` → `<target>/.claude/project.json.example` (left for you to rename and edit).
 
-It also wires two hooks (skip with `--no-hooks`; the Claude-plugin install in Option A gets them automatically):
+It also wires four hooks (skip with `--no-hooks`; the Claude-plugin install in Option A gets them automatically):
 
 - a **Stop** hook running `scripts/hooks/next-action.sh`, which surfaces the `.next-action` seam as `Next: <command>` (Claude `.claude/settings.json`, Copilot `.github/hooks/`, Codex `.codex/hooks.json`);
+- a **model-cap** hook running `scripts/hooks/enforce-model-cap.sh` on Claude's `PreToolUse` for the Agent tool. Inert until `.claude/project.json` sets `pipeline.enforce_cap: true`; then a sub-agent dispatch above `models.cap` is rewritten to the cap (reviewer dispatches, prefixed `review:`, are exempt) and you see each rewrite as a system message. Makes the cap deterministic instead of prose-enforced.
 - a **reseed** hook running `scripts/hooks/reseed-context.sh`, wired as Claude `SessionStart` (matcher `compact|clear`) and Codex `PostCompact`. It re-points the session at the loop's on-disk state after a compaction, so long `--queue` runs survive auto-compaction. Merged into existing hook config with `jq` and deduped by command string, so re-running is idempotent; without `jq` installed setup skips it and prints the entry to add by hand.
+- a **stop-gate** hook running `scripts/hooks/stop-gate.sh` on Claude and Codex `Stop` (Copilot gets no wiring). Inert until `.claude/project.json` sets `pipeline.stop_gate: "tests"`; then, while an `/sdlc` run's envelope is `in_progress`, a red `test.unit` blocks the Stop event (`decision: block`) instead of letting the run hand off silently red, bounded by `pipeline.loop.max_hops` consecutive failures. Stands down (no output) for `stop_hook_active` or a pending `.next-action` sentinel so it is never a second blocker — see `docs/SEAM.md`.
 
 Re-running `setup.sh` is safe: it skips existing files unless you pass `--force`. Install only for one tool with `--tools claude` or `--tools copilot`.
 
@@ -241,7 +243,11 @@ rather than guessing, so a repo with no `project.json` still works.
 
 - **[docs/CONFIG.md](docs/CONFIG.md):** the full key reference, plus which skill reads which key.
 - **[templates/project.json.example](templates/project.json.example):** a commented starting point.
-- `/repo-onboarding` writes the file for you, and asks about the choices detection can't make.
+- `/repo-onboarding` writes the file for you. It walks every key in
+  `project.json.example` and buckets each as detected / not applicable / unknown, so the
+  proposal is exhaustive rather than whatever the heuristics happened to notice, and it
+  asks about the choices detection can't make. Non-interactively (headless, CI) it takes
+  the documented defaults and still writes — it never stops at an unwritten proposal.
 
 ## Cost
 
@@ -278,12 +284,15 @@ by a live-data check. Total cost: ~240k tokens across 3 passes, each 1–6 minut
 - **[docs/AUTONOMOUS-DISCOVERY.md](docs/AUTONOMOUS-DISCOVERY.md):** optional pattern for running discovery skills unattended on a schedule: a watcher daemon driving the headless `claude` CLI against a job queue. Reference only, not shipped by `setup.sh`.
 - **[docs/LOOP-HYGIENE.md](docs/LOOP-HYGIENE.md):** how to keep a many-hour `/sdlc --queue` or auto-continue run context-cheap. The loop can't self-compact; the lever is **batch handoff:** a fresh process every `pipeline.loop.batch_size` completed items, plus a reseed hook that re-points at the on-disk envelope after a compact/clear.
 - **[docs/SEAM.md](docs/SEAM.md):** the `.claude/.next-action` contract: multi-slot, one JSON entry per line, append-and-dedup, `confirm: true` for anything that writes git history.
+- **[docs/EVALS.md](docs/EVALS.md):** the three testing tiers (static contract checks, fixture pytest evals, headless outcome evals on a fixture repo), how to add a case, how to read the summary, and why there are no LLM graders yet.
 
 ## Supporting scripts
 
 - **`scripts/eval-runner.py`:** runs pytest + fixture-based pipeline evals. Auto-discovers features from `evals/*/`. See `skills/test-check/SKILL.md` step 6.
 - **`scripts/check_docker_logs.py`:** audits logs for errors/tracebacks. Accepts `--log-command` and `--services`. Works with Docker, kubectl, journalctl, or any log source.
 - **`scripts/ci/check_install_refs.py`.** CI guard: installs the toolkit into a scratch repo and fails the build if any template citation in a shipped skill does not resolve there. Runs in the `setup-roundtrip` workflow.
+- **`scripts/ci/skill-eval.py`.** Tier 2 headless outcome evals: installs the toolkit into a disposable copy of `evals/skills/fixtures/mini-fastapi/`, runs one skill via `claude -p`, and grades the result with deterministic file/git/JSON assertions plus a cost-regression check against `evals/skills/baseline.json`. `--case <name>` / `--all` / `--keep-tmp` / `--update-baseline`. Costs real money — runs only via `workflow_dispatch` or the weekly cron in `.github/workflows/skill-evals.yml`, never on push or PR. See `docs/EVALS.md`.
+- **`scripts/ci/check_contracts.py`.** CI guard: proves the prose and the config agree — every `project.json` key a skill names exists in `templates/project.json.example`, every repo-path citation resolves, no forbidden (rename-invalidated) phrase from `scripts/ci/forbidden-phrases.txt` survives, and no sentence names the same `/command` twice. `--self-test` exercises the four checks against a synthetic tree. Runs in the `setup-roundtrip` workflow.
 - **`scripts/validate_skills.py`:** validates skill metadata, name-to-directory alignment, and Copilot-targeted skills against Claude-only capability leakage.
 - **`scripts/loop-runner.sh`:** batch-handoff queue runner for long backlogs. Drives `/sdlc --queue` in a **fresh headless process every `pipeline.loop.batch_size` completed items**, so context resets at a clean item boundary instead of growing all run. Batch size resolves `--queue X` flag > `pipeline.loop.batch_size` > `pipeline.loop.max_items` > 5. See `docs/LOOP-HYGIENE.md`.
 - **`scripts/hooks/next-action.sh`:** the Stop hook behind the `.next-action` seam. Reads the sentinel once, prints `Next: <command>`, deletes it. With `pipeline.loop.auto_continue: true` it instead **executes** a single non-`confirm` entry (`decision: block`), bounded by `pipeline.loop.max_hops`. See `docs/SEAM.md`.
@@ -303,3 +312,24 @@ by a live-data check. Total cost: ~240k tokens across 3 passes, each 1–6 minut
 This repo is the canonical source. Consumer repos are populated by `setup.sh`; to propagate updates, re-run `setup.sh --force` in each consumer repo. There is intentionally no auto-sync.
 
 See `AGENTS.md` for skill authoring rules (frontmatter, ceilings, contracts).
+
+### Prose budget
+
+Skills here are prompts, and every word is paid for on some schedule. Three
+schedules, three budgets:
+
+| What | Loads | Budget |
+|---|---|---|
+| Frontmatter `description` | **Every session, every runtime, always** — whether or not the skill fires | ≤550 chars each (600 ceiling); ≤7,500 chars for all 13 |
+| `SKILL.md` body | When that skill triggers | ≤100 lines (utility) / ≤250 (orchestration), with three named exceptions in AGENTS.md |
+| `templates/` and `references/` | When a stage actually runs — a self-skipping stage never loads its template | No fixed ceiling; add a `## Contents` TOC past ~150 lines so a partial read still shows full scope |
+| `docs/` | **Never** — `setup.sh` does not install it | Unbounded. This is where design history goes. |
+
+The always-resident row is the one with a hard external limit: Codex caps the
+whole skill-discovery listing at 8,000 characters and silently shortens
+descriptions from the end when it is exceeded. Measure the set, don't estimate
+it.
+
+Rationale prose that names a model failure mode stays in the skill; rationale
+that records design history moves to `docs/`. The rule and its test are in
+AGENTS.md under "Rationale prose — two kinds, one of which ships".

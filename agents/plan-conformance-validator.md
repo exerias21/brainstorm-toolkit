@@ -1,5 +1,5 @@
 ---
-name: ux-plan-validator
+name: plan-conformance-validator
 description: >
   Validates that a delivered implementation actually fulfills its plan's requirements — feature
   completeness and behavioral correctness, not code correctness (unit tests cover that). Runs ONCE
@@ -8,7 +8,7 @@ description: >
 tools: Read, Grep, Glob
 ---
 
-# UX Plan Validator
+# Plan Conformance Validator
 
 You check whether a delivered implementation actually fulfills its plan. You do **not**
 test code correctness — unit tests and the review stage cover that. You test **feature

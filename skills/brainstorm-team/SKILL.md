@@ -1,7 +1,8 @@
 ---
 name: brainstorm-team
 description: >
-  Launches a coordinated multi-agent team (5 agents in parallel) to produce a complete
+  Launches a coordinated 6-agent team (4 researching in parallel, then synthesis and
+  blueprints) to produce a complete
   product strategy document: competitive research, codebase mapping, UX critique, ranked
   feature list, and detailed implementation blueprints. Use when the user wants heavy
   autonomous product research or says "brainstorm team", "what should we build next",
@@ -29,7 +30,7 @@ Agent teams must be enabled. Check or set:
 
 ## What This Skill Does
 
-Creates a 6-agent team with specialized roles that work in parallel to produce a complete product strategy document. The team:
+Creates a 6-agent team with specialized roles to produce a complete product strategy document. The team:
 
 1. **Researches** the competitive landscape (internet search)
 2. **Maps** the codebase architecture and identifies opportunities
@@ -144,7 +145,6 @@ Don't stop at the results file. Once the user picks features to build, turn the
 chosen blueprint(s) into delivery rather than waiting for them to re-issue a
 command:
 - Render the results for a visual read if useful: `/plan-html plans/team-brainstorm-<topic-slug>.md`.
-- Hand a chosen blueprint to the pipeline — `/sdlc <plan>` (full pipeline,
-  hands you the validated changes; safe default, no git writes) or `/sdlc <plan>`
-  (→ PR; confirm first). Continue whichever flow has been used this session;
-  default to `/sdlc`.
+- Hand a chosen blueprint to the pipeline — `/sdlc <plan>` (full pipeline; hands you
+  the validated changes, no git writes). Continue whichever flow has been used this
+  session.

@@ -99,8 +99,9 @@ for line in open(sys.argv[1],encoding="utf-8",errors="replace"):
     turns+=1; tot+=ctx; peak=max(peak,ctx)
     out+=u.get("output_tokens") or 0; cr+=r; cw+=w; inp+=i
 avg=tot//turns if turns else 0
-# Rough relative spend, opus rates: in 15 / cache-write 18.75 / cache-read 1.50 / out 75 per Mtok.
-usd=(inp*15.0 + cw*18.75 + cr*1.50 + out*75.0)/1e6
+# Rough relative spend at Opus 5 list (2026-06): in 5 / cache-write 6.25 / cache-read 0.50 / out 25 per Mtok.
+# Every turn is priced at Opus regardless of model -- an upper bound, not a bill.
+usd=(inp*5.0 + cw*6.25 + cr*0.50 + out*25.0)/1e6
 print(f"{turns} {avg} {peak} {cr} {usd:.2f}")' "$transcript" 2>/dev/null)"
 else
   stats="$(jq -rs '
@@ -109,10 +110,10 @@ else
     | [ $u[] | (.input_tokens//0)+(.cache_read_input_tokens//0)+(.cache_creation_input_tokens//0) ] as $c
     | [ ($n|tostring), (if $n>0 then (($c|add)/$n|floor|tostring) else "0" end),
         (($c|max)//0|tostring), ([$u[]|.cache_read_input_tokens//0]|add|tostring),
-        ((([$u[]|.input_tokens//0]|add)*15.0
-          + ([$u[]|.cache_creation_input_tokens//0]|add)*18.75
-          + ([$u[]|.cache_read_input_tokens//0]|add)*1.50
-          + ([$u[]|.output_tokens//0]|add)*75.0)/1000000 | tostring) ]
+        ((([$u[]|.input_tokens//0]|add)*5.0
+          + ([$u[]|.cache_creation_input_tokens//0]|add)*6.25
+          + ([$u[]|.cache_read_input_tokens//0]|add)*0.50
+          + ([$u[]|.output_tokens//0]|add)*25.0)/1000000 | tostring) ]
     | join(" ")' "$transcript" 2>/dev/null)"
 fi
 [ -n "$stats" ] || exit 0

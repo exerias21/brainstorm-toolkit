@@ -159,6 +159,11 @@ for a genuinely long backlog, not a handful of items.
 > session. That inherits every limitation above and doesn't solve context bloat; it's OpenAI's default,
 > not a fix for this problem.
 
+The opt-in `pipeline.stop_gate` Stop hook (`scripts/hooks/stop-gate.sh`) shares the same hop-bound
+shape as L9 auto-continue: it re-runs `test.unit` on every Stop while an `/sdlc` run is
+`in_progress`, but only up to `pipeline.loop.max_hops` (default 5) consecutive red runs before it
+stands down rather than looping forever on a failure the run can't self-fix.
+
 ## See also
 - `docs/SEAM.md` — the `.next-action` seam the Stop hook surfaces / the reseed hook points at.
 - `docs/AUTONOMOUS-DISCOVERY.md` — the sibling docs-only "Claude as a scheduled worker" pattern.

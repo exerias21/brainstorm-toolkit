@@ -29,7 +29,7 @@ generator expects. Match the local convention rather than importing Python's.
 
 ## Coverage auditing without the bundled script
 
-`scripts/docstring_audit.py` is Python-only (it uses `ast`). For other languages,
+The skill's `scripts/docstring_audit.py` is Python-only (it uses `ast`). For other languages,
 get the coverage number from the ecosystem's own tooling where it exists, and fall
 back to counting when it does not.
 

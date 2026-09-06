@@ -5,7 +5,8 @@ description: >
   TASKS.md, writes a task file at plans/tasks/task-N-<slug>.md, and runs a write-test
   → implement → verify loop. Use for small to medium items that are too concrete for
   /brainstorm and too small to justify the full /sdlc pipeline. Invoke via /task or
-  when the user asks to "just do X" with a clear, bounded ask.
+  when the user asks to "just do X", "quick fix", "small change", or names one concrete,
+  bounded ask with no plan behind it.
 argument-hint: "<description>"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
@@ -78,12 +79,15 @@ against (docs, comments, config, copy edits), skip steps 1, 2, and 5 — make
 the edit directly at step 4 and note "no testable surface" in the report.
 Don't manufacture a hollow test, and don't punt the task to another skill.
 
-1. **Write a failing test** that encodes the acceptance criterion. Use the project's configured test runner (`.claude/project.json` → `test.unit` or `test.frontend`). If the project has no tests, write one in the conventional location (`tests/`, `__tests__/`, etc.).
-2. **Run the test** and confirm it fails for the expected reason. If it passes, the test is wrong — fix it before continuing.
-3. **Mark the TASKS.md row as in-progress** (`[ ]` → `[~]`) and, on Claude, `TaskUpdate status: in_progress`.
-4. **Implement the change**, following existing patterns. Keep the diff minimal.
-5. **Re-run the test** until it passes. Do not weaken the test to make it pass.
-6. **Run the wider test suite** if one is configured (`/test-check` or the project's root test command).
+1. **Write a failing test** encoding the acceptance criterion, using the project's configured
+   runner (`.claude/project.json` → `test.unit` or `test.frontend`; the conventional location
+   if none is configured), and confirm it fails for the expected reason.
+2. **Mark the TASKS.md row in-progress** (`[ ]` → `[~]`) and, on Claude, `TaskUpdate status:
+   in_progress`.
+3. **Implement the change**, following existing patterns, until the test passes without
+   weakening it.
+4. **Run the wider test suite** if one is configured (`/test-check` or the project's root test
+   command).
 
 ### 5. Close out
 
@@ -105,5 +109,4 @@ instruction. When you do commit, append a blank line and
 - **Don't inflate small tasks.** If the ask is one line of code, the task file can be terse. Don't pad acceptance criteria to look thorough.
 - **Respect `GOTCHAS.md`.** Before writing code, check the configured `gotchas_file` (if it exists) for entries that apply to the area you're touching — scoped to the touched area, not the whole file.
 - **Capture at exit (flywheel).** If the run hit a real trap (a test flipped red→green, or something surprised you), run the loop-exit capture protocol in `skills/gotcha/SKILL.md` — auto-draft + one-tap confirm; clean runs stay silent. If capture is declined/deferred, append a `/gotcha <drafted text>` sentinel line — structured + deduped by `cmd` (multi-slot seam, see `docs/SEAM.md`): `line='{"cmd":"/gotcha <drafted text>","source":"task","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action` (never a bare `/gotcha`). On Codex (as a fallback until its `.codex/hooks.json` Stop hook is wired+trusted) also print `Next: /gotcha …` inline so the seam degrades gracefully. If no Stop hook is wired at all, apply the **no-hook nudge** (`docs/SEAM.md` SEAM2).
-- **Don't skip the failing-test step when there IS a testable surface.** A passing test that was never red verifies nothing. Only skip the red-test cycle for genuinely untestable asks (pure docs/config/copy) — handle those directly here per the note in Section 4; don't punt them to another skill.
 - **One task at a time.** `/task` handles a single bounded item. If the ask implies a *batch* of tasks, don't fire `/task` repeatedly — run them through `/sdlc <range>` (e.g. `/sdlc 1-5`), which keeps full-pipeline discipline across the set and commits nothing until you review. For an open-ended feature, start with `/brainstorm`.

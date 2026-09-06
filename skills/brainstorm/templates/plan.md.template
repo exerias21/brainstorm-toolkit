@@ -23,6 +23,12 @@ Numbered list of concrete steps, each with:
 - Which files to create/modify
 - Key patterns to follow (reference existing code from the block above)
 
+Optional: group steps under `#### Phase N — <title>` headings when there are more than
+~6 steps, or a real ordering dependency (phase 2 can't start until phase 1 lands). A flat
+list with no `#### Phase` headings is one implicit phase — nothing downstream breaks.
+`/sdlc` Stage 0 reads the phase number (if any) into each `TASKS.md` row's `_phase:_`
+marker so a phase's rows can be told apart from the plan's other rows.
+
 ### Cross-Module Touchpoints
 - Which other modules this connects to and how
 

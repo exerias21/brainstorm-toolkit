@@ -477,13 +477,23 @@ must use this same call). If the run decomposed into per-lane dispatch (§7.2's 
 lane's own tier is a separate, out-of-scope concern for this run-level check — this resolves only
 the single-agent implement path's tier. If the reviewer value is one of the three tier names (not
 `fable`) **and** it resolves to the *same* tier the implementer used, independence is not
-established: bump the reviewer one tier up (both `sonnet` → reviewer runs `opus`; if implementer
-is already `opus`, mark `data.independence = "degraded"` in `review.json` and warn). The bumped
-value is the *effective* dispatch tier (§7.2's `effectiveReviewModel`, distinct from the raw
-resolved `REVIEW_MODEL`) — every reviewer/verify/fix-planner call, and `review.json.data.
-reviewer_model`, use it once a bump applies. Any finding produced under a `"degraded"` run fails
-rubric criterion #4 (§4.3) and can never be auto-fixed — only surfaced. `fable` is independent of
-the tier ladder by construction, so this check only applies when the reviewer resolves to one of
+established: mark `data.independence = "degraded"` in `review.json`, warn once, and **dispatch
+the configured reviewer unchanged**. Any finding produced under a `"degraded"` run fails rubric
+criterion #4 (§4.3) and can never be auto-fixed — only surfaced.
+
+> **Revised 2026-09-04 — the "bump one tier up" branch is gone.** The original rule bumped a
+> colliding reviewer one tier (both `sonnet` → reviewer runs `opus`). Because the reviewer's
+> default is `opus`, the ceiling, that branch could only ever fire against an *explicit*
+> `models.code_review` / `--review-model` value — it never touched a default. In practice that
+> made `models.code_review: "sonnet"` unreachable under the default `cap: sonnet`: a user who
+> lowered the reviewer exactly as the stage's own cap-warning told them to got Opus anyway, on
+> a from-scratch run, with a one-line "bumping per the independence rule" notice. The rule now
+> records the collision (`"degraded"`, surface-only) instead of correcting it. `reviewer_model`
+> in `review.json` is therefore always the raw resolved value; the `effectiveReviewModel` /
+> bump branch in the §7.2 snippet below is retained only as the record of the deleted Workflow
+> and is superseded by this paragraph.
+
+`fable` is independent of the tier ladder by construction, so this check only applies when the reviewer resolves to one of
 the three tier names — whether from an explicit `--review-model {opus|sonnet|haiku}` override or
 from the **default resolution itself**, since the default is now `opus` (§5.2).
 
@@ -1146,6 +1156,8 @@ if (reviewEnabled) {
   const REVIEW_PASSES = cfg.review_fix?.passes === 2 ? 2 : 1
   const SECOND_PASS_MODEL = cfg.review_fix?.second_pass_model ?? 'sonnet'
 
+  // NOTE (2026-09-04): the `else` branch below that BUMPS a colliding reviewer one tier is
+  // superseded -- see the revision note under §5.4. Record of the deleted Workflow only.
   // §5.4 independence resolution -- computed ONCE per run, threaded into planFixes
   // (rubric criterion #4) and into the persist:review envelope (data.independence,
   // data.reviewer_model). Only applies when REVIEW_MODEL is one of the tier names (not
@@ -1872,11 +1884,12 @@ opt-in runs**, not a default-on burn-in (there is none — see above).
       `pipeline.review_fix.enabled: false` in `project.json` still runs Stage 5.7 — the explicit
       opt-in flag wins over the standing config, mirroring `models.md`'s `--model` vs
       `models.cap` precedence.
-- [ ] **Independence resolution (§5.4):** `--review-model sonnet` on a default (Sonnet-capped) run
-      dispatches the reviewer at `opus` and records `review.json.data.independence: "ok"`; when the
-      implementer's effective tier is already `opus`, the run records `"degraded"` and the
-      fix-planner marks every finding that run `auto_fixable: false` with `reason` citing rubric
-      criterion #4.
+- [ ] **Independence resolution (§5.4, revised):** `--review-model sonnet` on a default
+      (Sonnet-capped) run dispatches the reviewer at `sonnet` — the configured value, never
+      bumped — and records `review.json.data.independence: "degraded"`; the fix-planner marks
+      every finding that run `auto_fixable: false` with `reason` citing rubric criterion #4.
+      The default reviewer (`opus`) under `cap: sonnet` records `"ok"` with no warning; `--model
+      opus` with the default reviewer records `"degraded"` the same way.
 - [ ] **Runtime-availability fallback (§5.2 / D16):** with the resolved reviewer model unavailable
       at dispatch (simulate: the resolved tier is unreachable on this host — a general
       dispatch-failure test, not a Fable-provisioning test, since Fable is never treated as an

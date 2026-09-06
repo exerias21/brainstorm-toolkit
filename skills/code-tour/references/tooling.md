@@ -117,7 +117,7 @@ when coverage drops *relative to the base branch*.
 threshold is achievable; `docstr-coverage` for a brownfield codebase, where a
 regression gate is the only workable option (see rule 4 below).
 
-The skill's own `scripts/docstring_audit.py` covers the same ground with no
+The skill's own `scripts/docstring_audit.py` (inside the skill directory) covers the same ground with no
 dependency and adds per-symbol qualified names — useful during the work. For
 permanent CI enforcement, prefer one of the maintained tools above.
 
@@ -224,7 +224,7 @@ jobs:
 **Using this skill's own auditor in CI** (no dependency to install):
 
 ```yaml
-      - run: python3 scripts/docstring_audit.py src/ --min 90
+      - run: python3 .claude/skills/code-tour/scripts/docstring_audit.py src/ --min 90
 ```
 
 It exits 1 below the threshold and 2 on a parse error, so both fail the build —

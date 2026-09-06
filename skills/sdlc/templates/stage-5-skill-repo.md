@@ -10,7 +10,7 @@ and proceeds (with warnings logged) on SOFT checks.
 
 ---
 
-## HARD checks (block the PR)
+## HARD checks (block the hand-off)
 
 ### 1. Skill validator passes
 
@@ -77,7 +77,7 @@ done
 
 The rule says "small utility skills ≤100 lines, larger orchestration skills
 ≤250 lines". Going over is a smell, not a blocker — `/sdlc` itself has been
-above the ceiling and shipping work. Note the count in the PR body and move on.
+above the ceiling and shipping work. Note the count in the Stage 7 report and move on.
 
 ### 6. AGENTS.md / CLAUDE.md drift check
 
@@ -96,7 +96,7 @@ materially different content.
 
 ## Output
 
-Summarize as a table for the PR body:
+Summarize as a table for the Stage 7 report:
 
 | Check | Status | Detail |
 |---|---|---|
@@ -109,4 +109,4 @@ Summarize as a table for the PR body:
 | copilot overlay parity | OK / WARN / N/A | drift detected? |
 
 Any HARD-check FAIL → STOP, do not proceed to Stage 6.
-All HARD pass → proceed to Stage 6 with the table embedded in the PR body.
+All HARD pass → proceed to Stage 6 and embed the table in the Stage 7 report.

@@ -1,9 +1,12 @@
 ---
 name: test-check
 description: >
-  Run all relevant tests, feature evals and log audits after code changes. Reads `.claude/project.json`
-  for project-specific commands. Gracefully skips any steps whose commands are not
-  configured. Use after implementing features, fixing bugs, or before marking work done.
+  Run all relevant tests, feature evals and log audits after code changes, in a Haiku
+  sub-agent so raw output never lands in your context. Reads `.claude/project.json` for
+  the project's commands and skips any step whose command is not configured. Use it after
+  implementing a feature or fixing a bug, before marking work done, or whenever the user
+  says /test-check, "run the tests", "did I break anything", "check the logs", or
+  "is it green". `--loop` also fixes failing e2e tests instead of only reporting them.
 argument-hint: "[--loop]"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
@@ -101,15 +104,16 @@ Skip if the key is missing.
 Skip if the key is missing.
 
 **`--loop` — fix e2e failures instead of only reporting them** (absorbed from the former
-`/test-check --loop`). With `--loop`, dispatch the `e2e-test-runner` agent (by type:
+`/e2e-loop`). With `--loop`, dispatch the `e2e-test-runner` agent — and on a runtime with no sub-agent
+seam (Copilot / Codex) **you are the loop**: run, triage flaky vs real, fix, re-run, bounded by
+the same budget, reporting only the structured summary. Dispatch the `e2e-test-runner` agent (by type:
 `brainstorm-toolkit:e2e-test-runner`, or bare `e2e-test-runner` when vendored) rather than
-running the command inline. It separates flaky failures from real ones, re-runs each failure
+running the command inline — Sonnet by default, per `skills/sdlc/templates/models.md`; pass
+`model` explicitly, since the agent pins no tier and an omitted `model` inherits the session
+model. It separates flaky failures from real ones, re-runs each failure
 once before believing it, dispatches fixes, and re-runs until green or `test.e2e_max_fix_loops`
 (default 3) is hit. It also reads `test.e2e_patterns_file` and `test.e2e_rerun_failed_only`
 when set. Without `--loop`, this step stays one-shot: run, report, don't fix.
-
-The agent was always the thing doing the work — `/e2e-loop` was a second entry point to it,
-and `/sdlc` Stage 5 a third. One skill, one flag.
 
 ### 5. Post-test log re-check (if `logs.command` defined)
 

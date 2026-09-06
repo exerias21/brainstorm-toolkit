@@ -106,6 +106,37 @@ copy_tree_if_new() {
   done
 }
 
+install_overlay() {
+  # install_overlay <overlay_dir> <canonical_dir> <dest>
+  # The overlay's SKILL.md replaces the canonical one, but the canonical skill's runtime
+  # resources (templates/, references/, scripts/, assets/) still ship unless the overlay
+  # carries its own copy of that directory. Overlays therefore cite the same
+  # `skills/<name>/templates/<file>` paths the canonical does instead of inlining the bodies.
+  local overlay="$1" canon="$2" dest="$3" sub
+  copy_tree_if_new "$overlay" "$dest"
+  for sub in templates references scripts assets; do
+    if [[ -d "$canon/$sub" && ! -d "$overlay/$sub" ]]; then
+      copy_tree_if_new "$canon/$sub" "$dest/$sub"
+    fi
+  done
+}
+
+# Agent Skills portable subset is name/description/license/metadata/compatibility/
+# allowed-tools. Claude-only keys are kept for the Claude install and stripped here,
+# because a strict Copilot/Codex consumer rejects unknown frontmatter keys outright.
+# Idempotent: on a file that's already stripped, neither awk condition matches, so the
+# file is rewritten byte-for-byte identical (safe to call on skip-on-exist paths too).
+strip_nonportable_frontmatter() {
+  local f="$1"
+  [[ -f "$f" ]] || return 0
+  local tmp; tmp="$(mktemp)"
+  awk '
+    /^---[[:space:]]*$/ { fence++ ; print ; next }
+    fence == 1 && /^(argument-hint|disable-model-invocation):/ { next }
+    { print }
+  ' "$f" > "$tmp" && mv "$tmp" "$f"
+}
+
 delete_if_exists() {
   # delete <path> if present
   local path="$1"
@@ -155,10 +186,13 @@ for skill_dir in "$PLUGIN_ROOT"/skills/*/; do
     # Overlay pattern: prefer copilot/skills/<name>/ if it exists (Copilot-optimized version)
     copilot_override="$PLUGIN_ROOT/copilot/skills/$name"
     if [[ -d "$copilot_override" ]]; then
-      copy_tree_if_new "$copilot_override" "$TARGET/.github/skills/$name"
+      install_overlay "$copilot_override" "$skill_dir" "$TARGET/.github/skills/$name"
     else
       copy_tree_if_new "$skill_dir" "$TARGET/.github/skills/$name"
     fi
+    # Copilot documents only the portable frontmatter subset; a strict consumer
+    # hard-errors on Claude-only keys (argument-hint, disable-model-invocation).
+    strip_nonportable_frontmatter "$TARGET/.github/skills/$name/SKILL.md"
   fi
 
   if [[ "$want_codex" -eq 1 ]] && applies_to_includes "$skill_dir" codex; then
@@ -172,12 +206,15 @@ for skill_dir in "$PLUGIN_ROOT"/skills/*/; do
     codex_override="$PLUGIN_ROOT/codex/skills/$name"
     copilot_override="$PLUGIN_ROOT/copilot/skills/$name"
     if [[ -d "$codex_override" ]]; then
-      copy_tree_if_new "$codex_override" "$TARGET/.agents/skills/$name"
+      install_overlay "$codex_override" "$skill_dir" "$TARGET/.agents/skills/$name"
     elif [[ -d "$copilot_override" ]]; then
-      copy_tree_if_new "$copilot_override" "$TARGET/.agents/skills/$name"
+      install_overlay "$copilot_override" "$skill_dir" "$TARGET/.agents/skills/$name"
     else
       copy_tree_if_new "$skill_dir" "$TARGET/.agents/skills/$name"
     fi
+    # Same portable-subset rule as the Copilot install above -- Codex documents
+    # only name/description/license/metadata/compatibility/allowed-tools.
+    strip_nonportable_frontmatter "$TARGET/.agents/skills/$name/SKILL.md"
   fi
 done
 
@@ -394,6 +431,45 @@ install_stop_hook_claude() {
   fi
 }
 
+# Install the PreToolUse(Agent) model-cap hook into the consumer's Claude settings. The
+# script is inert until project.json sets pipeline.enforce_cap: true, so wiring it is safe by
+# default. Same idempotent jq merge as the Stop hook, keyed on the exact command string.
+install_pretooluse_hook_claude() {
+  local script="enforce-model-cap.sh"
+  local settings="$TARGET/.claude/settings.json"
+  local cmd
+  if [[ "$COPY_SCRIPTS" -eq 1 ]]; then
+    cmd="bash scripts/hooks/$script"
+  else
+    local hook_path_escaped
+    printf -v hook_path_escaped '%q' "$PLUGIN_ROOT/scripts/hooks/$script"
+    cmd="bash $hook_path_escaped"
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "  skip: jq not installed — add this manually to $settings if you want cap enforcement:"
+    echo "        {\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Agent\",\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\"}]}]}}"
+    return
+  fi
+  mkdir -p "$(dirname "$settings")"
+  [[ -f "$settings" ]] || echo '{}' > "$settings"
+  if jq -e --arg cmd "$cmd" 'any(.hooks.PreToolUse[]?.hooks[]?; .command == $cmd)' "$settings" >/dev/null 2>&1; then
+    echo "  skip: Claude PreToolUse model-cap hook already wired ($cmd)"
+    return
+  fi
+  local tmp; tmp="$(mktemp)"
+  if jq --arg cmd "$cmd" '
+    .hooks //= {} |
+    .hooks.PreToolUse //= [] |
+    .hooks.PreToolUse += [{ "matcher": "Agent", "hooks": [{ "type": "command", "command": $cmd }] }]
+  ' "$settings" > "$tmp" && mv "$tmp" "$settings"; then
+    echo "  wrote: $settings (added PreToolUse model-cap hook; inert until pipeline.enforce_cap: true)"
+  else
+    rm -f "$tmp"
+    echo "  error: failed to update $settings with the PreToolUse hook" >&2
+    return 1
+  fi
+}
+
 # Install the Copilot Stop hook as a standalone file under .github/hooks/.
 # Copilot reads any *.json under .github/hooks/, so a fresh file is the
 # simplest install — no merging required. Skip-on-exist (refresh with --force).
@@ -494,6 +570,48 @@ install_context_watch_codex() {
   else
     rm -f "$tmp"
     echo "  error: failed to update $hook_file with Codex run-cost-report hook" >&2
+    return 1
+  fi
+}
+
+# Install the Codex stop-gate Stop hook by jq-MERGING a third entry into
+# .codex/hooks.json's Stop array. Same pattern as install_context_watch_codex (that
+# one can't be reused: it skips-on-exist and writes the whole file, so it would never
+# add a THIRD hook to an existing Stop array). Idempotent by command string. Inert
+# unless pipeline.stop_gate: "tests" is set -- see scripts/hooks/stop-gate.sh.
+install_stop_gate_codex() {
+  local hook_file="$TARGET/.codex/hooks.json"
+  local cmd
+  if [[ "$COPY_SCRIPTS" -eq 1 ]]; then
+    cmd='bash "$(git rev-parse --show-toplevel)/scripts/hooks/stop-gate.sh"'
+  else
+    local sg_path_escaped
+    printf -v sg_path_escaped '%q' "$PLUGIN_ROOT/scripts/hooks/stop-gate.sh"
+    cmd="bash $sg_path_escaped"
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "  skip: jq not installed — add a stop-gate Stop hook manually to $hook_file:"
+    echo "        {\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\",\"timeout\":310}]}]}}"
+    return
+  fi
+  mkdir -p "$(dirname "$hook_file")"
+  [[ -f "$hook_file" ]] || echo '{}' > "$hook_file"
+  if jq -e --arg cmd "$cmd" '
+        any(.hooks.Stop[]?.hooks[]?; .command == $cmd)
+      ' "$hook_file" >/dev/null 2>&1; then
+    echo "  skip: Codex stop-gate hook already wired ($cmd)"
+    return
+  fi
+  local tmp; tmp="$(mktemp)"
+  if jq --arg cmd "$cmd" '
+    .hooks //= {} |
+    .hooks.Stop //= [] |
+    .hooks.Stop += [{ "hooks": [{ "type": "command", "command": $cmd, "timeout": 310 }] }]
+  ' "$hook_file" > "$tmp" && mv "$tmp" "$hook_file"; then
+    echo "  wrote: $hook_file (added stop-gate Stop hook; inert until pipeline.stop_gate: \"tests\")"
+  else
+    rm -f "$tmp"
+    echo "  error: failed to update $hook_file with Codex stop-gate hook" >&2
     return 1
   fi
 }
@@ -601,6 +719,9 @@ if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
     echo "[hooks] Claude SessionStart reseed hook"
     install_reseed_hook_claude
     install_stop_hook_claude run-cost-report.sh run-cost-report
+    install_stop_hook_claude stop-gate.sh stop-gate
+    echo "[hooks] Claude PreToolUse model-cap hook"
+    install_pretooluse_hook_claude
   fi
   if [[ "$want_copilot" -eq 1 ]]; then
     echo "[hooks] Copilot Stop hook"
@@ -612,6 +733,7 @@ if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
     install_stop_hook_codex
     install_reseed_hook_codex
     install_context_watch_codex
+    install_stop_gate_codex
   fi
 else
   echo "[hooks] skipped (--no-hooks)"

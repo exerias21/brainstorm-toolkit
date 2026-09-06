@@ -42,6 +42,15 @@ starts.
 | `/dead-code-review` | host (Opus) | up to 5 lenses (2 × Haiku, 2 × Sonnet, 1 × Opus-tier), only those the repo has | 60k–180k | $0.20–$0.75 |
 | `/sdlc` | host (Opus) | 3 × Haiku (sanity) + 1 × Sonnet (implement) + 1 × Haiku (test-runner) + 1 × Sonnet (plan check); review stage opt-in | 90k–280k | $0.85–$3.00 |
 
+**A measured run, for calibration (2026-09):** one `/sdlc` run with the review stage **on**
+(4 lenses at Opus, `cap: sonnet`) on a +1,200 / −230 line change came to **~$22** — 7–25× the
+`/sdlc` row above. The split was Sonnet 61% / Opus 37% / Haiku 3%, and the Sonnet share was
+almost entirely **cache reads** (~60M cache-read tokens against <1k fresh input) — i.e. the
+orchestrator re-reading its own context turn after turn, not sub-agent work. Two lessons: the
+table above is a lower bound for a review-on run, and the lever that matters on a run like that
+is turn count × context size (delegate, stay `quiet`, keep the plan small), not the tier of the
+3%-share Haiku calls. `scripts/token-audit.py --session <uuid>` gives the same split per run.
+
 **Notes / caveats**:
 
 - The "host model" / "orchestrator" is whichever model is running the

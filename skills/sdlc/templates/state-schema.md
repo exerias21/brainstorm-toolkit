@@ -11,6 +11,14 @@ a state-write failure never fails a run. And **state is gitignored** — `setup.
 `schema_version: 1`. Additive fields need no bump; renames and removals do. Rationale and the
 original design rules: `docs/PHASE-1-STATE-ENVELOPE.md` (plugin repo, not shipped).
 
+## Contents
+
+- [Directory layout](#directory-layout)
+- [`run.json` — the top-level run record](#runjson--the-top-level-run-record)
+- [`stage-outputs/<stage>.json` — per-stage sidecars](#stage-outputsstagejson--per-stage-sidecars)
+  - Per-stage `data` shapes: `parse`, `sanity-check`, `implement`, `decompose`/`implement-<lane>`/`converge`, `generate-evals`, `validate` (standard and skill-repo mode), `handoff` (Stage 6)
+- [What does NOT live here](#what-does-not-live-here)
+
 ---
 
 ## Directory layout
@@ -29,10 +37,11 @@ original design rules: `docs/PHASE-1-STATE-ENVELOPE.md` (plugin repo, not shippe
     validate.json
     review.json             # Stage 5.7 -- only when the review stage is enabled; shape in stage-5.7-review-fix.md
     review-fix.json         # Stage 5.8 -- only when review.json.data.confirmed is non-empty; shape in stage-5.7-review-fix.md
+    cleanup.json            # Stage 5.9 -- only when the cleanup stage is enabled; shape in stage-5.9-cleanup.md
     handoff.json            # Stage 6 hand-off
 ```
 
-Stage filenames use the **canonical kebab names** from `docs/CONVENTIONS.md` "Stage names" — `parse`, `sanity-check`, `decompose`, `implement`, `implement-<lane>`, `converge`, `generate-evals`, `validate`, `review`, `review-fix`. Never decimal-versioned (no `stage-1.5.json`).
+Stage filenames use the **canonical kebab names** from `docs/CONVENTIONS.md` "Stage names" — `parse`, `sanity-check`, `decompose`, `implement`, `implement-<lane>`, `converge`, `generate-evals`, `validate`, `review`, `review-fix`, `cleanup`. Never decimal-versioned (no `stage-1.5.json`).
 
 Note: `review-fix`'s internal `loops[]` index is a bounded loop counter (`max_fix_loops`, default 3), **not** an artifact ID — it is not zero-padded and does not fall under the `pbi-001`/`task-001` convention.
 
@@ -81,7 +90,7 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
 | `status` | enum | yes | One of `in_progress`, `complete`, `failed`, `paused`. `paused` means the pipeline stopped and `--resume` would pick it up. |
 | `stages_completed` | string array | yes | In execution order. Each name appears once. A stage is "completed" when its sidecar's status is `pass`. |
 | `stages_skipped` | string array | yes | Stages explicitly skipped (e.g., stages skipped because their config was absent, or skill-repo-mode skips). Distinct from "not yet run." |
-| `next_action` | object | optional | Additive (L8 — the pending handoff, durable). `{"cmd": "...", "confirm": bool}`, mirroring a `.next-action` sentinel line, recording the next step this run proposed when it finished/paused. Lets `/sdlc-status` recover the proposed handoff from the envelope even after the fire-once sentinel was consumed — the loop's "program counter" survives in a file, not just chat context. **This is a `/sdlc-status` *fallback*, read on demand — it is NOT what the Stop hook auto-surfaces.** The `.next-action` **sentinel** is the only thing the hook reads; a park must write the sentinel too, never rely on this field alone (DQ5). Absent when the run proposed no next action. |
+| `next_action` | object | optional | Additive. `{"cmd": "...", "confirm": bool}`, mirroring a `.next-action` sentinel line, recording the next step this run proposed when it finished/paused. Lets `/sdlc-status` recover the proposed handoff from the envelope even after the fire-once sentinel was consumed. **This is a `/sdlc-status` *fallback*, read on demand — it is NOT what the Stop hook auto-surfaces.** The `.next-action` **sentinel** is the only thing the hook reads; a park must write the sentinel too, never rely on this field alone. Absent when the run proposed no next action. |
 | `data.stage2_decomposed` | bool | optional | Set at Stage 2a. `true` when the gate fanned Stage 2 into per-lane subagents; `false` (or absent) for the single-agent path. Absent on runs written before this field existed. |
 | `data.lanes` | string array | optional | Lane names from Stage 2a (e.g. `["data", "backend", "frontend"]`), in dependency dispatch order. `[]` when not decomposed. |
 
@@ -101,8 +110,8 @@ When `pipeline.review_fix.enabled` is `false`, `--no-review` was passed, or `rev
 `confirmed[]` ends up empty, `review` and/or `review-fix` move to `stages_skipped` instead on the
 prose/overlay paths — same documented convention as `generate-evals`'s own skill-repo-mode skip.
 
-**Queued / multi-item runs (`/sdlc --queue`, L10).** A queue run stays on **this exact
-schema** — it does **not** invent a parallel shape. Concretely (dogfood-hardened):
+**Queued / multi-item runs (`/sdlc --queue`).** A queue run stays on **this exact
+schema** — it does **not** invent a parallel shape. Concretely:
 - Canonical keys only — `feature_slug`, `plan_file`, `plan_hash`, `schema_version`,
   `started_at`, `updated_at`, `args`. Never `slug`/`plan`/`mode`.
 - `stage` / `stages_completed` hold **canonical stage names** (`implement`, `validate`,
@@ -184,77 +193,12 @@ Below is the shape each stage's `data` field is expected to take. These are the 
 }
 ```
 
-#### `decompose` (Stage 2a — only when the gate fans out)
-```json
-{
-  "gate_inputs": {
-    "surfaces_touched": ["data", "backend", "frontend"],
-    "surface_count": 3,
-    "task_count": 15,
-    "decompose_min_tasks": 6,
-    "files_disjoint": true
-  },
-  "gate_decision": "decompose",
-  "lanes": [
-    {
-      "lane": "data",
-      "files": ["migrations/0007_orders.sql", "models/order.py"],
-      "steps": ["add orders table", "add Order model"],
-      "depends_on": [],
-      "model": "sonnet",
-      "contract": "Order(id, user_id, total_cents, status); table `orders` with index on (user_id, status)."
-    },
-    {
-      "lane": "backend",
-      "files": ["api/routes/orders.py", "api/schemas/order.py"],
-      "steps": ["POST /orders", "GET /orders/{id}"],
-      "depends_on": ["data"],
-      "model": "sonnet",
-      "contract": "POST /orders -> 201 {id}; GET /orders/{id} -> 200 OrderOut. Uses Order model from the data lane."
-    }
-  ]
-}
-```
-`gate_decision` is `decompose` or `single-agent`. When `single-agent`, no
-`decompose.json` is written at all — the gate inputs that produced a
-no-decompose decision are still summarized in the `implement.json` `summary`.
-Each lane's `model` is `sonnet` (default) or `opus` (lane flagged
-high-complexity in 2a). `depends_on` lists lane names that must complete first;
-2b dispatches in a dependency-respecting order.
-
-#### `implement-<lane>` (one per lane — only when decomposed)
-Same shape as `implement` (above), plus a `lane` discriminator:
-```json
-{
-  "lane": "backend",
-  "agent_model": "claude-sonnet-4-5",
-  "files_changed": [
-    { "path": "api/routes/orders.py", "added": 42, "removed": 0 }
-  ],
-  "total_added": 42,
-  "total_removed": 0,
-  "blockers_reported": []
-}
-```
-The filename embeds the lane (`implement-backend.json`); the canonical stage
-name in `run.json.stages_completed` is still `implement` (recorded once after
-2c, not per lane).
-
-#### `converge` (Stage 2c — only when decomposed)
-```json
-{
-  "merged_files": ["api/routes/orders.py", "models/order.py", "..."],
-  "integration_fixes": [
-    { "file": "api/routes/orders.py", "fix": "import Order from models.order" }
-  ],
-  "import_check": { "status": "pass", "unresolved": [] },
-  "symbol_collisions": []
-}
-```
-`import_check.status` is `pass` or `fail`; `unresolved` lists imports/symbols
-that could not be resolved across the union of lane edits. `symbol_collisions`
-lists any name defined by more than one lane. A non-empty `unresolved` or
-`symbol_collisions` that 2c cannot fix is fed into Stage 5's shared fix loop.
+#### `decompose` / `implement-<lane>` / `converge` (decomposed path only)
+Shapes are the agent output contracts in `stage-2a-decompose.md`, `stage-2b-dispatch.md` and
+`stage-2c-converge.md`. Two rules live here: on the `single-agent` path no `decompose.json` is
+written — the gate inputs are summarized in `implement.json`'s `summary`; and the canonical
+stage name in `run.json.stages_completed` is `implement`, recorded once after 2c, never per
+lane.
 
 #### `generate-evals`
 ```json

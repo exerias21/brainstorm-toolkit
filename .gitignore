@@ -17,6 +17,7 @@ __pycache__/
 
 # Consumer-side artifacts (this is a plugin repo, not a consumer)
 plans/
+!docs/plans/
 TASKS.md
 GOTCHAS.md
 CHEATSHEET.md
@@ -24,6 +25,20 @@ CHEATSHEET.md
 .claude/pipeline/
 .claude/.next-action
 .claude/scheduled_tasks.lock
+
+# evals/skills/fixtures/mini-fastapi/ is a COMMITTED mock consumer repo (the
+# skill-eval.py harness copies it into a temp dir per run) -- its TASKS.md and
+# plans/ are fixture content, not this repo's own consumer-side artifacts, so
+# they need the same un-ignore treatment as docs/plans/ above.
+!evals/skills/fixtures/**/plans/
+!evals/skills/fixtures/**/plans/**
+!evals/skills/fixtures/**/TASKS.md
+
+# scripts/ci/skill-eval.py results — regenerated per run, not source. The
+# baseline stays tracked (it's the committed cost-regression reference); order
+# matters, the negation must follow the ignore or it would swallow the file.
+evals/skills/results/
+!evals/skills/baseline.json
 
 # Installed plugin artifacts — produced by setup.sh when this repo is its own
 # install target for dogfooding. The canonical source lives in skills/,

@@ -1,16 +1,12 @@
 ---
 name: brainstorm
 description: >
-  Interactive brainstorming and feature ideation skill. Guides the user through structured creative
-  exploration: asking focused clarifying questions when the seed is ambiguous, exploring codebase
-  context, generating multiple approaches,
-  evaluating tradeoffs, and producing a concrete action plan. Use this skill whenever the user says
-  /brainstorm, mentions "brainstorm", "let's think through", "I have an idea", "what if we",
-  "how should we approach", "let's explore", or otherwise wants to ideate on a feature, improvement,
-  or architectural change before jumping into code. This is the conversational planning companion —
-  for heavy autonomous multi-agent product research, use /brainstorm-team (Claude Code only).
-argument-hint: "[topic] [--vet light|deep|ultra|none] - optional: topic + multi-pass vet mode"
-disable-model-invocation: true
+  Interactive brainstorming and feature ideation skill: clarifies the idea, explores codebase
+  context, generates multiple approaches, evaluates tradeoffs, and writes an action plan to
+  `plans/`. Use whenever the user says /brainstorm, mentions "brainstorm", "let's think through",
+  "I have an idea", "what if we", "how should we approach", "let's explore", or wants to ideate
+  on a feature or change before jumping into code. This is the conversational planning companion
+  — for heavy autonomous multi-agent product research, use /brainstorm-team instead.
 metadata:
   brainstorm-toolkit-applies-to: copilot
 ---
@@ -144,37 +140,10 @@ approach, help them stress-test it: "The one thing I'd want to think through is.
 
 Once the user has converged on a direction, produce a concrete plan:
 
-```markdown
-## Brainstorm Result: [Feature Name]
-
-### Direction
-One paragraph summarizing the chosen approach and why. If the direction combines a
-conventional option with a wildcard, say so explicitly.
-
-### Conventions & reuse
-What this plan reuses from the existing codebase (from Step 2's recon), so
-implementation follows the repo instead of reinventing it:
-- Follow: <pattern> — see `path:line`
-- Reuse: <existing module/helper/type> for <purpose> — `path`
-- New (justified): <thing>, because <no existing pattern fits>
-- Doc drift: <AGENTS.md/CLAUDE.md says X but the code does Y>   (omit if none)
-
-### Implementation Steps
-Numbered list of concrete steps, each with:
-- What to do
-- Which files to create/modify
-- Key patterns to follow (reference existing code from the block above)
-
-### Cross-Module Touchpoints
-- Which other modules this connects to and how
-
-### Open Questions
-- Anything that still needs deciding (keep this short)
-
-### Appendix: Alternatives Considered
-Preserve every Conventional Approach and Wildcard generated in Step 4 — even the
-rejected ones — with a one-line "why not chosen" note.
-```
+**Write the plan using `skills/brainstorm/templates/plan.md.template`** — read it now. It
+carries the full section set (Direction, Conventions & reuse, Implementation Steps,
+Cross-Module Touchpoints, Open Questions, Appendix: Alternatives Considered). Keep the headings
+verbatim: `/sdlc`'s Stage 0 parser finds implementation steps and files-to-change by those names.
 
 **Write this to `plans/brainstorm-[topic-slug].md` at the repo root** (the
 consumer project's working directory) — NOT under `.claude/`. Use the file-write
@@ -186,72 +155,29 @@ doesn't exist.
 Do this **before** Step 7 (validation) — the validation checklist references
 this path.
 
+**Group implementation steps into phases past ~6 steps, or a real ordering dependency**
+(phase 2 needs phase 1 landed first) — `#### Phase N — <title>` headings under
+`### Implementation Steps`, per the template. A flat list stays one implicit phase; nothing
+downstream requires phases.
+
 **Also append action items to `TASKS.md`** (at repo root). For each implementation step
 that's concrete and bounded enough to stand alone, add a row to the `Active / Pending`
-section: `- [ ] (P2) <step title> — plans/brainstorm-[topic-slug].md`. If `TASKS.md`
-doesn't exist, create it from `templates/TASKS.md.template` (or with minimal sections).
+section: `- [ ] (P2) <step title> — plans/brainstorm-[topic-slug].md _plan: [topic-slug]_`
+(append `· _phase: N_` when the step sits under a `#### Phase N` heading). **The `_plan:_`
+value is `[topic-slug]` alone, never `brainstorm-[topic-slug]`** — `/sdlc` Stage 0 derives
+its slug by stripping the leading `brainstorm-` from the plan filename, so tagging the row
+with the full filename stem would make the "deterministic" key never match at Stage 6
+close-out. If `TASKS.md` doesn't exist, create it from `templates/TASKS.md.template` (or
+with minimal sections).
 
 ### Step 6.5: Multi-pass Vet (mode-gated)
 
-Before the single-pass validator in Step 7, optionally run a multi-lens vet
-using the `--vet [light|deep|ultra|none]` flag. Multiple passes catch issues
-one validator misses. Copilot runs them **sequentially in the main context**
-(no parallel sub-agents), so the cost is wall-clock-time-linear with mode.
-
-A **model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; see
-`skills/sdlc/templates/models.md`) would govern each pass's sub-agent tier
-on Claude — here the passes run inline in the session model, so the cap is
-advisory: set your session model to the cap tier for the savings.
-
-**Mode resolution** when `--vet` is not passed explicitly:
-- `<5` implementation steps in the saved plan → `none` (skip; go to Step 7).
-- `5–15` steps → `light`.
-- `>15` steps OR plan has a "Cross-Module Touchpoints" section listing more
-  than one module → suggest `deep` to the user; proceed with `light` if
-  they decline.
-- Plan grep finds keywords (`migration`, `auth`, `secret`, `oauth`,
-  `public api`, `deploy`, `rollback`, `prod`) in "Files to change" or
-  "Implementation Steps" → suggest `ultra` to the user.
-- User can override via explicit `--vet <mode>`.
-
-**Mode behavior** (run inline, sequentially):
-
-#### `none`
-Skip Step 6.5.
-
-#### `light` — 3 sequential passes
-For each of `paths`, `completeness`, `gotchas`, run the pass yourself in the
-main context (no sub-agent). Use the prompts at
-`skills/sdlc/templates/stage-1.5-sanity-check.md` as the per-pass checklist.
-
-#### `deep` — `light` + 1 stress-test pass
-After the 3 passes above, run a stress-test pass: try to find a way the plan
-would fail. Apply inversion: assume the plan is wrong, and identify the
-single most likely mode of failure under realistic load, edge cases, or
-operator error. Report under 250 words: failure mode, the step that
-introduces it, and a one-line fix.
-
-#### `ultra` — `deep` + 2 sequential premium passes
-
-5. **architectural-coherence**: read the plan and the project's
-   CLAUDE.md/AGENTS.md. Check whether the plan's structure fits the
-   codebase's existing architecture: layering, abstraction boundaries,
-   naming conventions, module ownership. Flag contradictions with
-   established patterns. Cap report at 300 words.
-
-6. **edge-case-divergence**: for each acceptance criterion, enumerate 3–5
-   edge cases the plan does NOT explicitly handle (nulls, empty inputs,
-   concurrent writes, partial failures, auth expiry, off-by-one
-   boundaries). Surface "happy-path only" plans. Cap at 400 words.
-
-#### Processing results
-
-1. Collect findings from all passes.
-2. **If issues found**: surface them to the user. For HIGH-confidence
-   findings, auto-revise the plan. For lower-confidence, ask the user.
-3. After revisions, write the updated plan back to the same path
-   (overwrite — the saved plan is the source of truth).
-4. Proceed to Step 7 with the post-vet plan.
+**Off unless a vet mode is explicitly requested** (`--vet`, or the user asking for a review
+pass). Resolve that first — when no mode is set, go straight to Step 7 and do not open the
+template. When a mode *is* set, **read `skills/brainstorm/templates/vet-modes.md` now** and run
+it; it carries the modes, their prompts, the merge rule and the post-vet hand-back. On this
+runtime run each pass **inline and sequentially** in the session (no sub-agents) — the cap is
+advisory here, so set your session model to the cap tier for the savings.
 
 ### Step 7: Validate the Plan
 
@@ -290,7 +216,8 @@ entry, see `docs/SEAM.md`), deduped by `cmd`:
 `line='{"cmd":"/sdlc plans/brainstorm-[topic-slug].md","source":"brainstorm","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action`
 On Codex (as a fallback until its `.codex/hooks.json` Stop hook is wired+trusted), also print `Next: <command>` inline right after writing
 the sentinel, so the handoff degrades gracefully instead of vanishing. **No-hook
-nudge (SEAM2):** if no Stop hook is wired at all, the sentinel is inert — apply the
-best-effort check in `docs/SEAM.md` and tell the user to enable the plugin (it ships
-the hook, SEAM1) or run `setup.sh`/`/repo-onboarding`.
+nudge (SEAM2):** if no Stop hook is wired at all, the sentinel is inert — check for one:
+`grep -rlqs 'next-action' .claude/settings.json ~/.claude/settings.json .github/hooks/
+~/.claude/plugins/ 2>/dev/null` — and if that finds nothing, tell the user to enable the
+plugin (it ships the hook, SEAM1) or run `setup.sh`/`/repo-onboarding`.
 (substitute `/sdlc` if that's the established flow). Skip only on "save for later".
