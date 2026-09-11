@@ -385,6 +385,30 @@ ensure_gitignored() {
   fi
 }
 
+# jq-free fallback for every hook merge below.
+#
+# WHY: these installers used to `return` early when jq was absent, printing a
+# "skip:" line and letting the install report success. A full --tools claude run
+# on a machine without jq therefore shipped ZERO hooks -- the .next-action seam,
+# the reseed, the cost report, the stop-gate and the model-cap PreToolUse hook
+# all silently missing, with the only evidence in mid-install chatter. Observed
+# on 2026-09-10. python3 is already a hard dependency of this repo, so this
+# costs nothing that was not already required.
+# $1=file  $2=event  $3=command  $4=label  [$5=--matcher X | --timeout N ...]
+hook_merge_py() {
+  local file="$1" event="$2" cmd="$3" label="$4"; shift 4
+  local py=""
+  for c in python3 python py; do
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c pass >/dev/null 2>&1; then py="$c"; break; fi
+  done
+  if [[ -z "$py" ]]; then
+    echo "  skip: neither jq nor python found — add this manually to $file:"
+    echo "        {\"hooks\":{\"$event\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\"}]}]}}"
+    return 1
+  fi
+  "$py" "$PLUGIN_ROOT/scripts/merge-hook.py" "$file" "$event" "$cmd" --label "$label" "$@"
+}
+
 # Install the Stop hook into the consumer's Claude Code settings file so the
 # next-action sentinel is surfaced after Claude finishes a turn. Idempotent:
 # checks for the exact command string before appending.
@@ -402,9 +426,7 @@ install_stop_hook_claude() {
     cmd="bash $hook_path_escaped"
   fi
   if ! command -v jq >/dev/null 2>&1; then
-    echo "  skip: jq not installed — cannot safely merge Claude hook config."
-    echo "        Install jq and re-run, or add this manually to $settings:"
-    echo "        {\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\"}]}]}}"
+    hook_merge_py "$settings" "Stop" "$cmd" "Claude Stop hook for $label" || return 1
     return
   fi
   mkdir -p "$(dirname "$settings")"
@@ -446,6 +468,10 @@ install_pretooluse_hook_claude() {
     cmd="bash $hook_path_escaped"
   fi
   if ! command -v jq >/dev/null 2>&1; then
+    hook_merge_py "$settings" "PreToolUse" "$cmd" "Claude PreToolUse model-cap hook" --matcher Agent || return 1
+    return
+  fi
+  if false; then
     echo "  skip: jq not installed — add this manually to $settings if you want cap enforcement:"
     echo "        {\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Agent\",\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\"}]}]}}"
     return
@@ -548,6 +574,10 @@ install_context_watch_codex() {
     cmd="bash $cw_path_escaped"
   fi
   if ! command -v jq >/dev/null 2>&1; then
+    hook_merge_py "$hook_file" "Stop" "$cmd" "Codex run-cost-report Stop hook" --timeout 10 || return 1
+    return
+  fi
+  if false; then
     echo "  skip: jq not installed — add a run-cost-report Stop hook manually to $hook_file:"
     echo "        {\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\",\"timeout\":10}]}]}}"
     return
@@ -590,6 +620,10 @@ install_stop_gate_codex() {
     cmd="bash $sg_path_escaped"
   fi
   if ! command -v jq >/dev/null 2>&1; then
+    hook_merge_py "$hook_file" "Stop" "$cmd" "Codex stop-gate Stop hook" --timeout 10 || return 1
+    return
+  fi
+  if false; then
     echo "  skip: jq not installed — add a stop-gate Stop hook manually to $hook_file:"
     echo "        {\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\",\"timeout\":310}]}]}}"
     return
@@ -672,6 +706,10 @@ install_reseed_hook_claude() {
     cmd="bash $reseed_path_escaped"
   fi
   if ! command -v jq >/dev/null 2>&1; then
+    hook_merge_py "$settings" "SessionStart" "$cmd" "Claude SessionStart reseed hook" --matcher "compact|clear" || return 1
+    return
+  fi
+  if false; then
     echo "  skip: jq not installed — add SessionStart reseed hook manually to $settings:"
     echo "        {\"hooks\":{\"SessionStart\":[{\"matcher\":\"compact|clear\",\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\"}]}]}}"
     return

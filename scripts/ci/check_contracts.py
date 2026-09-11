@@ -55,6 +55,7 @@ import argparse
 import fnmatch
 import json
 import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -532,6 +533,74 @@ def check_portable_frontmatter(files: list[Path], root: Path) -> list[Finding]:
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 
+# Content that is SHIPPED to a consumer. A change under any of these is a
+# change to what an installed plugin actually runs.
+SHIPPED_GLOBS = ("skills", "agents", "copilot", "codex", "templates", "scripts/hooks")
+
+
+def check_version_freshness(root: Path) -> list[Finding]:
+    """Fail when shipped content moved but `version` did not.
+
+    Claude Code caches an installed plugin under `<marketplace>/<plugin>/<version>/`
+    and keys freshness off that version string. Ship new skills under an
+    unchanged version and the cache never refreshes: the consumer keeps running
+    the old prose, silently, with no error anywhere.
+
+    This is not hypothetical. On 2026-09-11 the local install was found pinned
+    at gitCommitSha 21099d9 with a three-week-old `sdlc/SKILL.md` (1,069 lines
+    against the repo's 327) and a renamed agent the registry still exposed under
+    its old name -- eight commits of drift behind a `version` that never moved.
+    Nothing caught it, because nothing looked.
+    """
+    plugin_json = root / ".claude-plugin" / "plugin.json"
+    if not plugin_json.is_file():
+        return []
+
+    def git(*args: str) -> str:
+        try:
+            r = subprocess.run(["git", *args], cwd=str(root), capture_output=True,
+                               text=True, encoding="utf-8", errors="replace", timeout=20)
+        except (OSError, subprocess.SubprocessError):
+            return ""
+        return r.stdout.strip() if r.returncode == 0 else ""
+
+    # The commit that last CHANGED the version string, not merely touched the file.
+    version_commit = ""
+    log = git("log", "--format=%H", "-L", "/\"version\"/,+1:.claude-plugin/plugin.json")
+    if log:
+        version_commit = log.splitlines()[0].strip()
+    if not version_commit:
+        return []  # shallow clone, no git, or unparseable -- do not invent a failure
+
+    ts = git("show", "-s", "--format=%ct", version_commit)
+    if not ts.isdigit():
+        return []
+    version_ts = int(ts)
+
+    newer: list[str] = []
+    for glob in SHIPPED_GLOBS:
+        if not (root / glob).exists():
+            continue
+        out = git("log", "--format=%H %ct", "-1", version_commit + "..HEAD", "--", glob)
+        if out:
+            parts = out.split()
+            if len(parts) == 2 and parts[1].isdigit() and int(parts[1]) > version_ts:
+                newer.append(glob)
+    if not newer:
+        return []
+    return [Finding(
+        path=".claude-plugin/plugin.json", line=1,
+        message=(
+            "shipped content changed after the last version bump ("
+            + ", ".join(sorted(newer))
+            + "). A consumer's plugin cache is keyed by version, so it will keep "
+              "serving the OLD skills with no error. Bump `version` in "
+              ".claude-plugin/plugin.json AND .claude-plugin/marketplace.json."
+        ),
+        check="version-freshness",
+    )]
+
+
 def run_all(root: Path, phrases_file: Path) -> dict[str, list[Finding]]:
     files = scope_files(root)
     cite_files = citation_scope_files(root)
@@ -545,6 +614,7 @@ def run_all(root: Path, phrases_file: Path) -> dict[str, list[Finding]]:
         "forbidden-phrases": check_forbidden_phrases(files, root, phrases),
         "collapsed-pairs": check_collapsed_pairs(files, root),
         "portable-frontmatter": check_portable_frontmatter(overlay_skill_files(root), root),
+        "version-freshness": check_version_freshness(root),
     }
 
 

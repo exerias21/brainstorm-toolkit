@@ -9,7 +9,7 @@
 # run that died there never touched TASKS.md) and can't drift between copies --
 # all three runtimes invoke this file with the same one-line call.
 #
-# Two subcommands:
+# Three subcommands:
 #
 #   close --file TASKS.md --scope plan --key SLUG --plan-file PLAN.md [--dry-run]
 #     Closes every `[~]` row (never `[ ]`/`[x]`) tagged `_plan: SLUG_`, moving
@@ -52,6 +52,18 @@
 #     touches an `in_progress` envelope with no matching row -- there is no
 #     safe automatic fix for "orchestrator forgot to write the row."
 #
+#   board --file TASKS.md [--repo-name NAME] [--pipeline-dir .claude/pipeline]
+#     Read-only, always -- no flags exist to make it write. Joins TASKS.md rows
+#     to pipeline envelopes and emits ONE JSON object: `tasks[]` (file order,
+#     so `line` round-trips to source), `runs[]` (newest-first by `updated_at`
+#     when parseable, else the envelope file's mtime -- most real envelopes
+#     lack `updated_at`), and `plans_without_rows[]` (`plans/*.md` with no
+#     TASKS.md row referencing them -- "planned but never queued"). A `[~]`
+#     row's `started_at` comes only from its joined envelope (rows carry no
+#     such tag themselves); a malformed envelope is a `warnings[]` entry, never
+#     a crash. Exit 0 whenever `--file` parses; exit 1 only when it's
+#     missing/unreadable. Full contract: docs/BOARD-JSON.md.
+#
 # Output is always one JSON object on stdout (jq-or-python fallback, same
 # probe style as scripts/hooks/run-cost-report.sh and stop-gate.sh: prove the
 # interpreter RUNS, not merely that it resolves on PATH). This script does the
@@ -77,6 +89,21 @@ Usage:
   close-tasks.sh close --file TASKS.md --scope plan --key SLUG --plan-file PLAN.md [--dry-run]
   close-tasks.sh close --file TASKS.md --scope resolved --ids-file FILE [--dry-run]
   close-tasks.sh reconcile --file TASKS.md [--pipeline-dir .claude/pipeline] [--apply]
+    Mark a row `_followup_` (or `_followup: why_`) to say it was left open ON
+    PURPOSE after its plan completed. reconcile then stops reporting it as
+    drift, while a row that is merely forgotten still is. Without the marker a
+    completed plan that spawned N follow-ups reports N phantom drifts and
+    buries the one case the check exists for.
+  close-tasks.sh board --file TASKS.md [--repo-name NAME] [--pipeline-dir .claude/pipeline]
+    Read-only. Emits one JSON object: TASKS.md rows (tasks[], in FILE ORDER so
+    `line` round-trips to source) + pipeline envelopes (runs[], newest-first
+    by `updated_at` when parseable, else the envelope file's mtime -- most
+    envelopes in the wild lack `updated_at` entirely) + plans/*.md with no
+    TASKS.md row referencing them (plans_without_rows[]). `terminal` on a run
+    is derived (complete/failed => true). Never writes anything. Exit 0
+    whenever --file parses (malformed envelopes surface as warnings[], not a
+    failure); exit 1 only when --file is missing/unreadable. Schema-version
+    rule: additive fields never bump `schema`; a removed or retyped field does.
 EOF
 }
 
@@ -91,6 +118,7 @@ IDS_FILE=""
 PIPELINE_DIR=".claude/pipeline"
 DRY_RUN=0
 APPLY=0
+REPO_NAME=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -102,6 +130,7 @@ while [ $# -gt 0 ]; do
     --pipeline-dir) PIPELINE_DIR="$2"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     --apply) APPLY=1; shift ;;
+    --repo-name) REPO_NAME="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "{\"error\":\"unknown arg: $1\"}" >&2; usage; exit 2 ;;
   esac
@@ -122,6 +151,26 @@ from datetime import datetime, timezone
 SECTION_RE = re.compile(r'^##\s+(.+?)\s*$')
 ROW_RE = re.compile(r'^(\s*-\s*\[)([ x~])(\]\s*.*)$')
 PLAN_TAG_RE = re.compile(r'_plan:\s*([a-z0-9-]+)_')
+# `board` subcommand only -- net-new, nothing above this line reads these.
+PHASE_RE = re.compile(r'_phase:\s*(\d+)_')
+BLOCKED_REASON_RE = re.compile(r'_blocked_reason:\s*([^_]+?)_')
+COMPLETED_AT_RE = re.compile(r'_completed_at:\s*([^_]+?)_')
+PRIORITY_RE = re.compile(r'^\(P([1-3])\)')
+PLAN_PATH_RE = re.compile(r'[\w./-]*plans/[\w./-]+\.md')
+# A row DELIBERATELY left open after its plan completed -- a follow-up the run
+# surfaced and chose not to do. Without this marker `reconcile` cannot tell a
+# deferred follow-up from a forgotten close-out, so it reports every such row as
+# drift; the first real dogfood of `board` produced eight of them at once and
+# buried the one signal the check exists for. Bare `_followup_` or
+# `_followup: why_` both count.
+FOLLOWUP_RE = re.compile(r'_followup(?::\s*[^_]+?)?_')
+# Strips one or more chained `_key: value_` markers (joined by ` \xb7 `) off a
+# row's tail so `title` reads as prose, not "prose _plan: x_ \xb7 _phase: 1_".
+TAG_STRIP_RE = re.compile(r'\s*(?:\xb7\s*)?_[a-z_]+:\s*[^_]+?_')
+# Valueless flags need their own pattern: TAG_STRIP_RE requires `key: value`,
+# and widening it to make the colon optional would swallow ordinary `_italics_`
+# out of every title. Enumerate the bare flags instead.
+BARE_TAG_STRIP_RE = re.compile(r'\s*(?:\xb7\s*)?_followup_')
 
 
 def read_lines(path):
@@ -325,6 +374,202 @@ def envelope_candidates(name, run):
     return {c for c in candidates if c}
 
 
+# ---------------------------------------------------------------------------
+# `board` subcommand -- read-only JSON export. Everything below this line and
+# above `do_board` is net-new; nothing here is called by close/reconcile.
+# ---------------------------------------------------------------------------
+
+
+def parse_iso(s):
+    """Best-effort ISO8601 -> aware datetime. None on anything unparseable --
+    a malformed timestamp must fall back to file mtime, never crash."""
+    if not s or not isinstance(s, str):
+        return None
+    try:
+        dt = datetime.fromisoformat(s.replace('Z', '+00:00'))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except Exception:
+        return None
+
+
+def iso_utc(dt):
+    return dt.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+def parse_row(line):
+    """Map one TASKS.md row line to its JSON fields (everything except
+    `started_at`, which requires the joined envelope and is filled in by the
+    caller). Returns None for a non-row line."""
+    m = ROW_RE.match(line)
+    if not m:
+        return None
+    state = m.group(2)
+    rest = m.group(3)  # "] ...rest of the row..."
+    body = rest[1:].lstrip()
+    pm = PRIORITY_RE.match(body)
+    priority = f'P{pm.group(1)}' if pm else None
+    title_full = body[pm.end():].lstrip() if pm else body
+    title = BARE_TAG_STRIP_RE.sub('', TAG_STRIP_RE.sub('', title_full)).rstrip()
+    plan_m = PLAN_PATH_RE.search(title_full)
+    plan = plan_m.group(0) if plan_m else None
+    # The plan path rides in its own field, so leaving it in `title` too makes
+    # every consumer render it twice. Strip it plus the trailing em-dash
+    # separator the row convention puts before it.
+    if plan:
+        title = PLAN_PATH_RE.sub('', title).rstrip()
+        title = re.sub(r'[\s—–-]+$', '', title).rstrip()
+    tag_m = PLAN_TAG_RE.search(line)
+    plan_slug = tag_m.group(1) if tag_m else None
+    phase_m = PHASE_RE.search(line)
+    phase = int(phase_m.group(1)) if phase_m else None
+    blocked_m = BLOCKED_REASON_RE.search(line)
+    blocked_reason = blocked_m.group(1).strip() if blocked_m else None
+    completed_m = COMPLETED_AT_RE.search(line)
+    completed_at = completed_m.group(1).strip() if completed_m else None
+    return {
+        'state': state, 'priority': priority, 'title': title, 'plan': plan,
+        'plan_slug': plan_slug, 'phase': phase, 'blocked_reason': blocked_reason,
+        'completed_at': completed_at,
+        # Additive field -- does NOT bump `schema` (see the schema-version rule
+        # in the usage block). Lets a board mark a row as deferred-on-purpose
+        # rather than merely open.
+        'followup': bool(FOLLOWUP_RE.search(line)),
+    }
+
+
+def load_envelope(pdir, name):
+    """Load one envelope's run.json. Returns (dict, None) on success or
+    (None, warning) on anything unreadable/malformed -- callers must never
+    let a bad envelope raise or abort the run."""
+    run_json = os.path.join(pdir, name, 'run.json')
+    try:
+        with open(run_json, encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception as e:
+        return None, f"envelope '{name}': unreadable/malformed run.json ({e.__class__.__name__}) -- skipped"
+    if not isinstance(data, dict):
+        return None, f"envelope '{name}': run.json is not a JSON object -- skipped"
+    return data, None
+
+
+def do_board(args):
+    warnings = []
+    lines = read_lines(args.file)
+    sections = parse_sections(lines)
+
+    repo_path = os.path.dirname(os.path.abspath(args.file)) or os.getcwd()
+    repo = args.repo_name or os.path.basename(repo_path.rstrip(os.sep).rstrip('/')) or repo_path
+
+    # --- load envelopes (a malformed one is a warning, never a crash) ---
+    pdir = args.pipeline_dir
+    loaded = []  # (name, run, run_json_mtime_dt)
+    if pdir and os.path.isdir(pdir):
+        for name in sorted(os.listdir(pdir)):
+            entry_dir = os.path.join(pdir, name)
+            run_json = os.path.join(entry_dir, 'run.json')
+            if not os.path.isdir(entry_dir) or not os.path.isfile(run_json):
+                continue
+            run, warn = load_envelope(pdir, name)
+            if warn:
+                warnings.append(warn)
+                continue
+            try:
+                mtime_dt = datetime.fromtimestamp(os.path.getmtime(run_json), tz=timezone.utc)
+            except Exception:
+                mtime_dt = datetime.now(timezone.utc)
+            loaded.append((name, run, mtime_dt))
+
+    # --- build runs[], newest-first by updated_at (parsed) or mtime ---
+    runs = []
+    for name, run, mtime_dt in loaded:
+        status = run.get('status') if isinstance(run.get('status'), str) else None
+        data = run.get('data') or {}
+        if not isinstance(data, dict):
+            data = {}
+        plan_file = run.get('plan_file') or run.get('input') or data.get('plan_target')
+        updated_raw = run.get('updated_at')
+        updated_dt = parse_iso(updated_raw)
+        if updated_raw and updated_dt is None:
+            warnings.append(f"envelope '{name}': unparsable updated_at {updated_raw!r} -- sorted by mtime instead")
+        terminal = status in ('complete', 'completed', 'failed')
+        runs.append({
+            'slug': run.get('slug') or name,
+            'stage': run.get('stage'),
+            'status': run.get('status'),
+            'pipeline': run.get('pipeline'),
+            'plan_file': plan_file,
+            'updated_at': updated_raw if isinstance(updated_raw, str) else None,
+            'mtime': iso_utc(mtime_dt),
+            'plan_hash': run.get('plan_hash'),
+            'terminal': terminal,
+            '_candidates': envelope_candidates(name, run),
+            '_started_at': run.get('started_at'),
+            '_sort_dt': updated_dt or mtime_dt,
+        })
+    runs.sort(key=lambda r: r['_sort_dt'], reverse=True)
+
+    # --- tasks[], in file order; started_at comes only from a joined envelope ---
+    tasks = []
+    for i, line in enumerate(lines):
+        fields = parse_row(line)
+        if fields is None:
+            continue
+        sec = section_for(sections, i)
+        if sec is None:
+            continue
+        started_at = None
+        for r in runs:
+            if any(c in line for c in r['_candidates']):
+                started_at = r['_started_at']
+                break
+        tasks.append({
+            'state': fields['state'],
+            'section': sec,
+            'priority': fields['priority'],
+            'title': fields['title'],
+            'plan': fields['plan'],
+            'plan_slug': fields['plan_slug'],
+            'phase': fields['phase'],
+            'blocked_reason': fields['blocked_reason'],
+            'started_at': started_at,
+            'completed_at': fields['completed_at'],
+            'followup': fields['followup'],
+            'line': i + 1,
+        })
+
+    public_runs = [
+        {k: v for k, v in r.items() if not k.startswith('_')}
+        for r in runs
+    ]
+
+    # --- plans/*.md with no TASKS.md row referencing them ---
+    plans_without_rows = []
+    plans_dir = os.path.join(repo_path, 'plans')
+    if os.path.isdir(plans_dir):
+        row_lines = [l for l in lines if ROW_RE.match(l)]
+        for fname in sorted(os.listdir(plans_dir)):
+            if not fname.endswith('.md'):
+                continue
+            rel = f'plans/{fname}'
+            if not any(rel in rl for rl in row_lines):
+                plans_without_rows.append(rel)
+
+    result = {
+        "schema": 1,
+        "repo": repo,
+        "repo_path": repo_path,
+        "generated_at": iso_utc(datetime.now(timezone.utc)),
+        "tasks": tasks,
+        "runs": public_runs,
+        "plans_without_rows": plans_without_rows,
+        "warnings": warnings,
+    }
+    print(json.dumps(result, indent=2))
+    return 0
+
+
 def do_reconcile(args):
     lines = read_lines(args.file)
     sections = parse_sections(lines)
@@ -377,7 +622,13 @@ def do_reconcile(args):
                 matching_rows.append((i, line, m.group(2)))
 
         if status in ('complete', 'completed') and matching_rows:
-            open_rows = [r for r in matching_rows if r[2] != 'x']
+            # A row tagged `_followup_` was left open on purpose -- the run
+            # surfaced it and deferred it. Counting those as drift is how this
+            # check cries wolf: a completed plan that spawned N follow-ups
+            # reports N phantom drifts, and the real case (a close-out that
+            # genuinely did not fire) is lost in them.
+            open_rows = [r for r in matching_rows
+                         if r[2] != 'x' and not FOLLOWUP_RE.search(r[1])]
             if open_rows:
                 drift.append({
                     "type": "terminal_envelope_open_rows",
@@ -483,6 +734,7 @@ def main(argv):
     a.pipeline_dir = '.claude/pipeline'
     a.dry_run = False
     a.apply = False
+    a.repo_name = ''
     it = iter(argv[1:])
     for tok in it:
         if tok == '--file':
@@ -501,11 +753,15 @@ def main(argv):
             a.dry_run = True
         elif tok == '--apply':
             a.apply = True
+        elif tok == '--repo-name':
+            a.repo_name = next(it)
 
     if sub == 'close':
         return do_close(a)
     elif sub == 'reconcile':
         return do_reconcile(a)
+    elif sub == 'board':
+        return do_board(a)
     else:
         print(json.dumps({"error": f"unknown subcommand {sub!r}"}))
         return 2
@@ -527,6 +783,10 @@ case "$SUBCMD" in
   reconcile)
     ARGS+=("--pipeline-dir" "$PIPELINE_DIR")
     [ "$APPLY" -eq 1 ] && ARGS+=("--apply")
+    ;;
+  board)
+    ARGS+=("--pipeline-dir" "$PIPELINE_DIR")
+    [ -n "$REPO_NAME" ] && ARGS+=("--repo-name" "$REPO_NAME")
     ;;
   *)
     usage
