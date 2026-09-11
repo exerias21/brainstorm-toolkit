@@ -20,6 +20,7 @@ plans/
 !docs/plans/
 TASKS.md
 GOTCHAS.md
+DECISIONS.md
 CHEATSHEET.md
 .claude/project.json
 .claude/pipeline/

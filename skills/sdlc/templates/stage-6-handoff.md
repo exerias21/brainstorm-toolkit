@@ -112,6 +112,28 @@ order is the difference between "usually closes" and "closes."
    terminal `status` — never leave a `parse`-stage envelope `in_progress` with sidecars already
    on disk.
 
+3.5. **Record decisions — via the script, not by hand.** For each call this run
+   made that a future session could reasonably reverse, append one line:
+   `bash scripts/record-decision.sh add --slug <feature_slug> --title "<what was chosen>" --rejected "<the alternative>" --why "<the reason>" --evidence "<command + result, or file:line>"`
+   Idempotent on `--title`, so a resumed run cannot double-write.
+
+   **Record only what a re-reading of the diff would NOT reveal.** A decision
+   earns a line when the alternative was plausible and the reason is not visible
+   in the code: a path chosen because of a `git check-ignore` result, an ordering
+   chosen to make a status code reachable, a library not used. Skip anything
+   obvious from the diff — this file is small and stays useful only if it is.
+
+   **`--evidence` takes provenance, never a claim.** A command and its exit code,
+   a `file:line`, a measured number. Not "this works". A self-report written here
+   is read by the next session with more authority than it earned, and this
+   pipeline has produced confidently wrong self-reports before (a suite reported
+   green that was green on one OS only; a `chmod` reported applied that is a
+   no-op on Windows). Anything you did not verify by running it does not go in.
+
+   Zero decisions worth recording is a normal outcome — write nothing rather than
+   padding. The reseed hook points a post-compaction session at this file, so a
+   line that merely restates the diff costs tokens on every future reset.
+
 4. **Capture at loop-exit + seam** — run the shared protocol in
    `skills/gotcha/SKILL.md`. Auto-draft a gotcha **only** on an objective
    trigger — a test/eval/flowsim fix-loop that **failed-then-recovered**, or the

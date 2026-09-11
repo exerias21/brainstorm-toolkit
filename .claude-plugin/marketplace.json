@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "Cross-tool (Claude Code + GitHub Copilot) skills for brainstorming, SDLC, eval-driven development, and repo onboarding.",
-    "version": "0.3.0"
+    "version": "0.4.0"
   },
   "plugins": [
     {
