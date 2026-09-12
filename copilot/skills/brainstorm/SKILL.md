@@ -31,10 +31,26 @@ cannot find in the repo.
 
 None true and the seed is concrete? Skip to Step 2 and say you're skipping.
 
-Ask **2–3 questions in one message** — the ones whose answers change the plan: the **why**
+Ask in **one message per round** — only questions whose answers change the plan: the **why**
 (what problem, what workaround today), the **scope** (enhancement or module, who uses it), the
-**spark** (what prompted it now — the moment usually carries the real constraint). Thin answers
-are a reason to ask again, **once**: name the unknown rather than picking a reading.
+**spark** (what prompted it now — the moment usually carries the real constraint).
+
+**Scale the count to the ambiguity.** A concrete seed needs 2–3; a vague one needs as many as it
+takes, across as many rounds as it takes — there is no cap, and stopping early to look decisive
+is the expensive move. Stop when you could write the plan without inventing anything; thin
+answers mean naming the still-open unknown and asking again, not picking a reading.
+
+**Order rounds by dependency.** A question whose answer depends on another still open *in this
+round* belongs to a later round — ask both now and one gets answered against a guess, with no
+way to tell afterwards which.
+
+**Facts are your job; decisions are the user's.** Never ask what the repo can answer — it spends
+the user's patience and teaches them the interview is noise, which is how a grilling decays into
+rubber-stamping. Grep it instead; Step 2's grounding pass exists for this, so pull it forward
+whenever a "question" is really a lookup.
+
+**Every question ships your recommended answer**, so the user corrects a default instead of
+filling a blank page. A round that draws no pushback is a round that did not need asking.
 
 **This holds all session.** A plan-shaping ambiguity at any later step is a question, not an
 assumption. Everything else — anything a careful colleague would just decide — you decide, and

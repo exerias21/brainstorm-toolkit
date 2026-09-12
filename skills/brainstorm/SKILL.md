@@ -61,14 +61,27 @@ Ask in **one message per round**, and make every question one whose answer chang
 **Scale the count to the ambiguity, and keep going until the plan-shaping unknowns are
 closed.** A concrete seed needs 2–3; a vague one ("payments are a mess") needs as many as it
 takes, across as many rounds as it takes — there is no cap, and stopping early to look decisive
-is the expensive move. Two good questions beat five mediocre ones, but two good questions also
-beat one good question and a guess. Each round: name what is still unknown, ask, and stop when
-you could write the plan without inventing anything. If a round's answers are thin, say which
-unknown is still open and ask again rather than picking a reading and building on it.
+is the expensive move. Each round: name what is still unknown, ask, and stop when you could
+write the plan without inventing anything. If a round's answers are thin, say which unknown is
+still open and ask again rather than picking a reading and building on it.
+
+**Order rounds by dependency.** A question whose answer depends on another question still open
+*in this round* belongs to a later round — ask both now and one of them gets answered against a
+guess, with no way to tell afterwards which. Ask everything whose prerequisites are settled;
+each round's answers decide what becomes askable next.
+
+**Facts are your job; decisions are the user's.** Never ask what the repo can answer — it spends
+the only resource this step runs on, the user's patience, and teaches them the interview is
+noise, which is how a grilling decays into rubber-stamping. Grep it, or dispatch a sub-agent and
+ask the rest of the round while that runs; only questions downstream of the lookup wait. Step 2's
+grounding pass exists for this — pull it forward whenever a "question" is really a lookup.
 
 Prefer the host's **built-in interactive question UI** (the multiple-choice picker) where it
 exists, one question per unknown with a recommended default first — a user who is never offered
 an option never discovers the choice existed. Fall back to a numbered list answered in one reply.
+**Every question ships your recommended answer**, so the user corrects a default instead of
+filling a blank page. A round that draws no pushback is a round that did not need asking: forty
+questions answered "agreed" produce a plan carrying a confidence nobody actually granted it.
 
 **This holds for the whole session, not just Step 1.** A plan-shaping ambiguity that surfaces at
 Step 3, 4, or 6 is a question, not an assumption: stop and ask. Everything else — anything a

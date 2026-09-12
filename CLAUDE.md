@@ -128,7 +128,7 @@ repetition itself is required, not redundant.
    | Skill | Ceiling | Why |
    |---|---|---|
    | `sdlc` | ~330 lines | Orchestration surface; every stage body is already in `templates/`. What remains is gate + contract, and it is 15 stages' worth. |
-   | `brainstorm` | ~320 lines | A conversational flow; splitting mid-flow costs more in comprehension than it saves in tokens. Grew deliberately when the question-asking ceiling was removed — an interview that stops early is the expensive failure here. |
+   | `brainstorm` | ~335 lines | A conversational flow; splitting mid-flow costs more in comprehension than it saves in tokens. Grew deliberately twice: when the question-asking ceiling was removed (an interview that stops early is the expensive failure here), and when Step 1 gained dependency-ordered rounds and the facts-vs-decisions rule ported from `mattpocock/skills`' `grill-me`. |
    | `code-tour` | no line ceiling | Its prose **is** the product — the fabrication warnings and the "what bad output looks like" rubric are the output spec, not a wrapper around a template. Judge it on duplication, not length. |
 
    A skill over its ceiling without an entry in that table is a finding.

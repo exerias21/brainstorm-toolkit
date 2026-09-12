@@ -96,7 +96,15 @@ and `next-action.sh` does not read `stop_hook_active` at all — that escape hat
   `.claude/settings.json`, `.github/hooks/next-action.json`, and **`.codex/hooks.json`**
   respectively. Codex's Stop hook uses the same `systemMessage` / `decision:block` contract
   (learn.chatgpt.com/docs/hooks). The plugin ships it (SEAM1); `setup.sh` wires it for
-  copy-installs. Two Codex caveats: project-local `.codex/` hooks fire only once the user
+  copy-installs.
+  **`decision`/`reason` vs `continue`/`stopReason` — do not swap these.** Codex `Stop` accepts
+  both pairs and they do OPPOSITE things: `continue:false` + `stopReason` *halts* the turn,
+  while `decision:"block"` + `reason` is the one that *continues* it ("it tells Codex to
+  continue and automatically creates a new continuation prompt that acts as a new user prompt,
+  using your `reason` as that prompt text"). Auto-continue therefore wants `decision`/`reason`,
+  which is what `next-action.sh` emits. Recorded because the opposite reading was filed as a
+  latent bug and would have "fixed" the working field into the halting one (verified against the
+  docs 2026-09-12). Two Codex caveats: project-local `.codex/` hooks fire only once the user
   **trusts** the directory (`/hooks`), and Codex may run the hook from a subdirectory, so the
   script path resolves via the git top-level.
 - **Inline fallback** — writers still ALSO print `Next: <cmd>` inline (useful on Codex before
