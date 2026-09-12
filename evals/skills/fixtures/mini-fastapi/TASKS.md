@@ -19,6 +19,9 @@ Current work items for AI agents (Claude Code, GitHub Copilot, etc.) and humans 
 
 ## Active / Pending
 
+- [ ] (P2) Add GET /health endpoint — plans/two-step.md _plan: two-step_
+- [ ] (P3) Unrelated backlog item — plans/other-feature.md _plan: other-feature_
+
 <!-- task-health-endpoint appends a row here. -->
 
 ## Blocked

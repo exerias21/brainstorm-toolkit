@@ -245,7 +245,10 @@ Run again with --no-deps if dep audit is too slow on this repo.
 
 The "Suggested next" is the highest-impact actionable command (priority:
 unapplied migration > dep HIGH > stale pipeline run > test failure > stale
-gotcha > orphan file > skipped test > stale memory). Only
+gotcha > orphan file > skipped test > stale memory). Name `/sdlc <fix>` when the
+remedy is already known and bounded; name `/brainstorm <finding>` instead when the fix
+isn't yet known, spans multiple surfaces, or needs a design decision first (e.g. a Rules
+Drift finding that implies restructuring rather than a one-line edit). Only
 append this command to `.claude/.next-action` if the repo is already set up
 for that integration (for example, the file already exists or `.gitignore`
 already covers `.claude/.next-action` or `.claude/`). Append ONE structured line,

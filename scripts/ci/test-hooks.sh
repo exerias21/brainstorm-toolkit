@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# test-hooks.sh — regression harness for the hooks that make policy DETERMINISTIC
-# instead of prose-enforced: scripts/hooks/enforce-model-cap.sh and
-# scripts/hooks/stop-gate.sh.
+# test-hooks.sh — regression harness for the deterministic controls that make
+# policy DETERMINISTIC instead of prose-enforced: scripts/hooks/enforce-model-cap.sh,
+# scripts/hooks/stop-gate.sh, and scripts/protect-tests.sh (a CLI, not a wired
+# hook -- it earns a place here on scope alone; see its own header for why it
+# is not under scripts/hooks/).
 #
 # Builds fresh scratch project dirs under /tmp, feeds each hook sample stdin JSON
 # against a `.claude/project.json`, and asserts on stdout with `grep -q`. Mirrors
@@ -17,6 +19,7 @@ set -euo pipefail
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CAP_HOOK="$PLUGIN_ROOT/scripts/hooks/enforce-model-cap.sh"
 GATE_HOOK="$PLUGIN_ROOT/scripts/hooks/stop-gate.sh"
+PROTECT_TESTS="$PLUGIN_ROOT/scripts/protect-tests.sh"
 ROOT_TMP="/tmp/test-hooks-$$"
 
 cleanup() { rm -rf "$ROOT_TMP" || true; }
@@ -41,6 +44,10 @@ assert_match() {
 }
 assert_no_match() {
   if printf '%s' "$1" | grep -q -- "$2"; then fail "expected output to NOT contain '$2', got: $1"; fi
+  ok
+}
+assert_rc() {
+  [ "$1" -eq "$2" ] || fail "expected exit $2, got $1"
   ok
 }
 
@@ -281,6 +288,67 @@ EOF
 out="$(run_gate "$d" '{}')"
 assert_no_match "$out" '"decision"'
 assert_match "$out" '"systemMessage"'
+
+# ── scripts/protect-tests.sh: arm / verify / disarm -- a CLI, not a wired
+#    hook (see its own header), included here per the widened scope above ──
+
+pt_dir() {
+  local d="$ROOT_TMP/pt-$1"
+  mkdir -p "$d/.claude/pipeline/demo" "$d/tests"
+  cat > "$d/.claude/pipeline/demo/run.json" <<'EOF'
+{"schema_version": 1, "feature_slug": "demo", "plan_hash": "sha256:deadbeef", "status": "in_progress", "stage": "implement"}
+EOF
+  printf 'def test_x():\n    assert False\n' > "$d/tests/test_x.py"
+  printf '%s' "$d"
+}
+
+# Captures stdout/exit code without letting a nonzero rc trip `set -e`
+# (a bare `x=$(cmd)` assignment does NOT get the && / || / if exemption).
+run_pt() {
+  local proj="$1"; shift
+  set +e
+  PT_OUT="$(cd "$proj" && CLAUDE_PROJECT_DIR="$proj" bash "$PROTECT_TESTS" "$@")"
+  PT_RC=$?
+  set -e
+}
+
+CASE="protect-tests: arm records sha256 in run.json"
+d="$(pt_dir 01)"
+run_pt "$d" arm tests/test_x.py
+assert_rc "$PT_RC" 0
+grep -q '"protected_tests"' "$d/.claude/pipeline/demo/run.json" || fail "run.json missing data.protected_tests after arm"
+grep -q '"tests/test_x.py": "sha256:' "$d/.claude/pipeline/demo/run.json" || fail "run.json missing armed hash for tests/test_x.py"
+ok
+
+CASE="protect-tests: verify clean -> exit 0, no violation"
+run_pt "$d" verify
+assert_rc "$PT_RC" 0
+assert_no_match "$PT_OUT" 'VIOLATION'
+
+CASE="protect-tests: verify after modification -> nonzero exit with violation line"
+printf 'def test_x():\n    assert True\n' > "$d/tests/test_x.py"
+run_pt "$d" verify
+[ "$PT_RC" -ne 0 ] || fail "expected nonzero exit on a tampered armed test, got 0"
+assert_match "$PT_OUT" 'VIOLATION: tests/test_x.py changed since arming'
+
+CASE="protect-tests: disarm clears data.protected_tests"
+run_pt "$d" disarm
+assert_rc "$PT_RC" 0
+if grep -q '"protected_tests"' "$d/.claude/pipeline/demo/run.json"; then
+  fail "run.json still has data.protected_tests after disarm"
+fi
+ok
+
+CASE="protect-tests: verify after disarm -> exit 0 (nothing armed)"
+run_pt "$d" verify
+assert_rc "$PT_RC" 0
+assert_no_match "$PT_OUT" 'VIOLATION'
+
+CASE="protect-tests: no in_progress envelope -> no-op exit 0"
+d="$ROOT_TMP/pt-noenv"
+mkdir -p "$d"
+run_pt "$d" verify
+assert_rc "$PT_RC" 0
 
 echo
 echo "test-hooks.sh: all cases ok"

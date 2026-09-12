@@ -503,6 +503,7 @@ def do_board(args):
             'updated_at': updated_raw if isinstance(updated_raw, str) else None,
             'mtime': iso_utc(mtime_dt),
             'plan_hash': run.get('plan_hash'),
+            'stages_skipped': run.get('stages_skipped'),
             'terminal': terminal,
             '_candidates': envelope_candidates(name, run),
             '_started_at': run.get('started_at'),

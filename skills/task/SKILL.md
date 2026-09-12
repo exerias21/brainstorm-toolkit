@@ -81,7 +81,10 @@ Don't manufacture a hollow test, and don't punt the task to another skill.
 
 1. **Write a failing test** encoding the acceptance criterion, using the project's configured
    runner (`.claude/project.json` → `test.unit` or `test.frontend`; the conventional location
-   if none is configured), and confirm it fails for the expected reason.
+   if none is configured), and confirm it fails for the expected reason. Then run
+   `scripts/protect-tests.sh arm <test-file>` (best-effort, ignore a nonzero exit) — this is a
+   **detector, not a preventer**: it records the file's hash so `verify` at close-out can prove
+   the test was not quietly rewritten to pass; it cannot stop a rewrite.
 2. **Mark the TASKS.md row in-progress** (`[ ]` → `[~]`) and, on Claude, `TaskUpdate status:
    in_progress`.
 3. **Implement the change**, following existing patterns, until the test passes without
@@ -92,12 +95,14 @@ Don't manufacture a hollow test, and don't punt the task to another skill.
 ### 5. Close out
 
 1. **Update the task file**: set `status: completed`, mark all step checkboxes `[x]`, fill in `Files` with the actual paths touched.
-2. **Mark the TASKS.md row done** (`[~]` → `[x]`) and move it to the `Done` section.
-3. On Claude: `TaskUpdate status: completed`.
-4. **Update the state record** (best-effort): set `run.json.status = "complete"`,
+2. **Run `scripts/protect-tests.sh verify`.** A nonzero exit means a protected test's bytes
+   changed since it was armed — investigate before closing out; it does not block by itself.
+3. **Mark the TASKS.md row done** (`[~]` → `[x]`) and move it to the `Done` section.
+4. On Claude: `TaskUpdate status: completed`.
+5. **Update the state record** (best-effort): set `run.json.status = "complete"`,
    `stage = "done"`, and record the `files` touched (and `commit_sha` if you
    committed). Same never-fail rule as Section 1.
-5. Report a concise summary: files touched, tests that now pass (or "no testable surface"), anything left open.
+6. Report a concise summary: files touched, tests that now pass (or "no testable surface"), anything left open.
 
 Commit only if the user asked for it, or if they have a durable "always commit finished tasks"
 instruction. When you do commit, append a blank line and

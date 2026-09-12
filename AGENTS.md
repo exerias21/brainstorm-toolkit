@@ -128,7 +128,7 @@ repetition itself is required, not redundant.
    | Skill | Ceiling | Why |
    |---|---|---|
    | `sdlc` | ~330 lines | Orchestration surface; every stage body is already in `templates/`. What remains is gate + contract, and it is 15 stages' worth. |
-   | `brainstorm` | ~320 lines | A conversational flow; splitting mid-flow costs more in comprehension than it saves in tokens. Grew deliberately when the question-asking ceiling was removed — an interview that stops early is the expensive failure here. |
+   | `brainstorm` | ~335 lines | A conversational flow; splitting mid-flow costs more in comprehension than it saves in tokens. Grew deliberately twice: when the question-asking ceiling was removed (an interview that stops early is the expensive failure here), and when Step 1 gained dependency-ordered rounds and the facts-vs-decisions rule ported from `mattpocock/skills`' `grill-me`. |
    | `code-tour` | no line ceiling | Its prose **is** the product — the fabrication warnings and the "what bad output looks like" rubric are the output spec, not a wrapper around a template. Judge it on duplication, not length. |
 
    A skill over its ceiling without an entry in that table is a finding.
@@ -262,6 +262,35 @@ hands you a validated tree; see `docs/FLOW.md` for what each side of the merge c
 Two flags gate whole templates rather than sections — `--queue` (`queue-mode.md`) and the
 review stage's opt-in. Keep it that way: a flag nobody passed should cost nothing.
 
+### When a rule earns a hook, not just prose
+
+A skill is an advisory control — it can only ask the model to follow it. `enforce-model-cap.sh`,
+`stop-gate.sh`, and `next-action.sh` exist because sometimes that isn't enough: **a skill is an
+advisory control while a hook is the deterministic layer behind it.** The failure that motivates
+this is measured, not hypothetical: an audited `/sdlc` run said `**Read
+skills/sdlc/templates/<x>.md now**` at nine points, the model read zero of them (795 lines of
+stage contract unread), and nothing detected it.
+
+Before promoting a rule from prose to a hook, ask:
+
+1. **Does the rule need to hold even when the model forgets, not just when it cooperates?**
+   Prose only works on a model that reads it; a rule that fails silently when skipped (a model
+   tier, a rewritten test file) is the candidate — a rule that only needs a nudge is not.
+2. **Can the check itself be expressed deterministically** — reading structured input (stdin
+   JSON, `project.json`, a file hash) and returning a decision with no interpretation? If the
+   check needs judgment, it stays prose regardless of how important the rule is.
+3. **Can `scripts/ci/test-hooks.sh` exercise it** with scratch input and assert on stdout, the
+   way it already does for `enforce-model-cap.sh` and `stop-gate.sh`? A control nothing tests is
+   a liability, not a control.
+4. **Is a preventer actually enforceable, or only a detector?** A `PreToolUse` matcher can be
+   routed around (a `Bash`-driven `sed -i` skips a `Write|Edit` matcher); `scripts/protect-tests.sh`
+   answers "deterministic, yes — but a detector, not a hook" for exactly this reason.
+
+Weigh this against the cost honestly: a hook is **also** a second expression of the same rule,
+and this repo deleted a 1,398-line Workflow that mirrored the prose exactly because that second
+expression drifted with no automated guard. Pay the cost only when the second expression stays
+small, mechanical, and testable — the shipped hooks run a few hundred lines each, an order of
+magnitude under the Workflow's 1,398. Worked examples: `docs/ENFORCEMENT.md`.
 
 ## When adding a new skill
 

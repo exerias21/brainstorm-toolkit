@@ -535,7 +535,14 @@ def check_portable_frontmatter(files: list[Path], root: Path) -> list[Finding]:
 
 # Content that is SHIPPED to a consumer. A change under any of these is a
 # change to what an installed plugin actually runs.
-SHIPPED_GLOBS = ("skills", "agents", "copilot", "codex", "templates", "scripts/hooks")
+SHIPPED_GLOBS = ("skills", "agents", "copilot", "codex", "templates", "scripts")
+
+# setup.sh:288-294 copies the whole `scripts/` tree and then strips these two
+# paths back out (scripts/ci/ tests THIS repo's installer, sync-global.sh
+# installs FROM this repo -- neither ships to a consumer). Excluded here via
+# git pathspec magic so a change to scripts/ci/check_contracts.py itself does
+# not demand a version bump it doesn't deserve.
+SCRIPTS_NOT_SHIPPED = (":(exclude)scripts/ci", ":(exclude)scripts/sync-global.sh")
 
 
 def check_version_freshness(root: Path) -> list[Finding]:
@@ -581,7 +588,8 @@ def check_version_freshness(root: Path) -> list[Finding]:
     for glob in SHIPPED_GLOBS:
         if not (root / glob).exists():
             continue
-        out = git("log", "--format=%H %ct", "-1", version_commit + "..HEAD", "--", glob)
+        pathspecs = (glob, *SCRIPTS_NOT_SHIPPED) if glob == "scripts" else (glob,)
+        out = git("log", "--format=%H %ct", "-1", version_commit + "..HEAD", "--", *pathspecs)
         if out:
             parts = out.split()
             if len(parts) == 2 and parts[1].isdigit() and int(parts[1]) > version_ts:

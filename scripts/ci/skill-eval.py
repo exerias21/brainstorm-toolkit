@@ -21,6 +21,19 @@ Runs nightly / on demand only (see .github/workflows/skill-evals.yml) -- never
 per push. Stdlib only. NEVER writes outside the per-case temp dir and
 evals/skills/results/, except evals/skills/baseline.json, and then only when
 --update-baseline is explicitly passed.
+
+Exit codes (a 3-way contract -- a CI caller branches on this):
+  0 -- all assertions passed (harness ran fine, every case is green).
+  1 -- HARNESS failure: the runner itself broke -- bad config (unknown case,
+       no cases found), a missing fixture, a subprocess spawn failure, an
+       API/auth error, or a session aborted on --max-budget-usd before it
+       produced a verdict. The assertion results below such a case are NOT
+       skill findings -- don't act on them.
+  2 -- ASSERTION failure: the harness ran fine end to end and a case's
+       assertions (including the cost-regression guard) failed -- this is a
+       real skill regression signal.
+  If a run mixes both, 1 wins -- a harness failure anywhere makes every
+  assertion result in the run untrustworthy, not just that case's.
 """
 
 from __future__ import annotations
@@ -872,11 +885,19 @@ def run_case(name: str, args: argparse.Namespace, results_root: Path) -> dict:
                 tasks_file.read_text(encoding="utf-8", errors="replace")
             )
 
+        # Lowering-only: --max-budget-usd is a ceiling on the case's OWN budget,
+        # never a floor. Omitting the flag (args.max_budget_usd is None) leaves
+        # this byte-for-byte the same value the case declares, unchanged.
+        case_budget = case.get("max_budget_usd", 1.0)
+        effective_budget = case_budget
+        if args.max_budget_usd is not None:
+            effective_budget = min(case_budget, args.max_budget_usd)
+
         if setup_ok:
             repeat = int(case.get("repeat", 1))
             for i in range(1, repeat + 1):
                 events, raw = run_claude_once(
-                    case["prompt"], tmp, case.get("max_budget_usd", 1.0), args.timeout
+                    case["prompt"], tmp, effective_budget, args.timeout
                 )
                 events_path = case_result_dir / (
                     "events.jsonl" if repeat == 1 else f"events-{i}.jsonl"
@@ -908,7 +929,7 @@ def run_case(name: str, args: argparse.Namespace, results_root: Path) -> dict:
                     if sub == "error_max_budget_usd":
                         findings.append(
                             f"run {i}: session ABORTED on the --max-budget-usd ceiling "
-                            f"(${case.get('max_budget_usd', 1.0)}). Cost "
+                            f"(${effective_budget}). Cost "
                             f"{fields['total_cost_usd']}. The tree is "
                             f"partial, so the assertion results below are NOT skill "
                             f"findings -- raise max_budget_usd for this case and re-run."
@@ -989,28 +1010,80 @@ def run_case(name: str, args: argparse.Namespace, results_root: Path) -> dict:
 
 
 def load_baseline() -> dict:
+    """Returns {case_name: {"total_cost_usd": float, ...}, ...} -- the shape
+    run_case()'s cost-regression guard expects from `baseline.get(name, {})
+    .get("total_cost_usd")`.
+
+    baseline.json's actual top-level keys are `_comment` / `_runs` / `cases`
+    (see the file itself), with per-case entries living UNDER `cases` as bare
+    floats (`"plan-html-render": 0.866`) -- not at the top level, and not
+    dicts. Reading the raw top level, as this used to, makes `baseline.get(
+    name)` None for every case, so the 2x cost-regression guard in run_case()
+    could never fire. Descend into `cases`, skip `_`-prefixed metadata keys
+    living alongside it, and reshape each bare float into the
+    `{"total_cost_usd": ...}` dict the caller already expects -- the caller's
+    contract does not change, only this function's own reading of the file.
+    """
     if not BASELINE_FILE.is_file():
         return {}
     try:
-        return json.loads(BASELINE_FILE.read_text(encoding="utf-8"))
+        raw = json.loads(BASELINE_FILE.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
+    cases = raw.get("cases")
+    if not isinstance(cases, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for name, val in cases.items():
+        if name.startswith("_"):
+            continue
+        if isinstance(val, dict):
+            out[name] = val  # forward-compat: already the expected shape
+        elif isinstance(val, (int, float)):
+            out[name] = {"total_cost_usd": val}
+    return out
 
 
-def update_baseline(results: list[dict]) -> None:
+def update_baseline(results: list[dict], run_id: str) -> None:
     """The ONE deliberate exception to the temp-dir/results-dir sandbox: only
     reachable when the user explicitly passes --update-baseline, and always
     writes the literal BASELINE_FILE constant -- never a derived/parametrized
-    path -- so there is no path here an untrusted case file could redirect."""
-    baseline = load_baseline()
+    path -- so there is no path here an untrusted case file could redirect.
+
+    Must round-trip with load_baseline(): this reads the RAW file (not
+    load_baseline()'s flattened view) so `_comment` and the `cases` nesting
+    survive, merges new per-case entries under `cases`, and writes back the
+    same top-level shape. Per-case values are written as
+    `{"total_cost_usd": ..., "recorded_at": ...}` dicts -- load_baseline()
+    already reads this shape (and the legacy bare-float shape) identically,
+    so a value written here reads back as a plain float via
+    `.get("total_cost_usd")` on the very next run. `_runs` maps case name ->
+    the results-dir run id that produced its baseline value (matching
+    `results_root.name`'s `<date>-<uuid8>` shape); update it alongside
+    `cases` for the same cases so it never goes stale relative to the
+    values it documents.
+    """
+    try:
+        raw = json.loads(BASELINE_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raw = {}
+    if not isinstance(raw, dict):
+        raw = {}
+    cases = raw.get("cases")
+    cases = dict(cases) if isinstance(cases, dict) else {}
+    runs = raw.get("_runs")
+    runs = dict(runs) if isinstance(runs, dict) else {}
     for r in results:
         if r["total_cost_usd"] is None:
             continue
-        baseline[r["case"]] = {
+        cases[r["case"]] = {
             "total_cost_usd": r["total_cost_usd"],
             "recorded_at": r["ended_at"],
         }
-    BASELINE_FILE.write_text(json.dumps(baseline, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        runs[r["case"]] = run_id
+    raw["cases"] = cases
+    raw["_runs"] = runs
+    BASELINE_FILE.write_text(json.dumps(raw, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"wrote {BASELINE_FILE}")
 
 
@@ -1071,6 +1144,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--timeout", type=int, default=900, help="per `claude -p` invocation timeout in seconds (default 900)"
     )
+    parser.add_argument(
+        "--max-budget-usd",
+        type=float,
+        default=None,
+        metavar="USD",
+        help=(
+            "global ceiling on --max-budget-usd per case. Lowering-only: "
+            "effective budget is min(case's own max_budget_usd, this value) -- "
+            "never raises a case above its own declared budget. Omit to keep "
+            "today's behavior (each case runs at its own budget) unchanged."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if not args.case and not args.all:
@@ -1092,21 +1177,33 @@ def main(argv: list[str] | None = None) -> int:
     write_summary(results, results_root)
 
     if args.update_baseline:
-        update_baseline(results)
+        update_baseline(results, results_root.name)
 
     failed = [r for r in results if not r["overall_pass"]]
+    # A HARNESS failure (setup.sh failed, or the claude session never produced
+    # a usable verdict -- no events, an error result, or a --max-budget-usd
+    # abort) makes that case's assertion results meaningless, not just absent.
+    # See module docstring for the full 3-way exit-code contract.
+    harness_failed = [r for r in failed if not r["setup_ok"] or not r["claude_ok"]]
     print()
     print(f"{len(results) - len(failed)}/{len(results)} case(s) passed. Results: {results_root}")
     for r in failed:
+        kind = "HARNESS" if (not r["setup_ok"] or not r["claude_ok"]) else "ASSERTION"
         bad = [a for a in r["assertions"] if not a["passed"]]
         for a in bad:
-            print(f"  FAIL {r['case']} :: {a['type']}: {a['message'][:300]}")
+            print(f"  FAIL[{kind}] {r['case']} :: {a['type']}: {a['message'][:300]}")
         if r["cost_regression"]:
-            print(f"  FAIL {r['case']} :: cost_regression: {r['cost_regression']}")
+            print(f"  FAIL[ASSERTION] {r['case']} :: cost_regression: {r['cost_regression']}")
         for f in r["findings"]:
-            print(f"  FAIL {r['case']} :: {f[:300]}")
+            print(f"  FAIL[{kind}] {r['case']} :: {f[:300]}")
 
-    return 1 if failed else 0
+    if harness_failed:
+        print("exit 1: harness failure(s) above -- these are not skill findings, re-run.")
+        return 1
+    if failed:
+        print("exit 2: assertion failure(s) above -- the harness ran fine.")
+        return 2
+    return 0
 
 
 if __name__ == "__main__":
