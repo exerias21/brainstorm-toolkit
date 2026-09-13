@@ -6,6 +6,20 @@ spec for all of them. A skill needs only a one-line pointer here plus the
 print-then-dispatch rule — never inline the syntax (keeps skills under their line
 ceilings).
 
+## Contents
+
+- [The config surface](#the-config-surface)
+- [Two axes — keep them mechanically separate](#two-axes--keep-them-mechanically-separate)
+- [Axis 1 — the cap is a CEILING, not a setting](#axis-1--the-cap-is-a-ceiling-not-a-setting)
+- [Axis 2 — the reviewer](#axis-2--the-reviewer)
+- [Agent counts (`agents.*`)](#agent-counts-agents)
+- [Reasoning effort — not settable here](#reasoning-effort--not-settable-here)
+- [Prose dispatch rule (the DEFAULT path)](#prose-dispatch-rule-the-default-path--this-is-what-makes-any-of-it-real)
+- [Runtime regimes](#runtime-regimes)
+- [Invalid input — fall through, never guess](#invalid-input--fall-through-never-guess)
+- [Session nudge](#session-nudge)
+- [Migration from the old keys](#migration-from-the-old-keys)
+
 ## The config surface
 
 ```json
@@ -18,6 +32,7 @@ ceilings).
 "agents": {
   "sanity_focuses": ["paths", "completeness", "gotchas"],
   "code_review_lenses": ["correctness", "plan-alignment", "config-env-docs", "security"],
+  "code_review_max_lenses": 4,
   "code_review_passes": 1,
   "code_review_max_fix_loops": 3,
   "decompose_min_tasks": 6
@@ -37,6 +52,8 @@ This is the one rule a future edit must not break.
 | Values | `haiku` \| `sonnet` \| `opus` | `haiku` \| `sonnet` \| `opus` \| `fable` |
 | Stages | 1.5, 2, and every other fan-out | 5.7 / 5.8 only |
 
+Never route an Axis 2 value through the Axis 1 cap, and never let a dispatch omit `model`: a
+dispatch with no `model` inherits the session tier and bypasses the cap with zero error and
 zero log line. This is the highest-priority hazard in this file.
 
 ## Axis 1 — the cap is a CEILING, not a setting
@@ -52,10 +69,10 @@ on the expensive calls without upgrading the cheap ones.
 **The consequence that surprises everyone:** a stage whose built-in tier is `haiku` cannot
 be raised by the cap. `models.cap: "opus"` does not raise it; `--model opus` does not raise
 it — both only lower. **The per-stage key is the only lever.** That is precisely why
-`models.sanity` exist: Stage 1.5 defaults to Haiku and is never
+`models.sanity` exists: Stage 1.5 defaults to Haiku and is never
 gated, so before these keys existed it ran at Haiku on every run with no escape hatch.
 
-**Sonnet-first default:** the effective cap defaults to `sonnet`
+**Sonnet-first default:** the effective cap defaults to `sonnet`;
 `--model opus` (cap = opus = no ceiling) is the deliberate opt-up.
 
 The cap governs **sub-agent dispatch only** — never the session orchestrator running the
@@ -63,17 +80,12 @@ skill. See *Session nudge*.
 
 ### Per-stage tiers (Axis 1)
 
-| Key | Stage | Built-in default | Raise it when |
-|---|---|---|---|
-| `models.sanity` | 1.5 plan pre-flight | `haiku` (all focuses) | `completeness` is judging whether a plan hangs together — judgment work. Never gated, so this costs on **every** run |
-
-Each replaces the built-in default for that stage, **then still passes through the cap**:
-default still dispatches Sonnet unless you also pass `--model opus`. These are defaults
-*within* Axis 1, never a new axis.
-
-**Wired today: `models.sanity` only.** A key that parses but gates nothing is the exact failure
-this contract exists to prevent, so per-stage keys are added when a dispatch site reads them, not
-in advance.
+**Wired today: `models.sanity` only** — Stage 1.5 plan pre-flight, built-in default `haiku` for
+every focus; raise it when `completeness` must judge whether a plan hangs together (never gated,
+so it costs on every run). It replaces the built-in default **then still passes through the cap**:
+`models.sanity: "opus"` under `cap: "sonnet"` dispatches Sonnet unless you also pass `--model
+opus`. A key that parses but gates nothing is the failure this contract exists to prevent, so
+per-stage keys are added when a dispatch site reads them, not in advance.
 
 ### Resolution (Axis 1)
 
@@ -84,6 +96,13 @@ in advance.
 
 `--model <tier>` is a per-run escape hatch that wins **both directions** — it may raise a
 standing `sonnet` config for one run, because you asked explicitly.
+
+**Enforcement (Claude, opt-in).** Prose is the default enforcement surface. With
+`pipeline.enforce_cap: true`, a PreToolUse hook on the Agent tool rewrites any dispatch `model`
+above the cap down to it and fills in a missing `model` (a pinned agent definition keeps its
+pin). Axis 2 is exempt by a marker: every reviewer dispatch's `description` starts `review:`.
+The hook cannot see `--model`, so under enforcement the config cap is policy — raise it in
+`project.json` for a run that needs Opus. Each rewrite is reported as a `systemMessage`.
 
 ## Axis 2 — the reviewer
 
@@ -108,26 +127,22 @@ repeat — so a cheaper, different model is the point.
 back to the highest available of `opus`/`sonnet`/`haiku`, preferring `opus`, logged once.
 `fable` being billed is **not** an unavailability case.
 
-### The cap interaction users misread — say it out loud
+### Independence — observed, never enforced by re-tiering
 
-`models.cap` does **not** govern Axis 2. That is deliberate (a capped reviewer collapses onto
-the implementer and defeats independence), but from outside it reads as a bug, and the
-independence check *hides* it: `cap: sonnet` puts the implementer on sonnet, which **satisfies**
-the same-tier check, so the reviewer stays at full `opus` and no bump/degrade line ever fires.
-The user sees `cap: sonnet` next to N Opus agents with nothing connecting the two.
+The reviewer should differ from the implementer's effective tier. When the two collide, the
+stage **still dispatches the value you configured** and marks `review.json.data.independence`
+`"degraded"` (findings surfaced, never auto-fixed), with one log line. It never bumps the
+reviewer to a higher tier on your behalf — an explicit Axis 2 value is always the dispatched
+value.
 
-So when a cap is set **and** the reviewer outranks it, emit once:
+### The cap interaction — say it out loud
 
-```
-review: reviewer runs <model> on <n> lens(es) + verify + fix-planner. models.cap (<cap>) does
-        NOT govern this axis — lower it with models.code_review, or cut the fan-out with
-        agents.code_review_max_lenses.
-```
-
-it silently no-ops back to the call site's default tier, with zero error and zero log line.
-
-Axis 2's cost is `(lenses + verify + fix-planner) x reviewer model`, and every one of those
-calls is at the reviewer model — so **fan-out width, not `models.cap`, is what bounds it.**
+`models.cap` does **not** govern Axis 2 (a capped reviewer collapses onto the implementer and
+defeats independence). From outside it reads as a bug: `cap: sonnet` next to N Opus lenses with
+nothing connecting the two. So when a cap is set **and** the reviewer outranks it, Stage 5.7
+emits its cap-interaction line once — the literal text lives in `stage-5.7-review-fix.md`, the
+file open at emit time. Axis 2's cost is `(lenses + verify + fix-planner) x reviewer model`, so
+**fan-out width, not `models.cap`, is what bounds it.**
 
 ## Agent counts (`agents.*`)
 
@@ -169,6 +184,11 @@ silent. `validate_skills.py` checks that fan-out skills point at this file.
 ## Runtime regimes
 
 - **Claude** → parallel sub-agents; the tier resolved below is passed at each dispatch.
+  Claude Code also has `CLAUDE_CODE_SUBAGENT_MODEL` (a default for dispatches that omit
+  `model`) and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` (v2.1.257+, overrides *every* dispatch,
+  frontmatter included). The former is a safe floor under this contract; the latter collapses
+  Axis 2 onto Axis 1 and defeats reviewer independence — do not set it on a repo that enables
+  the review stage.
 - **Copilot** → stages run inline in the session model; the cap is **advisory** (there is no
   sub-agent tier to lower). The `agents.*` counts still apply.
 - **Codex** → advisory too. Codex has native subagents, but per-subagent model override is
@@ -196,6 +216,5 @@ Tool-agnostic wording — not `/model`, which is Claude-specific.
 
 ## Migration from the old keys
 
-The `pipeline.*` model keys were renamed to `models.*` / `agents.*` in a clean break. A repo
-still using an old key silently gets the built-in default; `/repo-onboarding` rewrites the
-block and `/repo-health` flags leftovers. Full mapping: `docs/MODEL-AXES.md`.
+The `pipeline.*` model keys were renamed to `models.*` / `agents.*`. A repo still using an old
+key silently gets the built-in default. Full mapping: `docs/MODEL-AXES.md`.

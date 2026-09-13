@@ -30,12 +30,13 @@ GROUND IN THE LIVE CODE FIRST (before writing any code):
 - If the plan has a `## Conventions & reuse` block, honor it AND re-verify it
   against the live code (the code may have moved since the plan was written).
 
-CRITICAL RULES:
-- Follow the implementation steps in order
-- Use the exact file paths specified in the plan
 - Follow patterns from referenced existing files; prefer extending existing
-  modules over creating new ones
-- Do NOT add features beyond what the plan specifies
-- Do NOT skip steps or take shortcuts
-- After implementation, run: git diff --stat to summarize changes
+  modules over creating new ones.
+- Use the EXACT file paths the plan specifies. A near-miss path silently creates
+  a second home for something that already has one.
+- Do NOT add features beyond what the plan specifies, and do NOT skip a step or
+  take a shortcut. Scope creep here is invisible to the tests (nothing fails)
+  and invisible to the plan check (it flags missing steps, not extra ones), so
+  this instruction is the only thing preventing it.
+- After implementation, run: git diff --stat to summarize changes.
 ```

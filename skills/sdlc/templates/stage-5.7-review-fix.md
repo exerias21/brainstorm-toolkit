@@ -3,11 +3,16 @@
 Canonical for `/sdlc`. **Opt-in, permanently OFF by default** —
 do not load this file unless the stage is enabled (see the enablement rule below).
 
-> **No sub-agent seam? (Copilot, Codex)** The dispatch instructions below describe the Claude
-> path. On a runtime without sub-agents, do the same work **inline in the session** and produce
-> the same structured result — but keep the discipline the dispatch existed to enforce: report
-> only the structured summary, never paste raw tool or runner output into your context. That
-> output is the single largest source of context bloat, and inline is exactly where it lands.
+## Contents
+
+- [Enablement and gate](#enablement-and-gate)
+- [Lens fan-out and cost knobs](#lens-fan-out-and-cost-knobs)
+- [Verify pass and false-positive circuit breaker](#verify-pass-and-false-positive-circuit-breaker)
+- [Stage 5.8 — Fix loop](#stage-58--fix-loop)
+- [Sidecar shapes (this stage only)](#sidecar-shapes-this-stage-only)
+- [`.claude/pipeline/_review-stats.json` — review circuit breaker (cross-run ledger)](#claudepipeline_review-statsjson--review-circuit-breaker-cross-run-ledger)
+
+## Enablement and gate
 
 This stage activates only on an explicit
 `--review-model <name>` flag or an explicit `pipeline.review_fix.enabled: true` in
@@ -21,6 +26,12 @@ Runs after Stage 5, before Stage 6, once enabled and not auto-off'd. Fans out
 on Copilot/Codex), each at the **reviewer** model — `models.code_review` / `--review-model`,
 default `opus`, resolved per `skills/sdlc/templates/models.md`. That axis is separate from the
 `haiku < sonnet < opus` cap ladder and `models.cap` never lowers it.
+
+**Every Axis 2 dispatch — each lens, the verify pass, the fix-planner — sets the Agent
+`description` to start with `review:`** (e.g. `review: correctness`). That prefix is how the
+opt-in model-cap hook (`pipeline.enforce_cap`) knows to leave the reviewer tier alone.
+
+## Lens fan-out and cost knobs
 
 **Which lenses run — `agents.code_review_lenses`.** Read the array from `.claude/project.json`;
 when the key is absent, use all four defaults below. **Set fewer to cut the stage's cost roughly
@@ -44,7 +55,7 @@ to `4`; it must never resolve to `0`, which would silently disable the stage rat
 *reviewer* model, plus one verify pass and one fix-planner at the same model. `models.cap` does
 **not** govern this axis, deliberately. The interaction is easy to misread: `cap: sonnet` puts
 the implementer on sonnet, which *satisfies* the independence check below, so the reviewer stays
-at full `opus` and no bump/degrade warning ever fires. When a cap is set and the reviewer
+at full `opus` and no independence warning ever fires. When a cap is set and the reviewer
 outranks it, emit:
 
 ```
@@ -68,6 +79,8 @@ Each lens returns structured findings (`REVIEW_FINDING_SCHEMA`, defined in
 sidecar shape, not the schema itself): `{severity, file, line, defect, failure_scenario, fix}`.
 `auto_fixable` is set later by the fix-planner (Stage 5.8) and merged in at that point — the lens
 itself never returns or claims it.
+
+## Verify pass and false-positive circuit breaker
 
 **Verify pass (adversarial, evidence-required, default-refute):** one more call, same reviewer
 model, that must attach a fresh falsifiable artifact to each finding it confirms — a re-read
@@ -123,10 +136,21 @@ Per `pipeline.review_fix.mode`:
   the whole bound.
 - **`off`**: emit findings to `review.json` only; Stage 5.8 does not run.
 
-**Independence enforcement:** the reviewer model must differ in effective tier from the
-implementer's effective tier (its default after the cap is applied); if they collide, the reviewer bumps
-one tier up, or — if already at the ceiling — the run is marked `data.independence = "degraded"`
-in `review.json` and every finding that run is surfaced only, never auto-fixed.
+**Independence enforcement — observe, never override.** Compare the reviewer's resolved
+value to the implementer's effective tier (its default after the cap is applied). When they
+differ (or the reviewer is `fable`, outside the ladder), `data.independence = "ok"`. When they
+collide, **dispatch the configured reviewer anyway** and mark the run
+`data.independence = "degraded"` in `review.json`: every finding that run is surfaced only,
+never auto-fixed (rubric criterion #4 above). Emit once, before dispatching:
+
+```
+review: reviewer (<model>) and implementer (<tier>) resolve to the same tier — independence
+        degraded; findings are surfaced, never auto-fixed. Set models.code_review to a
+        different tier (or fable) to restore it.
+```
+
+**The reviewer is never re-tiered on your behalf** — an explicit `models.code_review` /
+`--review-model` value is always the dispatched value (why: `docs/MODEL-AXES.md`).
 
 **Oscillation guard (fingerprint-based):** each confirmed finding gets a stable fingerprint —
 `file + ":" + lens + ":" + floor(line / 10)`. Persist `fixed_fingerprints[]` per loop iteration.
@@ -139,9 +163,10 @@ original fix + regression side by side (same shape as Stage 5's persistent-misma
 `loops[]` array carrying one entry per iteration. `review-fix` is recorded once in
 `run.json.stages_completed` regardless of loop count.
 
-**Blocking posture:** a surviving HIGH-severity confirmed finding (auto-fixable and unresolved
-after budget exhaustion, or a HIGH-severity design decision) **blocks** — Stage 6 does not create
-a PR; `run.json.status = "paused"`, same shape as an eval max-loops pause.
+**Posture on a surviving HIGH finding (unresolved after budget, or a HIGH design decision):**
+it does **not** block — `/sdlc` does no git writes, so there is nothing to gate. List it first in
+the Stage 7 report and leave `run.json.status` as the run's own verdict; the human decides before
+committing.
 
 **Post-fix validation:** if any fix was actually applied this run, re-run the Stage 5 `validate`
 gate exactly once before Stage 6 (a single confirmation pass, not a fresh budget). A regression
@@ -253,14 +278,13 @@ field reports the result of the re-review that ran immediately *after* the fix, 
 An id is only ever meaningful paired with the pass that minted it -- there is no guaranteed stable
 identity for "the same defect" across loops; the oscillation guard uses a content fingerprint for
 that instead. Persisted `fix_specs`/`decisions` are **id-keyed** (`finding_id`), never index-keyed
--- the fix-planner's agent-return shape is index-keyed, but the JS maps each `finding_index` to its
+-- the fix-planner's agent-return shape is index-keyed, but the orchestrator maps each `finding_index` to its
 confirmed finding's `finding_id` when interpolating the fix agent's envelope payload, so raw indices
 never reach the sidecar.
 
-**`reverify` is never written by the fix agent itself, on either path.** The fix agent runs
-*before* its own loop's re-review exists, so it cannot know that result.reason` is always `"workflow auto-apply"` (there
-is no human channel there) rather than `null` -- the `null` shown in the example above is the
-prose-path, human-interactive-approval case.
+**`reverify` is never written by the fix agent itself.** The fix agent runs *before* its own
+loop's re-review exists, so it cannot know that result; the orchestrator fills `reverify` after
+the re-review.
 
 ## `.claude/pipeline/_review-stats.json` — review circuit breaker (cross-run ledger)
 
@@ -293,11 +317,5 @@ file per repo, keyed by lens. It backs the Review→Fix stage's false-positive c
 - `review.json.data.demoted_lenses` is this run's *view* of which lenses were skipped because
   `_review-stats.json` already marked them demoted going in — the two files are consistent by
   construction (one reads what the other most recently wrote).
-- This mechanism (the sidecar, the writer-side update, and the demotion-aware lens filter) is
-  **active**: the per-lens ledger in `_review-stats.json` backs live lens demotion (a lens whose
-  confirmed-rate drops under 40% is demoted; 5 consecutive runs at ≥60% re-promote it, capped at the
-  last 20 runs per lens). `REVIEW_LENSES` filters out demoted lenses from dispatch on every run, and
-  `review.json.data.demoted_lenses` records which lenses were skipped because this ledger already
-  marked them demoted going in.
 
 ---

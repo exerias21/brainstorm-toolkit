@@ -1,0 +1,28 @@
+# Denylist of facts a rename or a design decision invalidated. Read by
+# check_contracts.py. Format (tab-separated): regex<TAB>reason<TAB>allow-glob(optional)
+#
+# allow-glob is a comma-separated list of fnmatch patterns (matched against the
+# POSIX-style repo-relative path) for files where the phrase is a CORRECT
+# statement (an attribution sentence, a documented DO-NOT list, a negated
+# fact) rather than the dead claim this row exists to catch. Keep entries
+# editable here rather than in code, per the plan this file was seeded from
+# (docs/plans/skill-evals-1-contract-checks.md).
+#
+# Each allow-glob entry pins an EXPECTED OCCURRENCE COUNT for that phrase in
+# that file: `path/glob:N` means exactly N legitimate occurrences are known to
+# exist there; a bare `path/glob` (no `:N`) means exactly 1 (keeps terse rows
+# valid). The file is still scanned -- a count ABOVE the pin is a finding
+# naming the first excess occurrence (a new instance needs hand review, then
+# the pin raised); a count BELOW the pin is a finding that the pin is stale
+# (lower it). Counts below were computed with
+# `grep -o '<phrase>' <file> | wc -l` against HEAD, not guessed.
+PR body	/sdlc opens no PR; only correct when hedging about a hypothetical future PR-authoring step (the coauthor_trailer wording), never a claim that /sdlc itself writes one	templates/project.json.example:1,skills/repo-onboarding/SKILL.md:1
+opens a PR	no skill in this repo opens a PR; correct only in the negated form ("never opens a PR" / "it never opens a PR")	skills/sdlc/SKILL.md:1,skills/repo-health/SKILL.md:2,skills/sdlc/templates/queue-mode.md:1
+gh pr create	/sdlc does no git writes; correct only inside the Stage 6 DO-NOT list naming the removed capability	skills/sdlc/SKILL.md:1,copilot/skills/sdlc/SKILL.md:1,codex/skills/sdlc/SKILL.md:1
+commit_sha	only /task records a commit_sha -- it is the one skill that runs git commit	skills/task/SKILL.md:1
+sanity_check\.model	dead key; renamed to models.sanity in the pipeline.*.model -> models.*/agents.* clean break
+pipeline\.review_fix\.model	dead key; renamed to models.code_review
+pipeline\.sanity_check\.focuses	dead key; renamed to agents.sanity_focuses
+model-cap\.md	dead filename; the shared model-tier cap contract now lives at skills/sdlc/templates/models.md
+sdlc-lite	/sdlc-lite was merged into /sdlc; the merged name never appears as a live reference inside skills/copilot/codex/agents/templates (attribution sentences that keep the old name belong in docs/, out of this file's scope)
+ux-plan-validator	dead agent name; renamed to plan-conformance-validator (it never validated UX -- it checks plan conformance on requirements + flow). Historical references in docs/archive and docs/gap-analysis are deliberate records and are out of this scan scope.

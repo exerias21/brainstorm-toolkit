@@ -53,6 +53,70 @@ if [ -z "$PROJ" ]; then
   if _gr="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -n "$_gr" ]; then PROJ="$_gr"; else PROJ="$PWD"; fi
 fi
 
+# Persist the five numbers into the envelope's `data.cost` (schema:
+# skills/sdlc/templates/state-schema.md). Additive-only and atomic (tmp +
+# os.replace, the idiom at scripts/merge-hook.py:89-97) because this Stop
+# hook mutates run.json, which stop-gate.sh, --resume's plan_hash check and
+# close-tasks.sh reconcile all read -- a half-written file corrupts every one
+# of them. Reads the whole file and rewrites only `data.cost`, so every other
+# field (including anything `--resume` validates) survives untouched.
+# Best-effort: any failure here is swallowed, never fails the run.
+write_cost() {
+  _env="$1"; _turns="$2"; _avg="$3"; _peak="$4"; _cread="$5"; _usd="$6"
+  _reported_at="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || true)"
+  [ -n "$_reported_at" ] || return 0
+  if [ -n "$PY" ]; then
+    "$PY" - "$_env" "$_turns" "$_avg" "$_peak" "$_cread" "$_usd" "$_reported_at" <<'PY' 2>/dev/null || true
+import json, os, sys
+path, turns, avg, peak, cread, usd, reported_at = sys.argv[1:8]
+try:
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+except Exception:
+    sys.exit(0)
+if not isinstance(data, dict):
+    sys.exit(0)
+d = data.get("data")
+if not isinstance(d, dict):
+    d = {}
+try:
+    d["cost"] = {
+        "turns": int(turns),
+        "avg_context_tokens": int(avg),
+        "peak_context_tokens": int(peak),
+        "cache_read_tokens": int(cread),
+        "estimated_usd": float(usd),
+        "reported_at": reported_at,
+    }
+except Exception:
+    sys.exit(0)
+data["data"] = d
+tmp = path + ".tmp"
+try:
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, path)
+except OSError:
+    try:
+        os.unlink(tmp)
+    except OSError:
+        pass
+PY
+  elif [ -n "$JQ" ]; then
+    _tmp="${_env}.tmp"
+    if jq --argjson turns "$_turns" --argjson avg "$_avg" --argjson peak "$_peak" \
+          --argjson cread "$_cread" --argjson usd "$_usd" --arg reported_at "$_reported_at" \
+          '.data = ((.data // {}) + {cost: {turns:$turns, avg_context_tokens:$avg, peak_context_tokens:$peak, cache_read_tokens:$cread, estimated_usd:$usd, reported_at:$reported_at}})' \
+          "$_env" > "$_tmp" 2>/dev/null; then
+      mv "$_tmp" "$_env" 2>/dev/null || rm -f "$_tmp" 2>/dev/null
+    else
+      rm -f "$_tmp" 2>/dev/null
+    fi
+  fi
+  return 0
+}
+
 input="$(cat 2>/dev/null || true)"
 [ -n "$input" ] || exit 0
 # stdin, never a temp file: under Git Bash a native Windows Python cannot open an MSYS path.
@@ -99,8 +163,9 @@ for line in open(sys.argv[1],encoding="utf-8",errors="replace"):
     turns+=1; tot+=ctx; peak=max(peak,ctx)
     out+=u.get("output_tokens") or 0; cr+=r; cw+=w; inp+=i
 avg=tot//turns if turns else 0
-# Rough relative spend, opus rates: in 15 / cache-write 18.75 / cache-read 1.50 / out 75 per Mtok.
-usd=(inp*15.0 + cw*18.75 + cr*1.50 + out*75.0)/1e6
+# Rough relative spend at Opus 5 list (2026-06): in 5 / cache-write 6.25 / cache-read 0.50 / out 25 per Mtok.
+# Every turn is priced at Opus regardless of model -- an upper bound, not a bill.
+usd=(inp*5.0 + cw*6.25 + cr*0.50 + out*25.0)/1e6
 print(f"{turns} {avg} {peak} {cr} {usd:.2f}")' "$transcript" 2>/dev/null)"
 else
   stats="$(jq -rs '
@@ -109,10 +174,10 @@ else
     | [ $u[] | (.input_tokens//0)+(.cache_read_input_tokens//0)+(.cache_creation_input_tokens//0) ] as $c
     | [ ($n|tostring), (if $n>0 then (($c|add)/$n|floor|tostring) else "0" end),
         (($c|max)//0|tostring), ([$u[]|.cache_read_input_tokens//0]|add|tostring),
-        ((([$u[]|.input_tokens//0]|add)*15.0
-          + ([$u[]|.cache_creation_input_tokens//0]|add)*18.75
-          + ([$u[]|.cache_read_input_tokens//0]|add)*1.50
-          + ([$u[]|.output_tokens//0]|add)*75.0)/1000000 | tostring) ]
+        ((([$u[]|.input_tokens//0]|add)*5.0
+          + ([$u[]|.cache_creation_input_tokens//0]|add)*6.25
+          + ([$u[]|.cache_read_input_tokens//0]|add)*0.50
+          + ([$u[]|.output_tokens//0]|add)*25.0)/1000000 | tostring) ]
     | join(" ")' "$transcript" 2>/dev/null)"
 fi
 [ -n "$stats" ] || exit 0
@@ -121,6 +186,7 @@ turns="${1:-0}"; avg="${2:-0}"; peak="${3:-0}"; cread="${4:-0}"; usd="${5:-0}"
 [ "$turns" -gt 0 ] 2>/dev/null || exit 0
 
 status="$(jget "$envelope" '.status' '?')"
+write_cost "$envelope" "$turns" "$avg" "$peak" "$cread" "$usd"
 : > "$(dirname "$envelope")/.cost-reported" 2>/dev/null || true
 
 msg="[run cost] ${slug} (${status}) - ${turns} turns, avg context $((avg/1000))k, peak $((peak/1000))k, cache-read $((cread/1000000))M, ~\$${usd}.

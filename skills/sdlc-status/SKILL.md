@@ -6,9 +6,9 @@ description: >
   pipeline runs (so a stalled /sdlc run can't hide). Reads
   TASKS.md and .claude/pipeline/ directly — no subagents, no dashboards.
   Invoke via /sdlc-status or when the user asks "what's left?", "current task?",
-  "status". Read-only by default; `--prune-stale` is an opt-in, confirm-gated
+  "status". Read-only by default; `--prune-stale` and `--reconcile` are opt-in, confirm-gated
   cleanup of stale/orphaned pipeline envelopes.
-argument-hint: "[--prune-stale]"
+argument-hint: "[--prune-stale] [--reconcile]"
 metadata:
    brainstorm-toolkit-applies-to: claude copilot codex
 ---
@@ -40,7 +40,16 @@ metadata:
    `skills/sdlc/templates/envelope-staleness.md` — the shared scan, including its
    false-positive guards (skip on `main_branch`, at most one report, silence when
    nothing changed). Read-only here: surface non-terminal and stale runs, don't
-   rewrite them. `--prune-stale` below is the only mutating path.
+   rewrite them. `--prune-stale` and `--reconcile` below are the only mutating paths.
+
+**`--reconcile` — backlog drift.** `TASKS.md` and the run envelopes can disagree, and
+nothing surfaced it before. Run `bash scripts/close-tasks.sh reconcile --file TASKS.md`
+(add `--apply` only after a single confirmation; without it the command writes nothing).
+It reports drift in **both** directions — a terminal envelope whose rows are still open, a
+`[~]` row with no or a non-terminal envelope, a `[x]` filed under `Active / Pending`, and a
+`[ ]`/`[~]` filed under `Done`. Print `drift_count` and one line per finding; say
+`backlog: no drift` when clean. Skip silently when `scripts/close-tasks.sh` is absent
+(`--no-copy-scripts` installs).
 8. **Print a 3–7 line summary**:
 
    ```
@@ -56,7 +65,7 @@ metadata:
    A non-terminal pipeline run is the one thing worth making loud — it's how a
    skipped/abandoned pipeline becomes visible instead of lingering in JSON.
 
-## Next step (absorbed from the former `/next`)
+## Next step (absorbed from the former `/next` and `/triage`)
 
 After the summary, print **one** recommended next command with a one-line reason. Highest
 match wins; stop at the first hit:
@@ -76,8 +85,7 @@ match wins; stop at the first hit:
    needs the full pipeline.
 7. **Nothing queued** → `/brainstorm` for ideation, or `/repo-health` for a hygiene sweep.
 
-Print it as `Next: <command>  — <reason>`. **Recommend only; never execute.** The classes in
-rung 1 are what the former `/triage` did — the diagnosis is a paragraph, not a skill.
+Print it as `Next: <command>  — <reason>`. **Recommend only; never execute.**
 
 ## `--prune-stale` (opt-in cleanup — the one write exception)
 
@@ -95,14 +103,7 @@ lets you actually clear them — confirm-gated, never automatic:
    it's a synthetic/garbage envelope, remove the `.claude/pipeline/<slug>/`
    directory. Report what was pruned.
 
-Without `--prune-stale`, `/sdlc-status` is **pure read** (default). The flag is the
-documented, confirm-gated exception — it's the only path that writes.
-
 ## Rules
-
-- **`/sdlc-status` is both the readout and the recommendation.** It absorbed the former
-  `/next` ladder and `/triage` classes, so there is one command for "where am I" and
-  "what next". It never executes — it recommends.
 
 - Pure read by default, no file writes. The sole exception is `--prune-stale`
   above, which is explicit and confirm-gated.

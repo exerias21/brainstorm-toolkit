@@ -1,0 +1,14 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 390, "h": 844, "title": "Board — mobile" },
+    { "file": "PlanDetail.dc.html", "x": 490, "y": 0, "w": 390, "h": 844, "title": "Plan detail" },
+    { "file": "ApproveConfirm.dc.html", "x": 980, "y": 0, "w": 390, "h": 844, "title": "Approve" },
+    { "file": "Desktop.dc.html", "x": 0, "y": 980, "w": 1440, "h": 900, "title": "Board — desktop widening" }
+  ],
+  "annotations": [
+    { "id": "flow-note", "x": 0, "y": -150, "w": 880, "text": "Mobile-first: the three phone artboards are the primary design; desktop is the same board widened, not a separate one.\n\nRead-only board, exactly one mutating action — Approve, behind a confirm sheet that shows the spend ceiling." },
+    { "id": "column-note", "x": 1470, "y": 0, "w": 300, "text": "Five columns, each derived from state that already exists:\n\nBacklog = [ ] rows in P1>P2>P3 order (this IS --queue's order)\nNeeds review = a plan with no run envelope\nIn progress = [~] rows + non-terminal runs, showing current stage\nPaused = status: paused\nRecently done = [x] rows\n\nThe board invents no status of its own." },
+    { "id": "colour-note", "x": 1470, "y": 380, "w": 300, "text": "Palette carried over from the toolkit architecture map — the same CVD-validated hues, reused as column identity:\n\nblue = flow / running\nviolet = gates / decisions\namber = attention\nteal = written / done\n\nIdentity is never colour alone: every column is labelled." }
+  ],
+  "launch": { "view": "canvas" }
+}

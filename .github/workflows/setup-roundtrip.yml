@@ -24,3 +24,19 @@ jobs:
         run: |
           bash setup.sh --target /tmp/install-refs-probe --tools all
           python scripts/ci/check_install_refs.py /tmp/install-refs-probe
+
+      - name: contract checks
+        run: |
+          python scripts/ci/check_contracts.py
+          python scripts/ci/check_contracts.py --self-test
+
+      - name: official plugin validator (claude plugin validate)
+        run: |
+          if ! command -v claude >/dev/null 2>&1; then
+            echo "skip: claude CLI not on PATH -- official validator not run"
+            exit 0
+          fi
+          claude plugin validate .
+
+      - name: hook regression harness
+        run: bash scripts/ci/test-hooks.sh

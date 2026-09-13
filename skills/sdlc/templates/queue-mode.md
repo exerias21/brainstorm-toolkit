@@ -9,8 +9,8 @@ so work appended *during* the run (a `/sdlc-status`-drafted fix, a brainstorm fo
 joins the loop — that re-scan is what makes it a loop rather than a fixed batch.
 **No git writes** (it's `/sdlc`): the whole loop leaves validated changes in
 your tree for you to commit; it never opens a PR. The loop itself is
-**prose-orchestrated** — each item runs the normal sdlc pipeline (prose or, under
-one pipeline run per item); the selection, re-scan, and stop conditions are here.
+**prose-orchestrated** — one pipeline run per item; the selection, re-scan, and stop
+conditions are here.
 
 Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
 
@@ -76,8 +76,10 @@ grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.ne
 ```
 
 **Do NOT rely on `run.json.next_action` alone** — the sentinel `echo` above is mandatory on
-every park. Then run the **no-hook nudge** (`docs/SEAM.md` SEAM2): if no Stop hook is wired,
-the line is inert — tell the user to enable the plugin or onboard, or the loop can't continue.
+every park. Then run the **no-hook nudge** (SEAM2): `grep -rlqs 'next-action'
+.claude/settings.json ~/.claude/settings.json .github/hooks/ ~/.claude/plugins/
+2>/dev/null` — if that finds nothing, the line is inert; tell the user to enable the
+plugin or onboard, or the loop can't continue.
 
 With the sentinel written, the Stop hook surfaces the resume — and with `pipeline.auto_continue:
 true`, **executes** it: the loop self-advances batch→batch hands-off until a `confirm:true`

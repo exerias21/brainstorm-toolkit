@@ -67,13 +67,44 @@ grep -rlqs 'next-action' .claude/settings.json ~/.claude/settings.json .github/h
   pending action to fold it into its output; if it consumed the line, the hook would have
   nothing to surface at the next Stop. A second consumer eats the hint before the user sees it.
 
+## Single-blocker contract
+
+Stop hooks run in **parallel** — `hooks.json` array order is documentation, not precedence —
+so at most one hook should return `decision: block` per Stop event. `next-action.sh` is the only
+hook that can ever emit `decision: block`, and only from inside its own opt-in auto-continue path
+(guarded on `pipeline.loop.auto_continue: true`, see below) — with that knob unset, `next-action.sh`
+never blocks, full stop.
+
+Mutual exclusivity is therefore enforced **at the config level**: the opt-in
+`scripts/hooks/stop-gate.sh` (a red `test.unit` during an in-progress `/sdlc` run) stands down — a
+`systemMessage`, never `decision: block` — whenever `pipeline.loop.auto_continue` is `true`. That
+makes the one condition under which `next-action.sh` might block exactly the condition under which
+`stop-gate.sh` cannot, deterministically, with no dependency on which of two parallel hook
+processes reads or deletes a sentinel file first. `stop-gate.sh` also still PEEKs the
+`.next-action` file and stands down when a sentinel is pending; that peek is a secondary courtesy
+for when `auto_continue` is off (it avoids a redundant test run right before a hint is about to
+fire) and is not what the mutual-exclusion guarantee rests on.
+
+Two things this contract does **not** claim: `next-action.sh` tracks its own separate
+`.claude/.auto-continue-hops` budget (distinct from `stop-gate.sh`'s `.claude/.stop-gate-hops`),
+and `next-action.sh` does not read `stop_hook_active` at all — that escape hatch is
+`stop-gate.sh`'s own, unrelated to the single-blocker contract above.
+
 ## Cross-tool
 
 - **Claude Code, Copilot, AND Codex** all have a `Stop` hook — wired via
   `.claude/settings.json`, `.github/hooks/next-action.json`, and **`.codex/hooks.json`**
   respectively. Codex's Stop hook uses the same `systemMessage` / `decision:block` contract
   (learn.chatgpt.com/docs/hooks). The plugin ships it (SEAM1); `setup.sh` wires it for
-  copy-installs. Two Codex caveats: project-local `.codex/` hooks fire only once the user
+  copy-installs.
+  **`decision`/`reason` vs `continue`/`stopReason` — do not swap these.** Codex `Stop` accepts
+  both pairs and they do OPPOSITE things: `continue:false` + `stopReason` *halts* the turn,
+  while `decision:"block"` + `reason` is the one that *continues* it ("it tells Codex to
+  continue and automatically creates a new continuation prompt that acts as a new user prompt,
+  using your `reason` as that prompt text"). Auto-continue therefore wants `decision`/`reason`,
+  which is what `next-action.sh` emits. Recorded because the opposite reading was filed as a
+  latent bug and would have "fixed" the working field into the halting one (verified against the
+  docs 2026-09-12). Two Codex caveats: project-local `.codex/` hooks fire only once the user
   **trusts** the directory (`/hooks`), and Codex may run the hook from a subdirectory, so the
   script path resolves via the git top-level.
 - **Inline fallback** — writers still ALSO print `Next: <cmd>` inline (useful on Codex before
@@ -82,7 +113,7 @@ grep -rlqs 'next-action' .claude/settings.json ~/.claude/settings.json .github/h
 
 ## Auto-continue (Lever C / L9) — OPT-IN, default off
 
-With `pipeline.auto_continue: true` in `.claude/project.json`, on **Claude Code or Codex**
+With `pipeline.loop.auto_continue: true` in `.claude/project.json`, on **Claude Code or Codex**
 (both honor the Stop-hook `decision:block` contract), the Stop hook stops *printing* the next
 action and starts *executing* it: it returns
 `{"decision":"block","reason":"Continue with: <cmd>"}`, which feeds `<cmd>` back to the model

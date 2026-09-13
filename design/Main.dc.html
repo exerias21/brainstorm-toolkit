@@ -1,0 +1,148 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: "IBM Plex Sans", system-ui, sans-serif; background: #f7f8fa; }
+    a { color: #1f6fd0; } a:hover { color: #17539c; }
+    .col::-webkit-scrollbar { display: none; }
+    .rail::-webkit-scrollbar { display: none; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; background: #f7f8fa; color: #14171c; display: flex; flex-direction: column; overflow: hidden;">
+
+  <!-- header -->
+  <div style="display: flex; flex-direction: column; gap: 10px; padding: 18px 16px 12px; background: #ffffff; border-bottom: 1px solid #d8dde5;">
+    <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px;">
+      <div style="font-family: 'IBM Plex Sans Condensed', sans-serif; font-weight: 700; font-size: 22px; letter-spacing: -0.01em;">Task Board</div>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <span style="width: 7px; height: 7px; border-radius: 50%; background: #0e8f7a; flex: none;"></span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #6b7280;">4 repos · 12s ago</span>
+      </div>
+    </div>
+    <!-- column rail -->
+    <div class="rail" style="display: flex; gap: 6px; overflow-x: auto; margin: 0 -16px; padding: 2px 16px 2px;">
+      <div style="display: flex; align-items: center; gap: 6px; padding: 7px 11px; border-radius: 999px; background: #1f6fd0; color: #ffffff; flex: none;">
+        <span style="font-size: 12.5px; font-weight: 600;">In progress</span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; opacity: .85;">2</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px; padding: 7px 11px; border-radius: 999px; background: #f2e8fa; color: #6d2e91; border: 1px solid #e2cef2; flex: none;">
+        <span style="font-size: 12.5px; font-weight: 600;">Needs review</span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px;">3</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px; padding: 7px 11px; border-radius: 999px; background: #faeddd; color: #94500b; border: 1px solid #f0d9bd; flex: none;">
+        <span style="font-size: 12.5px; font-weight: 600;">Paused</span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px;">1</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px; padding: 7px 11px; border-radius: 999px; background: #eef1f5; color: #454c58; border: 1px solid #d8dde5; flex: none;">
+        <span style="font-size: 12.5px; font-weight: 600;">Backlog</span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px;">38</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px; padding: 7px 11px; border-radius: 999px; background: #e0f2ee; color: #0a6b5c; border: 1px solid #c4e6df; flex: none;">
+        <span style="font-size: 12.5px; font-weight: 600;">Done</span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px;">8</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- swipeable column -->
+  <div class="col" style="flex: 1; overflow-y: auto; padding: 14px 16px 20px; display: flex; flex-direction: column; gap: 16px;">
+
+    <!-- IN PROGRESS -->
+    <div style="display: flex; flex-direction: column; gap: 9px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="width: 3px; height: 14px; border-radius: 2px; background: #1f6fd0; flex: none;"></span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: #454c58; font-weight: 500;">In progress</span>
+      </div>
+
+      <div style="background: #ffffff; border: 1px solid #d8dde5; border-left: 3px solid #1f6fd0; border-radius: 4px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #6b7280;">brainstorm-toolkit</span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; color: #1f6fd0; background: #e7effb; border-radius: 3px; padding: 2px 6px;">P1</span>
+        </div>
+        <div style="font-size: 14.5px; font-weight: 500; line-height: 1.35; text-wrap: pretty;">close-tasks.sh board: read-only JSON view of TASKS.md + envelopes</div>
+        <div style="display: flex; align-items: center; gap: 8px; padding-top: 2px;">
+          <span style="display: flex; align-items: center; gap: 5px; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #1f6fd0; background: #e7effb; border-radius: 3px; padding: 3px 7px;">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 3a9 9 0 1 1-6.4 2.6"></path></svg>
+            stage 2 · implement
+          </span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #6b7280;">phase 1</span>
+        </div>
+      </div>
+
+      <div style="background: #ffffff; border: 1px solid #d8dde5; border-left: 3px solid #1f6fd0; border-radius: 4px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #6b7280;">claude-headless-fastapi</span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; color: #454c58; background: #eef1f5; border-radius: 3px; padding: 2px 6px;">P2</span>
+        </div>
+        <div style="font-size: 14.5px; font-weight: 500; line-height: 1.35; text-wrap: pretty;">Add GET /health returning ok:true, plus a test for it</div>
+        <div style="display: flex; align-items: center; gap: 8px; padding-top: 2px;">
+          <span style="display: flex; align-items: center; gap: 5px; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #1f6fd0; background: #e7effb; border-radius: 3px; padding: 3px 7px;">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 3a9 9 0 1 1-6.4 2.6"></path></svg>
+            stage 5 · validate
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- NEEDS REVIEW -->
+    <div style="display: flex; flex-direction: column; gap: 9px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="width: 3px; height: 14px; border-radius: 2px; background: #8a3ab5; flex: none;"></span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: #454c58; font-weight: 500;">Needs review</span>
+      </div>
+
+      <div style="background: #ffffff; border: 1px solid #d8dde5; border-left: 3px solid #8a3ab5; border-radius: 4px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #6b7280;">brainstorm-toolkit</span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; color: #6d2e91; background: #f2e8fa; border-radius: 3px; padding: 2px 6px;">P1</span>
+        </div>
+        <div style="font-size: 14.5px; font-weight: 500; line-height: 1.35; text-wrap: pretty;">Stage 5.9 cleanup pass — over-engineering + docstring lenses</div>
+        <div style="display: flex; align-items: center; gap: 8px; padding-top: 2px;">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #6b7280;">plan written · never run</span>
+        </div>
+      </div>
+
+      <div style="background: #ffffff; border: 1px solid #d8dde5; border-left: 3px solid #8a3ab5; border-radius: 4px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #6b7280;">task-board</span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; color: #6d2e91; background: #f2e8fa; border-radius: 3px; padding: 2px 6px;">P1</span>
+        </div>
+        <div style="font-size: 14.5px; font-weight: 500; line-height: 1.35; text-wrap: pretty;">Tailnet kanban — phase 1, read-only board</div>
+        <div style="display: flex; align-items: center; gap: 8px; padding-top: 2px;">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #6b7280;">plan written · never run</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAUSED -->
+    <div style="display: flex; flex-direction: column; gap: 9px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="width: 3px; height: 14px; border-radius: 2px; background: #c76a12; flex: none;"></span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: #454c58; font-weight: 500;">Paused</span>
+      </div>
+
+      <div style="background: #ffffff; border: 1px solid #d8dde5; border-left: 3px solid #c76a12; border-radius: 4px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #6b7280;">brainstorm-toolkit</span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; color: #94500b; background: #faeddd; border-radius: 3px; padding: 2px 6px;">P2</span>
+        </div>
+        <div style="font-size: 14.5px; font-weight: 500; line-height: 1.35; text-wrap: pretty;">RUN-DURABILITY — run.json written lazily; --resume redoes work</div>
+        <div style="display: flex; align-items: center; gap: 8px; padding-top: 2px;">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #94500b; background: #faeddd; border-radius: 3px; padding: 3px 7px;">validate failed 3x</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

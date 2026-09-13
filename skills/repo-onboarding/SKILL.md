@@ -4,8 +4,10 @@ description: >
   Inspect a repository and generate the cross-tool contract files this toolkit's
   skills rely on: `AGENTS.md` (architecture + agent instructions), `TASKS.md`
   (work queue), `.claude/project.json` (runner config), and `GOTCHAS.md` (pitfalls).
-  Use when onboarding a new repo to the workflow toolkit, or when /onboard,
-  /discovery, /codelearn, or /init-toolkit is invoked. Replaces the separate
+  Use when onboarding a new repo to the workflow toolkit, when the user says "set up
+  this repo for the toolkit", "generate AGENTS.md", "create project.json", or asks how
+  the codebase is laid out, or when /onboard, /discovery, /codelearn, or /init-toolkit
+  is invoked. Replaces the separate
   /codelearn skill — architecture discovery is part of onboarding here.
 metadata:
    brainstorm-toolkit-applies-to: claude copilot codex
@@ -16,7 +18,7 @@ metadata:
 This skill inspects the current repository and generates the config files that
 the rest of the toolkit reads. Run this **once per repo** after dropping the
 toolkit's skills and scripts in place. After it finishes, `/test-check`,
-`/test-check` and `/sdlc` should work with no further setup.
+`/repo-health` and `/sdlc` should work with no further setup.
 
 ## Output
 
@@ -62,6 +64,20 @@ In the main context window (no subagents), survey the repo structure:
 6. **Existing docs**:
    - `README.md`, `CLAUDE.md` → skim for existing commands and conventions
 
+7. **Sweep the whole repo, then account for every key.** The fingerprints above are the
+   common cases, not the contract. Walk the actual tree (honour `.gitignore`; skip
+   `.git/`, `node_modules/`, `venv/`, build output) and also read `Makefile` / `Justfile`
+   / `Taskfile.*` targets, `.github/workflows/*` (where the real test/lint/build commands
+   are usually written down), `.env.example`, `Procfile`, `pytest.ini` / `tox.ini` /
+   `setup.cfg`, `migrations/` / `alembic/` / `prisma/`, workspace globs, published ports.
+
+   Then **drive the proposal from the key registry, not from what you happened to
+   notice**: open `.claude/project.json.example` (in the plugin repo itself, the same file
+   lives under its templates dir) and put **every** key in one bucket — `detected` (evidence),
+   `not applicable` (with why), or `unknown` (ambiguous). That list is what makes the scan
+   exhaustive rather than best-effort, and it is the only way a key nobody thought to look
+   for gets noticed. Carry it into Step 2; report the `unknown` ones in Step 6.
+
 ### Step 2 — Propose the config
 
 Build a draft `project.json` from what you found. Fill in:
@@ -71,8 +87,8 @@ Build a draft `project.json` from what you found. Fill in:
 - `test.e2e` — if Playwright/Cypress/etc. was detected
 - `logs.command` — from detected orchestration (docker / kubectl / file tail)
 - `logs.services` — from compose services or k8s deployments
-- `stack.up` / `stack.down` / `stack.rebuild` — how to bring the runnable stack up and
-  down for **manual verification**; propose only from a detected orchestrator, never
+- `stack.up` / `stack.rebuild` — how to bring the runnable stack up for **manual
+  verification**; propose only from a detected orchestrator, never
   invent one (see the detection table). `rebuild` is the force-recreate variant used
   when a dependency manifest changed.
 - `stack.url` — the local URL to open once it is up, if a port is discoverable from
@@ -88,17 +104,10 @@ Build a draft `project.json` from what you found. Fill in:
   contributor who wants it, and neither implies consent for this checkout.
 - `modules` — inferred from top-level code directories (`src/`, `api/`, `web/`, `packages/*`, etc.)
 - `models.cap` — the standing **sub-agent model-tier ceiling** for every fan-out
-  skill (`/sdlc`, `/dead-code-review`, `/brainstorm-*`, …). A ceiling, not a swap:
-  tiers rank `haiku (1) < sonnet (2) < opus (3)` and `effective = min(default, cap)`
-  — the cap only ever *lowers*, so `cap: "sonnet"` runs Opus sites at Sonnet while
-  Haiku/Sonnet sites are untouched. Governs **sub-agent dispatch only**, never the
-  session orchestrator. Valid values: exactly `haiku`, `sonnet`, `opus`; absent =
-  no cap (skills still default Sonnet-first, but a written cap makes it enforced
-  policy). Full contract: `skills/sdlc/templates/models.md`. **Default the
-  proposal to `{ "cap": "sonnet" }`** — it's the right ceiling for almost every
-  repo (keeps quality on review/verify stages while cutting Opus cost); propose
-  `haiku` only if the user wants to squeeze the cheap mechanical sweeps, or omit
-  it only if they explicitly want uncapped Opus fan-out.
+  skill. Valid values: exactly `haiku`, `sonnet`, `opus`; absent = no cap. **Default
+  the proposal to `{ "cap": "sonnet" }`**; propose `haiku` only to squeeze the cheap
+  mechanical sweeps, omit only for an explicitly uncapped Opus fan-out. Contract (and
+  the ceiling-only semantics explained to the user in Step 3): `skills/sdlc/templates/models.md`.
 
 **When unsure, leave the key out.** A missing key causes skills to skip that step
 gracefully — that's better than a wrong command. (Exception: `models.cap` — prefer
@@ -106,9 +115,41 @@ proposing `sonnet` over omitting, per above.)
 
 ### Step 3 — Show the proposal, then walk the choices detection can't make
 
+**Interactive sessions only.** When there is nobody to answer — a headless `claude -p`
+run, a CI job, any non-interactive invocation — **do not ask and do not stop.** Take each
+row's documented default (`models.cap: "sonnet"`, review off, `coauthor_trailer: false`,
+`stack.*` as detected or omitted), then go straight to Steps 4–5 so the repo is actually
+onboarded, naming every assumed value in the Step 6 report so it is one edit to correct.
+
 First print the proposed `project.json` with a one-line rationale per detected key
 (`Detected Python + pytest → test.unit`; `docker-compose services [api, web] → logs.* + stack.*`;
 `no eval runner → eval.* left blank`; `main branch from origin HEAD`; …).
+
+**Then interview the repo's owner about the stack and the architecture — read first, ask
+second, and ask as many rounds as it takes.** Step 1 read the code; this is where you find
+out what the code cannot tell you. There is no question cap: keep going until you could
+write `AGENTS.md` without inventing anything. Ground every question in something you
+actually saw — "I see `api/` and `worker/` but no queue client; how does work reach the
+worker?" beats "describe your architecture", because the first proves you read the repo and
+gives them something concrete to correct. Cover at least:
+
+- **Stack beyond the manifests** — the datastore and why it, the cache, the queue, external
+  services and which are load-bearing, anything running in production that has no file in
+  this repo.
+- **Architecture and request flow** — entry point through to persistence, which modules own
+  which responsibility, where the seams are, what talks to what. Draw back what you inferred
+  from the scan and ask what is wrong; a correction is faster to give than a description.
+- **What is deliberately unusual** — every repo has a decision that reads as a mistake and
+  isn't. Ask for it directly; it is the highest-value thing you can put in `AGENTS.md`, and
+  it is invisible to a scan.
+- **Where the bodies are** — the flaky area, the module nobody touches, the migration that
+  must run in a certain order. These become `GOTCHAS.md` entries, not architecture prose.
+- **How work actually ships** — branch and review conventions, what must pass before merge,
+  what is enforced by CI versus by habit.
+
+Take the answers into Step 4 (`AGENTS.md`) and into `GOTCHAS.md`; anything that resolves a
+config key goes into the proposal above. Skip this interview entirely when non-interactive,
+per the rule at the top of this step.
 
 **Then ask these questions explicitly — do not bury them in "does this look right?".**
 Detection can't decide any of them, they are the main cost/quality/policy levers, and a user
@@ -121,8 +162,8 @@ first so "just accept" is one keystroke, and state the cost (or policy) directio
 | Ask | Key | Options (default first) |
 |---|---|---|
 | **Ceiling for every sub-agent fan-out — implementers, fix agents, sanity + review lenses.** The single biggest cost lever. | `models.cap` | `sonnet` (Sonnet-first standing default) · `haiku` (cheapest; fine for sweeps/monitoring) · `opus` (**no ceiling** — every stage runs at its own full default tier) · omit |
-| **Which model pre-flights your plan before any code is written** (Stage 1.5, never gated — it runs on *every* `/sdlc` run). Say plainly that the built-in is Haiku and that **`models.cap` cannot raise it** — this key is the only lever. | `models.sanity` / `.focuses` | omit → 3 Haiku agents (`paths`, `completeness`, `gotchas`) · `sonnet` (better judgment on `completeness`, which asks whether the plan hangs together) · fewer focuses to cut cost (`paths` is mechanical; drop `gotchas` when there's no `GOTCHAS.md`) |
-| **Enable the adversarial Review→Fix stage?** Off unless you say yes — it never runs by accident. | `pipeline.review_fix.enabled` / `.model` | `false` (default) · `true` + reviewer `opus` · `true` + reviewer `fable` (usage-billed, explicit opt-in) |
+| **Which model pre-flights your plan before any code is written** (Stage 1.5, never gated — it runs on *every* `/sdlc` run). Say plainly that the built-in is Haiku and that **`models.cap` cannot raise it** — this key is the only lever. | `models.sanity` / `agents.sanity_focuses` | omit → 3 Haiku agents (`paths`, `completeness`, `gotchas`) · `sonnet` (better judgment on `completeness`, which asks whether the plan hangs together) · fewer focuses to cut cost (`paths` is mechanical; drop `gotchas` when there's no `GOTCHAS.md`) |
+| **Enable the adversarial Review→Fix stage?** Off unless you say yes — it never runs by accident. | `pipeline.review_fix.enabled` / `models.code_review` | `false` (default) · `true` + reviewer `opus` · `true` + reviewer `fable` (usage-billed, explicit opt-in) |
 | **How many review lenses?** Ask only if the stage was just enabled. One reviewer call per lens at the reviewer model, so this scales the stage's cost roughly linearly. | `agents.code_review_lenses` | omit → all four (`correctness`, `plan-alignment`, `config-env-docs`, `security`) · `["correctness", "security"]` (half cost; good default for app code) · `["correctness"]` (quarter cost; highest-yield single lens) |
 | **How do you bring this app up for manual verification?** Confirm or correct what was detected. | `stack.up` / `stack.rebuild` / `stack.url` | the detected compose/dev commands · corrected by the user · omit (skills then say which key is missing instead of guessing) |
 | **Should commit messages this toolkit writes or suggests credit Claude as a co-author?** Not a cost lever — a disclosure choice, so it is off unless the user says yes. Mention that it also lands in any PR body a future step authors, and that some DCO / commit-lint setups reject unrecognized trailers. | `coauthor_trailer` | `false` (default — no trailer) · `true` (append `Co-Authored-By: Claude <noreply@anthropic.com>`) |
@@ -146,7 +187,9 @@ Keep each section terse. AGENTS.md is read by every agent, every session — bre
 
 ### Step 5 — Write the files
 
-After the user confirms (or adjusts):
+After the user confirms or adjusts — or immediately, with the recorded defaults, when
+Step 3 was skipped as non-interactive. **This step always runs.** Reaching Step 5 and
+writing nothing is a failed onboarding, not a cautious one:
 
 1. Write `.claude/project.json` (create `.claude/` if missing).
 2. Write `AGENTS.md` at repo root. If `CLAUDE.md` is also missing, symlink it to `AGENTS.md` on POSIX, else copy.
@@ -167,27 +210,9 @@ After the user confirms (or adjusts):
    plans/
    ```
 
-   Why each:
-   - `.claude/pipeline/` — per-run `/sdlc` envelopes; one dir per
-     run, pure churn if tracked.
-   - `.claude/.next-action` / `.auto-continue-hops` — the seam's scratch files.
-   - `.claude/project.json` — **machine-specific.** It holds test commands, paths
-     and runner invocations that differ per checkout. The committed template is
-     `.claude/project.json.example`; a fresh clone copies it and edits locally.
-   - `TASKS.md` — a personal work queue, rewritten constantly.
-   - `plans/` — personal planning artifacts.
-
-   **Ignoring these does not break the cross-tool contract.** Copilot and Codex
-   read these files off disk in the working copy; `.gitignore` governs what gets
-   *shared*, not what gets *read*. The contract is per-checkout, and it still holds.
-
    **Keep tracked:** `.claude/project.json.example` (the bootstrap template),
    `.claude/settings.json` (hook wiring the team does share), `AGENTS.md`,
    `GOTCHAS.md`, and any committed agent/skill definitions.
-
-   Note the knock-on: with `project.json` ignored, a fresh clone has the example
-   but not the real file, so `/repo-health` Check 9 will flag "config inert" until
-   someone copies it. That is the intended nudge, not a false positive.
 
 ### Step 5.5 — Offer secret-blocking PreToolUse hook (Claude only)
 
@@ -230,6 +255,11 @@ Report what was written and suggest next steps:
   but no actual tests pass, still propose the pytest command but flag it.
 - **Do not generate evals.** That's the pipeline's Stage 3. This skill
   only sets up the config needed for evals to work if the user chooses to use them.
+- **Do not stop at a proposal.** Scanning, printing a config and not writing it is this
+  skill's most likely failure, because the analysis *looks* like the deliverable. It
+  isn't — on a from-scratch repo the written files are. With nobody to confirm, assume
+  the defaults and write (Step 3). The one exception stays the first rule above: an
+  **existing** `project.json` still needs explicit confirmation to overwrite.
 
 ## Detection heuristics reference
 
@@ -238,13 +268,10 @@ Report what was written and suggest next steps:
 | `package.json` with `"test"` script | `test.unit` or `test.frontend` = `npm test` (or pnpm/yarn equivalent) |
 | `pyproject.toml` with `[tool.pytest]` | `test.unit` = `pytest` |
 | `playwright.config.*` at root | `test.e2e` = `npx playwright test` |
-| `docker-compose.yml` | `logs.command` = `docker compose logs {service} --tail={tail}`, `logs.services` from compose services; `stack.up` = `docker compose up -d --build`, `stack.down` = `docker compose down`, `stack.rebuild` = `docker compose up -d --build --force-recreate`; `stack.url` from the first published host port |
+| `docker-compose.yml` | `logs.command` = `docker compose logs {service} --tail={tail}`, `logs.services` from compose services; `stack.up` = `docker compose up -d --build`, `stack.rebuild` = `docker compose up -d --build --force-recreate`; `stack.url` from the first published host port |
 | Kubernetes manifests | `logs.command` = `kubectl logs deploy/{service} --tail={tail}`; leave `stack.*` unset — a cluster is not a local up/down |
 | `package.json` with a `dev`/`start` script and no compose file | `stack.up` = that script (`npm run dev`); no `stack.rebuild` unless a build step is separate |
 | `go.mod` | `test.unit` = `go test ./...` |
 | `Cargo.toml` | `test.unit` = `cargo test` |
 | Top-level dirs like `api/`, `web/`, `worker/` | `modules` list |
 | `.git/HEAD` or `origin` default | `main_branch` |
-| Always (standing policy) | `models.cap` = `"sonnet"` — Sonnet-first ceiling for sub-agent fan-out; propose `haiku` to squeeze cheap sweeps, omit for uncapped Opus |
-| Never detectable — always **ask** (Step 3) | `coauthor_trailer` — default `false`; existing `Co-Authored-By` lines in `git log` are **not** evidence of consent for this checkout |
-| Repo uses this toolkit | gitignore the local working state: `.claude/pipeline/`, `.claude/.next-action`, `.claude/.auto-continue-hops`, `.claude/project.json`, `TASKS.md`, `plans/`. Keep `.claude/project.json.example` tracked as the bootstrap template |

@@ -45,11 +45,6 @@ Instead, when the testable functions live in the app package:
 2. Create smoke tests — does the script/endpoint return a valid response?
 3. If no tests are possible, note "eval generation skipped — no testable surface" and proceed
 
-### Key principle:
-
-Evals must be created BEFORE running them. This is test-driven: define what
-"correct" looks like first, then verify the implementation matches.
-
 **State write**: write `stage-outputs/generate-evals.json` with
 `data.evals_created[]` and `data.skipped_reason` (or `null`). Status is
 `pass` even when evals are skipped (no testable surface) — record the

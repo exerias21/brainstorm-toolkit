@@ -42,6 +42,7 @@ flowchart TD
       S4 --> S5["5 · Validate (/test-check: logs · unit · e2e)"] --> S55["5.5 · Plan-validate"]
       S55 --> S56["5.6 · Flowsim (plan⇄code narrative trace)"]
       S56 -. "planned — see REVIEW-FIX-STAGE.md" .-> S57["5.7 Review + 5.8 Fix (independent reviewer, opt-in)"]
+      S57 -.->|"opt-in"| S59["5.9 · Cleanup pass (over-engineering + docstring-currency, opt-in)"]
     end
 
     PIPE --> HO["Stage 6 hand-off: validated working tree — you commit (no git writes)"]

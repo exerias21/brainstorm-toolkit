@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "Cross-tool (Claude Code + GitHub Copilot) skills for brainstorming, SDLC, eval-driven development, and repo onboarding.",
-    "version": "0.2.0"
+    "version": "0.7.0"
   },
   "plugins": [
     {
@@ -16,7 +16,7 @@
       "agents": [
         "./agents/e2e-test-runner.md",
         "./agents/test-runner.md",
-        "./agents/ux-plan-validator.md"
+        "./agents/plan-conformance-validator.md"
       ],
       "skills": [
         "./skills/brainstorm",

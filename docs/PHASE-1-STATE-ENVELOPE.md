@@ -602,3 +602,70 @@ If `mkdir -p`, `chmod`, or any state-write fails (disk full, read-only volume, p
   persistent reports; `.claude/pipeline/` is ephemeral local state only.
 
 Neither shipped, so both were dropped from the runtime file.
+
+---
+
+## Appendix — more prose moved out of stage templates (2026-09)
+
+A later trim pass cut further design-history prose from `skills/sdlc/templates/*.md` files
+that load on every `/sdlc` run (some, unconditionally). Same reasoning as the appendix above:
+the runtime contract stays in the shipped file, the history of *why it looks like this* moves
+here, verbatim.
+
+### `envelope-staleness.md` — why the scan lives in one file
+
+> It lives in one file because it was written out five times and had already drifted:
+> `/sdlc`'s main-branch false-positive fix never reached `/sdlc-status`. Five copies of a rule
+> with one copy fixed is worse than no rule.
+
+And, on the main-branch skip guard specifically (originally the second sentence of the
+"False-positive guards — the part that drifted" section heading and body):
+
+> This is the fix that existed in `/sdlc` and nowhere else.
+
+### `stage-5-validate.md` — merging the former Stages 5, 5.5, 5.6
+
+> This replaces the former Stages 5, 5.5 and 5.6. They asked the same question three ways —
+> "do the tests pass", "does the code fulfill the plan" (four checklist agents), "does the flow
+> match the plan" (a narrative trace) — each with its own dispatch, sidecar, gate and pause, and
+> each paying its own round of orchestrator chatter. A current model does not need the
+> plan-vs-diff check partitioned into api/ui/data/cross-module lanes to do it well.
+
+On why an unwitnessed flow finding is advisory rather than gating:
+
+> The reason is cost, not squeamishness. Unwitnessed, the flow trace is grep plus inference over
+> a diff, with no runtime evidence to falsify it — and a MISMATCH it invents does not cost one
+> agent call, it costs up to three fix-agent dispatches plus three full re-runs of this gate.
+> Note the asymmetry it corrects: Stage 5.7's reviewer is opt-in and still gets an
+> evidence-required verify pass *and* a false-positive circuit breaker; this axis is always-on
+> and has neither, yet it could open the same loop. Advisory-when-unwitnessed is the cheapest
+> way to close that gap without losing the signal.
+
+And the sidecar retirement this merge completed:
+
+> Axis (b) **is** the flowsim step of the pipeline — it still runs as a stage of the process, it
+> just no longer writes its own sidecar (its results live in `validate.json`'s `data.flow[]`).
+> For a deeper interactive trace, `/flowsim` remains available as a standalone skill; this is
+> its inline, bounded form.
+>
+> [...]
+>
+> The former `plan-validate.json` and `flowsim-<slug>.json` sidecars are gone.
+
+### Not relocated (dropped as noise, not history)
+
+Two removed items from this same trim pass are not filed here because they carry no fact worth
+keeping:
+
+- `state-schema.md`'s internal plan-ID parentheticals — `(L8 — the pending handoff, durable)`,
+  `(DQ5)`, `(L10)`, `(dogfood-hardened)` — are dangling references to maintainer planning
+  documents, not design facts; a reader here couldn't resolve them either.
+- `state-schema.md`'s `next_action` "program counter" metaphor ("the loop's 'program counter'
+  survives in a file, not just chat context") restates the sentence immediately before it
+  without adding a new fact.
+- `models.md`'s cut prose (the `code_review: "sonnet"` unreachability reasoning, and the
+  "in a clean break" / `/repo-onboarding` and `/repo-health` migration-handling sentence) needed
+  no relocation: `docs/MODEL-AXES.md` already states both, in more detail, under "Independence:
+  why the reviewer is never re-tiered" and "Migration from the old keys" respectively.
+- `fix-loop.md`'s trim ("Stage 5.7/5.8 has its own separate budget" deduplicated from three
+  occurrences to one) is a duplication cut, not a history cut — nothing to file.
