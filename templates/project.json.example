@@ -29,8 +29,8 @@
 
   "eval": {
     "_comment": "Used by /test-check step 6 and /sdlc Stage 3.",
-    "_runner_options": "Two patterns: (1) consumer-resident (setup.sh copied scripts/ into this repo) — use 'python3 scripts/eval-runner.py'; (2) plugin-resident (setup.sh ran with --no-copy-scripts) — use 'python3 /absolute/path/to/brainstorm-toolkit/scripts/eval-runner.py'. Plugin-resident keeps shared infra in one place and benefits from plugin updates without re-running setup.",
-    "runner": "python3 scripts/eval-runner.py",
+    "_runner_options": "Two patterns: (1) consumer-resident (setup.sh copied scripts/ into this repo) — use 'bash scripts/py.sh scripts/eval-runner.py'; (2) plugin-resident (setup.sh ran with --no-copy-scripts) — use 'bash /absolute/path/to/brainstorm-toolkit/scripts/py.sh /absolute/path/to/brainstorm-toolkit/scripts/eval-runner.py'. Plugin-resident keeps shared infra in one place and benefits from plugin updates without re-running setup.",
+    "runner": "bash scripts/py.sh scripts/eval-runner.py",
     "features_dir": "evals/",
     "_thresholds_comment": "Optional. Without this block, eval-runner uses binary pass/fail (any failure = FAIL). min_pass_rate is the only enforced threshold; 0.98 is the ratchet target for prod-bound repos.",
     "thresholds": {
@@ -40,6 +40,9 @@
       }
     }
   },
+
+  "_python_comment": "Optional. The Python interpreter THIS machine actually has, used by scripts/py.sh, which every shipped command routes through. Set it to whatever is true for your OS — 'python3' on most Linux/macOS, 'python' or an absolute path like 'C:\\\\Python311\\\\python.exe' on Windows. WHY THIS KEY EXISTS: there is no portable token. On Windows 'python3' is usually a Microsoft Store STUB that resolves on PATH, prints 'Python was not found', opens the Store and exits non-zero — so a command hardcoding it is broken there; 'python' is absent on stock macOS and on Debian/Ubuntu without python-is-python3, so hardcoding that is broken elsewhere. Omit this key and py.sh probes python3 → python → py, taking the first that actually RUNS (not merely resolves — the stub passes a PATH check and then fails). A configured value that does not run is reported and falls back to the probe, so a stale entry cannot brick every skill. $BRAINSTORM_PYTHON overrides this.",
+  "python": "python3",
 
   "gotchas_file": "GOTCHAS.md",
   "main_branch": "main",

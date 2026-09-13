@@ -1,5 +1,13 @@
 ## Brainstorm Result: Windows portability — stop the bleeding, then stop the recurrence
 
+> **STATUS 2026-09-13 — steps 1, 4, 6, 7 landed directly (commit below), not via `/sdlc`.**
+> The two shipping bugs are fixed: `hooks/hooks.json` now prefixes `bash` and quotes the
+> path, and all 14 bare `python3` sites route through the new `scripts/py.sh` resolver,
+> backed by a new optional `.claude/project.json` `python` key so each machine can name
+> its own interpreter. `GOTCHAS.md` has the entry. **Remaining for `/sdlc`: steps 2, 3, 5,
+> 8, 9, 10** — the two verifications that need a real plugin reinstall, the
+> `portable-invocation` contract check, and the three backlog-hygiene items.
+
 ### Direction
 
 Two shipping bugs make this toolkit partly non-functional on Windows, and both were found by

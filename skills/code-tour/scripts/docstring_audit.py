@@ -29,14 +29,14 @@ Exit codes make it CI-usable:
      never silently skipped as "no symbols found")
 
 Usage:
-    python3 docstring_audit.py [PATH] [--min 100] [--json] [--quiet]
+    bash scripts/py.sh docstring_audit.py [PATH] [--min 100] [--json] [--quiet]
                                [--exclude PATTERN ...] [--include-private]
                                [--include-tests]
 
 Examples:
-    python3 docstring_audit.py backend/
-    python3 docstring_audit.py . --min 90 --exclude '*/migrations/*'
-    python3 docstring_audit.py src/ --json > coverage.json
+    bash scripts/py.sh docstring_audit.py backend/
+    bash scripts/py.sh docstring_audit.py . --min 90 --exclude '*/migrations/*'
+    bash scripts/py.sh docstring_audit.py src/ --json > coverage.json
 """
 from __future__ import annotations
 

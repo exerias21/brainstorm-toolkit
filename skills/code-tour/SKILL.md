@@ -56,9 +56,9 @@ Run the bundled audit to find the real gap:
 
 ```bash
 # the script ships inside this skill's directory (e.g. .claude/skills/code-tour/scripts/)
-python3 <skill-dir>/scripts/docstring_audit.py <path>              # per-file gaps + coverage
-python3 <skill-dir>/scripts/docstring_audit.py <path> --json       # machine-readable
-python3 <skill-dir>/scripts/docstring_audit.py <path> --include-tests
+bash scripts/py.sh <skill-dir>/scripts/docstring_audit.py <path>              # per-file gaps + coverage
+bash scripts/py.sh <skill-dir>/scripts/docstring_audit.py <path> --json       # machine-readable
+bash scripts/py.sh <skill-dir>/scripts/docstring_audit.py <path> --include-tests
 ```
 
 It parses with `ast` (never imports the code) and exits non-zero below `--min`,

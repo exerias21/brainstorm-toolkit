@@ -7,19 +7,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hooks/next-action.sh",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/next-action.sh\"",
             "args": [],
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hooks/run-cost-report.sh",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/run-cost-report.sh\"",
             "args": [],
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hooks/stop-gate.sh",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/stop-gate.sh\"",
             "args": [],
             "timeout": 310
           }
@@ -32,7 +32,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hooks/reseed-context.sh",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/reseed-context.sh\"",
             "args": [],
             "timeout": 10
           }
@@ -45,7 +45,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hooks/enforce-model-cap.sh",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/enforce-model-cap.sh\"",
             "args": [],
             "timeout": 10
           }

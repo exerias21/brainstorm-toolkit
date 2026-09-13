@@ -149,7 +149,7 @@ class Finding(NamedTuple):
 CONFIG_KEY_TOPLEVEL = [
     "models", "agents", "pipeline", "test", "logs", "stack", "eval",
     "discipline", "migrations", "gotchas_file", "main_branch",
-    "coauthor_trailer", "modules",
+    "coauthor_trailer", "modules", "python",
 ]
 _ROOT_ALT = "|".join(sorted(CONFIG_KEY_TOPLEVEL, key=len, reverse=True))
 _SEGMENT = r"(?:\.[A-Za-z0-9_]+|\.\*[A-Za-z0-9_]*|\.<[^>`]+>)"

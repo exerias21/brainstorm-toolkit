@@ -58,7 +58,7 @@ You do NOT embed repo-specific patterns in your own behavior — you read them f
 Same as `/test-check` Step 1. Reuse `scripts/check_docker_logs.py`:
 
 ```bash
-python3 scripts/check_docker_logs.py --output json \
+bash scripts/py.sh scripts/check_docker_logs.py --output json \
   --log-command "<logs.command>" --services <logs.services>
 ```
 

@@ -224,7 +224,7 @@ jobs:
 **Using this skill's own auditor in CI** (no dependency to install):
 
 ```yaml
-      - run: python3 .claude/skills/code-tour/scripts/docstring_audit.py src/ --min 90
+      - run: bash scripts/py.sh .claude/skills/code-tour/scripts/docstring_audit.py src/ --min 90
 ```
 
 It exits 1 below the threshold and 2 on a parse error, so both fail the build —

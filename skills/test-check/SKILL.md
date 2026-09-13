@@ -54,7 +54,7 @@ projects opt in to whichever layers apply.
     "services": [...]     // optional list of service names
   },
   "eval": {
-    "runner": "...",      // e.g. "python3 scripts/eval-runner.py"
+    "runner": "...",      // e.g. "bash scripts/py.sh scripts/eval-runner.py"
     "features_dir": "..." // where per-feature fixtures/expected live
   }
 }
@@ -67,7 +67,7 @@ projects opt in to whichever layers apply.
 Run the log-audit script, which parses logs via the configured command:
 
 ```bash
-python3 scripts/check_docker_logs.py --output json \
+bash scripts/py.sh scripts/check_docker_logs.py --output json \
   --log-command "<logs.command>" \
   --services <logs.services>
 ```

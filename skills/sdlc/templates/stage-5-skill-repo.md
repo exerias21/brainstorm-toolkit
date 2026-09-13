@@ -15,7 +15,7 @@ and proceeds (with warnings logged) on SOFT checks.
 ### 1. Skill validator passes
 
 ```bash
-python3 scripts/validate_skills.py
+bash scripts/py.sh scripts/validate_skills.py
 ```
 
 Must exit 0 and report all skills validated. A failure here means a skill's
