@@ -34,10 +34,17 @@ command string.
 - **Append, never overwrite** (`>>`, not `>`) — so independent sources coexist instead of
   racing for one slot (the old "only if absent — outermost run wins" rule is gone; the gotcha
   seam and a pipeline handoff now both land).
-- **Dedup by `cmd`** — append only if that exact line isn't already present:
+- **Dedup by `cmd`** — the command is the action; `source` is provenance, not identity. Append
+  only if no existing line's `cmd` field already matches — matching on the exact line (including
+  `source`) is the bug this replaced: two writers proposing the same command with different
+  `source` values both appended, since the lines differed by `source` alone.
   ```sh
-  line='{"cmd":"/sdlc plans/foo.md","source":"brainstorm","confirm":false}'
-  grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action
+  cmd='/sdlc plans/foo.md'
+  # -F (fixed string) so a cmd containing regex metacharacters (a plan path's
+  # `.md`, say) can never be misread as a pattern; -e twice covers both
+  # `"cmd":"x"` and `"cmd": "x"` spacings without needing to escape anything.
+  grep -qF -e "\"cmd\":\"$cmd\"" -e "\"cmd\": \"$cmd\"" .claude/.next-action 2>/dev/null \
+    || echo "{\"cmd\":\"$cmd\",\"source\":\"brainstorm\",\"confirm\":false}" >> .claude/.next-action
   ```
 - **Set `confirm:true`** for any command that writes git history or is otherwise hard to
   reverse. Default `false`. No toolkit skill writes git history unprompted — `/sdlc` stops at
@@ -68,6 +75,16 @@ grep -rlqs 'next-action' .claude/settings.json ~/.claude/settings.json .github/h
 - **Every other reader must PEEK** — read without deleting. `/sdlc-status` inspects the
   pending action to fold it into its output; if it consumed the line, the hook would have
   nothing to surface at the next Stop. A second consumer eats the hint before the user sees it.
+- **The reader also dedups by `cmd`**, on top of the writer-side check above — a defense against
+  a duplicate that slipped past a writer that skipped (or mis-implemented) its own dedup. It also
+  drops any entry whose plan/target file no longer exists (a stale pointer left over from a run
+  that already finished or was abandoned some other way), before printing or counting anything.
+- **A parked seam announces itself.** If, after dedup and staleness-dropping, more than one
+  distinct action is still pending, the hook prints `⚠ N actions pending — seam parked` alongside
+  the individual `Next: <cmd>` lines. Before this, duplicates could accumulate silently (the file
+  reached 5 pending lines in one observed run) and the loop-closing mechanism went dead with
+  nothing to show for it — a parked hook looked identical to a hook with nothing to say. The
+  warning is what makes that state visible instead of silent.
 
 ## Single-blocker contract
 
@@ -125,8 +142,9 @@ Guardrails (all enforced in `next-action.sh`, all non-negotiable):
 1. **Opt-in** — unset knob ⇒ unchanged print behavior. Nothing auto-runs by default.
 2. **Never a `confirm:true` action** — anything hard to reverse (a git write, a deploy) always
    parks to a printed hint. This is why every writer must set `confirm` honestly.
-3. **Single action only** — if more than one line is pending, the hook parks (prints). It
-   never guesses which of several to execute.
+3. **Single action only** — if more than one *distinct* action (post-dedup) is pending, the hook
+   parks (prints, with the `⚠ N actions pending — seam parked` depth warning above). It never
+   guesses which of several to execute.
 4. **Hop budget** — `pipeline.loop.max_hops` (default 5), tracked in
    `.claude/.auto-continue-hops`, decremented per hop; at 0 the loop parks. Bounds a runaway
    `brainstorm → pipeline → gotcha → …` chain exactly like the 3-iteration fix budget bounds a

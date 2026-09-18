@@ -25,16 +25,34 @@ from pathlib import Path
 #   `templates/<file>`                  -- skill-relative
 #   `skills/<skill>/templates/<file>`   -- cross-skill (the shared sdlc templates)
 # Also matches the per-tool rewritten forms setup.sh produces (.claude/, .github/, .agents/).
+#
+# The tool prefix is its OWN capture group (group 1), not folded away, because a rewritten
+# citation asserts a specific repo-root-relative path -- e.g. `.claude/templates/x.template`
+# means "resolve at target/.claude/templates/x.template", nothing else. Stripping the prefix
+# out of the match (as a prior version of this script did by leaving it outside any group)
+# let `resolve()` silently re-derive the base from the skill dir instead, so a citation
+# setup.sh rewrote to a now-nonexistent root-prefixed path could still resolve against the
+# skill-local templates/ dir it used to (correctly) point at -- the exact shape of the
+# `skills/plan-html/SKILL.md` `plan.html.template` mangle this script exists to catch.
 REF_RE = re.compile(
-    r"`(?:\.(?:claude|github|agents)/)?((?:skills/[A-Za-z0-9._-]+/)?templates/[A-Za-z0-9_./-]+)`"
+    r"`((?:\.(?:claude|github|agents)/)?)((?:skills/[A-Za-z0-9._-]+/)?templates/[A-Za-z0-9_./-]+)`"
 )
 
 # Where each tool's skills land, in the order we try to resolve against.
 TOOL_ROOTS = [".claude", ".github", ".agents"]
 
 
-def resolve(target: Path, skill_dir: Path, ref: str) -> bool:
-    """True if `ref` resolves from any plausible base in the installed tree."""
+def resolve(target: Path, skill_dir: Path, prefix: str, ref: str) -> bool:
+    """True if `ref` resolves from a plausible base in the installed tree.
+
+    A citation carrying a tool prefix (`.claude/`, `.github/`, `.agents/`) is an explicit
+    repo-root-relative claim -- it must resolve at exactly `target/prefix/ref`. It is NOT
+    allowed to fall back to the skill-local or sibling-skill bases below: those bases are
+    what an UNPREFIXED citation resolves against, and honoring them for a prefixed one is
+    what let a broken rewrite pass silently before.
+    """
+    if prefix:
+        return (target / prefix / ref).is_file()
     candidates = [
         skill_dir / ref,                    # skill-relative: <skill>/templates/x.md
         skill_dir.parent / ref,             # sibling skill:  skills/<other>/templates/x.md
@@ -65,10 +83,10 @@ def main() -> int:
     checked = 0
     for sf in skill_files:
         body = sf.read_text(encoding="utf-8", errors="replace")
-        for ref in sorted(set(REF_RE.findall(body))):
+        for prefix, ref in sorted(set(REF_RE.findall(body))):
             checked += 1
-            if not resolve(target, sf.parent, ref):
-                dangling.append((sf.relative_to(target).as_posix(), ref))
+            if not resolve(target, sf.parent, prefix, ref):
+                dangling.append((sf.relative_to(target).as_posix(), prefix + ref))
 
     print(f"checked {checked} template citation(s) across {len(skill_files)} installed skill(s)")
     if dangling:

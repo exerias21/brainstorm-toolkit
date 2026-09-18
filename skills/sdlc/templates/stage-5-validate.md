@@ -93,3 +93,8 @@ plan.
 **Writes** `stage-outputs/validate.json` with `data.layers{logs,frontend,backend,e2e,eval}`,
 `data.new_failures[]`, `data.preexisting_failures[]`, `data.requirements[]`, `data.flow[]`,
 `data.flow_witnessed`. `/sdlc-status` and `/repo-health` read `validate.json` for all of it.
+
+**On green**, also advance `run.json`: set `stage` to the next enabled stage (`review` when
+Stage 5.7 is on, otherwise the next stage in `state-schema.md`'s pipeline order), append
+`validate` to `stages_completed`, and refresh `updated_at` — a stale envelope here is what sends
+a `--resume` back to Stage 1 instead of past a validate that already passed.

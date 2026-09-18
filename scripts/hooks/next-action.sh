@@ -54,6 +54,26 @@ elif _gr="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -n "$_gr" ]; then
 fi
 NEXT_ACTION_FILE="$PROJ/.claude/.next-action"
 
+# Resolve a working Python by matching scripts/py.sh's full contract, not
+# merely "on PATH" (a Windows Store `python3` stub satisfies `command -v`
+# and then exits non-zero) -- this script calls python3 at three separate
+# sites below, so it needs the resolved value, not py.sh's one-shot `exec`
+# tail. Order: $BRAINSTORM_PYTHON -> .claude/project.json `python` -> probe
+# python3/python/py, each proven to RUN. One resolver's contract, matched
+# here rather than sourced, per scripts/py.sh's own header.
+PY="${BRAINSTORM_PYTHON:-}"
+if [ -n "$PY" ] && ! "$PY" -c 'pass' >/dev/null 2>&1; then PY=""; fi
+if [ -z "$PY" ] && [ -f "$PROJ/.claude/project.json" ]; then
+  PY="$(sed -n 's/.*"python"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+        "$PROJ/.claude/project.json" 2>/dev/null | head -n 1)"
+  if [ -n "$PY" ] && ! "$PY" -c 'pass' >/dev/null 2>&1; then PY=""; fi
+fi
+if [ -z "$PY" ]; then
+  for c in python3 python py; do
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c 'pass' >/dev/null 2>&1; then PY="$c"; break; fi
+  done
+fi
+
 # Collect messages. Two kinds, by design:
 #   - TRANSIENT hint: the .next-action sentinel — fires once, then deleted.
 #   - CONDITION-DERIVED warning: recomputed from live state every Stop and
@@ -71,7 +91,7 @@ msgs=()
 sentinel_cmds=()      # raw cmds, for the auto-continue decision (L9)
 sentinel_confirm=()   # 0/1 per cmd, parallel to sentinel_cmds
 if [ -s "$NEXT_ACTION_FILE" ]; then
-  if command -v python3 >/dev/null 2>&1; then
+  if [ -n "$PY" ]; then
     while IFS="$(printf '\t')" read -r cflag cmd; do
       [ -n "$cmd" ] || continue
       sentinel_cmds+=("$cmd"); sentinel_confirm+=("$cflag")
@@ -80,8 +100,10 @@ if [ -s "$NEXT_ACTION_FILE" ]; then
       else
         msgs+=("Next: $cmd")
       fi
-    done < <(python3 -c '
-import json, sys
+    done < <("$PY" -c '
+import json, os, sys
+proj = sys.argv[1] if len(sys.argv) > 1 else "."
+seen = set()
 for raw in sys.stdin:
     s = raw.strip()
     if not s:
@@ -91,14 +113,39 @@ for raw in sys.stdin:
         if not isinstance(obj, dict):
             raise ValueError
         cmd = str(obj.get("cmd", "")).strip()
-        if not cmd:
-            continue
-        print(("1" if obj.get("confirm") else "0") + "\t" + cmd)
+        confirm = "1" if obj.get("confirm") else "0"
     except (ValueError, TypeError):
-        print("0\t" + s)  # not JSON -> legacy bare command (never confirm)
-' < "$NEXT_ACTION_FILE")
+        cmd = s  # not JSON -> legacy bare command (never confirm)
+        confirm = "0"
+    if not cmd:
+        continue
+    if cmd in seen:
+        continue  # dedup by cmd (SEAM.md: dedup key is cmd, not the raw line)
+    # Drop an entry whose plan/target file no longer exists (or was already
+    # delivered) -- a stale pointer left over from a finished/abandoned run.
+    dropped = False
+    for tok in cmd.split():
+        if "/" in tok and (tok.endswith(".md") or tok.endswith(".json")):
+            path = tok if os.path.isabs(tok) else os.path.join(proj, tok)
+            if not os.path.exists(path):
+                dropped = True
+                break
+    if dropped:
+        continue
+    seen.add(cmd)
+    print(confirm + "\t" + cmd)
+' "$PROJ" < "$NEXT_ACTION_FILE")
+    # Only the branch that actually parsed the file may consume it -- on an
+    # interpreter that resolves but fails to run, NEXT_ACTION_FILE must
+    # survive so the sentinel is not silently eaten with zero output.
+    rm -f "$NEXT_ACTION_FILE"
   fi
-  rm -f "$NEXT_ACTION_FILE"
+  # A parked seam (more than one distinct pending action) must announce
+  # itself -- a parked hook otherwise looks identical to a hook with
+  # nothing to say (docs/SEAM.md).
+  if [ "${#sentinel_cmds[@]}" -gt 1 ]; then
+    msgs+=("⚠ ${#sentinel_cmds[@]} actions pending — seam parked")
+  fi
 fi
 
 # 2. Condition-derived: a pipeline run left in_progress/paused with a stale
@@ -162,14 +209,14 @@ if { [ -n "${CLAUDE_PROJECT_DIR:-}" ] || [ -n "${CODEX_HOME:-}" ]; } \
    && grep -Eq '"auto_continue"[[:space:]]*:[[:space:]]*true' "$PROJECT_JSON" 2>/dev/null \
    && [ "${#sentinel_cmds[@]}" -eq 1 ] \
    && [ "${sentinel_confirm[0]:-1}" = "0" ] \
-   && command -v python3 >/dev/null 2>&1; then
+   && [ -n "$PY" ]; then
   max_hops="$(grep -Eo '"max_hops"[[:space:]]*:[[:space:]]*[0-9]+' "$PROJECT_JSON" 2>/dev/null | grep -Eo '[0-9]+' | head -1)"
   [ -n "$max_hops" ] || max_hops=5
   if [ -s "$HOPS_FILE" ]; then remaining="$(cat "$HOPS_FILE" 2>/dev/null)"; else remaining="$max_hops"; fi
   case "$remaining" in ''|*[!0-9]*) remaining="$max_hops";; esac
   if [ "$remaining" -gt 0 ]; then
     printf '%s' "$((remaining - 1))" > "$HOPS_FILE"
-    python3 -c 'import json,sys; print(json.dumps({"decision":"block","reason":"Continue with: "+sys.argv[1]}))' "${sentinel_cmds[0]}"
+    "$PY" -c 'import json,sys; print(json.dumps({"decision":"block","reason":"Continue with: "+sys.argv[1]}))' "${sentinel_cmds[0]}"
     exit 0
   fi
   # Budget exhausted -> park (print) and reset the chain.
@@ -180,10 +227,11 @@ rm -f "$HOPS_FILE" 2>/dev/null || true
 
 [ ${#msgs[@]} -gt 0 ] || exit 0
 
-# Emit JSON with systemMessage (newline-joined). python3 handles escaping;
-# if it's absent, stay silent rather than risk invalid JSON. Never blocks.
-if command -v python3 >/dev/null 2>&1; then
-  python3 -c '
+# Emit JSON with systemMessage (newline-joined). $PY handles escaping; if no
+# working interpreter was resolved, stay silent rather than risk invalid
+# JSON. Never blocks.
+if [ -n "$PY" ]; then
+  "$PY" -c '
 import json, sys
 print(json.dumps({"systemMessage": "\n".join(sys.argv[1:])}))
 ' "${msgs[@]}"

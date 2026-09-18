@@ -131,8 +131,13 @@ if [ -f .claude/project.json ]; then
   [ "$enabled" = "off" ] && exit 0
 fi
 
-# Report only for a run that JUST reached a terminal state, and only once per run.
-envelope=""; slug=""
+# Report only for a run that JUST reached a terminal state, and only once per
+# run. Multiple terminal, unreported envelopes can coexist (a concurrent
+# /task and /sdlc run, say), so pick the one that finished MOST RECENTLY --
+# track max `updated_at` (ISO-8601 sorts lexically) and assign only on a
+# beat, rather than reassigning unconditionally on every match, which made
+# the alphabetically-last glob entry win regardless of recency.
+envelope=""; slug=""; best_updated=""
 for f in .claude/pipeline/*/run.json; do
   [ -f "$f" ] || continue
   st="$(jget "$f" '.status')"
@@ -140,7 +145,10 @@ for f in .claude/pipeline/*/run.json; do
     complete|completed|failed|paused)
       d="$(dirname "$f")"
       [ -f "$d/.cost-reported" ] && continue
-      envelope="$f"; slug="$(basename "$d")"
+      upd="$(jget "$f" '.updated_at')"
+      if [ -z "$envelope" ] || [ "$upd" \> "$best_updated" ]; then
+        envelope="$f"; slug="$(basename "$d")"; best_updated="$upd"
+      fi
       ;;
   esac
 done

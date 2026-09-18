@@ -50,6 +50,10 @@ Print `model: <tier> (cap: <cap|none>)` and the resolved focus list —
 issues, `pass` with `auto_patched: true` if issues were auto-corrected,
 `paused` if critical issues forced a stop.
 
+**On `pass`**, also advance `run.json`: set `stage` to `implement`, append
+`sanity-check` to `stages_completed`, and refresh `updated_at` — skipping this is
+how a `--resume` ends up re-running a stage that already passed.
+
 ---
 
 ## Agent: paths

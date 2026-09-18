@@ -260,11 +260,14 @@ install_shared_templates() {
       sed -i.bak "s|\`skills/|\`$root/skills/|g" "$f" && rm -f "$f.bak"
       hit=1
     fi
-    # Seed templates only (*.template). A skill-local `templates/<x>.md` resolves relative to
-    # the skill dir already and MUST NOT be rewritten -- doing so would break /brainstorm
-    # and cheatsheet, which ship their own templates/ dirs.
-    if grep -q '`templates/[A-Za-z0-9._-]*\.template`' "$f" 2>/dev/null; then
-      sed -i.bak "s|\`templates/\([A-Za-z0-9._-]*\.template\)\`|\`$root/templates/\1\`|g" "$f" && rm -f "$f.bak"
+    # Seed templates only -- the actual repo-root seed names (templates/*.template), never
+    # a skill-local `templates/<x>.template`. A skill-local ref resolves relative to the
+    # skill dir already and MUST NOT be rewritten -- doing so mangled
+    # skills/plan-html/SKILL.md's `templates/plan.html.template` pointer (skill-local AND a
+    # .template, so the old broad match caught it) into a nonexistent root-prefixed path.
+    # Named alternation, not a broad *.template glob -- see setup.sh's seed-template list above.
+    if grep -qE '`templates/(AGENTS\.md|TASKS\.md|CHEATSHEET\.md)\.template`' "$f" 2>/dev/null; then
+      sed -i.bak -E "s#\`templates/(AGENTS\.md|TASKS\.md|CHEATSHEET\.md)\.template\`#\`$root/templates/\1.template\`#g" "$f" && rm -f "$f.bak"
       hit=1
     fi
     [[ "$hit" -eq 1 ]] && n=$((n+1))

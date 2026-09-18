@@ -108,6 +108,12 @@
     "_stop_gate_timeout_comment": "Seconds before stop-gate.sh gives up on test.unit (timeout(1)). Default 300.",
     "stop_gate_timeout": 300,
 
+    "scope": {
+      "_comment": "Optional. Stage 0's scope gate for /sdlc -- caps how much of an oversized plan-file run one invocation takes. Task id / range / ad-hoc / --queue inputs are already bounded and never pass through this gate.",
+      "max_steps_per_run": 8,
+      "_max_steps_per_run_comment": "Fallback step-count cut, used only when the plan has no '#### Phase N' headers to cut on. When it does, the gate takes the lowest phase with open rows and parks the rest whole, regardless of this number -- it never splits a sequentially-dependent chain to hit a count. Default 8. Pass --no-scope-gate on a single run to force whole-plan execution instead of changing this."
+    },
+
     "output": {
       "_comment": "Optional. Stage-narration verbosity for /sdlc. DEFAULT IS 'quiet' -- this block exists to opt OUT, not in. Narration is re-read by every later turn in the same session, so it compounds. Detail is never lost: it is already written to the stage sidecars under .claude/pipeline/<slug>/stage-outputs/. MEASURED CAVEAT: on an audited run narration was only ~2% of main-thread tokens -- do this for signal-to-noise, not for savings. The real drivers were shell traffic (~53%) and the orchestrator writing files into its own context instead of delegating (~18%).",
       "verbosity": "quiet",

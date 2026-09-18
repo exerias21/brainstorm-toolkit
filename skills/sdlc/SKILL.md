@@ -8,7 +8,7 @@ description: >
   Use when you want full SDLC discipline on work you will review and commit
   yourself, e.g. onto an open PR's branch. Use /task instead for a single small
   TDD fix with no plan.
-argument-hint: "plan-file | task-id | task-range | description  [--resume] [--queue N]"
+argument-hint: "plan-file | task-id | task-range | description  [--resume] [--queue N] [--no-scope-gate]"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
 ---
@@ -73,8 +73,10 @@ Detect the argument shape:
    (Stage 5's plan check has a plan to check against). **Also scan `TASKS.md`
    for `Active / Pending` rows that reference this plan** — by the
    `_plan: <slug>_` marker `/brainstorm` appends, falling back to the
-   `— plans/<slug>.md` path for legacy untagged rows — and mark them
-   `[~]`; Stage 6 closes them via `scripts/close-tasks.sh`. A plan-file run that matches no such rows updates
+   `— plans/<slug>.md` path for legacy untagged rows. **Do not mark them `[~]` yet** —
+   the **Scope gate** below (after `parse.json`) decides which of these rows are in
+   scope for this run and marks only those; Stage 6 closes taken rows via
+   `scripts/close-tasks.sh`. A plan-file run that matches no such rows updates
    no `TASKS.md` — that's expected, not a miss.
 
 2. **Task id** — arg matches `task-NNN` or a bare row number. Read that
@@ -108,7 +110,9 @@ array from the existing envelope rather than re-deriving anything from session m
    stop conditions — see **Queue mode** below (that re-scan is what makes it a loop,
    not a one-shot range).
 
-Mark resolved rows `[~]` (in-progress). Derive `slug`: the plan filename minus its extension, minus a leading
+Mark resolved rows `[~]` (in-progress) — cases 2–5 mark immediately; case 1 (plan file) marks
+only the rows the **Scope gate** below takes, once `parse.json` exists to size them. Derive
+`slug`: the plan filename minus its extension, minus a leading
 `brainstorm-` / `team-brainstorm-` / `pbi-NNN-` / `task-NNN-` prefix, lowercased, every character
 outside `[a-z0-9-]` replaced with `-`, runs collapsed, ends trimmed; it must match
 `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$` or the run stops with a clear error (maintainer record:
@@ -130,6 +134,41 @@ implementation step.
 `run.json.stages_completed`. This is not bookkeeping: Stage 2's decompose gate
 reads `data.files_to_change` and `data.implementation_step_count` and cannot run
 without them.
+
+### Scope gate (plan-file runs only)
+
+Immediately after `parse.json` is written, decide how much of this plan to take **this run**.
+Skip this gate entirely for task-id / range / ad-hoc / `--queue` inputs — each is already
+bounded to one row or an explicit range — and for `--no-scope-gate`, which forces whole-plan
+execution (`taken` = every open row).
+
+Compute size from `parse.json` (`implementation_step_count`, `files_to_change`) plus surfaces
+touched (**via `skills/sdlc/templates/changed-files-gate.md`**) — the same quantities
+`skills/brainstorm/SKILL.md`'s `plan size: <n> steps across <m> files, <k> surface(s)` line
+already computes at authoring time. Reuse that verdict rather than re-deriving a second one.
+
+- **Prefer the plan's own `#### Phase N` boundaries over an arbitrary cut.** If the plan
+  declares phases, take the lowest-numbered phase with open (`[ ]`/`[~]`) rows and park every
+  later phase whole — **never split a sequentially-dependent chain to hit a number** (the same
+  rule `/brainstorm` Step 7.5 states at authoring time; this is its Stage-0 enforcement, not a
+  restatement). Fall back to a step-count cut — `pipeline.scope.max_steps_per_run` (default
+  `8`) — only when the plan has no phases.
+- **Honor an explicit DEFERRED marker.** A phase the plan itself marks deferred (e.g. "cannot
+  be verified on this machine") is never pulled into scope, regardless of position.
+- **Push back visibly, then proceed — never stop and ask.** A blocking prompt deadlocks
+  background/CI runs (`changed-files-gate.md`'s proceed-and-document precedent is the same
+  call here). Print the verdict as one line, **always, even under `quiet`**:
+
+  `scope gate: N steps across M files, K surface(s) — taking phase P (S steps); parking
+  [phases ...] (deferred: [...]) — resume: <cmd>`
+
+  Record `run.json.data.scope_gate = {plan_total_steps, plan_phases, taken, parked, deferred,
+  why, resume}`. **Mark `[~]` only on the `TASKS.md` rows actually taken** — parked rows stay
+  `Active / Pending`, untouched, so a plain re-run of `/sdlc <plan>` (the `resume` value) picks
+  up the next phase.
+- **On a partial take**, follow the shared **`## Park protocol`** in
+  `skills/sdlc/templates/queue-mode.md` with `<resume-cmd>` = the `resume` value above — the
+  same sentinel mechanics the queue loop uses between items, not a second implementation.
 
 **Native task mirror (Claude only; skip silently elsewhere).** Once the stage list for this run
 is known, call `TaskCreate` once per stage that will actually run — the gates above have already
@@ -206,14 +245,20 @@ decides single-agent vs. decompose.
 - **Single-agent (default):** dispatch one agent with `skills/sdlc/templates/stage-2-implement.md`,
   substitute `{feature_name}` and `{plan_content}`; **Sonnet by default** (Opus
   only on `--model opus`, per `skills/sdlc/templates/models.md`) on Claude,
-  inline on Copilot/Codex. Writes `implement.json`, no decompose/converge sidecars.
+  inline on Copilot/Codex. **State write (orchestrator, not the agent):** the
+  agent's prompt writes nothing to disk — when it returns `git diff --numstat`, **you**
+  write `stage-outputs/implement.json` from that summary, append `implement` to
+  `run.json.stages_completed`, and refresh `updated_at`. No decompose/converge sidecars.
 - **Decompose (large multi-surface plan):** run 2a/2b/2c —
   `skills/sdlc/templates/stage-2a-decompose.md` (Sonnet decomposer →
   `decompose.json`), `skills/sdlc/templates/stage-2b-dispatch.md` (one subagent
   per lane, sequential by `depends_on` → `implement-<lane>.json`), then
-  `skills/sdlc/templates/stage-2c-converge.md` (orchestrator reconcile →
-  `converge.json`). Set `run.json.data.stage2_decomposed` and
-  `run.json.data.lanes`.
+  `skills/sdlc/templates/stage-2c-converge.md` (orchestrator reconcile prompt — it
+  also writes nothing itself). **State write (orchestrator):** after 2c's reconcile
+  returns, **you** write `stage-outputs/converge.json`, set
+  `run.json.data.stage2_decomposed = true` and `run.json.data.lanes`, and append a single
+  `implement` (never per-lane) to `run.json.stages_completed` — the canonical stage name
+  either path completes under, per `skills/sdlc/templates/state-schema.md`.
 
 For a task **range**, the gate sees the combined file/step set. After
 implementation, review `git diff --stat` and confirm expected files were
@@ -297,7 +342,7 @@ every other stage runs unmodified.
 |---|---|
 | Stage 3 — Generate evals | **skip** (no test surface) — append `generate-evals` to `run.json.stages_skipped` |
 | Stage 5 — Validate | **substitute** with `skills/sdlc/templates/stage-5-skill-repo.md` (HARD: validator, marketplace registration, template-reference resolution, setup.sh dry install; SOFT: line-count ceiling, README skills-table drift, overlay parity). Writes `validate.json` with `data.mode = "skill-repo"` |
-| Stage 5.7 — Adversarial review | **adapt, never self-skip** — a docs-only diff is the code surface here. Correctness and plan-alignment apply equally to prose; `security` applies its skill-repo shell-injection check; `config-env-docs` repoints to the frontmatter / marketplace / template-reference checks in `stage-5-skill-repo.md` |
+| Stage 5.7 — Adversarial review | **adapt when enabled, never self-skip** — still opt-in/OFF-by-default per Stage 5.7 above; when it's ON, a docs-only diff is the code surface here. Correctness and plan-alignment apply equally to prose; `security` applies its skill-repo shell-injection check; `config-env-docs` repoints to the frontmatter / marketplace / template-reference checks in `stage-5-skill-repo.md` |
 
 ## Safety rules
 

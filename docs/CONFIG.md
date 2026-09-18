@@ -81,6 +81,9 @@ This page mirrors `templates/project.json.example`; that file is the registry
     "enforce_cap": false,
     "stop_gate": "off",
     "stop_gate_timeout": 300,
+    "scope": {
+      "max_steps_per_run": 8
+    },
     "output": {
       "verbosity": "quiet"
     },
@@ -141,6 +144,11 @@ linearly: one agent (or reviewer call) per entry, so trimming
 `agents.code_review_lenses` to `["correctness", "security"]` roughly halves the review
 stage. All of it governs sub-agents only, never the session orchestrator.
 
+`pipeline.scope.max_steps_per_run` bounds Stage 0's scope gate for a plan-file `/sdlc` run
+(default `8`) — the fallback step-count cut used only when the plan has no `#### Phase N`
+headers to cut on instead. Task id / range / ad-hoc / `--queue` inputs never pass through this
+gate; `--no-scope-gate` forces whole-plan execution for a single run without touching the config.
+
 `pipeline.loop.*` tunes the backlog loop and is **entirely optional** (defaults
 shown above). `max_items` caps how many TASKS.md rows one `/sdlc --queue`
 invocation consumes; `batch_size` is read only by `scripts/loop-runner.sh` and
@@ -164,6 +172,7 @@ printing it, so the loop self-advances. It never chains a `confirm: true` action
 | `/sdlc` | `models.code_review`, `models.code_review_second_pass`, `agents.code_review_*` (axis 2; never capped) |
 | `/sdlc` | `pipeline.review_fix.*`: stage *behavior* only (`enabled`, `mode`). Opt-in, permanently off by default. (`blocking` was removed 2026-09: `/sdlc` does no git writes, so a HIGH finding is reported first in Stage 7, never gated) |
 | `/sdlc` | `agents.decompose_min_tasks` (Stage 2 decompose gate) |
+| `/sdlc` Stage 0 | `pipeline.scope.max_steps_per_run` (scope gate; `--no-scope-gate` bypasses per-run) |
 | `/sdlc --queue`, `scripts/loop-runner.sh`, `scripts/hooks/next-action.sh` | `pipeline.loop.*` (`max_items`, `batch_size`, `max_hops`, `auto_continue`) |
 | `/sdlc` Stage 6 | `stack.up` / `stack.rebuild` / `stack.url`: printed as the manual-verification line at hand-off, never auto-run |
 | `/sdlc` Stage 6 | `coauthor_trailer`: whether the *suggested* commit message carries the trailer (`/sdlc` prints it; it never commits) |

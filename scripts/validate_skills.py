@@ -61,6 +61,14 @@ MODEL_CAP_REF = "models.md"
 REVIEW_STAGE_SKILLS = {"sdlc"}
 REVIEW_MODEL_REF = "models.md"
 
+# H: an overlay may legitimately have nothing to point a cross-skill template ref at (e.g.
+# Copilot/Codex have no sub-agent seam, so the stage-2a/2b/2c decompose templates don't
+# apply there). The marker this repo uses to record that, in prose, is a bare backtick-quoted
+# filename followed (same paragraph, either order) by the phrase "not applicable on this
+# runtime" -- e.g. "`stage-2a-decompose.md` ... not applicable on this runtime." See
+# copilot/skills/sdlc/SKILL.md's Stage 2 section for the landed example this was modelled on.
+NOT_APPLICABLE_RE = re.compile(r"not applicable on this runtime", re.IGNORECASE)
+
 
 def parse_targets(raw_value: str) -> list[str]:
     value = raw_value.strip().strip('"').strip("'")
@@ -84,6 +92,11 @@ def resolve_skills_root(repo_root: Path) -> Path | None:
 
 def resolve_copilot_overrides_root(repo_root: Path) -> Path | None:
     candidate = repo_root / "copilot" / "skills"
+    return candidate if candidate.exists() else None
+
+
+def resolve_codex_overrides_root(repo_root: Path) -> Path | None:
+    candidate = repo_root / "codex" / "skills"
     return candidate if candidate.exists() else None
 
 
@@ -366,6 +379,74 @@ def review_model_pointer_warnings(skills_root: Path) -> list[str]:
     return warnings
 
 
+def cross_template_pointer_warnings(
+    skills_root: Path, overlay_root: Path | None, overlay_label: str
+) -> list[str]:
+    """H: soft-warn when a canonical SKILL.md's cross-skill template pointers
+    (`skills/<skill>/templates/<file>`, B2''/CROSS_TEMPLATE_REF_RE) are missing from its
+    <overlay_label> overlay.
+
+    This is a NEW check, not a tightening of B1'/`overlay_parity_warnings`: that check's
+    `find_bundled_resource_refs()` only matches the skill-local `templates/<x>` form and
+    resolves against `canonical_dir / "templates"`, so a cross-skill ref (which resolves
+    against a DIFFERENT skill's dir entirely) never reaches its "deliberate simplification"
+    exemption. This check exists to see that shape.
+
+    A missing pointer is not automatically a defect: an overlay may have nothing to point
+    at (e.g. Copilot/Codex have no sub-agent seam, so the stage-2a/2b/2c decompose templates
+    genuinely don't apply there). Recognize that as satisfied, rather than warning on it
+    forever, when the overlay carries -- anywhere in the same paragraph, either order -- a
+    bare backtick-quoted reference to the file's name plus the phrase "not applicable on
+    this runtime" (`NOT_APPLICABLE_RE`). Whitespace (including a mid-phrase line wrap) is
+    normalized before matching. Same posture as `model_cap_pointer_warnings()`: a soft
+    warning, not a validation failure.
+    """
+    warnings: list[str] = []
+    if overlay_root is None or not overlay_root.exists():
+        return warnings
+
+    for canonical_dir in sorted(p for p in skills_root.iterdir() if p.is_dir()):
+        canonical_file = canonical_dir / "SKILL.md"
+        overlay_file = overlay_root / canonical_dir.name / "SKILL.md"
+        if not canonical_file.exists() or not overlay_file.exists():
+            continue
+
+        cm = FRONTMATTER_RE.match(canonical_file.read_text(encoding="utf-8"))
+        om = FRONTMATTER_RE.match(overlay_file.read_text(encoding="utf-8"))
+        if not cm or not om:
+            continue
+        _, canonical_body = cm.groups()
+        _, overlay_body = om.groups()
+
+        canonical_refs = find_cross_template_refs(canonical_body)
+        if not canonical_refs:
+            continue
+        overlay_refs = set(find_cross_template_refs(overlay_body))
+
+        # Paragraph-scoped "not applicable" notes: split on blank lines, then collapse
+        # internal whitespace so a note that line-wraps mid-phrase still matches.
+        paragraphs = [
+            re.sub(r"\s+", " ", para)
+            for para in re.split(r"\n\s*\n", overlay_body)
+        ]
+
+        for owner, ref in canonical_refs:
+            if (owner, ref) in overlay_refs:
+                continue
+            exempted = any(
+                f"`{ref}`" in para and NOT_APPLICABLE_RE.search(para)
+                for para in paragraphs
+            )
+            if exempted:
+                continue
+            warnings.append(
+                f"{overlay_file}: missing cross-skill template pointer "
+                f"`skills/{owner}/templates/{ref}` present in canonical {canonical_file} "
+                f'(no "not applicable on this runtime" note found for `{ref}` either)'
+            )
+    return warnings
+
+
 # E: sub-agent definitions in agents/. These are a separate artifact from skills --
 # a `.md` with YAML frontmatter that Claude Code loads into its agent registry (and
 # that setup.sh copies into a consumer's .claude/agents/). Two fields are load-bearing
@@ -513,6 +594,7 @@ def main() -> int:
     repo_root = Path(__file__).resolve().parent.parent
     skills_root = resolve_skills_root(repo_root)
     copilot_overrides_root = resolve_copilot_overrides_root(repo_root)
+    codex_overrides_root = resolve_codex_overrides_root(repo_root)
 
     if skills_root is None:
         print(
@@ -554,6 +636,13 @@ def main() -> int:
     all_warnings.extend(model_cap_pointer_warnings(skills_root))
     # D: review-fix skills must point at the shared reviewer-model contract (soft warning).
     all_warnings.extend(review_model_pointer_warnings(skills_root))
+    # H: cross-skill template pointers dropped by an overlay (soft warning).
+    all_warnings.extend(
+        cross_template_pointer_warnings(skills_root, copilot_overrides_root, "Copilot")
+    )
+    all_warnings.extend(
+        cross_template_pointer_warnings(skills_root, codex_overrides_root, "Codex")
+    )
 
     # Validate copilot overrides if present
     if copilot_overrides_root is not None:

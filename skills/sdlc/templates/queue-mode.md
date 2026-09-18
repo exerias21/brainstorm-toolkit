@@ -1,8 +1,10 @@
 # Queue mode (`--queue`) — attended backlog loop
 
-Loaded **only when `--queue` is passed.** A single-input run never opens this file; resolve the
-flag first. The loop runs the normal pipeline once per item and adds selection, a re-scan, stop
-conditions and the park protocol on top.
+Loaded when `--queue` is passed, **or** when Stage 0's scope gate needs to park an oversized
+plan's later phases (it calls only the **Park protocol** section below, not the loop). A
+single-input run under its scope-gate threshold never opens this file. The loop runs the
+normal pipeline once per item and adds selection, a re-scan, stop conditions and the park
+protocol on top.
 
 `--queue` runs the pipeline over the pending backlog and **re-scans between items**,
 so work appended *during* the run (a `/sdlc-status`-drafted fix, a brainstorm follow-up)
@@ -51,23 +53,31 @@ Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
 - **An item's own pipeline paused/failed** (`stop_on: pause`) → that **item's** envelope gets
   the full Stage 6 close-out: `status = "paused"` (**never leave it `in_progress`** — a parked
   run left `in_progress` is flagged stale by `/sdlc-status`/`/repo-health` after ~24h) +
-  `next_action = {cmd, confirm}` (the `/sdlc-status` or `--resume`, L8). Then write the
-  queue-resume sentinel below.
+  `next_action = {cmd, confirm}` (the `/sdlc-status` or `--resume`, L8). Then run the **Park
+  protocol** below with `<resume-cmd>` = `/sdlc <plan> --queue`.
 - **A queue-level stop** (`max_items` / `max_consecutive_failures` / a `confirm:true` action
   reached, with the current item already **complete**) → there is **no in-flight envelope to
   mark** (the last item's is already `complete`); the queue's own resume state is the
-  `TASKS.md` rows + the sentinel. Just write the sentinel below.
+  `TASKS.md` rows + the sentinel. Just run the **Park protocol** below.
 
-**Then — ALWAYS, on every park — WRITE THE SENTINEL.** This is the step that keeps getting
-skipped (agents write only `run.json.next_action` and stop, which leaves the loop dead). Be
-exact about *why*: the `.claude/.next-action` **sentinel is the ONLY thing the Stop hook reads
-and auto-surfaces**; `run.json.next_action` is a durable *fallback* that `/sdlc-status` reads **on
+## Park protocol (shared — queue mode and the Stage 0 scope gate both call this)
+
+Any `/sdlc` caller that stops before finishing its full work set — the queue loop between
+items, or the Stage 0 scope gate leaving later phases for a follow-up run — parks the same
+way: it never dead-ends, it writes a durable resume path. Substitute the caller's own resume
+command for `<resume-cmd>` below (the queue loop uses `/sdlc <plan> --queue`; the scope gate
+uses its recorded `run.json.data.scope_gate.resume`).
+
+**ALWAYS, on every park — WRITE THE SENTINEL.** This is the step that keeps getting skipped
+(agents write only `run.json.next_action` and stop, which leaves the loop dead). Be exact about
+*why*: the `.claude/.next-action` **sentinel is the ONLY thing the Stop hook reads and
+auto-surfaces**; `run.json.next_action` is a durable *fallback* that `/sdlc-status` reads **on
 demand** — it is **NOT** auto-surfaced. A park that sets only the envelope field is invisible
 and cannot self-continue. Run these exact appends (dedup + multi-slot, `docs/SEAM.md`):
 
 ```sh
-# (A) queue-resume line — ALWAYS when rows remain pending:
-line='{"cmd":"/sdlc <plan> --queue","source":"sdlc","confirm":false}'
+# (A) resume line — ALWAYS when work remains:
+line='{"cmd":"<resume-cmd>","source":"sdlc","confirm":false}'
 grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action
 # (B) if it parked on a confirm:true action (a commit/rebuild the human must run FIRST),
 #     ALSO append that action so the hook surfaces it:

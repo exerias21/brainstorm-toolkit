@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # test-hooks.sh — regression harness for the deterministic controls that make
 # policy DETERMINISTIC instead of prose-enforced: scripts/hooks/enforce-model-cap.sh,
-# scripts/hooks/stop-gate.sh, and scripts/protect-tests.sh (a CLI, not a wired
+# scripts/hooks/stop-gate.sh, scripts/protect-tests.sh (a CLI, not a wired
 # hook -- it earns a place here on scope alone; see its own header for why it
-# is not under scripts/hooks/).
+# is not under scripts/hooks/), scripts/hooks/next-action.sh (interpreter
+# probe + the .next-action seam's dedup/staleness/depth-warning contract),
+# and scripts/hooks/run-cost-report.sh (recency-based envelope selection).
 #
 # Builds fresh scratch project dirs under /tmp, feeds each hook sample stdin JSON
 # against a `.claude/project.json`, and asserts on stdout with `grep -q`. Mirrors
@@ -20,6 +22,8 @@ PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CAP_HOOK="$PLUGIN_ROOT/scripts/hooks/enforce-model-cap.sh"
 GATE_HOOK="$PLUGIN_ROOT/scripts/hooks/stop-gate.sh"
 PROTECT_TESTS="$PLUGIN_ROOT/scripts/protect-tests.sh"
+NEXT_ACTION_HOOK="$PLUGIN_ROOT/scripts/hooks/next-action.sh"
+COST_HOOK="$PLUGIN_ROOT/scripts/hooks/run-cost-report.sh"
 ROOT_TMP="/tmp/test-hooks-$$"
 
 cleanup() { rm -rf "$ROOT_TMP" || true; }
@@ -349,6 +353,146 @@ d="$ROOT_TMP/pt-noenv"
 mkdir -p "$d"
 run_pt "$d" verify
 assert_rc "$PT_RC" 0
+
+# ── next-action.sh: interpreter probe (step 6) and the .next-action seam's
+#    dedup / staleness / depth-warning contract (step 10c) ─────────────────
+
+na_dir() {
+  local d="$ROOT_TMP/na-$1"
+  mkdir -p "$d/.claude"
+  printf '%s' "$d"
+}
+
+# fakebin, when non-empty, is PREPENDED to PATH so its stubs shadow whatever
+# real interpreters the host machine has. $BRAINSTORM_PYTHON and stdin are
+# both cleared/emptied so nothing outside the fixture can affect resolution.
+run_na() {
+  local proj="$1" fakebin="$2"
+  if [ -n "$fakebin" ]; then
+    env -u BRAINSTORM_PYTHON CLAUDE_PROJECT_DIR="$proj" PATH="$fakebin:$PATH" \
+      bash "$NEXT_ACTION_HOOK" </dev/null
+  else
+    env -u BRAINSTORM_PYTHON CLAUDE_PROJECT_DIR="$proj" bash "$NEXT_ACTION_HOOK" </dev/null
+  fi
+}
+
+make_broken_stub() {
+  local path="$1"
+  cat > "$path" <<'EOF'
+#!/bin/sh
+echo "Python was not found; run without arguments to install from the Microsoft Store" >&2
+exit 49
+EOF
+  chmod +x "$path"
+}
+
+CASE="next-action: falls back past a broken python3 -- Next reaches stdout"
+d="$(na_dir 01)"
+echo '{"cmd":"/gotcha next-action fallback test","source":"test","confirm":false}' > "$d/.claude/.next-action"
+fakebin="$ROOT_TMP/na-fakebin-01"
+mkdir -p "$fakebin"
+make_broken_stub "$fakebin/python3"
+out="$(run_na "$d" "$fakebin")"
+assert_match "$out" 'Next: /gotcha next-action fallback test'
+[ -f "$d/.claude/.next-action" ] && fail ".next-action should be consumed once the python fallback renders it"
+ok
+
+CASE="next-action: no working interpreter at all -- sentinel survives, no output"
+d="$(na_dir 02)"
+echo '{"cmd":"/gotcha next-action fallback test","source":"test","confirm":false}' > "$d/.claude/.next-action"
+fakebin2="$ROOT_TMP/na-fakebin-02"
+mkdir -p "$fakebin2"
+for name in python3 python py; do make_broken_stub "$fakebin2/$name"; done
+out="$(run_na "$d" "$fakebin2")"
+assert_empty "$out"
+[ -f "$d/.claude/.next-action" ] || fail "sentinel must survive (not be eaten) when nothing can render it"
+ok
+
+CASE="next-action: reader dedups by cmd even if duplicates reach the file"
+d="$(na_dir 03)"
+{
+  echo '{"cmd":"/gotcha dup read test","source":"sdlc","confirm":false}'
+  echo '{"cmd":"/gotcha dup read test","source":"task","confirm":false}'
+} > "$d/.claude/.next-action"
+out="$(run_na "$d" "")"
+assert_match "$out" 'Next: /gotcha dup read test'
+assert_no_match "$out" 'seam parked'
+
+CASE="next-action: parked seam (>1 distinct pending) prints the depth warning"
+d="$(na_dir 04)"
+{
+  echo '{"cmd":"/gotcha alpha pending","source":"sdlc","confirm":false}'
+  echo '{"cmd":"/gotcha beta pending","source":"task","confirm":false}'
+} > "$d/.claude/.next-action"
+out="$(run_na "$d" "")"
+# The em dash round-trips through JSON as — (json.dumps escapes non-ASCII
+# by default), so match the ASCII portions of the depth warning separately
+# rather than the literal glyph.
+assert_match "$out" '2 actions pending'
+assert_match "$out" 'seam parked'
+assert_match "$out" 'Next: /gotcha alpha pending'
+assert_match "$out" 'Next: /gotcha beta pending'
+
+CASE="next-action: drops an entry whose plan/target file no longer exists"
+d="$(na_dir 05)"
+echo '{"cmd":"/sdlc plans/does-not-exist.md","source":"brainstorm","confirm":false}' > "$d/.claude/.next-action"
+out="$(run_na "$d" "")"
+assert_empty "$out"
+[ -f "$d/.claude/.next-action" ] && fail "an all-stale sentinel should still be consumed (parsed, then removed)"
+ok
+
+CASE="seam: appending a duplicate cmd with a different source does not grow the file"
+d="$(na_dir 06)"
+file="$d/.claude/.next-action"
+: > "$file"
+seam_append_dedup() {
+  local f="$1" cmd="$2" src="$3"
+  grep -qF -e "\"cmd\":\"$cmd\"" -e "\"cmd\": \"$cmd\"" "$f" 2>/dev/null \
+    || echo "{\"cmd\":\"$cmd\",\"source\":\"$src\",\"confirm\":false}" >> "$f"
+}
+seam_append_dedup "$file" "/gotcha dup write test" "sdlc"
+seam_append_dedup "$file" "/gotcha dup write test" "task"
+lines="$(wc -l < "$file" | tr -d ' ')"
+[ "$lines" -eq 1 ] || fail "expected 1 line after a duplicate cmd from a different source, got $lines"
+ok
+
+# ── run-cost-report.sh: newest-terminal-envelope selection (step 7) ────────
+
+cost_dir() {
+  local d="$ROOT_TMP/cost-$1"
+  mkdir -p "$d/.claude/pipeline/aaa-newer" "$d/.claude/pipeline/zzz-older"
+  cat > "$d/.claude/pipeline/aaa-newer/run.json" <<'EOF'
+{"status": "complete", "updated_at": "2026-09-18T12:00:00Z"}
+EOF
+  cat > "$d/.claude/pipeline/zzz-older/run.json" <<'EOF'
+{"status": "complete", "updated_at": "2026-09-01T00:00:00Z"}
+EOF
+  # Synthetic JSONL transcript -- run-cost-report.sh exits early unless
+  # `.transcript_path` names an existing file.
+  cat > "$d/transcript.jsonl" <<'EOF'
+{"message": {"usage": {"input_tokens": 100, "cache_read_input_tokens": 10, "cache_creation_input_tokens": 5, "output_tokens": 50}}}
+{"message": {"usage": {"input_tokens": 120, "cache_read_input_tokens": 20, "cache_creation_input_tokens": 0, "output_tokens": 60}}}
+EOF
+  printf '%s' "$d"
+}
+
+run_cost() {
+  local proj="$1" input="$2"
+  CLAUDE_PROJECT_DIR="$proj" bash "$COST_HOOK" <<<"$input"
+}
+
+CASE="cost-report: newest terminal envelope wins, not the alphabetically-last glob entry"
+d="$(cost_dir 01)"
+out="$(run_cost "$d" "{\"transcript_path\": \"$d/transcript.jsonl\"}")"
+assert_match "$out" '"systemMessage"'
+grep -q '"cost"' "$d/.claude/pipeline/aaa-newer/run.json" \
+  || fail "expected data.cost written to aaa-newer/run.json (the NEWER envelope by updated_at)"
+if grep -q '"cost"' "$d/.claude/pipeline/zzz-older/run.json"; then
+  fail "data.cost incorrectly written to zzz-older/run.json (the OLDER envelope, but alphabetically last)"
+fi
+[ -f "$d/.claude/pipeline/aaa-newer/.cost-reported" ] || fail "expected .cost-reported marker in aaa-newer"
+[ -f "$d/.claude/pipeline/zzz-older/.cost-reported" ] && fail "unexpected .cost-reported marker in zzz-older"
+ok
 
 echo
 echo "test-hooks.sh: all cases ok"

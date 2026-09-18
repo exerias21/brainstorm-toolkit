@@ -50,3 +50,7 @@ Instead, when the testable functions live in the app package:
 `pass` even when evals are skipped (no testable surface) — record the
 reason in `summary` and `data.skipped_reason`.
 
+**On `pass`**, also advance `run.json`: set `stage` to `validate`, append
+`generate-evals` to `stages_completed`, and refresh `updated_at` — skipping this is
+how a `--resume` ends up re-running a stage that already passed.
+

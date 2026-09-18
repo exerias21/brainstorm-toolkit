@@ -58,10 +58,11 @@ regardless of verbosity — the per-dispatch `model:` line, gate verdicts, PAUSE
 - **Plan file** (path ending `.md` that exists) → use as the plan, like `/sdlc`.
   **Also scan `TASKS.md` for `Active / Pending` rows referencing this plan** — by the
   `_plan: <slug>_` marker `/brainstorm` appends, falling back to the `— plans/<slug>.md`
-  path for legacy untagged rows — and mark them `[~]`. Stage 6's close-out flips them via
-  `scripts/close-tasks.sh`. Without this scan the close-out has nothing to resolve, which
-  is why a finished plan used to close nothing on this runtime. A run matching no rows
-  updates no `TASKS.md` — expected, not a miss.
+  path for legacy untagged rows. **Do not mark them `[~]` yet** — the **Scope gate** below
+  (after `parse.json`) decides which rows are in scope this run and marks only those. Stage
+  6's close-out flips taken rows via `scripts/close-tasks.sh`. Without this scan the close-out
+  has nothing to resolve, which is why a finished plan used to close nothing on this runtime.
+  A run matching no rows updates no `TASKS.md` — expected, not a miss.
 **If `.claude/project.json` is absent while `project.json.example` is present, warn once
 here** — every gated setting (`models.cap`, `pipeline.*`, test commands) is silently inert
 and the run reports `cap: none`.
@@ -88,12 +89,15 @@ close-out failure the plan-file scan above exists to prevent.
   sentinel). Copilot has no compaction/reseed hook, so a many-hour loop
   needs the fresh-session-per-item escalation in `docs/LOOP-HYGIENE.md` (plugin repo).
 
-Mark resolved rows `[~]`. Derive `slug`: the plan filename minus its extension, minus a leading
+Mark resolved rows `[~]` — task id / range / ad-hoc / `--queue` mark immediately; a plan-file
+run marks only the rows the **Scope gate** below takes, once `parse.json` exists to size them.
+Derive `slug`: the plan filename minus its extension, minus a leading
 `brainstorm-` / `team-brainstorm-` / `pbi-NNN-` / `task-NNN-` prefix, lowercased, every character
 outside `[a-z0-9-]` replaced with `-`, runs collapsed, ends trimmed; it must match
 `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$` or the run stops with a clear error (maintainer record:
 `docs/CONVENTIONS.md`). Capture `base_commit = git rev-parse HEAD` and
-initialize `.claude/pipeline/<slug>/` with the canonical `run.json` — `pipeline: "sdlc"`,
+initialize `.claude/pipeline/<slug>/` with the canonical `run.json` (schema:
+`skills/sdlc/templates/state-schema.md`) — `pipeline: "sdlc"`,
 `base_commit`, `status: "in_progress"`, **and the computed required fields that get dropped
 otherwise (DQ6):** `plan_hash: "sha256:$(sha256sum <plan> | cut -d' ' -f1)"`, `started_at` =
 `updated_at` = `"$(date -u +%Y-%m-%dT%H:%M:%SZ)"`. Omitting them breaks `--resume` and
@@ -105,6 +109,24 @@ create or modify, the acceptance criteria ("expected"/"should"/"must"/"verify" l
 cross-module touchpoints. **Write `stage-outputs/parse.json`** with `data.feature_name`,
 `data.files_to_change`, `data.implementation_step_count`, `data.acceptance_criteria_count` and
 append `parse` to `run.json.stages_completed` — Stage 2's gate reads it and cannot run without it.
+
+**Scope gate (plan-file runs only).** Immediately after `parse.json` is written, decide how
+much of this plan to take this run — skip for task-id / range / ad-hoc / `--queue` inputs
+(already bounded) and for `--no-scope-gate` (whole-plan execution). Compute size from
+`parse.json` plus surfaces touched (`skills/sdlc/templates/changed-files-gate.md`) — the same
+quantities `skills/brainstorm/SKILL.md`'s `plan size: <n> steps across <m> files, <k>
+surface(s)` line already prints at authoring time. **Prefer the plan's own `#### Phase N`
+boundaries** — take the lowest phase with open rows, park the rest whole, never splitting a
+sequentially-dependent chain to hit a number; fall back to a step-count cut
+(`pipeline.scope.max_steps_per_run`, default `8`) only when the plan has no phases. **Honor an
+explicit DEFERRED marker** — never pull a phase the plan itself defers into scope. **Push back
+visibly, then proceed — never stop and ask**: print `scope gate: N steps across M files, K
+surface(s) — taking phase P (S steps); parking [...] — resume: <cmd>` always, even under
+`quiet`; record `run.json.data.scope_gate = {plan_total_steps, plan_phases, taken, parked,
+deferred, why, resume}`; mark `[~]` only on rows actually taken. On a partial take, run the
+shared **`## Park protocol`** in `skills/sdlc/templates/queue-mode.md` with `<resume-cmd>` =
+the recorded `resume` value — the same sentinel mechanics the queue loop uses, not a second
+implementation.
 
 **Skill-repo detection** (automatic): if `.claude-plugin/marketplace.json` exists at repo root,
 switch to **Skill-repo mode** below for the rest of the run. **Vendored-skill guard:** if it is
@@ -118,18 +140,18 @@ branch take only the single most-recently-updated run whose `base_commit` is an 
 HEAD, and prompt only if it is non-terminal or complete with HEAD advanced past that
 `base_commit`. One prompt at most, or none.
 
-**`--resume`:** if `--resume` was passed, read the existing `run.json` instead of
-re-initializing — reject on a `plan_hash` mismatch, skip stages whose sidecar shows
-`status: "pass"`, and resume at the first non-passing one (follows `/sdlc`'s
-Resumption rules; error if there's no prior run).
+**`--resume`:** if `--resume` was passed, **read `skills/sdlc/templates/resumption.md` now**
+and follow it instead of re-initializing — reject on a `plan_hash` mismatch, reconcile
+`stages_completed` as a union with on-disk sidecars, skip stages whose sidecar shows
+`status: "pass"`, and resume at the first non-passing one; error if there's no prior run.
 
 ## Stage 1.5 — Sanity check
 
-Run `/sdlc` Stage 1.5 inline (sequential pre-flight). Not gated, not optional.
-For a range, run once over the combined set. Stop and report on a real blocker.
-`agents.sanity_focuses` selects which checks run (default all three); on this
-runtime `models.sanity` is advisory like every tier — set your session
-model instead.
+**Read `skills/sdlc/templates/stage-1.5-sanity-check.md` now** and run it inline (sequential
+pre-flight — no parallel focus agents on this runtime). Not gated, not optional. For a range,
+run once over the combined set. Stop and report on a real blocker. `agents.sanity_focuses`
+selects which checks run (default all three); on this runtime `models.sanity` is advisory
+like every tier — set your session model instead.
 
 ## Stage 2 — Implement
 
@@ -141,9 +163,18 @@ guards against is real here too, though, and the mitigation is different — kee
 short and hand off at stage boundaries (`docs/LOOP-HYGIENE.md`), because every file you write
 stays in your context for the rest of the run.
 
+**`stage-2a-decompose.md` / `stage-2b-dispatch.md` / `stage-2c-converge.md` — not applicable on
+this runtime.** They exist only to fan Stage 2 out across parallel sub-agents; with no
+sub-agent seam here there is nothing to fan out to. Always take the single-agent path below,
+regardless of plan size.
 
-Run `/sdlc` Stage 2 inline, including its **auto-gate** (**read
-`skills/sdlc/templates/stage-2-gate.md` now**), preceded by **live-code grounding**.
+**Read `skills/sdlc/templates/stage-2-implement.md` now**, before writing any files, then run
+`/sdlc` Stage 2 inline, including its **auto-gate** (**read `skills/sdlc/templates/stage-2-gate.md`
+now** — it computes `surfaces_touched` via `skills/sdlc/templates/changed-files-gate.md` and
+records the decision for `implement.json`'s summary even though the route it can pick on this
+runtime is always single-agent), preceded by **live-code grounding**.
+**State write:** after implementing, write `stage-outputs/implement.json` yourself and append
+`implement` to `run.json.stages_completed`.
 
 **Live-code grounding** — **read `skills/sdlc/templates/convention-grounding.md` now** and follow it before writing any file. Scope the recon to the feature's target area, never the whole repo.
 
@@ -223,7 +254,7 @@ surface, so three stages change; every other stage runs unmodified.
 |---|---|
 | Stage 3 — Generate evals | **skip** — append `generate-evals` to `run.json.stages_skipped` |
 | Stage 5 — Validate | **substitute** `skills/sdlc/templates/stage-5-skill-repo.md` (validator, marketplace registration, template-reference resolution, setup.sh dry install; soft: line ceilings, README drift, overlay parity). Writes `validate.json` with `data.mode = "skill-repo"` |
-| Stage 5.7 — Adversarial review | **adapt, never self-skip** — a docs-only diff is the code surface here |
+| Stage 5.7 — Adversarial review | **adapt when enabled, never self-skip** — still opt-in/OFF-by-default per Stages 5.7/5.8 above; when it's ON, a docs-only diff is the code surface here |
 
 ## Safety rules
 

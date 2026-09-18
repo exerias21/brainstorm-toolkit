@@ -117,6 +117,9 @@ at least one approach simpler than the user probably expects.
 
 **Step 4b — Wildcards (four lenses, sequential).** Walk through these four lenses in
 order. Keep each lens's output tight (≤200 words) so the combined block stays scannable.
+Tier and count resolve per `skills/sdlc/templates/models.md` as everywhere else — on this
+runtime the lenses run **inline, no sub-agents**, so the tier half is advisory (set your
+session model to the cap for the savings), but `agents.*` still decides how many run.
 For each lens, consider the user's seed and your Step 2/3 summary through that lens alone:
 
 1. **First Principles** — strip the idea to its physics. What's the user *actually* trying
