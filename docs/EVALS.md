@@ -1,5 +1,7 @@
 # Testing this toolkit: three tiers
 
+> **✓ Live contract — current and maintained.**
+
 Skills here are prompts, not code, so there is no single test suite. Instead there are three
 independent tiers, cheapest first. Each one catches a failure class the others cannot.
 
@@ -12,18 +14,22 @@ Lints the skill prose itself, without ever invoking a model:
   (missing `name`/`description`, a prose model-tier or read-only claim the frontmatter
   doesn't enforce), marketplace registration drift.
 - **`python scripts/ci/check_contracts.py`** (`--self-test` exercises it against a synthetic
-  tree) — proves the prose and the config agree: every `project.json` key a skill names
-  exists in `templates/project.json.example`, every repo-path citation resolves, no
-  forbidden (rename-invalidated) phrase from `scripts/ci/forbidden-phrases.txt` survives,
-  and no sentence names the same `/command` twice (the signature of a collapsed
-  `s|/old|/new|g` rename). Deliberately excludes `evals/skills/fixtures/**` — that tree is a
-  mock consumer repo, not toolkit prose.
+  tree) — checks proving the prose, the config and the shipped plugin agree:
+  `config-keys` (every `project.json` key a skill names exists in
+  `templates/project.json.example`), `citations` (every repo-path citation resolves),
+  `forbidden-phrases` (no rename-invalidated phrase from `scripts/ci/forbidden-phrases.txt`
+  survives), `collapsed-pairs` (no sentence names the same `/command` twice — the signature
+  of a collapsed `s|/old|/new|g` rename), `portable-frontmatter` (no Copilot/Codex overlay
+  declares a Claude-only frontmatter key), and `version-freshness` (`.claude-plugin/plugin.json`'s
+  `version` moved when shipped content did). Deliberately excludes `evals/skills/fixtures/**`
+  — that tree is a mock consumer repo, not toolkit prose.
 - **`python scripts/ci/check_install_refs.py <installed-dir>`** — the same citation check,
   but against what a consumer actually receives after `setup.sh`, since a per-tool overlay
   installs *instead of* the canonical skill tree and can dangle a citation the repo-side
   linter never sees.
-- **`bash scripts/ci/test-hooks.sh`** — regression harness for the hooks that make policy
-  deterministic instead of prose-enforced (`enforce-model-cap.sh`, `stop-gate.sh`).
+- **`bash scripts/ci/test-hooks.sh`** — regression harness for the **deterministic controls**
+  that back policy instead of prose — the two wired hooks (`enforce-model-cap.sh`,
+  `stop-gate.sh`) and the `scripts/protect-tests.sh` detector CLI.
 
 Runs in the `setup-roundtrip` CI workflow on every push and PR. Seconds, not dollars.
 

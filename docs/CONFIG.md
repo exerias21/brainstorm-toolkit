@@ -1,5 +1,7 @@
 # Config contract: `.claude/project.json`
 
+> **✓ Live contract — current and maintained.**
+
 Every key is optional. Skills skip a step gracefully when its key is missing, so a repo with
 no `project.json` at all still gets useful behavior from `/brainstorm`, `/task` and `/gotcha`.
 Split out of `README.md` so the front page stays a tour rather than a reference.
@@ -7,23 +9,39 @@ Split out of `README.md` so the front page stays a tour rather than a reference.
 Start from [`templates/project.json.example`](../templates/project.json.example), which
 carries an inline comment for every key. `/repo-onboarding` writes this file for you.
 
-`.claude/project.json`, all keys optional:
+This page mirrors `templates/project.json.example`; that file is the registry
+`scripts/ci/check_contracts.py` validates against — update it first.
+
+`.claude/project.json`, all keys optional (`_comment` keys below are stripped for readability
+— the real file's inline comments are more detailed than this page):
 
 ```json
 {
   "test": {
     "unit": "pytest tests/ -v --tb=short",
     "frontend": "cd web && pnpm test --run",
-    "e2e": "npx playwright test"
+    "e2e": "npx playwright test --reporter=json",
+    "e2e_max_fix_loops": 3,
+    "e2e_patterns_file": ".claude/e2e-patterns.md",
+    "e2e_rerun_failed_only": true
   },
   "logs": {
     "command": "docker compose logs {service} --tail={tail}",
-    "services": ["api", "web"]
+    "services": ["api", "web", "worker"]
+  },
+  "stack": {
+    "up": "docker compose up -d --build",
+    "rebuild": "docker compose up -d --build --force-recreate",
+    "url": "http://localhost:3000"
   },
   "eval": {
-    "runner": "python3 scripts/eval-runner.py",
-    "features_dir": "evals/"
+    "runner": "bash scripts/py.sh scripts/eval-runner.py",
+    "features_dir": "evals/",
+    "thresholds": {
+      "min_pass_rate": 0.85
+    }
   },
+  "python": "python3",
   "gotchas_file": "GOTCHAS.md",
   "main_branch": "main",
   "coauthor_trailer": false,
@@ -37,11 +55,46 @@ carries an inline comment for every key. `/repo-onboarding` writes this file for
   "agents": {
     "sanity_focuses": ["paths", "completeness", "gotchas"],
     "code_review_lenses": ["correctness", "plan-alignment", "config-env-docs", "security"],
+    "code_review_max_lenses": 4,
     "code_review_passes": 1,
     "code_review_max_fix_loops": 3,
-    "decompose_min_tasks": 6
+    "decompose_min_tasks": 6,
+    "cleanup_lenses": ["over-engineering", "docstring-currency"],
+    "cleanup_max_lenses": 2
+  },
+  "migrations": {
+    "dir": "backend/migrations",
+    "applied_check": "psql \"$DATABASE_URL\" -tAc \"select max(version) from schema_migrations\""
+  },
+  "discipline": {
+    "staleness_hours": 24,
+    "frontend_globs": ["**/*.tsx", "**/*.jsx", "**/*.vue", "**/*.svelte", "**/*.css", "**/*.scss"],
+    "backend_globs": ["**/*.py", "**/*.go", "**/*.rb", "**/*.java", "**/*.ts"],
+    "data_globs": ["**/migrations/**", "**/schema/**", "**/models/**", "**/*.sql"],
+    "docs_globs": ["**/*.md", "docs/**"],
+    "deploy_delta_globs": ["requirements.txt", "pyproject.toml", "poetry.lock", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "go.mod", "Cargo.toml", "Gemfile.lock", "Dockerfile", "**/Dockerfile"],
+    "memory_index": null
   },
   "pipeline": {
+    "skip_secret_scan": false,
+    "poka_yoke": false,
+    "enforce_cap": false,
+    "stop_gate": "off",
+    "stop_gate_timeout": 300,
+    "output": {
+      "verbosity": "quiet"
+    },
+    "context": {
+      "cost_report": "on"
+    },
+    "review_fix": {
+      "enabled": false,
+      "mode": "interactive"
+    },
+    "cleanup": {
+      "enabled": false,
+      "mode": "interactive"
+    },
     "loop": {
       "max_items": 5,
       "batch_size": 5,
@@ -116,4 +169,15 @@ printing it, so the loop self-advances. It never chains a `confirm: true` action
 | `/sdlc` Stage 6 | `coauthor_trailer`: whether the *suggested* commit message carries the trailer (`/sdlc` prints it; it never commits) |
 | `/task` | `coauthor_trailer` (only when you ask it to commit); otherwise reads TASKS.md directly |
 | `/sdlc-status` | (none; reads TASKS.md and `.claude/pipeline/` directly) |
+| `scripts/py.sh` (every shipped Python invocation) | `python` |
+| `scripts/hooks/enforce-model-cap.sh` (Claude `PreToolUse(Agent)`) | `pipeline.enforce_cap`, `models.cap` |
+| `scripts/hooks/stop-gate.sh` (Claude/Codex `Stop`) | `pipeline.stop_gate`, `pipeline.stop_gate_timeout`, `test.unit`, `pipeline.loop.max_hops` |
+| `scripts/hooks/run-cost-report.sh` (Claude/Codex `Stop`) | `pipeline.context.cost_report` |
+| `/sdlc` Stage 5.9 | `pipeline.cleanup.*`, `agents.cleanup_lenses`, `agents.cleanup_max_lenses` |
+| `/sdlc` Stage 5.7 | `agents.code_review_max_lenses` |
+| `/sdlc` changed-files gate | `discipline.*` (`staleness_hours`, `*_globs`, `deploy_delta_globs`) |
+| `/repo-health` | `migrations.dir`, `migrations.applied_check`, `discipline.memory_index` |
+| `/sdlc` all stages | `pipeline.output.verbosity` |
+| `/test-check --loop`, `e2e-test-runner` | `test.e2e_max_fix_loops`, `test.e2e_patterns_file`, `test.e2e_rerun_failed_only` |
+| `scripts/eval-runner.py` | `eval.thresholds.min_pass_rate` |
 | `/repo-onboarding` | writes all of the above |

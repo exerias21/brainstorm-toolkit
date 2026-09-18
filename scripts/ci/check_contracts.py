@@ -39,6 +39,33 @@ checks:
                        (setup.sh strips them for the Copilot/Codex install
                        paths only).
 
+Phase 1 of docs/plans/flow-gap-fixes.md widened checks 1-4's file scope to
+CLAUDE.md, AGENTS.md and docs/*.md (previously skills/copilot/codex/agents/
+templates only) and added three more:
+
+  6. Doc status markers -- every docs/*.md declares `Live contract` or
+                       `Historical design record` in its header. A historical
+                       marker must carry a pointer to the live contract that
+                       superseded it, and the pointer must resolve; the COUNT
+                       of historical docs is pinned so a new one is a
+                       reviewed diff. A historical doc is exempt from checks
+                       1-4 and 8 -- it is an amending instrument, never
+                       re-verified once the consolidated text exists.
+  7. No cardinality  -- a number-word (`one`..`twenty`) immediately
+                       followed by `checks`/`hooks`/`skills`/`agents`, outside
+                       fenced code, in CLAUDE.md/AGENTS.md/a `Live contract`
+                       doc: a derivable count that goes stale with no local
+                       edit to catch it.
+  8. Header-list-count -- where check 7's pattern is immediately followed by
+                       a bulleted list (README.md's "five hooks"), the count
+                       must equal the list length instead of being banned --
+                       deleting the number there makes the sentence worse.
+
+A ninth mechanism, `recheck-by` pins (`<!-- assert-manual: recheck-by
+YYYY-MM-DD "<claim>" -->` in CLAUDE.md/AGENTS.md/docs/*.md), is a permanent
+WARN, never a failure -- see `recheck_by_warnings()`. It never contributes to
+the exit code, mirroring `model_cap_pointer_warnings()` in validate_skills.py.
+
 This targets the exact failure class a 2026-09 review found 46 instances of.
 Stdlib only, no model calls, runs in well under 5s.
 
@@ -58,6 +85,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from datetime import date
 from pathlib import Path
 from typing import NamedTuple
 
@@ -83,9 +111,61 @@ def _exclude_fixtures(root: Path, files: list[Path]) -> list[Path]:
     return [f for f in files if not relposix(root, f).startswith(FIXTURE_EXCLUDE_PREFIX)]
 
 
+# ── Doc status markers (Step 1) -- decides the historical exemption ─────────
+#
+# A docs/*.md file marked `Historical design record` is an amending
+# instrument (docs/CONVENTIONS.md "Migration policy"'s legal-codification
+# framing): it records what a design USED to be, and its dead keys, dangling
+# filenames and merged-away skill names are the whole point of the sentence,
+# not a bug. Detecting it as content (not just a path) is what lets checks
+# 1-4 skip it without a second, parallel exclusion list to keep in sync.
+#
+# The marker must live in the file's own HEADER, not anywhere in its body:
+# docs/FLOW.md cites "historical design record for the adversarial
+# Review->Fix stage" in its own see-also table, and a whole-file search would
+# misclassify FLOW.md itself as historical from that one citation.
+DOC_STATUS_HEADER_LINES = 15
+DOC_STATUS_LIVE_RE = re.compile(r"Live contract", re.IGNORECASE)
+DOC_STATUS_HISTORICAL_RE = re.compile(r"Historical design record", re.IGNORECASE)
+
+
+def docs_status_files(root: Path) -> list[Path]:
+    """Every docs/*.md file, non-recursive -- independent of scope_files()'s
+    historical exclusion, since this is the function that decides it."""
+    d = root / "docs"
+    return sorted(d.glob("*.md")) if d.is_dir() else []
+
+
+def _doc_header(path: Path) -> str:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    return "\n".join(text.splitlines()[:DOC_STATUS_HEADER_LINES])
+
+
+def is_historical_doc(path: Path) -> bool:
+    return bool(DOC_STATUS_HISTORICAL_RE.search(_doc_header(path)))
+
+
+def _exclude_historical_docs(files: list[Path]) -> list[Path]:
+    return [f for f in files if not is_historical_doc(f)]
+
+
 def scope_files(root: Path) -> list[Path]:
     """The file set every check but citations runs over: skills/**/*.md,
-    copilot/**/*.md, codex/**/*.md, agents/*.md, templates/*.template."""
+    copilot/**/*.md, codex/**/*.md, agents/*.md, templates/*.template,
+    CLAUDE.md, AGENTS.md, and non-recursive docs/*.md (minus any doc marked
+    `Historical design record` -- see `is_historical_doc()`).
+
+    docs/ is walked with `glob()`, not `rglob()`: `docs/plans/**`,
+    `docs/archive/**` and `docs/gap-analysis/**` are deliberate
+    historical/working trees a rename or a prose sweep must never rewrite
+    (see CONVENTIONS.md "Migration policy"). A non-recursive glob already
+    can't reach them, so no separate exclusion filter is needed here -- one
+    would be dead code, same as the docs/ exclusion `check_collapsed_pairs`
+    used to carry before docs/ was ever in scope.
+    """
     files: list[Path] = []
     for base in SKILL_TREE_DIRS:
         d = root / base
@@ -97,12 +177,18 @@ def scope_files(root: Path) -> list[Path]:
     templates_dir = root / "templates"
     if templates_dir.is_dir():
         files.extend(sorted(templates_dir.glob("*.template")))
+    for name in ("CLAUDE.md", "AGENTS.md"):
+        f = root / name
+        if f.is_file():
+            files.append(f)
+    files.extend(_exclude_historical_docs(docs_status_files(root)))
     return _exclude_fixtures(root, files)
 
 
 def citation_scope_files(root: Path) -> list[Path]:
     """Citations additionally cover README.md (paths only, per the plan's
-    Open Question: yes for paths, no for phrases)."""
+    Open Question: yes for paths, no for phrases) -- on top of the CLAUDE.md,
+    AGENTS.md and docs/*.md that scope_files() itself now covers."""
     files = scope_files(root)
     readme = root / "README.md"
     if readme.is_file():
@@ -194,6 +280,40 @@ OPEN_LIST_PREFIXES: dict[str, str] = {
         "--queue's loop knobs",
     "pipeline.review_fix.*": "collective reference to the review_fix block "
         "(enabled, mode)",
+    "logs.*": "collective reference in docs/CONFIG.md's 'which skill reads "
+        "which key' table -- /test-check reads the logs block generically",
+    "eval.*": "collective reference in docs/CONFIG.md's 'which skill reads "
+        "which key' table -- /sdlc delegates the whole eval block to "
+        "/test-check",
+    "pipeline.cleanup.*": "collective reference in docs/CONFIG.md's 'which "
+        "skill reads which key' table -- Stage 5.9 reads the cleanup block "
+        "generically",
+    "discipline.*": "collective reference in docs/CONFIG.md's 'which skill "
+        "reads which key' table -- the changed-files gate and /repo-health "
+        "each read discipline.* keys generically",
+}
+
+# Config-keys equivalent of CITATION_ALLOWLIST, for a CONCRETE (non-wildcard)
+# dotted key that is correct where it's cited -- a migration table's OLD
+# column, never a live claim the key still resolves. docs/MODEL-AXES.md's
+# "Migration from the old keys" table is exactly this: three of its eight
+# rows already have a forbidden-phrases.txt denylist row of their own (the
+# check that actually asserts these are dead); the other five have no
+# corresponding denylist row today and would otherwise read as unknown keys.
+CONFIG_KEY_ALLOWLIST: dict[tuple[str, str], str] = {
+    ("docs/MODEL-AXES.md", key): "MODEL-AXES.md 'Migration from the old "
+        "keys' table OLD column -- documents a dead key by design, not a "
+        "live one"
+    for key in (
+        "pipeline.sanity_check.model",
+        "pipeline.sanity_check.focuses",
+        "pipeline.review_fix.model",
+        "pipeline.review_fix.second_pass_model",
+        "pipeline.review_fix.lenses",
+        "pipeline.review_fix.passes",
+        "pipeline.review_fix.max_fix_loops",
+        "pipeline.decompose_min_tasks",
+    )
 }
 
 
@@ -221,6 +341,7 @@ def check_config_keys(files: list[Path], root: Path, registry: set[str]) -> list
     findings: list[Finding] = []
     for path in files:
         text = path.read_text(encoding="utf-8", errors="replace")
+        rel = relposix(root, path)
         seen: set[tuple[int, str]] = set()
         for m in CONFIG_KEY_RE.finditer(text):
             full = m.group(1)
@@ -235,6 +356,8 @@ def check_config_keys(files: list[Path], root: Path, registry: set[str]) -> list
                 continue  # e.g. `models.md` -- a file citation, not a key
             if full in registry:
                 continue
+            if (rel, full) in CONFIG_KEY_ALLOWLIST:
+                continue  # a dead key, correct in a migration table's OLD column
             line = text.count("\n", 0, m.start()) + 1
             key = (line, full)
             if key in seen:
@@ -530,6 +653,282 @@ def check_portable_frontmatter(files: list[Path], root: Path) -> list[Finding]:
     return findings
 
 
+# ── Check 6: doc status markers (docs/*.md only) ─────────────────────────────
+
+# Step 1's loophole-closer (b): pin the COUNT of historical docs/*.md files
+# using the same `path/glob:N` idiom as forbidden-phrases.txt's allow-glob
+# column -- a third historical doc appearing is then a visible, reviewed
+# diff (raise this pin) rather than a silent addition to the exemption.
+HISTORICAL_DOC_GLOB = "docs/*.md"
+HISTORICAL_DOC_PINNED_COUNT = 2
+
+
+def check_doc_status_markers(files: list[Path], root: Path) -> list[Finding]:
+    """Step 1: every docs/*.md declares `Live contract` or `Historical
+    design record` in its header. A historical marker is never a free pass:
+    (a) it must carry a pointer to the live contract that superseded it, and
+    the pointer must resolve (docs/FLOW.md:105's see-also entry models the
+    shape: "the stage shipped; its live contract is `skills/...`"); (b) the
+    COUNT of historical docs is pinned (`HISTORICAL_DOC_PINNED_COUNT`), so
+    review, not a silent grep, is what lets that count change."""
+    findings: list[Finding] = []
+    historical_count = 0
+    for path in files:
+        rel = relposix(root, path)
+        header = _doc_header(path)
+        is_live = bool(DOC_STATUS_LIVE_RE.search(header))
+        is_historical = bool(DOC_STATUS_HISTORICAL_RE.search(header))
+        if not is_live and not is_historical:
+            findings.append(
+                Finding(
+                    rel, 1,
+                    "no `Live contract` / `Historical design record` status "
+                    f"marker in the header (first {DOC_STATUS_HEADER_LINES} lines)",
+                    "doc-status-markers",
+                )
+            )
+            continue
+        if is_historical:
+            historical_count += 1
+            pointer_ok = any(
+                citation_resolves(root, path, m.group(1))
+                for m in CITATION_RE.finditer(header)
+            )
+            if not pointer_ok:
+                findings.append(
+                    Finding(
+                        rel, 1,
+                        "`Historical design record` marker has no resolving "
+                        "pointer (in the header) to the live contract that "
+                        "superseded it",
+                        "doc-status-markers",
+                    )
+                )
+    if historical_count > HISTORICAL_DOC_PINNED_COUNT:
+        findings.append(
+            Finding(
+                HISTORICAL_DOC_GLOB, 0,
+                f"{historical_count} docs/*.md file(s) now carry the "
+                "`Historical design record` marker but check_contracts.py's "
+                f"HISTORICAL_DOC_PINNED_COUNT says {HISTORICAL_DOC_PINNED_COUNT} "
+                "-- review the new one by hand, then raise the pin",
+                "doc-status-markers",
+            )
+        )
+    elif historical_count < HISTORICAL_DOC_PINNED_COUNT:
+        findings.append(
+            Finding(
+                HISTORICAL_DOC_GLOB, 0,
+                f"only {historical_count} docs/*.md file(s) carry the "
+                "`Historical design record` marker but the pin says "
+                f"{HISTORICAL_DOC_PINNED_COUNT} -- stale pin, lower it",
+                "doc-status-markers",
+            )
+        )
+    return findings
+
+
+# ── Check 7: no-cardinality (narrowed) ───────────────────────────────────────
+
+# Number-words only (`one`..`twenty`) -- the digit form (`5 hooks`) measured
+# 7 hits in CLAUDE.md + docs/*.md with 0 real defects and is left alone.
+NUMBER_WORDS: dict[str, int] = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+    "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
+    "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+    "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+    "twenty": 20,
+}
+# The four nouns a derivable count actually goes stale for. NOT "corruptions"
+# et al -- docs/CONVENTIONS.md's "Six corruptions have shipped this way" is a
+# historical tally that is the point of its sentence, and staying off that
+# noun is how this check avoids flagging it without needing to know the
+# sentence is historical.
+CARDINALITY_NOUNS = ("checks", "hooks", "skills", "agents")
+CARDINALITY_RE = re.compile(
+    rf"\b({'|'.join(NUMBER_WORDS)})\s+({'|'.join(CARDINALITY_NOUNS)})\b",
+    re.IGNORECASE,
+)
+
+FENCE_LINE_RE = re.compile(r"^\s*```")
+
+
+def strip_code_fences(text: str) -> str:
+    """Blank fenced code-block bodies (and their ``` delimiter lines) while
+    preserving line numbers -- check_contracts.py has no fenced-code
+    stripper today; no-cardinality is the first check that needs one (a
+    fenced shell example naming a count is not a prose claim)."""
+    out: list[str] = []
+    in_fence = False
+    for line in text.split("\n"):
+        if FENCE_LINE_RE.match(line):
+            in_fence = not in_fence
+            out.append("")
+            continue
+        out.append("" if in_fence else line)
+    return "\n".join(out)
+
+
+def cardinality_scope_files(root: Path) -> list[Path]:
+    """no-cardinality's scope, per the plan: CLAUDE.md, AGENTS.md, and
+    `Live contract` docs/*.md only -- never a `Historical design record` doc
+    (a frozen tally is the point there) and never README.md (its one
+    numbered claim is checked for list-length consistency instead, by
+    check_header_list_counts, because deleting the number there would make
+    the sentence worse)."""
+    files: list[Path] = []
+    for name in ("CLAUDE.md", "AGENTS.md"):
+        f = root / name
+        if f.is_file():
+            files.append(f)
+    files.extend(f for f in docs_status_files(root) if not is_historical_doc(f))
+    return files
+
+
+# Same shape as COLLAPSED_PAIR_ALLOWLIST: keyed on the MATCHED TEXT (lowered),
+# never a line number, so an unrelated edit above it can't silently stop the
+# exemption from applying. At ~50% measured precision this check WILL flag
+# stable, correct counts -- each entry here was read by hand and is a fixed
+# fact (a fixed-size enumeration named in the same sentence, or a specific
+# case study), never a live check/hook/skill/agent count that could drift.
+NO_CARDINALITY_ALLOWLIST: dict[tuple[str, str], str] = {
+    ("CLAUDE.md", "two checks"): "the Migration policy grep pair enumerated "
+        "immediately below (1. collapsed pairs, 2. the fact the rename "
+        "invalidated) -- a fixed, numbered list, not a check_contracts.py "
+        "check count",
+    ("AGENTS.md", "two checks"): "same as CLAUDE.md (byte-identical) -- the "
+        "Migration policy grep pair",
+    ("docs/CONVENTIONS.md", "two checks"): "the canonical source of the same "
+        "Migration policy grep pair CLAUDE.md/AGENTS.md mirror",
+    ("docs/FLOW.md", "three agents"): "the toolkit's three target runtimes, "
+        "named in the same sentence (Claude Code, GitHub Copilot, OpenAI "
+        "Codex) -- a structural fact, not a driftable check/hook/skill/agent "
+        "count",
+    ("docs/PROSE-FIDELITY.md", "two skills"): "the two specific dogfood runs "
+        "the case study is about, named in the two bullets immediately "
+        "below -- a fixed anecdote, not a live count",
+}
+
+
+def check_cardinality_claims(files: list[Path], root: Path) -> list[Finding]:
+    findings: list[Finding] = []
+    for path in files:
+        raw = path.read_text(encoding="utf-8", errors="replace")
+        text = strip_code_fences(raw)
+        rel = relposix(root, path)
+        for m in CARDINALITY_RE.finditer(text):
+            if (rel, m.group(0).lower()) in NO_CARDINALITY_ALLOWLIST:
+                continue
+            line = text.count("\n", 0, m.start()) + 1
+            findings.append(
+                Finding(
+                    rel, line,
+                    f"derivable count `{m.group(0)}` in prose -- counts drift "
+                    "with no local edit to catch it; state the fact without "
+                    "the number, or let a list/table carry the count instead",
+                    "no-cardinality",
+                )
+            )
+    return findings
+
+
+# ── Check 8: header-list-count (README.md only) ──────────────────────────────
+
+
+def header_list_scope_files(root: Path) -> list[Path]:
+    """README.md only -- the one site the plan asks this mechanism to cover
+    (`It also wires five hooks` above exactly five bullets)."""
+    readme = root / "README.md"
+    return [readme] if readme.is_file() else []
+
+
+def check_header_list_counts(files: list[Path], root: Path) -> list[Finding]:
+    """Where check 7's pattern is immediately followed (after at most one
+    blank line) by a run of `- ` bullets -- README.md's "It also wires five
+    hooks" above exactly five bullets -- assert header count == list length
+    instead of banning the number: deleting it there would make the
+    sentence worse, since the list is right there to keep it honest."""
+    findings: list[Finding] = []
+    for path in files:
+        text = strip_code_fences(path.read_text(encoding="utf-8", errors="replace"))
+        lines = text.split("\n")
+        rel = relposix(root, path)
+        for i, line in enumerate(lines):
+            if line.lstrip().startswith("- "):
+                continue  # a header for a sub-list is prose, not itself a
+                # bullet in some larger, unrelated list (README's own
+                # scripts-reference list is exactly this shape)
+            m = CARDINALITY_RE.search(line)
+            if not m:
+                continue
+            expected = NUMBER_WORDS[m.group(1).lower()]
+            j = i + 1
+            while j < len(lines) and lines[j].strip() == "":
+                j += 1
+            count = 0
+            while j < len(lines) and lines[j].lstrip().startswith("- "):
+                count += 1
+                j += 1
+            if count == 0 or count == expected:
+                continue  # not list-shaped, or already consistent
+            findings.append(
+                Finding(
+                    rel, i + 1,
+                    f"header says '{m.group(0)}' but the following list has "
+                    f"{count} item(s)",
+                    "header-list-count",
+                )
+            )
+    return findings
+
+
+# ── recheck-by pins (warn-only, never contributes to the exit code) ─────────
+
+RECHECK_BY_RE = re.compile(
+    r'<!--\s*assert-manual:\s*recheck-by\s+(\d{4}-\d{2}-\d{2})\s+"([^"]*)"\s*-->'
+)
+
+
+def recheck_by_scope_files(root: Path) -> list[Path]:
+    """CLAUDE.md, AGENTS.md, docs/*.md -- the pin's declared home per the
+    plan. A claim about the outside world is read by a maintainer, not
+    re-read by a stage template on every /sdlc run, so this stays narrower
+    than scope_files()'s skills/copilot/codex tree."""
+    files: list[Path] = []
+    for name in ("CLAUDE.md", "AGENTS.md"):
+        f = root / name
+        if f.is_file():
+            files.append(f)
+    files.extend(docs_status_files(root))
+    return files
+
+
+def recheck_by_warnings(root: Path, today: date | None = None) -> list[str]:
+    """Step 3: `<!-- assert-manual: recheck-by YYYY-MM-DD "<claim>" -->` pins
+    a claim about something outside this repo that no local diff can
+    invalidate. Permanent WARN, never a failure -- mirrors
+    `model_cap_pointer_warnings()` in validate_skills.py, this repo's own
+    precedent for a soft warning: check_contracts.py exits 1 on any finding
+    and runs in `setup-roundtrip`, so a date-triggered failure would be
+    indistinguishable from a real contract break and would train people to
+    ignore both."""
+    today = today or date.today()
+    warnings: list[str] = []
+    for path in recheck_by_scope_files(root):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        rel = relposix(root, path)
+        for m in RECHECK_BY_RE.finditer(text):
+            due = date.fromisoformat(m.group(1))
+            if due >= today:
+                continue
+            line = text.count("\n", 0, m.start()) + 1
+            warnings.append(
+                f'{rel}:{line}: recheck-by {due.isoformat()} expired -- '
+                f'reverify: "{m.group(2)}"'
+            )
+    return warnings
+
+
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 
@@ -613,6 +1012,7 @@ def run_all(root: Path, phrases_file: Path) -> dict[str, list[Finding]]:
     files = scope_files(root)
     cite_files = citation_scope_files(root)
     load_files = load_only_scope_files(root)
+    doc_files = docs_status_files(root)
     registry = load_registry(root)
     phrases = load_forbidden_phrases(phrases_file)
 
@@ -623,16 +1023,23 @@ def run_all(root: Path, phrases_file: Path) -> dict[str, list[Finding]]:
         "collapsed-pairs": check_collapsed_pairs(files, root),
         "portable-frontmatter": check_portable_frontmatter(overlay_skill_files(root), root),
         "version-freshness": check_version_freshness(root),
+        "doc-status-markers": check_doc_status_markers(doc_files, root),
+        "no-cardinality": check_cardinality_claims(cardinality_scope_files(root), root),
+        "header-list-count": check_header_list_counts(header_list_scope_files(root), root),
     }
 
 
-def print_report(results: dict[str, list[Finding]], as_json: bool) -> int:
+def print_report(
+    results: dict[str, list[Finding]], as_json: bool, warnings: list[str] | None = None,
+) -> int:
+    warnings = warnings or []
     total = sum(len(v) for v in results.values())
     if as_json:
         payload = {
             check: [f._asdict() for f in findings] for check, findings in results.items()
         }
         payload["total"] = total
+        payload["recheck-by-warnings"] = warnings
         print(json.dumps(payload, indent=2))
         return 1 if total else 0
 
@@ -640,6 +1047,13 @@ def print_report(results: dict[str, list[Finding]], as_json: bool) -> int:
         print(f"{check}: {len(findings)} finding(s)")
         for f in findings:
             print(f"  {f.path}:{f.line}: {f.message}")
+
+    if warnings:
+        # Permanent WARN, never contributes to `total` or the exit code --
+        # see recheck_by_warnings()'s docstring.
+        print(f"\nrecheck-by warnings: {len(warnings)} (does not affect exit code)")
+        for w in warnings:
+            print(f"  {w}")
 
     if total:
         print(f"\n{total} total finding(s) across {len(results)} checks")
@@ -737,6 +1151,157 @@ def self_test_count_baseline() -> bool:
     return ok
 
 
+def self_test_doc_status_markers() -> bool:
+    """Step 1, primary case: a `Live contract` doc and two `Historical
+    design record` docs with a resolving pointer (matching the real
+    HISTORICAL_DOC_PINNED_COUNT of 2, so the count check stays quiet) all
+    pass silently; a doc with no status marker at all is the seeded
+    violation."""
+    with tempfile.TemporaryDirectory(prefix="check_contracts_selftest_docstatus_") as tmp:
+        root = Path(tmp)
+        docs_dir = root / "docs"
+        docs_dir.mkdir(parents=True)
+        target_dir = root / "skills" / "target"
+        target_dir.mkdir(parents=True)
+        (target_dir / "live.md").write_text("the live contract target\n", encoding="utf-8")
+
+        (docs_dir / "LIVE.md").write_text(
+            "# A live doc\n\n> **Live contract.**\n\nBody text.\n", encoding="utf-8"
+        )
+        (docs_dir / "HIST-A.md").write_text(
+            "# Historical A\n\n> **Historical design record.** Its live "
+            "contract is `skills/target/live.md`.\n", encoding="utf-8",
+        )
+        (docs_dir / "HIST-B.md").write_text(
+            "# Historical B\n\n> **Historical design record.** Its live "
+            "contract is `skills/target/live.md`.\n", encoding="utf-8",
+        )
+        (docs_dir / "NO-MARKER.md").write_text(
+            "# No marker at all\n\nJust prose, no status line.\n", encoding="utf-8",
+        )
+
+        findings = check_doc_status_markers(docs_status_files(root), root)
+
+    ok = len(findings) == 1 and findings[0].path == "docs/NO-MARKER.md"
+    status = "OK" if ok else "FAIL"
+    print(
+        f"[{status}] doc-status-markers: expected 1 violation(s) (missing "
+        f"status marker), caught {len(findings)}"
+    )
+    for f in findings:
+        print(f"    {f.path}:{f.line}: {f.message}")
+    return ok
+
+
+def self_test_doc_status_pointer() -> bool:
+    """Step 1, loophole-closer (a): a `Historical design record` marker with
+    NO resolving pointer is caught -- even though the total historical count
+    (2) still matches the real pin, isolating this from the count check."""
+    with tempfile.TemporaryDirectory(prefix="check_contracts_selftest_docptr_") as tmp:
+        root = Path(tmp)
+        docs_dir = root / "docs"
+        docs_dir.mkdir(parents=True)
+        (docs_dir / "HIST-OK.md").write_text(
+            "# Historical, pointer resolves\n\n> **Historical design "
+            "record.** Its live contract is `docs/HIST-OK.md`.\n",
+            encoding="utf-8",
+        )
+        (docs_dir / "HIST-DANGLING.md").write_text(
+            "# Historical, pointer dangles\n\n> **Historical design "
+            "record.** Its live contract is `skills/does-not-exist/x.md`.\n",
+            encoding="utf-8",
+        )
+        findings = check_doc_status_markers(docs_status_files(root), root)
+
+    ok = len(findings) == 1 and findings[0].path == "docs/HIST-DANGLING.md"
+    status = "OK" if ok else "FAIL"
+    print(
+        f"[{status}] doc-status-markers pointer: expected 1 violation(s) "
+        f"(dangling live-contract pointer), caught {len(findings)}"
+    )
+    for f in findings:
+        print(f"    {f.path}:{f.line}: {f.message}")
+    return ok
+
+
+def self_test_doc_status_count() -> bool:
+    """Step 1, loophole-closer (b): a THIRD well-formed historical doc (all
+    three pointers resolve, so no per-file finding fires) still trips the
+    pinned-count check -- adding one must be a visible, reviewed diff."""
+    with tempfile.TemporaryDirectory(prefix="check_contracts_selftest_doccount_") as tmp:
+        root = Path(tmp)
+        docs_dir = root / "docs"
+        docs_dir.mkdir(parents=True)
+        for name in ("HIST-A.md", "HIST-B.md", "HIST-C.md"):
+            (docs_dir / name).write_text(
+                f"# {name}\n\n> **Historical design record.** Its live "
+                f"contract is `docs/{name}`.\n", encoding="utf-8",
+            )
+        findings = check_doc_status_markers(docs_status_files(root), root)
+
+    ok = len(findings) == 1 and "3 docs/*.md file(s)" in findings[0].message
+    status = "OK" if ok else "FAIL"
+    print(
+        f"[{status}] doc-status-markers count pin: expected 1 violation(s) "
+        f"(3 historical docs against a pin of {HISTORICAL_DOC_PINNED_COUNT}), "
+        f"caught {len(findings)}"
+    )
+    for f in findings:
+        print(f"    {f.path}:{f.line}: {f.message}")
+    return ok
+
+
+def self_test_no_cardinality() -> bool:
+    """Step 4: a number-word directly before a target noun is caught in
+    prose; the same phrase inside a fenced code block is not (the fenced-
+    code stripper this check introduces)."""
+    with tempfile.TemporaryDirectory(prefix="check_contracts_selftest_card_") as tmp:
+        root = Path(tmp)
+        (root / "CLAUDE.md").write_text(
+            "# Test\n\n"
+            "There are four skills that matter here.\n\n"
+            "```bash\n"
+            "# five hooks inside a fence must never be flagged\n"
+            "```\n",
+            encoding="utf-8",
+        )
+        findings = check_cardinality_claims(cardinality_scope_files(root), root)
+
+    ok = len(findings) == 1 and "four skills" in findings[0].message
+    status = "OK" if ok else "FAIL"
+    print(
+        f"[{status}] no-cardinality: expected 1 violation(s) (prose count, "
+        f"fenced one excluded), caught {len(findings)}"
+    )
+    for f in findings:
+        print(f"    {f.path}:{f.line}: {f.message}")
+    return ok
+
+
+def self_test_header_list_count() -> bool:
+    """Step 4's paired consistency check: a numbered header immediately
+    followed by a mismatched bullet list is caught (README's real 'five
+    hooks' / five-bullets site is the one this models -- there, the numbers
+    genuinely match, so nothing should ever fire)."""
+    with tempfile.TemporaryDirectory(prefix="check_contracts_selftest_hlc_") as tmp:
+        root = Path(tmp)
+        (root / "README.md").write_text(
+            "# Test\n\nIt wires three hooks:\n\n- one\n- two\n",
+            encoding="utf-8",
+        )
+        findings = check_header_list_counts(header_list_scope_files(root), root)
+
+    ok = len(findings) == 1 and "three hooks" in findings[0].message
+    status = "OK" if ok else "FAIL"
+    print(
+        f"[{status}] header-list-count: expected 1 violation(s) (header "
+        f"says three, list has two), caught {len(findings)}"
+    )
+    for f in findings:
+        print(f"    {f.path}:{f.line}: {f.message}")
+    return ok
+
+
 def self_test() -> int:
     with tempfile.TemporaryDirectory(prefix="check_contracts_selftest_") as tmp:
         root = Path(tmp)
@@ -774,6 +1339,16 @@ def self_test() -> int:
 
     if not self_test_count_baseline():
         ok = False
+    if not self_test_doc_status_markers():
+        ok = False
+    if not self_test_doc_status_pointer():
+        ok = False
+    if not self_test_doc_status_count():
+        ok = False
+    if not self_test_no_cardinality():
+        ok = False
+    if not self_test_header_list_count():
+        ok = False
 
     if not ok:
         print("\nself-test FAILED")
@@ -796,7 +1371,8 @@ def main(argv: list[str] | None = None) -> int:
 
     phrases_file = REPO_ROOT / "scripts" / "ci" / "forbidden-phrases.txt"
     results = run_all(REPO_ROOT, phrases_file)
-    return print_report(results, args.json)
+    warnings = recheck_by_warnings(REPO_ROOT)
+    return print_report(results, args.json, warnings)
 
 
 if __name__ == "__main__":

@@ -66,18 +66,18 @@ should include every changed skill. If `setup.sh` errors out, it's a HARD fail
 ### 5. Line-count ceiling per `CLAUDE.md` rule 3
 
 ```bash
-for f in skills/*/SKILL.md; do
+for f in skills/*/SKILL.md copilot/skills/*/SKILL.md codex/skills/*/SKILL.md; do
+  [ -f "$f" ] || continue
   lines=$(wc -l < "$f")
-  if [ "$lines" -gt 250 ]; then
+  if [ "$lines" -gt 500 ]; then
     # SOFT warning — over the rule-3 ceiling
-    echo "WARN: $f is $lines lines (>250)"
+    echo "WARN: $f is $lines lines (>500)"
   fi
 done
 ```
 
-The rule says "small utility skills ≤100 lines, larger orchestration skills
-≤250 lines". Going over is a smell, not a blocker — `/sdlc` itself has been
-above the ceiling and shipping work. Note the count in the Stage 7 report and move on.
+The ceiling is 500 lines, the Agent Skills spec limit (`CLAUDE.md` rule 3).
+Going over is a smell, not a blocker. Note the count in the Stage 7 report and move on.
 
 ### 6. AGENTS.md / CLAUDE.md drift check
 
@@ -104,7 +104,7 @@ Summarize as a table for the Stage 7 report:
 | marketplace registration | PASS / FAIL | missing skills, if any |
 | template references | PASS / FAIL | unresolved refs, if any |
 | setup.sh dry install | PASS / FAIL | exit code |
-| line-count ceiling | OK / WARN | files over 250 |
+| line-count ceiling | OK / WARN | files over 500 |
 | README skills table | OK / WARN | drift detected? |
 | copilot overlay parity | OK / WARN / N/A | drift detected? |
 

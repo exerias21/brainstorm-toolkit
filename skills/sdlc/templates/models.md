@@ -191,9 +191,10 @@ silent. `validate_skills.py` checks that fan-out skills point at this file.
   the review stage.
 - **Copilot** → stages run inline in the session model; the cap is **advisory** (there is no
   sub-agent tier to lower). The `agents.*` counts still apply.
-- **Codex** → advisory too. Codex has native subagents, but per-subagent model override is
-  reported regressed upstream, so its fan-out runs single-model. Background and the caveat on
-  that report: `docs/MODEL-AXES.md`.
+- **Codex** → not advisory-only like Copilot: Codex has native subagents
+  (`.codex/agents/*.toml`, parallel, `max_threads`), and per-subagent `model` override works
+  today, so the cap and per-stage tiers can apply here too. Remaining caveat (narrower,
+  provider-only) and background: `docs/MODEL-AXES.md`.
 
 ## Invalid input — fall through, never guess
 

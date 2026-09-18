@@ -142,6 +142,9 @@ Convention skills — load a house pattern before writing code:
 | `/gotcha "..."` | Append a pitfall (auto-drafted at loop-exit on real traps) | after a bug bites |
 | `/repo-onboarding` | Regenerate AGENTS.md / project.json | new repo intake |
 | `/dead-code-review` | Multi-agent unused-code scan | pre-cleanup, monthly |
+| `/code-tour` | Why-focused docstrings + a guided reading path (`TOUR.md`) | onboarding someone new to the repo |
+| `/brainstorm-team [topic]` | Multi-agent product/competitive research team | heavy autonomous product research |
+| `/plan-html {plan}` | Render a markdown plan as a shareable single-file HTML page | handing a plan to a stakeholder |
 
 ---
 

@@ -192,7 +192,7 @@ Step 3 was skipped as non-interactive. **This step always runs.** Reaching Step 
 writing nothing is a failed onboarding, not a cautious one:
 
 1. Write `.claude/project.json` (create `.claude/` if missing).
-2. Write `AGENTS.md` at repo root. If `CLAUDE.md` is also missing, symlink it to `AGENTS.md` on POSIX, else copy.
+2. Write `AGENTS.md` at repo root. If `CLAUDE.md` is also missing, **copy** it — never symlink, matching `setup.sh` (WSL/NTFS and Windows git both struggle with symlinks). Keep the two in sync.
 3. If no `TASKS.md`, copy `templates/TASKS.md.template` to repo root.
 4. If no `GOTCHAS.md` at repo root, create one from `examples/GOTCHAS.md.example`.
 5. **Update `.gitignore`.** The toolkit's working files are *local* working

@@ -68,6 +68,7 @@
     "code_review_passes": 1,
     "code_review_max_fix_loops": 3,
     "decompose_min_tasks": 6,
+    "_decompose_min_tasks_comment": "Optional. Stage 2 fans out into per-surface lanes only when surfaces>=2 AND task_count>=this AND the file sets are disjoint. Default 6.",
     "cleanup_lenses": ["over-engineering", "docstring-currency"],
     "_cleanup_lenses_comment": "Optional, default both (= the array above). Which Stage 5.9 cleanup lenses fan out -- see skills/sdlc/templates/stage-5.9-cleanup.md. An unrecognized entry is ignored with one warning.",
     "cleanup_max_lenses": 2,
@@ -96,9 +97,8 @@
   },
 
   "pipeline": {
-    "_comment": "Optional. Knobs read by /sdlc. Most keys default to false/unset; decompose_min_tasks defaults to 6 when unset.",
+    "_comment": "Optional. Knobs read by /sdlc. Most keys default to false/unset.",
     "skip_secret_scan": false,
-    "_decompose_min_tasks_comment": "Optional. Stage 2 fans out into per-surface lanes only when surfaces>=2 AND task_count>=this AND the file sets are disjoint. Default 6.",
     "_poka_yoke_comment": "Claude-only. When true, /repo-onboarding writes a PreToolUse hook to .claude/settings.json that blocks Write/Edit when a likely secret is in the payload. Enabling this key alone does NOT install the hook — see AGENTS.md 'Hooks (Claude-only)' for the settings.json schema. Copilot consumers gain nothing from this key (no PreToolUse equivalent); rely on the Stage 6 gitleaks scan instead.",
     "poka_yoke": false,
     "_enforce_cap_comment": "Claude-only, default false. When true, the PreToolUse(Agent) hook scripts/hooks/enforce-model-cap.sh (wired by setup.sh / the plugin) makes models.cap deterministic: a dispatch whose model ranks above the cap is rewritten to the cap, and a dispatch that omits model gets the cap unless its agent definition pins a tier. Dispatches whose description starts 'review:' (the Axis 2 reviewer) are exempt. Trade-off: the hook cannot see a per-run --model flag, so with enforcement on the config cap is policy and --model opus is clamped -- raise models.cap for that run instead. Each rewrite is shown to you as a systemMessage; it never blocks.",

@@ -1,5 +1,7 @@
 # Prose fidelity — prescriptive steps get followed, abstract steps get improvised
 
+> **✓ Live contract — current and maintained.**
+
 A design lesson from dogfooding the loop skills against real work (2026-07). It is the
 single most useful thing we learned about *why* a skill sometimes does exactly what its
 SKILL.md says and sometimes freelances — and what to do about it.

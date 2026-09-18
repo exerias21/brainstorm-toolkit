@@ -1,5 +1,7 @@
 # The `.next-action` seam — contract
 
+> **✓ Live contract — current and maintained.**
+
 The `.claude/.next-action` sentinel is the cross-skill handoff channel: a skill that
 finishes writes what should happen next, and the Stop hook
 (`scripts/hooks/next-action.sh`) surfaces it once. This page is the canonical contract now

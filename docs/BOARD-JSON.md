@@ -1,5 +1,7 @@
 # `close-tasks.sh board` — JSON work-state export
 
+> **✓ Live contract — current and maintained.**
+
 `bash scripts/close-tasks.sh board --file TASKS.md [--repo-name NAME] [--pipeline-dir .claude/pipeline]`
 emits **one JSON object** on stdout describing everything this repo knows about its own work:
 `TASKS.md` rows joined against `.claude/pipeline/*/run.json` envelopes.

@@ -105,34 +105,19 @@ repetition itself is required, not redundant.
    ```
    `setup.sh` uses this metadata to decide whether the skill is copied to `.github/skills/<name>/` (Copilot) in addition to `.claude/skills/<name>/` (Claude). The installer still accepts the legacy top-level `applies-to:` key for backward compatibility, but new edits in this repo should use `metadata`.
 2. **Claude-only features** (Plan mode, sub-agents via the Agent tool, hooks) → mark the skill `claude` only in `skills/`. If the skill is still useful on Copilot in a simplified form, create a Copilot-optimized override in `copilot/skills/<name>/SKILL.md` (see rule 9).
-3. **Keep each SKILL.md tight — and know which ceiling you are under.** Two
-   different numbers get cited as "the limit" and they are not the same rule:
+3. **Keep each SKILL.md under 500 lines.** That is the ceiling in the open Agent Skills
+   spec (https://agentskills.io/specification), which Claude Code, Copilot and Codex all
+   honor, and this repo adopts it unchanged rather than maintaining a stricter house number.
+   Nothing here is close: the largest skill is `brainstorm` at 332 lines. Note that 500 is a
+   documented recommendation, not a validator-enforced hard error — no tool in the chain
+   rejects a longer file.
 
-   - **Upstream (Anthropic / the open Agent Skills spec): 500 lines.** A hard
-     ceiling. Nothing in this repo is close to it.
-   - **This repo's house rule: ≤100 lines for a utility skill, ≤300 for an
-     orchestration skill.** Stricter than upstream on purpose, because a skill
-     here ships to three runtimes and its stage bodies already have a home in
-     `templates/`. Treat it as a soft target with real slack: a few lines over
-     is not worth a restructure, and buying a line back is only worth it when
-     the line was not earning its place anyway. Past ~300, ask whether a stage
-     body belongs in `templates/` instead — that is the actual signal, not the
-     count.
-
-   Cite the house rule as the house rule. Do not justify it as "Anthropic's
-   guidance" — the upstream number is looser, and the mismatch has been used to
-   argue both directions.
-
-   Three named exceptions, decided and not reopened each time they are re-measured:
-
-   | Skill | Ceiling | Why |
-   |---|---|---|
-   | `sdlc` | ~330 lines | Orchestration surface; every stage body is already in `templates/`. What remains is gate + contract, and it is 15 stages' worth. |
-   | `brainstorm` | ~335 lines | A conversational flow; splitting mid-flow costs more in comprehension than it saves in tokens. Grew deliberately twice: when the question-asking ceiling was removed (an interview that stops early is the expensive failure here), and when Step 1 gained dependency-ordered rounds and the facts-vs-decisions rule ported from `mattpocock/skills`' `grill-me`. |
-   | `code-tour` | no line ceiling | Its prose **is** the product — the fabrication warnings and the "what bad output looks like" rubric are the output spec, not a wrapper around a template. Judge it on duplication, not length. |
-
-   A skill over its ceiling without an entry in that table is a finding.
-   **Adding a row is a deliberate decision, not a way to close the finding.**
+   **Length is not the real signal — duplication is.** Past ~300 lines, ask whether a stage
+   body belongs in `skills/sdlc/templates/` instead. A skill that restates a template it
+   also tells the model to read now is a finding at any line count; a skill whose prose *is*
+   the product (`code-tour`'s fabrication warnings and its "what bad output looks like"
+   rubric are the output spec, not a wrapper around a template) is not a finding at any
+   length. Judge on duplication, not on the count.
 
 4. **Frontmatter `description` — a hard budget, because it is always resident.**
    Every skill's name + description loads into every session on every turn,
@@ -157,7 +142,9 @@ repetition itself is required, not redundant.
 7. **Copilot uses Agent Skills, not prompt-file shims.** Consumer repos should receive `.github/skills/<name>/SKILL.md`, including any bundled resources referenced by the skill.
 8. **Claude helper agents stay in `.claude/agents/`.** VS Code can discover Claude-format agents there, so this repo does not maintain a duplicate `.github/agents/` tree for the current Claude-only helper agents.
 9. **Copilot overlay pattern.** `copilot/skills/<name>/SKILL.md` overrides the canonical `skills/<name>/SKILL.md` for Copilot distribution. Use this when a skill needs Claude-specific features (Plan mode, agents) in its canonical version but can still provide value as a simplified Copilot slash command. `setup.sh` prefers the override when it exists; otherwise falls through to the canonical version. Overrides must set `metadata.brainstorm-toolkit-applies-to: copilot` and pass `validate_skills.py` independently.
-10. **Portable frontmatter subset.** The Agent Skills spec GitHub Copilot and OpenAI Codex document is `name`, `description`, `license`, `metadata`, `compatibility`, `allowed-tools` only — a strict consumer hard-errors on any other key. Claude-only keys (`argument-hint`, `disable-model-invocation`, ...) may appear on the canonical `skills/<name>/SKILL.md` (the Claude install source); `setup.sh` strips them for the `.github/skills/` and `.agents/skills/` installs. `copilot/skills/<name>/SKILL.md` and `codex/skills/<name>/SKILL.md` overlays must never declare them by hand — `check_contracts.py`'s `portable-frontmatter` check enforces this.
+10. **Portable frontmatter subset.** The open Agent Skills spec (https://agentskills.io/specification), which GitHub Copilot and OpenAI Codex both implement, defines `name`, `description`, `license`, `metadata`, `compatibility`, `allowed-tools` only. A strict spec validator — and Anthropic's own Skills API upload — hard-errors on any other key; Copilot and Codex as shipped are more lenient (they log "unknown field ignored" and load anyway). Write to the strict set regardless: leniency is a current implementation detail, not a contract. Claude-only keys (`argument-hint`, `disable-model-invocation`, ...) may appear on the canonical `skills/<name>/SKILL.md` (the Claude install source); `setup.sh` strips them for the `.github/skills/` and `.agents/skills/` installs. `copilot/skills/<name>/SKILL.md` and `codex/skills/<name>/SKILL.md` overlays must never declare them by hand — `check_contracts.py`'s `portable-frontmatter` check enforces this.
+
+    <!-- assert-manual: recheck-by 2027-03-15 "Copilot and Codex load an unknown SKILL.md frontmatter key leniently (log + continue) rather than hard-erroring" -->
 
 ## Unified contracts
 
@@ -239,9 +226,10 @@ fails the build if any cited template does not resolve in a fresh install.
 
 Each stage's body lives in **one** template there — `output-verbosity`, `resumption`,
 `stage-1.5-sanity-check`, `stage-2-gate`, `stage-2-implement`, `stage-2a/2b/2c`,
-`stage-3-evals`, `fix-loop`, `stage-5-validate`, `stage-5.7-review-fix`, `secret-scan`,
-`stage-5-skill-repo`, `changed-files-gate`, `convention-grounding`, `envelope-staleness`,
-`models`, `state-schema` — and `skills/sdlc/SKILL.md` stays thin per stage: a short
+`stage-3-evals`, `fix-loop`, `stage-5-validate`, `stage-5.7-review-fix`, `stage-5.9-cleanup`,
+`stage-6-handoff`, `secret-scan`, `stage-5-skill-repo`, `changed-files-gate`,
+`convention-grounding`, `envelope-staleness`, `models`, `state-schema` — and
+`skills/sdlc/SKILL.md` stays thin per stage: a short
 framing paragraph, the gate/skip rule that decides *whether* to run, and a
 `**Read skills/sdlc/templates/<x>.md now**` pointer.
 
@@ -257,16 +245,19 @@ Two rules follow, and both are load-bearing:
 
 **`/sdlc` absorbed the former `/sdlc-lite`** — the two duplicated every stage, so keeping both
 cost more than the merge did. The survivor took the `/sdlc` name, does **no git writes**, and
-hands you a validated tree; see `docs/FLOW.md` for what each side of the merge contributed.
+hands you a validated tree; the rename is recorded under *Migration policy* in `docs/CONVENTIONS.md`.
 
 Two flags gate whole templates rather than sections — `--queue` (`queue-mode.md`) and the
 review stage's opt-in. Keep it that way: a flag nobody passed should cost nothing.
 
 ### When a rule earns a hook, not just prose
 
-A skill is an advisory control — it can only ask the model to follow it. `enforce-model-cap.sh`,
-`stop-gate.sh`, and `next-action.sh` exist because sometimes that isn't enough: **a skill is an
-advisory control while a hook is the deterministic layer behind it.** The failure that motivates
+A skill is an advisory control — it can only ask the model to follow it. The hooks in
+`scripts/hooks/` exist because sometimes that isn't enough — three are policy controls
+(`enforce-model-cap.sh`, `stop-gate.sh`, `next-action.sh`) and two are context/observability
+(`reseed-context.sh`, `run-cost-report.sh`), which is the distinction this section cares
+about: **a skill is an advisory control while a hook is the deterministic layer behind it.**
+The failure that motivates
 this is measured, not hypothetical: an audited `/sdlc` run said `**Read
 skills/sdlc/templates/<x>.md now**` at nine points, the model read zero of them (795 lines of
 stage contract unread), and nothing detected it.
@@ -280,8 +271,8 @@ Before promoting a rule from prose to a hook, ask:
    JSON, `project.json`, a file hash) and returning a decision with no interpretation? If the
    check needs judgment, it stays prose regardless of how important the rule is.
 3. **Can `scripts/ci/test-hooks.sh` exercise it** with scratch input and assert on stdout, the
-   way it already does for `enforce-model-cap.sh` and `stop-gate.sh`? A control nothing tests is
-   a liability, not a control.
+   way it already does for `enforce-model-cap.sh`, `stop-gate.sh`, and `protect-tests.sh`? A
+   control nothing tests is a liability, not a control.
 4. **Is a preventer actually enforceable, or only a detector?** A `PreToolUse` matcher can be
    routed around (a `Bash`-driven `sed -i` skips a `Write|Edit` matcher); `scripts/protect-tests.sh`
    answers "deterministic, yes — but a detector, not a hook" for exactly this reason.
@@ -367,15 +358,19 @@ pytest evals, and `scripts/ci/skill-eval.py`'s headless outcome evals on a fixtu
 1. Running `python scripts/validate_skills.py` from the repo root — this covers skills
    **and** `agents/` frontmatter (missing `name`/`description`, a prose model-tier or
    read-only claim the frontmatter doesn't enforce, marketplace registration drift).
-2. Running `python scripts/ci/check_contracts.py` — proves the prose and the config
-   agree: every `project.json` key a skill names exists in
-   `templates/project.json.example`, every repo-path citation resolves, no forbidden
-   (rename-invalidated) phrase survives, and no sentence names the same command twice.
-   `--self-test` exercises the four checks against a synthetic tree.
-3. Running `bash scripts/ci/test-hooks.sh` — the regression harness for the hooks that make
-   policy deterministic instead of prose-enforced (`scripts/hooks/enforce-model-cap.sh`,
-   `scripts/hooks/stop-gate.sh`): scratch project dirs, sample stdin JSON, assertions on
-   stdout. Exits 1 on the first failing case.
+2. Running `python scripts/ci/check_contracts.py` — checks proving the prose, the config
+   and the shipped plugin agree: every `project.json` key a skill names exists in
+   `templates/project.json.example`; every repo-path citation resolves (and a `docs/` file a
+   skill says to *load* is a placement error); no forbidden (rename-invalidated) phrase
+   survives; no sentence names the same command twice; no Copilot/Codex overlay declares a
+   Claude-only frontmatter key; and `.claude-plugin/plugin.json`'s `version` moved when
+   shipped content did — an unmoved version leaves every consumer on a stale cached plugin,
+   silently. `--self-test` exercises each one against a synthetic tree.
+3. Running `bash scripts/ci/test-hooks.sh` — the regression harness for the **deterministic
+   controls** that back policy instead of prose — the two wired hooks
+   (`scripts/hooks/enforce-model-cap.sh`, `scripts/hooks/stop-gate.sh`) and the
+   `scripts/protect-tests.sh` detector CLI: scratch project dirs, sample stdin JSON,
+   assertions on stdout. Exits 1 on the first failing case.
 4. Running `bash setup.sh --target /tmp/test-repo --tools both` against a scratch repo.
 5. Invoking the changed skill in both Claude Code and Copilot when the skill targets both tools.
 6. Confirming the skill runs without referencing removed files or broken paths.

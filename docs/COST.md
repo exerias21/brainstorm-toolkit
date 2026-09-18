@@ -1,5 +1,7 @@
 # Model & cost reference
 
+> **✓ Live contract — current and maintained.**
+
 What each skill dispatches under the hood, and what a run costs. Split out of `README.md`
 so the front page stays a tour rather than a reference table.
 

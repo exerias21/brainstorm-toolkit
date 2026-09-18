@@ -1,5 +1,7 @@
 # Model axes — design record
 
+> **✓ Live contract — current and maintained.**
+
 Maintainer reference. **Not shipped by `setup.sh`**, so it costs consumers nothing. The runtime
 contract lives in `skills/sdlc/templates/models.md`, which every fan-out skill loads on every
 run; anything here is background that a running agent does not need.
@@ -34,13 +36,18 @@ gains the parameter.
   sub-agent tier to lower). The `agents.*` counts still apply.
 - **Codex** → advisory too, but for a different reason worth keeping straight. Codex *does*
   have native subagents (`.codex/agents/*.toml`, parallel, `max_threads`) — it is not
-  structurally inline-only like Copilot. What blocks tiering is that **per-subagent model
-  override is reported regressed upstream** (subagents inherit the parent model), so the
-  fan-out runs single-model.
+  structurally inline-only like Copilot. Per-subagent model
+  override **works today**: per OpenAI's docs, a custom agent file's `model` (and
+  `model_reasoning_effort`) takes precedence, resolving explicit spawn value > `[agents]`
+  default > parent's value. The remaining open bug is narrower — `model_provider` overrides
+  specifically are ignored (openai/codex#40858, reproduced on CLI v0.149.1) — which does not
+  affect the single-provider case this toolkit uses. So Codex fan-out tiering is no longer
+  blocked.
 
-  > **Reported, not verified here** — from web research on 2026-07-13, not a hands-on Codex
-  > install, and an upstream bug that may already be fixed. Re-check before relying on the
-  > limitation *or* its absence. Describes Codex only; changes nothing about tier defaults
+  > Re-checked 2026-09-13 against https://learn.chatgpt.com/docs/agent-configuration/subagents,
+  > superseding the 2026-07-13 "reported regressed" note this replaces.
+
+<!-- assert-manual: recheck-by 2027-03-15 "Codex per-subagent model override works today (openai/codex#40858 is narrowed to model_provider only)" -->
 
 ---
 

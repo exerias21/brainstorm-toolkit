@@ -1,6 +1,6 @@
 # Naming Conventions
 
-**Status**: canonical. New skills, artifacts, and flags follow these rules. See "Migration Policy" for how existing inconsistencies are handled.
+**Status**: live contract — canonical. New skills, artifacts, and flags follow these rules. See "Migration Policy" for how existing inconsistencies are handled.
 
 **Drafted**: 2026-04-25, dogfooded `/brainstorm` (4 lens agents in parallel — first principles, inversion, cross-domain k8s, constraint removal). See "Provenance" at the bottom.
 
@@ -287,6 +287,21 @@ script surfaces as an allowlist entry with a reason, not a silent skip.
 
 **Stages**: opt-in. Existing skills using "Stage 1.5" prose remain. New skills, plus the run.json schema in Phase 1, use semantic names. Conversions of existing skills happen when those skills are edited for other reasons.
 
+**Line ceilings**: `CLAUDE.md`/`AGENTS.md` rule 3 formerly ran a two-tier house rule (≤100 lines
+for a utility skill, ≤300 for an orchestration skill) with a three-row named-exceptions table
+for the skills that ran over it. `sdlc` (327 lines at last measurement) and `brainstorm` (332
+lines) were two of those three rows: `sdlc`'s length is the orchestration surface itself —
+every stage body already lives in `templates/`, so what remains in the skill is gate + contract
+for 15 stages' worth of them. `brainstorm` grew deliberately twice — once when the
+question-asking ceiling was removed (an interview that stops early is the more expensive
+failure there), and again when Step 1 gained dependency-ordered rounds plus the
+facts-vs-decisions rule ported from `mattpocock/skills`' `grill-me`. (The third row, `code-tour`,
+was not a length exception at all — its prose *is* the product, and that rationale is now the
+rule's general principle rather than a table entry.) The two-tier rule and the table are retired
+in favor of a flat 500-line cap (the Agent Skills spec ceiling); at 327/332 lines neither skill
+is anywhere near it, so this paragraph is a record of why they used to be exceptions, not a
+description of a current one. Line counts drift — treat the numbers above as of this change.
+
 The principle: **conventions defend against future bugs; they don't justify retroactive churn.**
 
 ---
@@ -364,10 +379,11 @@ Correct form, in priority order:
 description instead of a placeholder. A frontmatter-less agent file is not reliably
 dispatchable.
 
-The same two-root rule applies to **skill-tree paths** (`templates/*.md`, the Workflow
-`scriptPath`): `<CLAUDE_PLUGIN_ROOT>/skills/…` under a plugin install, `.claude/skills/…`
-when vendored. `sdlc-pipeline.workflow.js` centralizes this in its `SDLC_DIR` / `AGENTS_DIR`
-constants; prose skills name both inline. Exception: `.claude/skills/**` appearing as a
+The same two-root rule applies to **skill-tree paths** (`templates/*.md`):
+`<CLAUDE_PLUGIN_ROOT>/skills/…` under a plugin install, `.claude/skills/…` when vendored.
+Prose skills name both inline; `setup.sh` rewrites the citation prefix at install time
+(`install_shared_templates()`), and `scripts/ci/check_install_refs.py` fails CI if a cited
+template does not resolve in a fresh install. Exception: `.claude/skills/**` appearing as a
 **glob pattern** for skill-repo detection is a path *match*, not a path *resolution* — leave
 those alone.
 
@@ -375,9 +391,9 @@ those alone.
 
 These remain genuinely unresolved but are non-blocking:
 
-1. **`/sdlc` argument-hint syntax**: standardize how flags are documented in argument-hint strings. Today some show `[--vet light|deep|ultra|none]` (pipe-separated) and others show `[--profile <core|pipeline|both>]` (angle-brackets + pipe). Pick one before Phase 1 1E ships.
+Argument-hint enumerations use the pipe form without angle brackets: `[--vet light|deep|ultra|none]`.
 
-2. **Slug-collision policy**: if two `/sdlc` runs derive the same slug (e.g., a user runs `/sdlc plans/brainstorm-feature.md` twice in different working trees), should the second invocation auto-append a suffix (`feature-2`), error out, or silently overwrite? Recommend: error out unless `--force-slug` is passed. Lock before Phase 1 1A ships.
+1. **Slug-collision policy**: if two `/sdlc` runs derive the same slug (e.g., a user runs `/sdlc plans/brainstorm-feature.md` twice in different working trees), should the second invocation auto-append a suffix (`feature-2`), error out, or silently overwrite? Recommend: error out unless `--force-slug` is passed. Still unresolved; `/sdlc --resume` currently reuses the envelope, so a second run against the same slug resumes rather than collides.
 
 ---
 

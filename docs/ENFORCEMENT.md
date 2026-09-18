@@ -1,5 +1,7 @@
 # Prose vs. hook vs. detector — worked examples
 
+> **✓ Live contract — current and maintained.**
+
 `CLAUDE.md`'s "When a rule earns a hook, not just prose" states the four questions and the
 tension (a hook is also a second expression, and this repo deleted a 1,398-line Workflow because
 a second expression drifted). This page is the worked-examples appendix that section points to —
