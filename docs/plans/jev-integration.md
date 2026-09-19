@@ -17,13 +17,25 @@ enabled, the toolkit shells out to the external command at a few decision points
 small JSON verdict. When the section is absent, disabled, or the command fails or times out, every
 call site behaves exactly as it does today.
 
-**The API key is referenced, never stored, in `project.json`.** The `jev` section names the
-*environment variable* that holds the key (`api_key_env`, default `TYPESAFE_API_KEY`); the shim
-reads that variable and passes it to the child process's environment. `project.json` is gitignored
-by `setup.sh` in consumers, but two things still argue against a literal key in it: a plugin-only
-install (README Option A) never runs `setup.sh` and so never gets that gitignore entry, and models
-open `project.json` routinely (the Stage 1.5 sanity agent, `convention-grounding.md`), which puts
-its contents into transcripts -- the same transcripts claude-wiki harvests. See Open Questions.
+**The API key never lives in a repo, and never passes through the chat.** Three rules:
+
+- **Not in `project.json`.** It is gitignored by `setup.sh` in consumers, but a plugin-only install
+  (README Option A) never runs `setup.sh` and so never gets that entry, and models open
+  `project.json` routinely (the Stage 1.5 sanity agent, `convention-grounding.md`).
+- **Not in `.env`.** In a consumer repo `.env` belongs to the application: dotenv loaders pull it
+  into the app's environment, and it is among the most commonly committed-by-accident files there is.
+- **Not typed into the conversation.** Anything pasted into chat is in the transcript, and
+  claude-wiki harvests transcripts. So `/repo-onboarding` asks only *whether* to enable Jev; the key
+  itself is entered through a hidden-input prompt the model never sees.
+
+It lives in a **user-level credentials file outside every repo** —
+`${XDG_CONFIG_HOME:-~/.config}/brainstorm-toolkit/credentials` — written by `scripts/jev-key.sh`.
+A key belongs to a person, not a repo, so one setup covers every repo; a file outside the tree needs
+no gitignore entry, which also removes the setup.sh/repo-onboarding ignore-list sync hazard for it;
+and nothing globs a user's config directory by accident. Resolution order at call time: the
+environment variable named by `jev.api_key_env` (default `TYPESAFE_API_KEY`), then the credentials
+file, then nothing — in which case the shim still runs the command without forwarding a key, because
+the command may hold its own (claude-wiki already reads `JEV_API_KEY` from its own `.env`).
 
 ```
 claude-wiki repo (E:\programming\jev)             brainstorm-toolkit (this repo)
@@ -154,6 +166,12 @@ Lessons that carry over:
   thing to delete. **Every new key must land in both `templates/project.json.example` and
   `docs/CONFIG.md`** -- `check_contracts.py`'s config-keys check fails otherwise. The committed
   `.example` must never carry a key value, only the shape.
+- **Follow `/repo-onboarding`'s opt-in question pattern** (Step 3's one-row-per-key table, default
+  first, and Step 5.5's "offer an opt-in feature; on no, change nothing" shape). The Jev question is
+  one more row, defaulting to off.
+- **New (justified): a user-level credentials file**, `${XDG_CONFIG_HOME:-~/.config}/brainstorm-toolkit/credentials`,
+  because no existing store in the toolkit is outside the repo tree, and a key belongs there. See
+  Direction for why not `project.json` or `.env`.
 - **Follow the per-machine command key:** like `"python"` (`templates/project.json.example:45`)
   and `scripts/py.sh`, the judge command differs per machine (a Windows path vs a WSL path to the
   same repo), so it is a config value, never hardcoded.
@@ -285,9 +303,10 @@ does not, and can ship now.
    - `enabled` -- master switch. Default `false`. Nothing is read, called or recorded unless `true`.
    - `command` -- the external judge. Example `"uv --directory E:/programming/jev run -q claude-wiki"`,
      or the `/mnt/e/...` form under WSL.
-   - `api_key_env` -- the **name** of the environment variable holding the TypeSafe key, never the
-     key itself. The shim passes that variable's value to the child process; if it is unset, the
-     verdict is `null` with `error: "no-api-key"` and the call site proceeds as today.
+   - `api_key_env` -- the **name** of the environment variable to read the TypeSafe key from, never
+     the key itself. Resolution: that variable, then the user-level credentials file (step 12a),
+     then nothing. A resolved key is forwarded to the child process as `TYPESAFE_API_KEY`; an
+     unresolved one is not an error, because the command may carry its own.
    - `mode` -- `"shadow" | "enforce"`, read only when enabled. Default `"shadow"`, so turning the
      integration on records verdicts before any of them acts.
    - `enforce` -- verbs allowed to act in `enforce` mode. Default `[]`: even in `enforce` mode,
@@ -295,9 +314,10 @@ does not, and can ship now.
    - `timeout_ms` -- default `2500`.
    - `memory_source` -- path to a claims file. Default `""`.
 10. **`scripts/judge.py`** (stdlib). Reads the `jev` section; returns `{"verdict": null}` -- and
-    writes nothing -- when the section is absent, `enabled` is not `true`, `command` is empty, or the
-    `api_key_env` variable is unset. Otherwise it returns `{"verdict": null}` on a timeout, error or
-    malformed output; otherwise runs `<command> judge <verb>` with the
+    writes nothing -- when the section is absent, `enabled` is not `true`, or `command` is empty. It
+    resolves the key per step 9 and forwards it only if found; the command's own auth failure then
+    surfaces as `{"verdict": null, "error": ...}` like any other. It returns `{"verdict": null}` on a
+    timeout, error or malformed output; otherwise runs `<command> judge <verb>` with the
     timeout and validates the contract from step 4. It **appends one line** —
     `{verb, verdict, band, signals, confidence, acted, at}` — to the addressed envelope's
     `stage-outputs/judge.jsonl`, never to `run.json`. It never writes the key anywhere -- not to
@@ -306,7 +326,8 @@ does not, and can ship now.
     Invocation: `bash scripts/py.sh scripts/judge.py <verb> [--slug <s>] < input.json`.
 11. **`scripts/ci/test-hooks.sh` cases** with the stub command: section absent, `enabled: false`,
     and `enabled: true` with an empty command (all three: no call, no `judge.jsonl` written);
-    `api_key_env` unset (no call); a key value never appears in `judge.jsonl` or stderr; shadow (records,
+    key resolution order (env var beats credentials file; neither → command runs with no key
+    forwarded); a key value never appears in `judge.jsonl`, stdout or stderr; shadow (records,
     changes nothing), enforce+act, enforce+uncertain (must not act), timed-out command, missing
     command, malformed output, and **two concurrent appends to one `judge.jsonl`** (both survive).
 12. **Doctrine: add the "Jev picks, code decides" worked case to `docs/ENFORCEMENT.md`.**
@@ -319,6 +340,38 @@ does not, and can ship now.
     set; its uncertain band never acts; it is off by default. Amend question 2 by one clause
     pointing there. Written **before** any call site lands, so it is not written to ratify one.
     `CLAUDE.md` and `AGENTS.md` stay byte-identical.
+12a. **`scripts/jev-key.sh set | check | clear`** — the only way the toolkit writes a key.
+    - `set` reads the key with hidden input (`read -rs`) and writes
+      `TYPESAFE_API_KEY=<key>` to the credentials file, creating the directory if needed.
+      **It refuses the key as a command-line argument**: argv lands in shell history and process
+      listings. It never echoes the key, not even masked.
+    - Permissions: `chmod 600` on POSIX. **On Windows that is a no-op** — say so in the script's
+      output rather than reporting it as applied (this repo has been bitten by exactly that false
+      report). The file sits under the user profile, which is user-only by default ACL; state that
+      as the Windows protection instead.
+    - `check` resolves the key per step 9 and runs one minimal request through the configured
+      command, printing only `ok`, `no key found`, or `key rejected`.
+    - `clear` deletes the key line.
+    - Tell the user to run `set` **in their own terminal**. Running it through the agent would put
+      the prompt in a session the model reads, and a user may paste the key as an argument out of
+      habit.
+    - Files: `scripts/jev-key.sh` (new; top-level `scripts/`, so it ships and is watched by
+      `version-freshness`), `scripts/ci/test-hooks.sh` (cases: refuses argv, writes the file,
+      `check` never echoes, `clear` removes only the key line).
+12b. **`/repo-onboarding` asks whether to enable Jev — never for the key.** Add one row to Step 3's
+    question table, default off:
+    | Ask | Key | Options (default first) |
+    |---|---|---|
+    | **Enable the optional Jev judge?** It classifies failures and checks claims against their evidence, in shadow mode first. Needs the external `claude-wiki` command and a TypeSafe API key. | `jev.enabled` / `jev.command` | `false` (default — nothing runs, no network) · `true` + the judge command path |
+
+    On yes: write the `jev` section with `enabled: true`, the command, and `mode: "shadow"`. Then
+    ask one follow-up — *"Does that command already have its own API key configured?"* (claude-wiki
+    does, via its own `.env`). If not, **print** the instruction to run `bash scripts/jev-key.sh set`
+    in their own terminal and then `bash scripts/jev-key.sh check`; do not run it, and never ask the
+    user to paste the key into the conversation. On no: write nothing, as Step 5.5 does. Report the
+    choice in Step 6. `/repo-onboarding` has no Copilot or Codex overlay, so this is a single-leg
+    edit; it is shipped, so this phase carries a **version bump**.
+    Files: `skills/repo-onboarding/SKILL.md`.
 
 #### Phase 4 — Prose call sites, shadow only (depends on Phases 2 and 3)
 
@@ -440,6 +493,8 @@ does not, and can ship now.
 - **`record-decision.sh`** and therefore **`DECISIONS.md`** — entries gain a verification tag
   (step 14); nothing is ever refused.
 - **`/gotcha`** — dedup becomes a verb (step 24). Keep entries atomic, one trap each.
+- **`/repo-onboarding`** — gains one opt-in question (step 12b). It asks whether to enable Jev and
+  prints the key-setup instruction; it never collects the key.
 - **`/repo-health`** — optional: report "judge configured but command failing".
 - **`/claude-wiki`** (external) — the loop's own transcripts flow back into the wiki on the next
   harvest, which also grows the labelled sets from step 7 automatically.
@@ -449,14 +504,11 @@ does not, and can ship now.
 
 ### Open Questions
 
-- **Should `project.json` also accept the key literally?** This revision references it by
-  environment-variable name only. A literal `jev.api_key` would be simpler to set up and is
-  machine-local on any repo `setup.sh` installed into, since `.claude/project.json` is gitignored
-  there (`ensure_gitignored ".claude/project.json"` in `setup.sh`). Against it: a plugin-only install
-  never runs `setup.sh` and so has no such ignore entry, and models read `project.json` routinely,
-  putting the key into transcripts that claude-wiki later harvests (it redacts credentials, but that
-  is a second line of defence, not a first). If allowed, the secret-scan stage should flag a
-  non-empty `jev.api_key` in any tracked file, and the key must never be echoed. **Owner's call.**
+- **Decided: no literal key in `project.json`, and not in `.env` either.** The key lives in the
+  user-level credentials file written by `scripts/jev-key.sh` (step 12a); see Direction for the
+  reasons. Still open: whether to also support an OS keychain (macOS Keychain, Windows Credential
+  Manager, libsecret) as a later resolution step — stronger at rest, but three platform backends for
+  a stdlib-only toolkit.
 
 - **The WSL path.** Latency is measured for Windows-native `uv` only (261–345 ms warm). Most
   toolkit sessions run in WSL against `/mnt/h/...`. Measure the WSL → `/mnt/e` form before Phase 5
