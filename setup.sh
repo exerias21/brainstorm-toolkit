@@ -58,6 +58,13 @@ case "$TOOLS" in
 esac
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# A missing target used to fail here with a bare `cd: No such file or directory`, which is how
+# CI's install-refs step (and the documented `--target /tmp/test-repo` smoke install) broke on a
+# fresh runner. Create it, and say so, so a typo'd path is visible rather than silent.
+if [[ ! -d "$TARGET" ]]; then
+  mkdir -p "$TARGET" || { echo "setup.sh: cannot create --target $TARGET" >&2; exit 1; }
+  echo "note: created --target $TARGET (it did not exist)." >&2
+fi
 TARGET="$(cd "$TARGET" && pwd)"
 
 if [[ "$PLUGIN_ROOT" == "$TARGET" ]]; then

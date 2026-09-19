@@ -45,14 +45,17 @@ if [[ ! -f "$MARKETPLACE" ]]; then
   exit 1
 fi
 
-# Extract skill paths via python3 (always present in CI runners and the local
-# dev env). Avoids a jq dependency.
-SKILL_NAMES="$(python3 -c '
+# Extract skill paths with Python -- avoids a jq dependency. Resolve the interpreter
+# through scripts/py.sh rather than naming `python3`: on Windows that name is often the
+# Store stub, which resolves but exits nonzero, and this step then failed locally while
+# passing on Linux CI.
+PY="$(bash "$PLUGIN_ROOT/scripts/py.sh" --print)" || { echo "[setup-roundtrip] FAIL: no working Python" >&2; exit 1; }
+SKILL_NAMES="$("$PY" -c '
 import json, sys, pathlib
 data = json.loads(pathlib.Path(sys.argv[1]).read_text())
 for p in data["plugins"][0]["skills"]:
     print(pathlib.PurePosixPath(p).name)
-' "$MARKETPLACE")"
+' "$MARKETPLACE" | tr -d '\r')"  # Windows Python emits CRLF; a trailing CR broke every path but the last
 
 missing=0
 for name in $SKILL_NAMES; do
