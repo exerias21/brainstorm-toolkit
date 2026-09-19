@@ -481,6 +481,42 @@ does not, and can ship now.
     Thresholds change in `claude-wiki/questions.py`, not in the toolkit. Pin `jev-1.13.0` (or the
     then-current version) before the first promotion.
 
+#### Phase 9 — Reconciliation: doc drift and backlog drift (depends on Phases 2 and 3)
+
+> **Why this is here.** On 2026-09-19 the Phase 1 validator of `flow-gap-fixes` measured that
+> widening the citation lint catches **none** of three real doc bugs found that day, because each
+> cited path *resolves*: `docs/FLOW.md` called a shipped stage "planned"; `docs/CONVENTIONS.md`
+> described a deleted script in the present tense; `CLAUDE.md` pointed at `docs/FLOW.md` for a
+> changelog that file never contained. Each is a **claim checked against its evidence** — exactly
+> `verify-claim`. The same day, backlog state drifted twice: 10 `TASKS.md` rows stayed open after
+> `f739a5e` delivered them, and a plan's `#### Phase` headings disagreed with its rows' `_phase:`
+> tags. Both were caught by hand. The 8-agent review that found the doc bugs cost ~1M model tokens;
+> this sweep costs Jev input tokens at $0.042 per million.
+
+31. **Doc-drift sweep — a `/repo-health` call site for the existing `verify-claim` verb.**
+    - **Code picks the pairs:** scan `CLAUDE.md`, `AGENTS.md` and every `live contract` doc (the
+      markers `flow-gap-fixes` step 1 added) for sentences that cite a repo path; for each, extract
+      the cited section — not the whole file (large unrelated state is a documented accuracy loss).
+    - **Jev judges:** `verify-claim(sentence, excerpt)`. Report `contradicted` and `not-addressed`,
+      each with both texts, as findings. `supported` is silent.
+    - **Read-only and tag-only**, like the rest of `/repo-health`: it never edits a doc.
+    - **Limits to state in the report:** only cited sentences are covered — uncited claims need Jev
+      to pick the evidence first (the TypeSafe reranking pattern), a later step; and literal reading
+      will produce some false `not-addressed` on paraphrased evidence.
+    - Would have caught all three bugs above: "planned" vs a shipped template → `contradicted`; the
+      changelog pointer → `not-addressed`.
+32. **EXTERNAL · DEFERRED here: verb `match-row`.** Choice over a plan's implementation steps plus
+    `none-of-these`: "Which step of `plan` does `row.title` describe?" Code then compares the
+    matched step's `#### Phase N` heading with the row's `_phase:` tag and reports disagreement —
+    the heading/row drift that nearly made the Stage 0 scope gate re-take delivered work.
+33. **"Delivered but still open" candidates for `/sdlc-status --reconcile`.** For each open row,
+    `verify-claim(row.title, <commit subject + diffstat>)` over commits since the row's plan landed.
+    Surface `supported` pairs as **suggestions** to close — never close automatically. This is the
+    Phase-2 miss from 2026-09-19 (10 rows delivered in `f739a5e`, left open, and the scope gate would
+    have re-run them).
+    Files: `skills/repo-health/SKILL.md`, `skills/sdlc-status/SKILL.md` (both shipped → version bump);
+    the verb itself in claude-wiki.
+
 ---
 
 ### Cross-Module Touchpoints
@@ -495,7 +531,9 @@ does not, and can ship now.
 - **`/gotcha`** — dedup becomes a verb (step 24). Keep entries atomic, one trap each.
 - **`/repo-onboarding`** — gains one opt-in question (step 12b). It asks whether to enable Jev and
   prints the key-setup instruction; it never collects the key.
-- **`/repo-health`** — optional: report "judge configured but command failing".
+- **`/repo-health`** — gains the doc-drift sweep (step 31); optionally also "judge configured but
+  command failing".
+- **`/sdlc-status --reconcile`** — gains "delivered but still open" suggestions (step 33).
 - **`/claude-wiki`** (external) — the loop's own transcripts flow back into the wiki on the next
   harvest, which also grows the labelled sets from step 7 automatically.
 - **Consumers** -- the whole `jev` section is opt-in (`enabled: false`, no command, no key). A
