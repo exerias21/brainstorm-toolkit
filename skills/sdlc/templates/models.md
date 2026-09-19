@@ -35,7 +35,8 @@ ceilings).
   "code_review_max_lenses": 4,
   "code_review_passes": 1,
   "code_review_max_fix_loops": 3,
-  "decompose_min_tasks": 6
+  "decompose_min_tasks": 6,
+  "decompose_min_files": 12
 }
 ```
 
@@ -157,6 +158,7 @@ one reviewer call.
 | `agents.code_review_passes` | `1` | `2` adds one completeness-critic call at `code_review_second_pass` |
 | `agents.code_review_max_fix_loops` | `3` | Stage 5.8's own budget, separate from Stage 5's shared budget |
 | `agents.decompose_min_tasks` | `6` | Stage 2 decompose gate threshold |
+| `agents.decompose_min_files` | `12` | Stage 2 decompose gate's OR partner — decompose when `task_count` OR `len(files_to_change)` clears its threshold, catching a small step count that spans a large file count |
 
 An unrecognized entry in any list is ignored with one warning — the lists are deliberately
 open so a repo can add its own.

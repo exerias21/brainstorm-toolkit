@@ -90,9 +90,16 @@ Detect the argument shape:
    ids in `run.json.data.task_range`. Mark each resolved row `[~]`.
 
 4. **Ad-hoc description** — anything else. Create a new `TASKS.md` row + task
-   file using `/task`'s procedure (`skills/task/SKILL.md` Sections 1–2), then
-   proceed. There's no plan, so Stage 5's plan check self-skips. Mark the new
-   row `[~]`.
+   file using `/task`'s procedure (`skills/task/SKILL.md` Sections 1–2), which
+   at its own step 5 already writes `.claude/pipeline/task-<N>-<slug>/run.json`
+   at `in_progress`. **This run's slug IS that `task-<N>-<slug>`** — one
+   envelope, not two — the same rule `skills/sdlc/templates/queue-mode.md`
+   already applies to a row with a linked task file ("uses that task slug
+   instead"). Do not derive a second slug from the description text here: doing
+   so leaves the `/task`-written envelope `in_progress` forever, which feeds
+   `next-action.sh`'s stale-run warning on every Stop and makes `stop-gate.sh`
+   re-run tests indefinitely under `pipeline.stop_gate: "tests"`. There's no
+   plan, so Stage 5's plan check self-skips. Mark the new row `[~]`.
 
 **Task id / range / ad-hoc-description runs have no `_plan:` key** (that tag only exists
 on plan-file rows), so Stage 6 can't close them by key. Instead, **persist the resolved row

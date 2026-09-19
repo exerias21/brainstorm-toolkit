@@ -35,8 +35,10 @@ order is the difference between "usually closes" and "closes."
    `bash scripts/close-tasks.sh close --file TASKS.md --scope <plan|resolved> ...` and read
    its JSON result back — never edit `TASKS.md` checkbox state directly here. (`setup.sh`
    ships this script under the repo-local `scripts/` tree unless the consumer chose
-   `--no-copy-scripts`; if the path is missing, say so in the report and skip close-out
-   rather than failing the whole hand-off — the pipeline still delivers a validated tree.)
+   `--no-copy-scripts` **or never ran `setup.sh` at all — a Claude-plugin-only install
+   (README Option A) never receives `scripts/`, the same missing-path shape**; if the path is
+   missing, report it as a **known install gap**, not politely, and skip close-out rather than
+   failing the whole hand-off — the pipeline still delivers a validated tree.)
 
    - **Plan-file run** (Stage 0 resolved a `.md` plan path):
      `bash scripts/close-tasks.sh close --file TASKS.md --scope plan --key <feature_slug> --plan-file <plan_file>`.

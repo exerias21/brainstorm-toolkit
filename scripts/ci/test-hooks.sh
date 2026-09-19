@@ -354,6 +354,49 @@ mkdir -p "$d"
 run_pt "$d" verify
 assert_rc "$PT_RC" 0
 
+CASE="protect-tests: --slug addresses exactly the named envelope"
+d="$ROOT_TMP/pt-slug"
+mkdir -p "$d/.claude/pipeline/task-1-foo" "$d/.claude/pipeline/task-2-bar" "$d/tests"
+cat > "$d/.claude/pipeline/task-1-foo/run.json" <<'EOF'
+{"schema_version": 1, "feature_slug": "task-1-foo", "pipeline": "task", "status": "in_progress", "stage": "implement", "started_at": "2026-01-01T00:00:00Z"}
+EOF
+cat > "$d/.claude/pipeline/task-2-bar/run.json" <<'EOF'
+{"schema_version": 1, "feature_slug": "task-2-bar", "pipeline": "task", "status": "in_progress", "stage": "implement", "started_at": "2026-02-01T00:00:00Z"}
+EOF
+printf 'def test_y():\n    assert False\n' > "$d/tests/test_y.py"
+run_pt "$d" arm tests/test_y.py --slug task-1-foo
+assert_rc "$PT_RC" 0
+grep -q '"tests/test_y.py"' "$d/.claude/pipeline/task-1-foo/run.json" || fail "expected slug-addressed envelope task-1-foo to be armed"
+if grep -q '"protected_tests"' "$d/.claude/pipeline/task-2-bar/run.json"; then
+  fail "task-2-bar must not be touched when --slug names task-1-foo (even though it has the newer started_at)"
+fi
+ok
+
+CASE="protect-tests: no --slug with two open envelopes prefers pipeline:task"
+d="$ROOT_TMP/pt-pref"
+mkdir -p "$d/.claude/pipeline/task-3-baz" "$d/.claude/pipeline/sdlc-run" "$d/tests"
+cat > "$d/.claude/pipeline/sdlc-run/run.json" <<'EOF'
+{"schema_version": 1, "feature_slug": "sdlc-run", "pipeline": "sdlc", "status": "in_progress", "stage": "implement", "started_at": "2026-03-01T00:00:00Z"}
+EOF
+cat > "$d/.claude/pipeline/task-3-baz/run.json" <<'EOF'
+{"schema_version": 1, "feature_slug": "task-3-baz", "pipeline": "task", "status": "in_progress", "stage": "implement", "started_at": "2026-01-01T00:00:00Z"}
+EOF
+printf 'def test_z():\n    assert False\n' > "$d/tests/test_z.py"
+run_pt "$d" arm tests/test_z.py
+assert_rc "$PT_RC" 0
+grep -q '"tests/test_z.py"' "$d/.claude/pipeline/task-3-baz/run.json" || fail "expected the pipeline:task envelope to be preferred over pipeline:sdlc even though sdlc-run has the newer started_at"
+if grep -q '"protected_tests"' "$d/.claude/pipeline/sdlc-run/run.json"; then
+  fail "sdlc-run envelope must not be armed when a pipeline:task envelope is open"
+fi
+ok
+
+CASE="protect-tests: --slug naming a missing envelope -> exit 0 no-op"
+d="$ROOT_TMP/pt-slug-missing"
+mkdir -p "$d/.claude/pipeline" "$d/tests"
+printf 'def test_w():\n    assert False\n' > "$d/tests/test_w.py"
+run_pt "$d" arm tests/test_w.py --slug does-not-exist
+assert_rc "$PT_RC" 0
+
 # ── next-action.sh: interpreter probe (step 6) and the .next-action seam's
 #    dedup / staleness / depth-warning contract (step 10c) ─────────────────
 

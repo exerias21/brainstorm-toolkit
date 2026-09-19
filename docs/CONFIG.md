@@ -59,6 +59,7 @@ This page mirrors `templates/project.json.example`; that file is the registry
     "code_review_passes": 1,
     "code_review_max_fix_loops": 3,
     "decompose_min_tasks": 6,
+    "decompose_min_files": 12,
     "cleanup_lenses": ["over-engineering", "docstring-currency"],
     "cleanup_max_lenses": 2
   },
@@ -171,7 +172,7 @@ printing it, so the loop self-advances. It never chains a `confirm: true` action
 | `/sdlc` | `models.sanity` + `agents.sanity_focuses` (Stage 1.5 pre-flight; never gated, so it runs every time) |
 | `/sdlc` | `models.code_review`, `models.code_review_second_pass`, `agents.code_review_*` (axis 2; never capped) |
 | `/sdlc` | `pipeline.review_fix.*`: stage *behavior* only (`enabled`, `mode`). Opt-in, permanently off by default. (`blocking` was removed 2026-09: `/sdlc` does no git writes, so a HIGH finding is reported first in Stage 7, never gated) |
-| `/sdlc` | `agents.decompose_min_tasks` (Stage 2 decompose gate) |
+| `/sdlc` | `agents.decompose_min_tasks` / `agents.decompose_min_files` (Stage 2 decompose gate) |
 | `/sdlc` Stage 0 | `pipeline.scope.max_steps_per_run` (scope gate; `--no-scope-gate` bypasses per-run) |
 | `/sdlc --queue`, `scripts/loop-runner.sh`, `scripts/hooks/next-action.sh` | `pipeline.loop.*` (`max_items`, `batch_size`, `max_hops`, `auto_continue`) |
 | `/sdlc` Stage 6 | `stack.up` / `stack.rebuild` / `stack.url`: printed as the manual-verification line at hand-off, never auto-run |

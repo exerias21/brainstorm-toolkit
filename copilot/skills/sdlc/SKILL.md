@@ -73,8 +73,13 @@ and the run reports `cap: none`.
   `Active / Pending` row in range; execute as a batch (changes accumulate in the
   working tree — see Stage 6 range semantics; this skill never commits). Record
   the resolved ids in `run.json.data.task_range`.
-- **Ad-hoc description** → create a new row + task file via `/task`'s procedure.
-  No plan, so Stage 5's plan check self-skips.
+- **Ad-hoc description** → create a new row + task file via `/task`'s procedure,
+  which already writes `.claude/pipeline/task-<N>-<slug>/run.json` at
+  `in_progress`. **Reuse that `task-<N>-<slug>` as this run's slug** — one
+  envelope, not two, the same rule `queue-mode.md` applies to a row with a
+  linked task file — rather than deriving a second slug from the description
+  text, which orphans the `/task`-written envelope `in_progress` forever. No
+  plan, so Stage 5's plan check self-skips.
 
 **Task-id / range / ad-hoc runs have no `_plan:` key** — that tag exists only on plan-file
 rows — so Stage 6 cannot close them by key. **Persist the resolved row id(s) at Stage 0**

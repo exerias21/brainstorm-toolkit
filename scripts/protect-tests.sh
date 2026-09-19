@@ -10,21 +10,34 @@
 # armed hashes live at run.json's `data.protected_tests`, alongside
 # `plan_hash` (schema: skills/sdlc/templates/state-schema.md).
 #
-# Three subcommands:
+# Three subcommands, all accepting an optional --slug:
 #
-#   protect-tests.sh arm <test-file> [more...] [--pipeline-dir DIR]
+#   protect-tests.sh arm <test-file> [more...] [--pipeline-dir DIR] [--slug NAME]
 #     Hashes each file and records data.protected_tests["<repo-relative-path>"]
 #     = "sha256:<hex>" in the current in_progress envelope's run.json.
 #     Re-arming a path overwrites its hash.
 #
-#   protect-tests.sh verify [--pipeline-dir DIR]
+#   protect-tests.sh verify [--pipeline-dir DIR] [--slug NAME]
 #     Recomputes each armed file's hash and compares against the recorded
 #     one. Prints one "VIOLATION: ..." line per mismatched or missing file
 #     and exits non-zero if any are found. Silent, exit 0, when nothing was
 #     armed.
 #
-#   protect-tests.sh disarm [--pipeline-dir DIR]
+#   protect-tests.sh disarm [--pipeline-dir DIR] [--slug NAME]
 #     Clears data.protected_tests from the envelope.
+#
+# --slug NAME addresses exactly `<--pipeline-dir>/<NAME>/run.json`, no
+# selection heuristic involved -- a no-op (exit 0) if that envelope doesn't
+# exist, the same posture as "no envelope at all" below. Callers that own a
+# known slug (`/task` passes its own `task-<N>-<slug>`) should always pass
+# it: with two runs open, an unaddressed call previously risked arming or
+# verifying a FOREIGN envelope and reporting clean.
+#
+# Without --slug, the fallback prefers an in_progress envelope whose
+# `pipeline` field is `"task"`, tie-broken on the newest `started_at`
+# (ISO-8601 sorts lexically); falling back further to the newest `started_at`
+# among ALL in_progress envelopes when none has `pipeline: "task"`. This
+# replaces the old "last name in sorted order wins" scan.
 #
 # All three are no-ops exiting 0 when no in_progress envelope exists (or no
 # working python interpreter is found -- same fail-open posture as the other
@@ -42,16 +55,21 @@ set -u
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  protect-tests.sh arm <test-file> [more...] [--pipeline-dir DIR]
+  protect-tests.sh arm <test-file> [more...] [--pipeline-dir DIR] [--slug NAME]
     Detector, not preventer: records each file's sha256 as
     data.protected_tests["<repo-relative-path>"] = "sha256:<hex>" in the
     current in_progress run envelope.
-  protect-tests.sh verify [--pipeline-dir DIR]
+  protect-tests.sh verify [--pipeline-dir DIR] [--slug NAME]
     Re-hashes every armed file and reports mismatches. Exit 0 if all match
     (or nothing armed); non-zero with one "VIOLATION: ..." line per
     mismatched/missing file otherwise.
-  protect-tests.sh disarm [--pipeline-dir DIR]
+  protect-tests.sh disarm [--pipeline-dir DIR] [--slug NAME]
     Clears data.protected_tests from the envelope.
+
+--slug NAME addresses exactly <--pipeline-dir>/NAME/run.json (no-op, exit 0,
+if it doesn't exist). Without it: prefer an in_progress envelope with
+pipeline == "task", tie-break on newest started_at; else the newest
+started_at among all in_progress envelopes.
 
 Root resolution: CLAUDE_PROJECT_DIR -> git rev-parse --show-toplevel -> PWD.
 No-op (exit 0) when there is no in_progress envelope under --pipeline-dir
@@ -63,6 +81,7 @@ EOF
 SUBCMD="$1"; shift
 
 PIPELINE_DIR=".claude/pipeline"
+SLUG=""
 FILES=()
 
 case "$SUBCMD" in
@@ -70,6 +89,7 @@ case "$SUBCMD" in
     while [ $# -gt 0 ]; do
       case "$1" in
         --pipeline-dir) PIPELINE_DIR="$2"; shift 2 ;;
+        --slug) SLUG="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) FILES+=("$1"); shift ;;
       esac
@@ -80,6 +100,7 @@ case "$SUBCMD" in
     while [ $# -gt 0 ]; do
       case "$1" in
         --pipeline-dir) PIPELINE_DIR="$2"; shift 2 ;;
+        --slug) SLUG="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) echo "unknown arg: $1" >&2; usage; exit 2 ;;
       esac
@@ -111,14 +132,28 @@ cat > "$PYCORE" <<'PYEOF'
 import hashlib, json, os, sys
 
 
-def find_envelope(proj, pdir):
-    """Repo-relative pipeline dir -> the current in_progress envelope's
-    run.json path, or None. Mirrors run-cost-report.sh's scan: sorted names,
-    last in_progress match wins (there is normally exactly one)."""
+def find_envelope(proj, pdir, slug=None):
+    """Repo-relative pipeline dir -> the envelope's run.json path, or None.
+
+    With a slug, address exactly <pdir>/<slug>/run.json -- no selection
+    heuristic, no in_progress requirement -- None (no-op) if it doesn't
+    exist. Without one, scan for the in_progress envelope: prefer
+    `pipeline == "task"`, tie-broken on the newest `started_at` (ISO-8601
+    sorts lexically); fall back to the newest `started_at` among ALL
+    in_progress envelopes when none has `pipeline: "task"`. This replaces
+    the old "last name in sorted order wins" scan, which let a foreign
+    envelope get armed/verified whenever more than one run was open.
+    """
     base = os.path.join(proj, pdir)
     if not os.path.isdir(base):
         return None
-    found = None
+
+    if slug:
+        run_json = os.path.join(base, slug, 'run.json')
+        return run_json if os.path.isfile(run_json) else None
+
+    best_task = None   # (started_at, run_json)
+    best_any = None     # (started_at, run_json)
     for name in sorted(os.listdir(base)):
         run_json = os.path.join(base, name, 'run.json')
         if not os.path.isfile(run_json):
@@ -128,9 +163,18 @@ def find_envelope(proj, pdir):
                 data = json.load(f)
         except Exception:
             continue
-        if isinstance(data, dict) and data.get('status') == 'in_progress':
-            found = run_json
-    return found
+        if not isinstance(data, dict) or data.get('status') != 'in_progress':
+            continue
+        started = data.get('started_at') or ''
+        if data.get('pipeline') == 'task':
+            if best_task is None or started > best_task[0]:
+                best_task = (started, run_json)
+        else:
+            if best_any is None or started > best_any[0]:
+                best_any = (started, run_json)
+    if best_task is not None:
+        return best_task[1]
+    return best_any[1] if best_any is not None else None
 
 
 def sha256_of(path):
@@ -170,10 +214,11 @@ def atomic_write(path, data):
 
 
 def main(argv):
-    sub, proj, pdir = argv[0], argv[1], argv[2]
-    rest = argv[3:]
+    sub, proj, pdir, slug = argv[0], argv[1], argv[2], argv[3]
+    rest = argv[4:]
+    slug = slug or None
 
-    run_json = find_envelope(proj, pdir)
+    run_json = find_envelope(proj, pdir, slug)
     if run_json is None:
         return 0  # no-op: no in_progress envelope to arm/verify/disarm against
 
@@ -237,6 +282,6 @@ if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))
 PYEOF
 
-"$PY" "$PYCORE" "$SUBCMD" "$PROJ" "$PIPELINE_DIR" "${FILES[@]}"
+"$PY" "$PYCORE" "$SUBCMD" "$PROJ" "$PIPELINE_DIR" "$SLUG" "${FILES[@]}"
 rc=$?
 exit $rc

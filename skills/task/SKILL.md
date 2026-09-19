@@ -82,9 +82,12 @@ Don't manufacture a hollow test, and don't punt the task to another skill.
 1. **Write a failing test** encoding the acceptance criterion, using the project's configured
    runner (`.claude/project.json` → `test.unit` or `test.frontend`; the conventional location
    if none is configured), and confirm it fails for the expected reason. Then run
-   `scripts/protect-tests.sh arm <test-file>` (best-effort, ignore a nonzero exit) — this is a
-   **detector, not a preventer**: it records the file's hash so `verify` at close-out can prove
-   the test was not quietly rewritten to pass; it cannot stop a rewrite.
+   `bash scripts/protect-tests.sh arm <test-file> --slug task-<N>-<slug>` (best-effort, ignore
+   a nonzero exit) — this is a **detector, not a preventer**: it records the file's hash so
+   `verify` at close-out can prove the test was not quietly rewritten to pass; it cannot stop a
+   rewrite. **Always pass `--slug`** with the same `task-<N>-<slug>` this run's own envelope
+   (Section 1 step 5) was written under — unaddressed, a second run open at the same time can
+   get armed/verified instead.
 2. **Mark the TASKS.md row in-progress** (`[ ]` → `[~]`) and, on Claude, `TaskUpdate status:
    in_progress`.
 3. **Implement the change**, following existing patterns, until the test passes without
@@ -95,8 +98,9 @@ Don't manufacture a hollow test, and don't punt the task to another skill.
 ### 5. Close out
 
 1. **Update the task file**: set `status: completed`, mark all step checkboxes `[x]`, fill in `Files` with the actual paths touched.
-2. **Run `scripts/protect-tests.sh verify`.** A nonzero exit means a protected test's bytes
-   changed since it was armed — investigate before closing out; it does not block by itself.
+2. **Run `bash scripts/protect-tests.sh verify --slug task-<N>-<slug>`** (the same slug arm
+   used). A nonzero exit means a protected test's bytes changed since it was armed —
+   investigate before closing out; it does not block by itself.
 3. **Mark the TASKS.md row done** (`[~]` → `[x]`) and move it to the `Done` section.
 4. On Claude: `TaskUpdate status: completed`.
 5. **Update the state record** (best-effort): set `run.json.status = "complete"`,

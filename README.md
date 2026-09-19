@@ -124,6 +124,16 @@ If you use the Claude Code plugin system, add this repo as a marketplace source 
 /plugin install brainstorm-toolkit
 ```
 
+**This ships skills + agents + hooks, but not `scripts/`.** A plugin-only install has no
+repo-local `scripts/close-tasks.sh`, `protect-tests.sh`, or `record-decision.sh`, so Stage 6
+close-out reports `tasks: 0 closed` forever, the test-immutability detector never arms, and no
+decision gets recorded — silently, unless you know to look. To get `scripts/` on top of the
+plugin install, also run `setup.sh` once, skipping the hooks and skills it already gave you:
+
+```bash
+bash <plugin>/setup.sh --target . --tools claude --no-hooks
+```
+
 ### Option B: `setup.sh` (Claude, Copilot, or both)
 
 For Copilot users, or if you prefer file-based installs:

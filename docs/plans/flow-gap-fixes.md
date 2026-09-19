@@ -220,7 +220,7 @@ it on the weaker ground that "prevention gets deferred."
     and `resolve()` (`:36-45`) tries `skill_dir / ref` first, so the rewritten path re-resolves
     against the base the rewrite moved away from. Files: `setup.sh`, `scripts/ci/check_install_refs.py`.
 
-#### Phase 3 — elected MEDIUMs (ships with Phase 2)
+*(Steps 10b–10e below were found during Phase 1 and delivered with Phase 2 in `f739a5e`.)*
 
 10b. **Add a SCOPE GATE to `/sdlc` Stage 0 — push back on an oversized plan and take only what
     it can.** Today `/sdlc` has no such gate: Stage 0 resolves a plan file, marks *every* matching
@@ -301,6 +301,8 @@ it on the weaker ground that "prevention gets deferred."
     skill repo. Reword the row to "adapt **when enabled**, never self-skip".
     Files: `skills/sdlc/SKILL.md`, `copilot/skills/sdlc/SKILL.md`, `codex/skills/sdlc/SKILL.md`.
 
+#### Phase 3 — elected MEDIUMs + the decompose-gate fix
+
 11. **Give pipeline envelopes explicit addressing (G9 + G10, one problem).** `protect-tests.sh`
     `find_envelope()` (`:113-133`) takes the **last** sorted match; `stop-gate.sh:125-131` breaks
     on the **first**. With any other run open the detector arms and verifies a *foreign* envelope
@@ -317,17 +319,19 @@ it on the weaker ground that "prevention gets deferred."
     directory and terminalizes only its own. The orphan then feeds `next-action.sh`'s stale-run
     warning on every Stop and makes `stop-gate.sh` re-run the unit suite indefinitely under
     `pipeline.stop_gate: "tests"`. Reuse `task-<N>-<slug>` as the run slug, as `queue-mode.md:25`
-    already does. Files: `skills/sdlc/SKILL.md`.
+    already does. **Three-leg edit** (Stage 1.5 auto-patch): both overlays carry their own ad-hoc
+    line (`copilot/skills/sdlc/SKILL.md:76`, `codex/skills/sdlc/SKILL.md:75`). Files:
+    `skills/sdlc/SKILL.md`, `copilot/skills/sdlc/SKILL.md`, `codex/skills/sdlc/SKILL.md`.
 
 13. **Fix the plugin-only install trap (G7) — document *and* repair.** `README.md:117-125`
     Option A never mentions `setup.sh`, so a plugin-only user never receives `scripts/`:
     close-out reports `tasks: 0 closed` forever, rows stay `[~]`, no decisions recorded, detector
-    never arms — and the Stage 6 caveat makes the model report it *politely*. (a) Option A states
-    you still run `bash <plugin>/setup.sh --target . --tools claude --no-hooks`. (b) Make prose
-    call sites plugin-root-aware and broaden `stage-6-handoff.md:36-39` beyond
-    `--no-copy-scripts`. Mind `GOTCHAS.md:69` — *"never name a Python or a `.sh` directly in
-    shipped prose"* — which bears directly on (b). Files: `README.md`,
-    `skills/sdlc/templates/stage-6-handoff.md`, `skills/task/SKILL.md`, `skills/sdlc-status/SKILL.md`.
+    never arms — and the Stage 6 caveat makes the model report it *politely*. **This run takes the
+    documentation half only** (Stage 1.5 auto-patch — see step 16 for why): (a) README Option A
+    states you still run `bash <plugin>/setup.sh --target . --tools claude --no-hooks` to get
+    `scripts/`; (b) broaden the `stage-6-handoff.md:36-39` caveat so it names the plugin-only
+    install as a cause, not only `--no-copy-scripts`, so the close-out miss is reported as a known
+    install gap rather than politely. Files: `README.md`, `skills/sdlc/templates/stage-6-handoff.md`.
 
 13b. **Make the Stage 2 decompose gate weigh files, not just steps.** Observed on this plan's own
     Phase 1 run: `task_count = 4 < 6` routed a change spanning ~20 files and three new CI checks to a
@@ -345,6 +349,23 @@ it on the weaker ground that "prevention gets deferred."
     cannot "fail without this"; the bump is needed for the *commit*, not the run. Current version
     is **0.8.0** (committed with Phase 2); bump from there.
     Files: `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`.
+
+#### Phase 5 — plugin-root-aware script citations (split out of step 13 by Stage 1.5)
+
+16. **Make shipped prose find `scripts/` under a plugin-only install.** Step 13 originally bundled
+    this with the README fix. Stage 1.5 measured the real scope: **21 backticked `scripts/…`
+    citations across 11 shipped files** (`stage-6-handoff.md` ×4; `skills/task`, `state-schema.md`,
+    `skills/sdlc`, `skills/sdlc-status`, `skills/repo-onboarding`, and both `/sdlc` overlays ×2
+    each; `skills/repo-health` and two `code-tour` references ×1) against the 3 files step 13
+    named. That is a four-fold scope increase, and it has an **undesigned mechanism**: skill prose
+    cannot expand `${CLAUDE_PLUGIN_ROOT}` the way `hooks/hooks.json` does, so "plugin-root-aware" is
+    not yet a thing a sentence can be. Design first — candidates: a single stated resolution rule
+    ("`scripts/<x>` resolves against the repo root if present, else the plugin root above this
+    skill's base directory") cited from each site; or `setup.sh`-style prefix rewriting done by the
+    plugin loader; or making the plugin install copy `scripts/` on first use. Only Claude
+    plugin-only installs are affected — Copilot and Codex always install through `setup.sh`, which
+    copies `scripts/`. Mind `GOTCHAS.md:69`: invoke as `bash …` / `bash scripts/py.sh …`, never a
+    bare `.sh` or `python3`. Files: the 11 listed above, once the mechanism is chosen.
 
 #### Deferred — cannot be verified on this machine
 
