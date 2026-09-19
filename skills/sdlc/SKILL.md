@@ -98,7 +98,9 @@ Detect the argument shape:
    instead"). Do not derive a second slug from the description text here: doing
    so leaves the `/task`-written envelope `in_progress` forever, which feeds
    `next-action.sh`'s stale-run warning on every Stop and makes `stop-gate.sh`
-   re-run tests indefinitely under `pipeline.stop_gate: "tests"`. There's no
+   re-run tests indefinitely under `pipeline.stop_gate: "tests"`. **Adopting this
+   envelope means `/sdlc` owns it**: set `run.json.pipeline: "sdlc"` (not `"task"`)
+   and record the additive `data.adopted_from: "task"` (`state-schema.md`). There's no
    plan, so Stage 5's plan check self-skips. Mark the new row `[~]`.
 
 **Task id / range / ad-hoc-description runs have no `_plan:` key** (that tag only exists
@@ -348,7 +350,7 @@ every other stage runs unmodified.
 | Stage | Skill-repo behavior |
 |---|---|
 | Stage 3 — Generate evals | **skip** (no test surface) — append `generate-evals` to `run.json.stages_skipped` |
-| Stage 5 — Validate | **substitute** with `skills/sdlc/templates/stage-5-skill-repo.md` (HARD: validator, marketplace registration, template-reference resolution, setup.sh dry install; SOFT: line-count ceiling, README skills-table drift, overlay parity). Writes `validate.json` with `data.mode = "skill-repo"` |
+| Stage 5 — Validate | **substitute the test half only** with `skills/sdlc/templates/stage-5-skill-repo.md` (HARD: validator, marketplace registration, template-reference resolution, setup.sh dry install; SOFT: line-count ceiling, README skills-table drift, overlay parity) — **the plan-vs-diff check stays on** whenever there is a plan target: requirements gate as normal, flow is advisory-only (no test evidence to witness it). Writes `validate.json` with `data.mode = "skill-repo"` |
 | Stage 5.7 — Adversarial review | **adapt when enabled, never self-skip** — still opt-in/OFF-by-default per Stage 5.7 above; when it's ON, a docs-only diff is the code surface here. Correctness and plan-alignment apply equally to prose; `security` applies its skill-repo shell-injection check; `config-env-docs` repoints to the frontmatter / marketplace / template-reference checks in `stage-5-skill-repo.md` |
 
 ## Safety rules

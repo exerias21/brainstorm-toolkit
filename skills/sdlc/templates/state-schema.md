@@ -82,7 +82,7 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
 | `plan_file` | string | yes | Path relative to repo root, as passed to `/sdlc`. |
 | `plan_hash` | string | yes | `sha256:<hex>` of the plan file's contents at Stage 1. Lets `--resume` detect plan edits (a mismatch rejects the resume). |
 | `args` | object | yes | Snapshot of run-time decisions. Snake_case keys. `/sdlc` is zero-flag — the only field currently recorded is `skill_repo` (auto-detected from `.claude-plugin/marketplace.json` presence at repo root). New additive fields are allowed. |
-| `pipeline` | string | optional | Which skill wrote this run: `sdlc` or `task`. Absent ⇒ assume `sdlc` (back-compat). Lets `/sdlc-status`, `/repo-health`, and the Stop hook distinguish run types. |
+| `pipeline` | string | optional | Which skill wrote this run: `sdlc` or `task`. Absent ⇒ assume `sdlc` (back-compat). Lets `/sdlc-status`, `/repo-health`, and the Stop hook distinguish run types. **On adoption** — Stage 0 case 4, where `/sdlc` reuses `/task`'s `task-<N>-<slug>` envelope instead of deriving a second slug — `/sdlc` sets `pipeline: "sdlc"` and records the additive `data.adopted_from: "task"` (see `data.adopted_from` below). One consequence: `scripts/protect-tests.sh`'s no-`--slug` fallback prefers `pipeline == "task"` (~:169), so an adopted envelope drops out of that preference — low risk, since `/task` always passes `--slug`. |
 | `base_commit` | string | optional | `git rev-parse HEAD` captured at Stage 1, before any implementation commit. Powers **continuity detection** (is this branch's prior run an ancestor of HEAD?) and **reconciliation** (an `in_progress` run whose `base_commit` is already an ancestor of HEAD was almost certainly committed outside the pipeline). Additive; absent on older runs. |
 | `started_at` | ISO 8601 string | yes | UTC, second precision. |
 | `updated_at` | ISO 8601 string | yes | Refreshed on every stage transition. |
@@ -95,6 +95,7 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
 | `data.lanes` | string array | optional | Lane names from Stage 2a (e.g. `["data", "backend", "frontend"]`), in dependency dispatch order. `[]` when not decomposed. |
 | `data.cost` | object | optional | Written once by `scripts/hooks/run-cost-report.sh` when a run reaches a terminal state (fire-once, same run as the `.cost-reported` marker). `{turns:int, avg_context_tokens:int, peak_context_tokens:int, cache_read_tokens:int, estimated_usd:float, reported_at:"<ISO 8601 UTC, second precision>"}`. Additive; the hook reads the whole file and rewrites only this key, so it never touches `plan_hash` or any other field `--resume` validates. Absent on runs from before this field existed, or when the transcript/parser was unavailable. |
 | `data.protected_tests` | object | optional | Written by `scripts/protect-tests.sh arm`, keyed by repo-relative test file path, each value `"sha256:<hex>"` — same string form as `plan_hash`. `verify` recomputes and compares; `disarm` clears the key. Detector only: proves a protected test file's bytes changed since arming, does not prevent a rewrite. Absent when `/task` never armed a test for this run. |
+| `data.adopted_from` | string | optional | Set to `"task"` when `/sdlc` adopted a `/task`-written envelope (Stage 0 case 4) instead of initializing its own. Additive; absent on every run that initialized its own envelope. |
 
 **`stages_completed` worked example** (supplementary — a full run with the Review→Fix stage on):
 
@@ -257,9 +258,22 @@ axis gates either way. Both arrays are absent when there was no plan target to c
     "line_count_ceiling":  { "status": "pass" },
     "readme_skills_table": { "status": "pass" },
     "copilot_overlay_parity": { "status": "n/a" }
-  }
+  },
+  "requirements": [
+    { "criterion": "skill-repo table row updated", "verdict": "met", "evidence": "skills/sdlc/SKILL.md:351" }
+  ],
+  "flow": [
+    { "step": "Stage 5 loads stage-5-skill-repo.md", "verdict": "OK", "evidence": "skills/sdlc/SKILL.md:351" }
+  ],
+  "flow_witnessed": false
 }
 ```
+
+`requirements[]`, `flow[]` and `flow_witnessed` are the same fields the standard shape above
+documents, present **only when there is a plan target** (`templates/stage-5-skill-repo.md`'s
+"Plan axis" section). `flow_witnessed` is unconditionally `false` here — skill-repo mode has no
+test evidence to witness a flow — so the flow axis is always advisory; the requirements axis
+still gates. Both arrays are absent, same as standard mode, when there was no plan target.
 
 
 #### `handoff` (Stage 6)

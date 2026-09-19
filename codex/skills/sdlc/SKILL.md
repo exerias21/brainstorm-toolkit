@@ -77,8 +77,10 @@ and the run reports `cap: none`.
   `in_progress`. **Reuse that `task-<N>-<slug>` as this run's slug** — one
   envelope, not two, the same rule `queue-mode.md` applies to a row with a
   linked task file — rather than deriving a second slug from the description
-  text, which orphans the `/task`-written envelope `in_progress` forever. No
-  plan, so Stage 5's plan check self-skips.
+  text, which orphans the `/task`-written envelope `in_progress` forever.
+  **Adopting this envelope means `/sdlc` owns it**: set `run.json.pipeline: "sdlc"`
+  (not `"task"`) and record the additive `data.adopted_from: "task"`
+  (`state-schema.md`). No plan, so Stage 5's plan check self-skips.
 
 **Task-id / range / ad-hoc runs have no `_plan:` key** — that tag exists only on plan-file
 rows — so Stage 6 cannot close them by key. **Persist the resolved row id(s) at Stage 0**
@@ -261,7 +263,7 @@ surface, so three stages change; every other stage runs unmodified.
 | Stage | Skill-repo behavior |
 |---|---|
 | Stage 3 — Generate evals | **skip** — append `generate-evals` to `run.json.stages_skipped` |
-| Stage 5 — Validate | **substitute** `skills/sdlc/templates/stage-5-skill-repo.md` (validator, marketplace registration, template-reference resolution, setup.sh dry install; soft: line ceilings, README drift, overlay parity). Writes `validate.json` with `data.mode = "skill-repo"` |
+| Stage 5 — Validate | **substitute the test half only** with `skills/sdlc/templates/stage-5-skill-repo.md` (validator, marketplace registration, template-reference resolution, setup.sh dry install; soft: line ceilings, README drift, overlay parity) — **the plan-vs-diff check stays on** whenever there is a plan target: requirements gate as normal, flow is advisory-only (no test evidence to witness it). Writes `validate.json` with `data.mode = "skill-repo"` |
 | Stage 5.7 — Adversarial review | **adapt when enabled, never self-skip** — still opt-in/OFF-by-default per Stages 5.7/5.8 above; when it's ON, a docs-only diff is the code surface here |
 
 ## Safety rules

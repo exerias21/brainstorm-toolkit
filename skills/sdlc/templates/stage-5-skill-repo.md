@@ -1,9 +1,10 @@
 # Stage 5 — Skill-repo validation procedure
 
 When skill-repo mode is auto-detected (`.claude-plugin/marketplace.json`
-exists at repo root), this replaces the standard Stage 5 (full test suite)
-and Stage 5's plan-vs-diff check. Markdown skills have no test surface;
-the equivalent discipline is structural and contract-level.
+exists at repo root), this replaces only the **test half** of the standard
+Stage 5 (the full test suite) — Markdown skills have no test surface, so the
+equivalent discipline is structural and contract-level. **The plan-vs-diff
+check stays on**: see "Plan axis" below.
 
 Run each check; collect findings. The pipeline pauses if any HARD check fails
 and proceeds (with warnings logged) on SOFT checks.
@@ -94,6 +95,22 @@ materially different content.
 
 ---
 
+## Plan axis (whenever there is a plan target)
+
+**Read `skills/sdlc/templates/stage-5-validate.md` now**, §2 ("Check the delivery
+against the plan"), and run its plan axis — same dispatch, same brief, same runtime
+delta (Claude dispatches the `plan-conformance-validator` agent; the overlays run it
+as one inline pass). Skip it exactly as that section says: no plan target, no check.
+
+**Gating rule.** The **requirements** axis gates exactly as it does in standard
+mode — `requirements_green: false` fails the stage, unconditionally. The **flow**
+axis is **advisory only** in skill-repo mode: it always runs and its findings are
+always reported, but they can never fail the stage or open the fix loop. Skill-repo
+mode has no test evidence to witness a flow (`stage-5-validate.md`'s "Witnessed" /
+"Unwitnessed" split), and the structural HARD/SOFT checks above are not flow
+evidence — they check shape (paths, registration, references), not behavior. Set
+`data.flow_witnessed: false` unconditionally here.
+
 ## Output
 
 Summarize as a table for the Stage 7 report:
@@ -107,6 +124,9 @@ Summarize as a table for the Stage 7 report:
 | line-count ceiling | OK / WARN | files over 500 |
 | README skills table | OK / WARN | drift detected? |
 | copilot overlay parity | OK / WARN / N/A | drift detected? |
+| plan requirements | PASS / FAIL / N/A | missing/partial criteria, if any |
+| plan flow (advisory) | OK / WARN / N/A | MISMATCH/MISSING findings, if any |
 
-Any HARD-check FAIL → STOP, do not proceed to Stage 6.
+A requirements FAIL is a HARD fail (STOP, do not proceed to Stage 6) exactly like
+the checks above; a flow finding never blocks, per the gating rule above.
 All HARD pass → proceed to Stage 6 and embed the table in the Stage 7 report.
