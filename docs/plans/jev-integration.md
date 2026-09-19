@@ -17,16 +17,21 @@ enabled, the toolkit shells out to the external command at a few decision points
 small JSON verdict. When the section is absent, disabled, or the command fails or times out, every
 call site behaves exactly as it does today.
 
-**The API key never lives in a repo, and never passes through the chat.** Three rules:
+**The API key never lives in a repo.** Two rules, and one owner's decision:
 
 - **Not in `project.json`.** It is gitignored by `setup.sh` in consumers, but a plugin-only install
   (README Option A) never runs `setup.sh` and so never gets that entry, and models open
   `project.json` routinely (the Stage 1.5 sanity agent, `convention-grounding.md`).
 - **Not in `.env`.** In a consumer repo `.env` belongs to the application: dotenv loaders pull it
   into the app's environment, and it is among the most commonly committed-by-accident files there is.
-- **Not typed into the conversation.** Anything pasted into chat is in the transcript, and
-  claude-wiki harvests transcripts. So `/repo-onboarding` asks only *whether* to enable Jev; the key
-  itself is entered through a hidden-input prompt the model never sees.
+- **Decided by the owner: onboarding asks for the key directly.** The friction of a separate
+  terminal step is the difference between people enabling this and not, so `/repo-onboarding`
+  asks "what is your TypeSafe API key?" and writes the answer straight to the credentials file
+  below. **The cost, stated once:** a key pasted into the conversation is in that session's local
+  transcript. Mitigations that cost the user nothing, all required: the key is never echoed back,
+  never written to `project.json` or any file in the repo, never passed on a command line, and
+  claude-wiki's harvest **must** redact the TypeSafe key format before anything is classified. The
+  hidden-input `bash scripts/jev-key.sh set` stays available for anyone who would rather not paste.
 
 It lives in a **user-level credentials file outside every repo** —
 `${XDG_CONFIG_HOME:-~/.config}/brainstorm-toolkit/credentials` — written by `scripts/jev-key.sh`.
@@ -54,6 +59,16 @@ Why this split:
 - **Everything Jev-specific iterates in one place:** question wording, thresholds, the pinned model
   version, the labelled eval sets, and API cost.
 - **The same repo already builds the memory wiki**, so memory injection is one more verb.
+
+**No runtime dependency on the model knowing Jev.** The `typesafe-ai` agent skill (or any other
+source of Jev knowledge in the model's context) is **never required** to use this integration.
+Every toolkit call site consumes only fields code has already computed — `verdict`, `band`
+(`act` / `uncertain` / `no`), `acted` — and never asks the model to reason about Noul, Choice,
+Score or confidence; all Jev reasoning lives in the external command. This is not a preference:
+Copilot and Codex load no Claude skills, so a call site that leaned on one would already be broken
+on two of three runtimes. **Guard it:** any future edit that has prose interpret a raw Jev field
+(a probability, a Choice distribution) instead of `band` / `verdict` breaks this rule. The skill
+is an *authoring* aid for whoever writes and tunes the judge's questions, in the judge's own repo.
 
 **The organising rule: Jev picks, code decides.** It comes from OpenWork, which wires Jev into its
 eval testkit to *select* checked-in checks while deterministic code runs them — *"no model-decided
@@ -343,8 +358,9 @@ does not, and can ship now.
 12a. **`scripts/jev-key.sh set | check | clear`** — the only way the toolkit writes a key.
     - `set` reads the key with hidden input (`read -rs`) and writes
       `TYPESAFE_API_KEY=<key>` to the credentials file, creating the directory if needed.
-      **It refuses the key as a command-line argument**: argv lands in shell history and process
-      listings. It never echoes the key, not even masked.
+      `set --stdin` reads it from a pipe instead, for onboarding (step 12b). **It refuses the key as
+      a command-line argument**: argv lands in shell history and process listings. It never echoes
+      the key, not even masked.
     - Permissions: `chmod 600` on POSIX. **On Windows that is a no-op** — say so in the script's
       output rather than reporting it as applied (this repo has been bitten by exactly that false
       report). The file sits under the user profile, which is user-only by default ACL; state that
@@ -358,18 +374,22 @@ does not, and can ship now.
     - Files: `scripts/jev-key.sh` (new; top-level `scripts/`, so it ships and is watched by
       `version-freshness`), `scripts/ci/test-hooks.sh` (cases: refuses argv, writes the file,
       `check` never echoes, `clear` removes only the key line).
-12b. **`/repo-onboarding` asks whether to enable Jev — never for the key.** Add one row to Step 3's
+12b. **`/repo-onboarding` offers Jev and collects the key.** Add one row to Step 3's
     question table, default off:
     | Ask | Key | Options (default first) |
     |---|---|---|
     | **Enable the optional Jev judge?** It classifies failures and checks claims against their evidence, in shadow mode first. Needs the external `claude-wiki` command and a TypeSafe API key. | `jev.enabled` / `jev.command` | `false` (default — nothing runs, no network) · `true` + the judge command path |
 
     On yes: write the `jev` section with `enabled: true`, the command, and `mode: "shadow"`. Then
-    ask one follow-up — *"Does that command already have its own API key configured?"* (claude-wiki
-    does, via its own `.env`). If not, **print** the instruction to run `bash scripts/jev-key.sh set`
-    in their own terminal and then `bash scripts/jev-key.sh check`; do not run it, and never ask the
-    user to paste the key into the conversation. On no: write nothing, as Step 5.5 does. Report the
-    choice in Step 6. `/repo-onboarding` has no Copilot or Codex overlay, so this is a single-leg
+    ask for the key, with three choices, default first: **paste it now** · *the command already has
+    its own key* (claude-wiki does, via its own `.env`) · *set it later privately* (prints
+    `bash scripts/jev-key.sh set`, the hidden-input path). On *paste it now*: pipe the key to
+    `bash scripts/jev-key.sh set --stdin` — **stdin, never an argument** — so it lands in the
+    user-level credentials file and nowhere in the repo; then run `bash scripts/jev-key.sh check`
+    and report only `ok` / `no key found` / `key rejected`. **Never echo the key, never repeat it in a
+    summary, never write it to `project.json`.** Say once, in the question itself, that a pasted key
+    stays in this session's local transcript and that the private path avoids that. On no: write
+    nothing, as Step 5.5 does. Report the choice in Step 6 (enabled or not; never the key). `/repo-onboarding` has no Copilot or Codex overlay, so this is a single-leg
     edit; it is shipped, so this phase carries a **version bump**.
     Files: `skills/repo-onboarding/SKILL.md`.
 
@@ -529,8 +549,8 @@ does not, and can ship now.
 - **`record-decision.sh`** and therefore **`DECISIONS.md`** — entries gain a verification tag
   (step 14); nothing is ever refused.
 - **`/gotcha`** — dedup becomes a verb (step 24). Keep entries atomic, one trap each.
-- **`/repo-onboarding`** — gains one opt-in question (step 12b). It asks whether to enable Jev and
-  prints the key-setup instruction; it never collects the key.
+- **`/repo-onboarding`** — gains one opt-in question (step 12b). It offers Jev and, on yes, asks
+  for the key and writes it to the user-level credentials file through `jev-key.sh set --stdin`.
 - **`/repo-health`** — gains the doc-drift sweep (step 31); optionally also "judge configured but
   command failing".
 - **`/sdlc-status --reconcile`** — gains "delivered but still open" suggestions (step 33).
@@ -541,6 +561,20 @@ does not, and can ship now.
   The two Phase 1 warnings are the only changes a consumer reads.
 
 ### Open Questions
+
+- **Harvest redaction must cover the TypeSafe key format.** Onboarding now takes the key in the
+  conversation (owner's decision), so the key can appear in a local transcript. claude-wiki's
+  harvest already redacts credentials; confirm its patterns match a TypeSafe key specifically, and
+  add a test with a synthetic key, before step 12b ships.
+
+- **Distribution — the real blocker for anyone but the author.** claude-wiki has no git remote; it
+  is not published. Until it is, "detect-if-present" never detects anything on any other machine,
+  and the integration is inert for every other user. Two ways out, not mutually exclusive:
+  **publish claude-wiki** (with its judge verbs and labelled sets), or **publish the judge command
+  contract** (step 4's stdin/stdout shape, the verbs, the band semantics) as a spec so anyone can
+  implement a judge. The toolkit side needs neither to ship — every call site is opt-in and inert
+  without a command — but a user-facing page must not imply a judge is obtainable when it is not;
+  `docs/JEV.md` says so.
 
 - **Decided: no literal key in `project.json`, and not in `.env` either.** The key lives in the
   user-level credentials file written by `scripts/jev-key.sh` (step 12a); see Direction for the
