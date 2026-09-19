@@ -76,7 +76,13 @@ say()  { printf '%s\n' "$*"; }
 run()  { if [[ "$DRY_RUN" -eq 1 ]]; then say "  [dry-run] $*"; else eval "$@"; fi; }
 
 [[ -d "$REPO/skills" ]] || { echo "error: $REPO does not look like the toolkit repo (no skills/)" >&2; exit 1; }
-command -v rsync >/dev/null || { echo "error: rsync not found" >&2; exit 1; }
+# rsync is NOT available in Git Bash on Windows, where this toolkit is developed;
+# neither is jq. Both were hard requirements, which made the one install path that
+# exists for a no-marketplace machine unusable on exactly the platform that most
+# needs it. Use portable equivalents: cp for the copy (with an explicit rm to keep
+# rsync --delete's per-skill prune semantics), and scripts/merge-hook.py for the
+# settings.json merge -- python is already a hard dependency of this repo.
+if command -v rsync >/dev/null 2>&1; then COPY_TOOL="rsync"; else COPY_TOOL="cp"; fi
 
 # ---------------------------------------------------------------- uninstall
 if [[ "$UNINSTALL" -eq 1 ]]; then
@@ -142,7 +148,14 @@ run "mkdir -p '$SKILLS_DST'"
 for s in "${SKILLS[@]}"; do
   # --delete is scoped INSIDE this one skill dir: it prunes files removed from the
   # repo's copy of THIS skill, and can never reach a sibling skill it doesn't own.
-  run "rsync -a --delete '$REPO/skills/$s/' '$SKILLS_DST/$s/'"
+  if [[ "$COPY_TOOL" == "rsync" ]]; then
+    run "rsync -a --delete '$REPO/skills/$s/' '$SKILLS_DST/$s/'"
+  else
+    # rm-then-cp reproduces rsync --delete scoped to THIS skill dir: a file removed
+    # from the repo's copy disappears here too, and nothing outside
+    # $SKILLS_DST/$s is ever touched -- the same safety the rsync form relied on.
+    run "rm -rf '$SKILLS_DST/$s' && mkdir -p '$SKILLS_DST/$s' && cp -R '$REPO/skills/$s/.' '$SKILLS_DST/$s/'"
+  fi
   say "  $s"
 done
 say
@@ -150,14 +163,34 @@ say
 say "syncing agents:"
 run "mkdir -p '$AGENTS_DST'"
 for f in "$REPO"/agents/*.md; do
-  run "rsync -a '$f' '$AGENTS_DST/'"
+  if [[ "$COPY_TOOL" == "rsync" ]]; then
+    run "rsync -a '$f' '$AGENTS_DST/'"
+  else
+    run "cp -f '$f' '$AGENTS_DST/'"
+  fi
   say "  $(basename "$f")"
 done
 say
 
 # ---------------------------------------------------------------- hooks
 if [[ "$WANT_HOOKS" -eq 1 ]]; then
-  if ! command -v jq >/dev/null; then
+  if ! command -v jq >/dev/null && [[ -f "$REPO/scripts/merge-hook.py" ]]; then
+    # jq-free path. Skipping hooks here meant a global install silently produced
+    # skills with no seam at all -- and this route exists precisely for machines
+    # where the plugin path is unavailable, which are the same machines least
+    # likely to have jq. scripts/merge-hook.py does the same idempotent merge.
+    say "hooks: jq not found -- using scripts/merge-hook.py (python) instead"
+    _PY=""
+    for c in python3 python py; do
+      if command -v "$c" >/dev/null 2>&1 && "$c" -c 'pass' >/dev/null 2>&1; then _PY="$c"; break; fi
+    done
+    if [[ -z "$_PY" ]]; then
+      say "skip hooks: neither jq nor a working python found."
+    else
+      run "'$_PY' '$REPO/scripts/merge-hook.py' '$SETTINGS' Stop '$HOOK_STOP' --timeout 10 --label 'global Stop hook (next-action)'"
+      run "'$_PY' '$REPO/scripts/merge-hook.py' '$SETTINGS' SessionStart '$HOOK_RESEED' --matcher 'compact|clear' --timeout 10 --label 'global SessionStart hook (reseed)'"
+    fi
+  elif ! command -v jq >/dev/null; then
     say "skip hooks: jq not installed. Install jq and re-run, or merge this by hand into"
     say "$SETTINGS:"
     cat <<JSON
