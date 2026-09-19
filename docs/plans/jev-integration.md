@@ -11,15 +11,24 @@
 
 **brainstorm-toolkit gains an optional, detect-if-present integration with an external repo,
 `claude-wiki` (at `E:\programming\jev`), which owns everything Jev-related.** The toolkit never
-depends on Jev, never imports the TypeSafe SDK, and never needs an API key. When the external
-command is configured and runs, the toolkit shells out to it at a few decision points and gets
-back a small JSON verdict. When it is absent, fails, or times out, every call site behaves
-exactly as it does today.
+depends on Jev and never imports the TypeSafe SDK. **Every part of it is opt-in:** it does nothing
+unless `.claude/project.json` has a `jev` section with `"enabled": true` **and** a `command`. When
+enabled, the toolkit shells out to the external command at a few decision points and gets back a
+small JSON verdict. When the section is absent, disabled, or the command fails or times out, every
+call site behaves exactly as it does today.
+
+**The API key is referenced, never stored, in `project.json`.** The `jev` section names the
+*environment variable* that holds the key (`api_key_env`, default `TYPESAFE_API_KEY`); the shim
+reads that variable and passes it to the child process's environment. `project.json` is gitignored
+by `setup.sh` in consumers, but two things still argue against a literal key in it: a plugin-only
+install (README Option A) never runs `setup.sh` and so never gets that gitignore entry, and models
+open `project.json` routinely (the Stage 1.5 sanity agent, `convention-grounding.md`), which puts
+its contents into transcripts -- the same transcripts claude-wiki harvests. See Open Questions.
 
 ```
 claude-wiki repo (E:\programming\jev)             brainstorm-toolkit (this repo)
 ─────────────────────────────────────             ───────────────────────────────
-Jev questions + thresholds (one file)             detects `pipeline.judge.command`
+Jev questions + thresholds (one file)             detects `jev.enabled` + `jev.command`
 typesafe-sdk, JEV_API_KEY, uv env         ◄─────  shells out: <command> judge <verb>
 `claude-wiki judge <verb>` (stdin JSON → stdout)  (stdin JSON, stdout JSON, hard timeout)
 labelled eval sets + thresholds                   appends verdicts to judge.jsonl
@@ -28,7 +37,8 @@ the wiki: harvest → classify → verify             reads the wiki's verified 
 
 Why this split:
 - **Toolkit rules stay intact:** stdlib-only Python via `scripts/py.sh`, hooks always exit 0, no
-  secrets, works unchanged on Codex and Copilot. The integration is one subprocess behind a key.
+  key stored in the repo, works unchanged on Codex and Copilot. The integration is one subprocess
+  behind an opt-in switch.
 - **Everything Jev-specific iterates in one place:** question wording, thresholds, the pinned model
   version, the labelled eval sets, and API cost.
 - **The same repo already builds the memory wiki**, so memory injection is one more verb.
@@ -136,10 +146,14 @@ Lessons that carry over:
 
 ### Conventions & reuse
 
-- **Follow the opt-in knob pattern:** `pipeline.loop.auto_continue`, `pipeline.stop_gate` and
-  `pipeline.scope.*` carry a `_comment` and live in `templates/project.json.example`
-  (`"pipeline": {` at :99). **Every new key must land in both `templates/project.json.example` and
-  `docs/CONFIG.md`** — `check_contracts.py`'s config-keys check fails otherwise.
+- **Follow the opt-in knob pattern, as its own top-level `jev` section:** like
+  `pipeline.loop.auto_continue` and `pipeline.stop_gate`, every key is off by default and carries a
+  `_comment`. The whole integration lives in one top-level `jev` block in
+  `templates/project.json.example` rather than under `pipeline`, because it configures an external
+  service (a command, a key reference, a model) and not a pipeline stage -- and one block is one
+  thing to delete. **Every new key must land in both `templates/project.json.example` and
+  `docs/CONFIG.md`** -- `check_contracts.py`'s config-keys check fails otherwise. The committed
+  `.example` must never carry a key value, only the shape.
 - **Follow the per-machine command key:** like `"python"` (`templates/project.json.example:45`)
   and `scripts/py.sh`, the judge command differs per machine (a Windows path vs a WSL path to the
   same repo), so it is a config value, never hardcoded.
@@ -252,22 +266,47 @@ does not, and can ship now.
 
 #### Phase 3 — Toolkit seam and doctrine (depends on the prerequisite)
 
-9. **Config keys** under `pipeline.judge`, each with a `_comment`, in **both**
-   `templates/project.json.example` and `docs/CONFIG.md`:
-   - `command` — default `""` (off). Example `"uv --directory E:/programming/jev run -q claude-wiki"`,
+9. **A top-level `jev` section -- opt-in only**, each key with a `_comment`, in **both**
+   `templates/project.json.example` and `docs/CONFIG.md`. **Two conditions must both hold before
+   anything runs: `enabled` is `true` and `command` is non-empty.** An absent section,
+   `enabled: false`, or an empty command are all "off", and every call site then behaves exactly as
+   today.
+   ```json
+   "jev": {
+     "enabled": false,
+     "command": "",
+     "api_key_env": "TYPESAFE_API_KEY",
+     "mode": "shadow",
+     "enforce": [],
+     "timeout_ms": 2500,
+     "memory_source": ""
+   }
+   ```
+   - `enabled` -- master switch. Default `false`. Nothing is read, called or recorded unless `true`.
+   - `command` -- the external judge. Example `"uv --directory E:/programming/jev run -q claude-wiki"`,
      or the `/mnt/e/...` form under WSL.
-   - `mode` — `"off" | "shadow" | "enforce"`. Default `"off"`; `"shadow"` when a command is set.
-   - `enforce` — list of verbs allowed to act. Default `[]`.
-   - `timeout_ms` — default `2500`.
-   - `memory_source` — path to a claims file. Default `""`.
-10. **`scripts/judge.py`** (stdlib). Reads config; returns `{"verdict": null}` when off,
-    unconfigured, timed out, erroring or malformed; otherwise runs `<command> judge <verb>` with the
+   - `api_key_env` -- the **name** of the environment variable holding the TypeSafe key, never the
+     key itself. The shim passes that variable's value to the child process; if it is unset, the
+     verdict is `null` with `error: "no-api-key"` and the call site proceeds as today.
+   - `mode` -- `"shadow" | "enforce"`, read only when enabled. Default `"shadow"`, so turning the
+     integration on records verdicts before any of them acts.
+   - `enforce` -- verbs allowed to act in `enforce` mode. Default `[]`: even in `enforce` mode,
+     nothing acts until a verb is named here.
+   - `timeout_ms` -- default `2500`.
+   - `memory_source` -- path to a claims file. Default `""`.
+10. **`scripts/judge.py`** (stdlib). Reads the `jev` section; returns `{"verdict": null}` -- and
+    writes nothing -- when the section is absent, `enabled` is not `true`, `command` is empty, or the
+    `api_key_env` variable is unset. Otherwise it returns `{"verdict": null}` on a timeout, error or
+    malformed output; otherwise runs `<command> judge <verb>` with the
     timeout and validates the contract from step 4. It **appends one line** —
     `{verb, verdict, band, signals, confidence, acted, at}` — to the addressed envelope's
-    `stage-outputs/judge.jsonl`, never to `run.json`. Exits 0 always. Takes `--slug` and resolves
+    `stage-outputs/judge.jsonl`, never to `run.json`. It never writes the key anywhere -- not to
+    `judge.jsonl`, not to stderr, not into an error message. Exits 0 always. Takes `--slug` and resolves
     through the prerequisite's addressing.
     Invocation: `bash scripts/py.sh scripts/judge.py <verb> [--slug <s>] < input.json`.
-11. **`scripts/ci/test-hooks.sh` cases** with the stub command: off (no call), shadow (records,
+11. **`scripts/ci/test-hooks.sh` cases** with the stub command: section absent, `enabled: false`,
+    and `enabled: true` with an empty command (all three: no call, no `judge.jsonl` written);
+    `api_key_env` unset (no call); a key value never appears in `judge.jsonl` or stderr; shadow (records,
     changes nothing), enforce+act, enforce+uncertain (must not act), timed-out command, missing
     command, malformed output, and **two concurrent appends to one `judge.jsonl`** (both survive).
 12. **Doctrine: add the "Jev picks, code decides" worked case to `docs/ENFORCEMENT.md`.**
@@ -347,7 +386,7 @@ does not, and can ship now.
 22. **`skills/sdlc/templates/queue-mode.md` Select:** prefer rows `triage-rows` marks runnable
     unattended. Shadow records which row would have been picked. The Stage 0 scope gate still owns
     phase boundaries; triage only orders rows within the taken phase.
-23. **`skills/sdlc/templates/stage-2-implement.md`:** if `pipeline.judge.memory_source` is set, run
+23. **`skills/sdlc/templates/stage-2-implement.md`:** if `jev.memory_source` is set, run
     `relevant-memory` once and add at most ~8 claims to the brief under "How this user works".
     Enforce only after the wiki's two open rough edges are fixed.
 24. **`skills/gotcha/SKILL.md`:** replace the dedup judgment call with `dedupe-gotcha`.
@@ -370,7 +409,8 @@ does not, and can ship now.
     `/dead-code-review` — every one of those descriptions carries explicit "use X instead" text.
     Run each case against the descriptions **as installed per runtime**, after the truncation each
     runtime applies (`CLAUDE.md` rule 4: Codex shortens from the end).
-28. **Wire it beside `scripts/ci/skill-eval.py`** as a nightly/on-demand eval, never per push. Fail
+28. **Wire it beside `scripts/ci/skill-eval.py`** as a nightly/on-demand eval, never per push, and
+    **skipped cleanly when no key is present**, so a contributor without one never sees it fail. Fail
     when a case that used to route correctly stops doing so — the regression is the signal, not the
     absolute score.
 
@@ -403,10 +443,20 @@ does not, and can ship now.
 - **`/repo-health`** — optional: report "judge configured but command failing".
 - **`/claude-wiki`** (external) — the loop's own transcripts flow back into the wiki on the next
   harvest, which also grows the labelled sets from step 7 automatically.
-- **Consumers** — every key defaults off. A consumer without Jev sees no behaviour change and no
-  new required config. The two Phase 1 warnings are the only changes a consumer reads.
+- **Consumers** -- the whole `jev` section is opt-in (`enabled: false`, no command, no key). A
+  consumer who never adds it sees no behaviour change, no network call, and no new required config.
+  The two Phase 1 warnings are the only changes a consumer reads.
 
 ### Open Questions
+
+- **Should `project.json` also accept the key literally?** This revision references it by
+  environment-variable name only. A literal `jev.api_key` would be simpler to set up and is
+  machine-local on any repo `setup.sh` installed into, since `.claude/project.json` is gitignored
+  there (`ensure_gitignored ".claude/project.json"` in `setup.sh`). Against it: a plugin-only install
+  never runs `setup.sh` and so has no such ignore entry, and models read `project.json` routinely,
+  putting the key into transcripts that claude-wiki later harvests (it redacts credentials, but that
+  is a second line of defence, not a first). If allowed, the secret-scan stage should flag a
+  non-empty `jev.api_key` in any tracked file, and the key must never be echoed. **Owner's call.**
 
 - **The WSL path.** Latency is measured for Windows-native `uv` only (261–345 ms warm). Most
   toolkit sessions run in WSL against `/mnt/h/...`. Measure the WSL → `/mnt/e` form before Phase 5

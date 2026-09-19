@@ -329,13 +329,21 @@ it on the weaker ground that "prevention gets deferred."
     shipped prose"* — which bears directly on (b). Files: `README.md`,
     `skills/sdlc/templates/stage-6-handoff.md`, `skills/task/SKILL.md`, `skills/sdlc-status/SKILL.md`.
 
+13b. **Make the Stage 2 decompose gate weigh files, not just steps.** Observed on this plan's own
+    Phase 1 run: `task_count = 4 < 6` routed a change spanning ~20 files and three new CI checks to a
+    single agent (`implement.json.data.gate.note`). The gate in `skills/sdlc/templates/stage-2-gate.md`
+    decomposes only when `task_count >= agents.decompose_min_tasks`; add `len(files_to_change)` as a
+    second trigger (a named threshold, overridable, e.g. `agents.decompose_min_files`), keeping the
+    surfaces-disjoint requirement. Any new key lands in `templates/project.json.example` **and**
+    `docs/CONFIG.md`. Files: `skills/sdlc/templates/stage-2-gate.md`, `templates/project.json.example`,
+    `docs/CONFIG.md`.
+
 14. **Version bump — only if Phase 2/3 ships, and mind the existing one.** Phases 2–3 touch
     `skills/`, `copilot/`, `codex/`, `scripts/hooks/` — all under `SHIPPED_GLOBS`. **Two
     corrections to revision 1:** `check_version_freshness` is **git-history based** (`:548-609`,
     `git log -L`), so it reads green for the entire `/sdlc` run regardless of what changes — it
-    cannot "fail without this"; the bump is needed for the *commit*, not the run. And the tree
-    **already carries an uncommitted 0.7.0 → 0.7.1 bump**, so this step must not produce a
-    redundant 0.7.2. Phase 1 alone needs **no bump at all** — it touches nothing shipped.
+    cannot "fail without this"; the bump is needed for the *commit*, not the run. Current version
+    is **0.8.0** (committed with Phase 2); bump from there.
     Files: `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`.
 
 #### Deferred — cannot be verified on this machine
