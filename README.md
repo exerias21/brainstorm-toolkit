@@ -299,6 +299,7 @@ by a live-data check. Total cost: ~240k tokens across 3 passes, each 1–6 minut
 - **[docs/PROSE-FIDELITY.md](docs/PROSE-FIDELITY.md):** why prescriptive prose beats a second deterministic expression, and the case history of the deleted Workflow.
 - **[docs/EVALS.md](docs/EVALS.md):** the three testing tiers (static contract checks, fixture pytest evals, headless outcome evals on a fixture repo), how to add a case, how to read the summary, and why there are no LLM graders yet.
 - **[docs/BOARD-JSON.md](docs/BOARD-JSON.md):** the output contract for `scripts/close-tasks.sh board` — a read-only JSON export joining `TASKS.md` rows to pipeline envelopes, its ordering guarantees, and the schema-version rule.
+- **[docs/JEV.md](docs/JEV.md):** the optional Jev (TypeSafe) judge integration — planned, not implemented — what it will do, its opt-in settings, and where the API key will and will never live.
 
 ## Supporting scripts
 
