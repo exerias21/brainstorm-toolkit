@@ -367,7 +367,7 @@ it on the weaker ground that "prevention gets deferred."
     copies `scripts/`. Mind `GOTCHAS.md:69`: invoke as `bash …` / `bash scripts/py.sh …`, never a
     bare `.sh` or `python3`. Files: the 11 listed above, once the mechanism is chosen.
 
-#### Deferred — cannot be verified on this machine
+#### Phase 4 — Deferred: cannot be verified on this machine
 
 15. **The two macOS portability bugs — own follow-up, not this run.** Both were flagged
     *unverified* by the review and this machine has only bash 5.2, so neither can be reproduced

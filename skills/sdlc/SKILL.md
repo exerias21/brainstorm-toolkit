@@ -70,14 +70,19 @@ Detect the argument shape:
 1. **Plan file** — arg is a path ending `.md` that exists (e.g.
    `plans/my-feature.md`). Use it as the plan and parse it per Stage 0 below.
    This is the primary path and the one that exercises the full pipeline
-   (Stage 5's plan check has a plan to check against). **Also scan `TASKS.md`
-   for `Active / Pending` rows that reference this plan** — by the
-   `_plan: <slug>_` marker `/brainstorm` appends, falling back to the
-   `— plans/<slug>.md` path for legacy untagged rows. **Do not mark them `[~]` yet** —
-   the **Scope gate** below (after `parse.json`) decides which of these rows are in
-   scope for this run and marks only those; Stage 6 closes taken rows via
-   `scripts/close-tasks.sh`. A plan-file run that matches no such rows updates
-   no `TASKS.md` — that's expected, not a miss.
+   (Stage 5's plan check has a plan to check against). **Look up this plan's
+   `TASKS.md` rows by calling `scripts/close-tasks.sh rows --plan <slug>
+   --plan-file <path>`** (the slug is the plan's basename minus extension) —
+   never `reconcile | grep <slug>`: `reconcile` only reports drift against
+   *existing* pipeline envelopes, so on a first run for this plan it always
+   returns zero rows even though correctly-tagged rows are sitting open (a
+   live miss on 2026-09-20). `rows` reads TASKS.md alone, matching the
+   `_plan: <slug>_` marker `/brainstorm` appends, with a legacy path-substring
+   fallback for untagged rows. **Do not mark any row `[~]` yet** — the
+   **Scope gate** below (after `parse.json`) decides which of these rows are
+   in scope for this run and marks only those; Stage 6 closes taken rows via
+   `scripts/close-tasks.sh`. A plan-file run whose `rows` call returns no
+   `matched[]` updates no `TASKS.md` — that's expected, not a miss.
 
 2. **Task id** — arg matches `task-NNN` or a bare row number. Read that
    `TASKS.md` row and its linked `plans/tasks/task-N-<slug>.md`. The task
@@ -87,7 +92,8 @@ Detect the argument shape:
 3. **Task range** — arg is `N-M`, `task-N..task-M`, or `tasks N-M`. Resolve
    every `Active / Pending` row in that inclusive range to its task file.
    Execute them as a batch (see Stage 6 range semantics). Record the resolved
-   ids in `run.json.data.task_range`. Mark each resolved row `[~]`.
+   ids in `run.json.data.task_range`. Mark each resolved row `[~]`, **except a
+   `_manual_` row** — leave it `Active / Pending` and report it, never execute it.
 
 4. **Ad-hoc description** — anything else. Create a new `TASKS.md` row + task
    file using `/task`'s procedure (`skills/task/SKILL.md` Sections 1–2), which
@@ -151,33 +157,10 @@ Skip this gate entirely for task-id / range / ad-hoc / `--queue` inputs — each
 bounded to one row or an explicit range — and for `--no-scope-gate`, which forces whole-plan
 execution (`taken` = every open row).
 
-Compute size from `parse.json` (`implementation_step_count`, `files_to_change`) plus surfaces
-touched (**via `skills/sdlc/templates/changed-files-gate.md`**) — the same quantities
-`skills/brainstorm/SKILL.md`'s `plan size: <n> steps across <m> files, <k> surface(s)` line
-already computes at authoring time. Reuse that verdict rather than re-deriving a second one.
-
-- **Prefer the plan's own `#### Phase N` boundaries over an arbitrary cut.** If the plan
-  declares phases, take the lowest-numbered phase with open (`[ ]`/`[~]`) rows and park every
-  later phase whole — **never split a sequentially-dependent chain to hit a number** (the same
-  rule `/brainstorm` Step 7.5 states at authoring time; this is its Stage-0 enforcement, not a
-  restatement). Fall back to a step-count cut — `pipeline.scope.max_steps_per_run` (default
-  `8`) — only when the plan has no phases.
-- **Honor an explicit DEFERRED marker.** A phase the plan itself marks deferred (e.g. "cannot
-  be verified on this machine") is never pulled into scope, regardless of position.
-- **Push back visibly, then proceed — never stop and ask.** A blocking prompt deadlocks
-  background/CI runs (`changed-files-gate.md`'s proceed-and-document precedent is the same
-  call here). Print the verdict as one line, **always, even under `quiet`**:
-
-  `scope gate: N steps across M files, K surface(s) — taking phase P (S steps); parking
-  [phases ...] (deferred: [...]) — resume: <cmd>`
-
-  Record `run.json.data.scope_gate = {plan_total_steps, plan_phases, taken, parked, deferred,
-  why, resume}`. **Mark `[~]` only on the `TASKS.md` rows actually taken** — parked rows stay
-  `Active / Pending`, untouched, so a plain re-run of `/sdlc <plan>` (the `resume` value) picks
-  up the next phase.
-- **On a partial take**, follow the shared **`## Park protocol`** in
-  `skills/sdlc/templates/queue-mode.md` with `<resume-cmd>` = the `resume` value above — the
-  same sentinel mechanics the queue loop uses between items, not a second implementation.
+**Read `skills/sdlc/templates/scope-gate.md` now** and follow it: it sizes the plan, prefers the
+plan's own phase boundaries, handles a plan with zero rows and `_manual_`-only phases, runs a
+warn-only reconcile check before taking, records `run.json.data.scope_gate` (accumulating
+`taken_phases` across re-runs), and prints the verdict line.
 
 **Native task mirror (Claude only; skip silently elsewhere).** Once the stage list for this run
 is known, call `TaskCreate` once per stage that will actually run — the gates above have already

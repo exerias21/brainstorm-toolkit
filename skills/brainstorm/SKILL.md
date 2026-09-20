@@ -189,15 +189,22 @@ Cross-Module Touchpoints, Open Questions, Appendix: Alternatives Considered) and
 what belongs in each. Keep the headings verbatim: `/sdlc`'s Stage 0 parser finds
 implementation steps and files-to-change by those names.
 
-**Use the `Write` tool** to save this to `plans/brainstorm-[topic-slug].md` at the **repo
-root** (not under `.claude/`) — the only location downstream skills (`/sdlc`, `/flowsim`,
-`/repo-health`, validators) read, and Step 7's validation agent reads it too, so do this
-before Step 7. Create `plans/` first if it doesn't exist (Write creates parent dirs
-automatically).
+**Skill-repo detection** (same idiom `/sdlc` uses): if `.claude-plugin/marketplace.json` exists
+at repo root, this repo is itself a markdown-skill plugin — write the plan to
+`docs/plans/<topic-slug>.md` instead (no `brainstorm-` prefix; that's where this repo's own
+plans already live). Otherwise use the ordinary `plans/brainstorm-[topic-slug].md` path below.
+Whichever applies, use that same path everywhere else in this step and in Step 8.
+
+**Use the `Write` tool** to save this to `plans/brainstorm-[topic-slug].md` (or
+`docs/plans/<topic-slug>.md` in a skill repo) at the **repo root** (not under `.claude/`) — the
+only location downstream skills (`/sdlc`, `/flowsim`, `/repo-health`, validators) read, and Step
+7's validation agent reads it too, so do this before Step 7. Create the parent directory first
+if it doesn't exist (Write creates parent dirs automatically).
 
 If you find yourself holding a transient host plan path (`~/.claude/plans/<random>.md`), something
 entered Plan mode against this skill's contract — write the canonical copy to
-`plans/brainstorm-<topic-slug>.md` and continue from there.
+`plans/brainstorm-<topic-slug>.md` (or `docs/plans/<topic-slug>.md` in a skill repo) and continue
+from there.
 
 **Group implementation steps into phases past ~6 steps, or a real ordering dependency**
 (phase 2 needs phase 1 landed first) — `#### Phase N — <title>` headings under
@@ -207,12 +214,16 @@ downstream requires phases.
 **Also append action items to `TASKS.md`** (at repo root). For each implementation step
 that's concrete and bounded enough to stand alone, add a row to the `Active / Pending`
 section: `- [ ] (P2) <step title> — plans/brainstorm-[topic-slug].md _plan: [topic-slug]_`
-(append `· _phase: N_` when the step sits under a `#### Phase N` heading). **The `_plan:_`
-value is `[topic-slug]` alone, never `brainstorm-[topic-slug]`** — `/sdlc` Stage 0 derives
-its slug by stripping the leading `brainstorm-` from the plan filename, so tagging the row
-with the full filename stem would make the "deterministic" key never match at Stage 6
-close-out. If `TASKS.md` doesn't exist, create it from `templates/TASKS.md.template` (or
-with minimal sections).
+(in a skill repo, the plan path in that row is `docs/plans/<topic-slug>.md` instead — same
+detection as above) (append `· _phase: N_` when the step sits under a `#### Phase N` heading).
+**The `_plan:_` value is `[topic-slug]` alone, never `brainstorm-[topic-slug]`** — `/sdlc`
+Stage 0 derives its slug by stripping the leading `brainstorm-` from the plan filename, so
+tagging the row with the full filename stem would make the "deterministic" key never match at
+Stage 6 close-out. **Tag a human-only step `_manual_` in the trailer** (after the tags above,
+e.g. `_plan: [topic-slug]_ _manual_`) when it's work only a human can do (an account, a
+credential, a manual verification) — `/sdlc`'s scope gate and `close-tasks.sh`'s reconcile both
+skip a `_manual_` row rather than trying to execute it. If `TASKS.md` doesn't exist, create it
+from `templates/TASKS.md.template` (or with minimal sections).
 
 ### Step 6.5: Multi-agent Vet (mode-gated)
 
@@ -267,7 +278,8 @@ stopping at the plan.
 
 **Step 8.0 — confirm the plan file exists before routing.** There is no plan mode
 to exit (Step 0), so this is a one-line check rather than a state transition:
-`plans/brainstorm-<topic-slug>.md` must exist at the repo root — Step 6 wrote it.
+`plans/brainstorm-<topic-slug>.md` (or `docs/plans/<topic-slug>.md` in a skill repo — same
+detection as Step 6) must exist at the repo root — Step 6 wrote it.
 Do not proceed to routing or the sentinel until it does; a sentinel pointing at a
 missing plan is a bug.
 
@@ -292,8 +304,11 @@ Drop a **next-action sentinel** naming that command so the Stop hook surfaces it
 # Append ONE structured line (multi-slot seam — coexists with a gotcha entry;
 # see docs/SEAM.md). /sdlc does no git writes, so confirm stays false; set
 # "confirm":true only if you substitute a command that is hard to reverse.
-line='{"cmd":"/sdlc plans/brainstorm-<topic-slug>.md","source":"brainstorm","confirm":false}'
-grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action
+# Dedup by cmd, not the whole line (docs/SEAM.md) -- -F/-e as there, so a cmd
+# containing regex metacharacters (a plan path's `.md`) is never misread as a pattern.
+cmd='/sdlc plans/brainstorm-<topic-slug>.md'   # or docs/plans/<topic-slug>.md in a skill repo
+grep -qF -e "\"cmd\":\"$cmd\"" -e "\"cmd\": \"$cmd\"" .claude/.next-action 2>/dev/null \
+  || echo "{\"cmd\":\"$cmd\",\"source\":\"brainstorm\",\"confirm\":false}" >> .claude/.next-action
 ```
 
 The Stop hook — **shipped by the plugin** (auto-wired when the plugin is enabled,
@@ -312,10 +327,11 @@ no intent to ship.
 Continue:
 
 1. **Show what's being built** (optional, cheap) — offer
-   `/plan-html plans/brainstorm-<topic-slug>.md` to render the plan as a
-   single-file HTML view the user or a stakeholder can scroll, for a
-   shape-of-the-work read before delivery starts.
-2. **Continue into delivery** — `/sdlc plans/brainstorm-<topic-slug>.md`.
+   `/plan-html plans/brainstorm-<topic-slug>.md` (or `/plan-html docs/plans/<topic-slug>.md`
+   in a skill repo) to render the plan as a single-file HTML view the user or a stakeholder
+   can scroll, for a shape-of-the-work read before delivery starts.
+2. **Continue into delivery** — `/sdlc plans/brainstorm-<topic-slug>.md` (or
+   `/sdlc docs/plans/<topic-slug>.md` in a skill repo).
 3. **Save for later** — if the user signals they're done for now, leave the
    plan file and skip the sentinel.
 

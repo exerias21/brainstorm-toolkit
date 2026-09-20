@@ -164,11 +164,18 @@ carries the full section set (Direction, Conventions & reuse, Implementation Ste
 Cross-Module Touchpoints, Open Questions, Appendix: Alternatives Considered). Keep the headings
 verbatim: `/sdlc`'s Stage 0 parser finds implementation steps and files-to-change by those names.
 
+**Skill-repo detection** (same idiom `/sdlc` uses): if `.claude-plugin/marketplace.json` exists
+at repo root, this repo is itself a markdown-skill plugin — write the plan to
+`docs/plans/<topic-slug>.md` instead (no `brainstorm-` prefix; that's where this repo's own
+plans already live). Otherwise use the ordinary `plans/brainstorm-[topic-slug].md` path below.
+Whichever applies, use that same path everywhere else in this step and in Step 8.
+
 **Write this to `plans/brainstorm-[topic-slug].md` at the repo root** (the
 consumer project's working directory) — NOT under `.claude/`. Use the file-write
 mechanism the agent has available. The on-disk path `<repo-root>/plans/<slug>.md`
+(or `<repo-root>/docs/plans/<slug>.md` in a skill repo)
 is the source of truth — it is the only location the downstream skills (`/sdlc`,
-`/flowsim`, `/repo-health`) read. Create the `plans/` directory first if it
+`/flowsim`, `/repo-health`) read. Create the parent directory first if it
 doesn't exist.
 
 Do this **before** Step 7 (validation) — the validation checklist references
@@ -182,12 +189,16 @@ downstream requires phases.
 **Also append action items to `TASKS.md`** (at repo root). For each implementation step
 that's concrete and bounded enough to stand alone, add a row to the `Active / Pending`
 section: `- [ ] (P2) <step title> — plans/brainstorm-[topic-slug].md _plan: [topic-slug]_`
-(append `· _phase: N_` when the step sits under a `#### Phase N` heading). **The `_plan:_`
-value is `[topic-slug]` alone, never `brainstorm-[topic-slug]`** — `/sdlc` Stage 0 derives
-its slug by stripping the leading `brainstorm-` from the plan filename, so tagging the row
-with the full filename stem would make the "deterministic" key never match at Stage 6
-close-out. If `TASKS.md` doesn't exist, create it from `templates/TASKS.md.template` (or
-with minimal sections).
+(in a skill repo, the plan path in that row is `docs/plans/<topic-slug>.md` instead — same
+detection as above) (append `· _phase: N_` when the step sits under a `#### Phase N` heading).
+**The `_plan:_` value is `[topic-slug]` alone, never `brainstorm-[topic-slug]`** — `/sdlc`
+Stage 0 derives its slug by stripping the leading `brainstorm-` from the plan filename, so
+tagging the row with the full filename stem would make the "deterministic" key never match at
+Stage 6 close-out. **Tag a human-only step `_manual_` in the trailer** (after the tags above,
+e.g. `_plan: [topic-slug]_ _manual_`) when it's work only a human can do (an account, a
+credential, a manual verification) — `/sdlc`'s scope gate and `close-tasks.sh`'s reconcile both
+skip a `_manual_` row rather than trying to execute it. If `TASKS.md` doesn't exist, create it
+from `templates/TASKS.md.template` (or with minimal sections).
 
 ### Step 6.5: Multi-pass Vet (mode-gated)
 
@@ -222,17 +233,21 @@ whichever pipeline flow has been used this session; default to `/sdlc`
 it can't surprise you with a PR).
 
 1. **Show what's being built** (optional) — `/plan-html plans/brainstorm-[topic-slug].md`
-   renders the plan as a single-file HTML view for a shape-of-the-work read.
+   (or `/plan-html docs/plans/<topic-slug>.md` in a skill repo) renders the plan as a
+   single-file HTML view for a shape-of-the-work read.
 2. **Continue into delivery** — `/sdlc <plan>`. It runs the full pipeline and
    leaves the validated changes for you to commit; it opens no PR. For a single
    tiny item, `/task` is the fast path.
 3. **Save for later** — leave the plan at `plans/brainstorm-[topic-slug].md`
-   (task items are already in `TASKS.md`).
+   (or `docs/plans/<topic-slug>.md` in a skill repo) (task items are already in `TASKS.md`).
 
 Write the next-action sentinel naming the chosen command so Copilot's Stop
 hook surfaces it — append ONE structured line (multi-slot seam; coexists with a gotcha
-entry, see `docs/SEAM.md`), deduped by `cmd`:
-`line='{"cmd":"/sdlc plans/brainstorm-[topic-slug].md","source":"brainstorm","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action`
+entry, see `docs/SEAM.md`), **deduped by `cmd`, not the whole line** (the exact idiom
+`docs/SEAM.md` uses: `-F`/`-e` twice so a cmd containing regex metacharacters, like a plan
+path's `.md`, is never misread as a pattern):
+`cmd='/sdlc plans/brainstorm-[topic-slug].md'; grep -qF -e "\"cmd\":\"$cmd\"" -e "\"cmd\": \"$cmd\"" .claude/.next-action 2>/dev/null || echo "{\"cmd\":\"$cmd\",\"source\":\"brainstorm\",\"confirm\":false}" >> .claude/.next-action`
+(substitute `docs/plans/<topic-slug>.md` for `cmd` in a skill repo)
 On Codex (as a fallback until its `.codex/hooks.json` Stop hook is wired+trusted), also print `Next: <command>` inline right after writing
 the sentinel, so the handoff degrades gracefully instead of vanishing. **No-hook
 nudge (SEAM2):** if no Stop hook is wired at all, the sentinel is inert — check for one:

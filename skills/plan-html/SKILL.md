@@ -26,6 +26,7 @@ resolve against the current working directory. Common locations:
 
 - `plans/<slug>.md`
 - `plans/tasks/task-N-<slug>.md`
+- `docs/plans/<slug>.md` (a skill repo's plan location)
 - `docs/<name>.md`
 - Any markdown file in the repo
 
@@ -155,9 +156,12 @@ when ready.
   exotic (footnotes, definition lists, image embeds with sizing), pass
   it through as best-effort and note "rendered as-is" in the footer.
 - **Don't write `.html` when the source is in a non-`plans/` location**
-  without checking. If the user passes `docs/CONVENTIONS.md`, the output
-  goes to `docs/CONVENTIONS.html`. Mention this in the final report so
-  they aren't surprised.
+  without checking — `docs/plans/` counts as a `plans/` location here (it's
+  where a skill repo's own `/brainstorm`/`/brainstorm-team`/`/sdlc` plans live,
+  auto-detected the same way `/sdlc` detects a skill repo), so a plan there
+  gets its `.html` sibling with no note. If the user passes `docs/CONVENTIONS.md`
+  (a non-plan doc), the output goes to `docs/CONVENTIONS.html`. Mention this in
+  the final report so they aren't surprised.
 - **The template lives at `skills/plan-html/templates/plan.html.template`.**
   If a future change forks the template, update the cross-references
   in this SKILL.md too — no template duplication.

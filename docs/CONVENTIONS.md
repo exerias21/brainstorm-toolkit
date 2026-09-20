@@ -124,6 +124,7 @@ Form: lowercase-kebab segments, each segment matching the RFC 1123 regex.
 | `pbis/pbi-001.md` | PBI artifacts (frontmatter + acceptance criteria — the "what") | Yes |
 | `plans/brainstorm-<slug>.md` | Implementation plans (the "how" — from `/brainstorm`, `/pbi`, `/pbi-decompose`) | Per-repo (gitignored on plugin repo, often tracked on consumers) |
 | `plans/tasks/task-001.md` | Task plan stubs | Same as `plans/` |
+| `docs/plans/<slug>.md` | The same implementation plans, but in a **skill repo** (`.claude-plugin/marketplace.json` at repo root, auto-detected the same way `/sdlc` detects one) — `/brainstorm` drops the `brainstorm-` prefix there since it's alongside this repo's own hand-authored plans; `/brainstorm-team` keeps its `team-brainstorm-` prefix to avoid colliding on the same topic-slug | Yes (this repo tracks its own `docs/plans/`) |
 | `delivery/pbi-001.json` | Machine-generated, persistent artifacts (delivery manifests, BRD-coverage reports, post-deploy verification matrices) | Yes |
 | `delivery/post-deploy-<env>-<timestamp>.json` | Post-deploy verification results | Yes |
 | `.claude/pipeline/<slug>/` | Machine-generated, ephemeral state (per-run state envelope) | No (always gitignored) |

@@ -25,6 +25,10 @@ Also called inline by `/sdlc` Stage 5 (as its flow axis) whenever a parent plan
 is available.
 
 - **Plan source**: a `plans/brainstorm-<slug>.md` file, a `plans/tasks/task-N-<slug>.md` file, or a TASKS.md row. The plan must describe at least one flow: entry point → steps → outcome.
+  **Skill-repo detection** (same idiom `/sdlc` uses): if `.claude-plugin/marketplace.json` exists
+  at repo root, the plan lives at `docs/plans/<slug>.md` instead — resolve the plan there, and
+  resolve the cache (step 0 and step 4 below) beside it in `docs/plans/` too, so both steps agree
+  on one location.
 - **Optional**: `--max-hops N` (default 3) — how many function/module jumps to follow per flow.
 - **Optional**: `--focus <module>` — restrict tracing to one module (useful for large features).
 - **Optional**: `--force` — ignore the prior-run cache (see Flow step 0) and re-trace every flow.
@@ -37,8 +41,9 @@ is available.
 
 ### 0. Check the prior-run cache
 
-Before tracing, look for `plans/flowsim-<feature-slug>.json` from a previous run.
-If it exists and `--force` was NOT passed:
+Before tracing, look for `plans/flowsim-<feature-slug>.json` from a previous run (or
+`docs/plans/flowsim-<feature-slug>.json` in a skill repo — see the skill-repo detection note
+above). If it exists and `--force` was NOT passed:
 
 1. Load the prior flows array.
 2. For each prior flow with `status: "MATCH"` and every step anchored to a real
@@ -101,8 +106,24 @@ Produce a markdown block:
 ### Flow 2: ...
 ```
 
+**Write the cache.** After producing the report, write the flows array plus a `written_at`
+timestamp to `plans/flowsim-<feature-slug>.json` (or `docs/plans/flowsim-<feature-slug>.json`
+in a skill repo — the same location step 0 read from), creating that directory first if it
+doesn't exist. This is the cache step 0 of the *next* run reads, so a fresh run always leaves
+one behind — including a `cached-MATCH` run, so the `written_at` mtime advances and a later
+run's staleness check has a current baseline to compare against.
+
+```json
+{
+  "flows": [ /* the per-flow status/steps this run produced, including any carried-through cached-MATCH entries */ ],
+  "written_at": "2026-09-20T00:00:00Z"
+}
+```
+
 ## Output limits
 
 - **Three hops max by default.** If the plan implies a 5-hop flow, split it into two flows of 3 hops each.
-- **Don't fix anything.** Flowsim is read-only. Hand findings to the user (or, when running inside the pipeline, to Stage 5's fix loop).
+- **Never edits source.** Flowsim writes its own cache file (above) and nothing else — it never
+  touches the code it's tracing. Hand findings to the user (or, when running inside the pipeline,
+  to Stage 5's fix loop).
 - **Cap output at ~60 lines of markdown** unless there are many flows. A 200-line flowsim report is a sign the plan is too ambitious for one feature.

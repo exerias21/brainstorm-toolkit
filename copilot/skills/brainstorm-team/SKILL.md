@@ -13,7 +13,7 @@ metadata:
 
 # Brainstorm Team (Copilot Edition — Sequential)
 
-Six research passes executed in order by you, producing a single strategy document at `plans/team-brainstorm-<topic-slug>.md` (at the repo root, written via the Copilot agent's file-write mechanism — NOT under `.claude/`). The Claude canonical runs these as parallel workers; this version runs them sequentially. Output is the same shape, just slower.
+Six research passes executed in order by you, producing a single strategy document at `plans/team-brainstorm-<topic-slug>.md` (or `docs/plans/team-brainstorm-<topic-slug>.md` in a skill repo — see "Final output" below), at the repo root, written via the Copilot agent's file-write mechanism — NOT under `.claude/`. The Claude canonical runs these as parallel workers; this version runs them sequentially. Output is the same shape, just slower.
 
 **Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/models.md`) governs each worker's tier on the Claude canonical. Here the passes run inline in the session model, so the cap is advisory — set your session model to the cap tier for the savings.
 
@@ -89,15 +89,23 @@ For the top 3 features from Pass 4, write detailed implementation blueprints fol
 
 ## Final output
 
-**Write the assembled document to `plans/team-brainstorm-<topic-slug>.md`** at the
+**Skill-repo detection** (same idiom `/sdlc` uses): if `.claude-plugin/marketplace.json`
+exists at repo root, this repo is itself a markdown-skill plugin — write the document to
+`docs/plans/team-brainstorm-<topic-slug>.md` instead (same `team-brainstorm-` prefix, just
+alongside this repo's own plans, so it never collides with a plain `/brainstorm` plan on the
+same topic-slug). Otherwise use the ordinary `plans/team-brainstorm-<topic-slug>.md` path below.
+
+**Write the assembled document to `plans/team-brainstorm-<topic-slug>.md`** (or
+`docs/plans/team-brainstorm-<topic-slug>.md` in a skill repo) at the
 repo root (the consumer project's working directory) — NOT under `.claude/`.
 Derive `<topic-slug>` from the session's topic (lowercase, hyphenated, ≤40
 chars) so repeated runs don't clobber each other; fall back to
 `team-brainstorm-results.md` only for a truly generic "what next?" session.
-Use the file-write mechanism Copilot's agent has available; create the `plans/`
+Use the file-write mechanism Copilot's agent has available; create the parent
 directory first if it does not exist.
 
-Assemble everything into `plans/team-brainstorm-<topic-slug>.md` with sections:
+Assemble everything into `plans/team-brainstorm-<topic-slug>.md` (or
+`docs/plans/team-brainstorm-<topic-slug>.md` in a skill repo) with sections:
 1. Competitive Landscape
 2. Codebase Map & Technical Assessment
 3. Conventions & reuse (Pass 2's live-code reuse inventory: dominant patterns with `path:line`, shared utilities to reuse, and any doc drift found — blueprints in §6 bind to this)
@@ -114,6 +122,7 @@ If any Pass generated meaningfully more content than fits a single section, spli
 ## Continue the flow
 
 Once the strategy document is written, say what comes next rather than stopping at a file:
-offer `/plan-html <doc>` to render it for sharing, and hand a chosen blueprint to
-`/sdlc <plan>` to implement it. A research document nobody routes into the pipeline is
-where this skill's value leaks out.
+offer `/plan-html plans/team-brainstorm-<topic-slug>.md` (or `/plan-html
+docs/plans/team-brainstorm-<topic-slug>.md` in a skill repo) to render it for sharing, and
+hand a chosen blueprint to `/sdlc <plan>` to implement it. A research document nobody routes
+into the pipeline is where this skill's value leaks out.

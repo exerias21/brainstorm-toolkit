@@ -32,6 +32,8 @@ cross-machine dashboard: see that plan's "Why this belongs in the toolkit" secti
       "blocked_reason": null,     // the `_blocked_reason: ..._` tag value, or null
       "started_at": null,         // from the JOINED envelope's `started_at` only -- rows carry no such tag
       "completed_at": null,       // the `_completed_at: ..._` tag value, or null
+      "followup": false,          // true iff `_followup_` appears in the row's TRAILER (after the last " -- ")
+      "manual": false,            // true iff `_manual_` appears in the row's TRAILER -- a human-only row
       "line": 15                  // 1-based line number in --file
     }
   ],
@@ -72,6 +74,9 @@ cross-machine dashboard: see that plan's "Why this belongs in the toolkit" secti
 - **`plan_slug` comes only from the `_plan: slug_` tag.** It is not derived from the `plan`
   path when the tag is absent — a row can have a `plan` (path found in its text) with no
   `plan_slug` (no tag), and the two fields are deliberately not filled in from each other.
+- **`followup` and `manual` match only in the row's trailer** — the text after the last
+  ` — ` (space, em dash, space) on the line. A title that merely *mentions* `_followup_` or
+  `_manual_` in its prose (rather than carrying it as a trailing tag) is not flagged.
 - **A malformed envelope is a `warnings[]` entry, never a crash.** Every documented envelope
   field is optional; an unreadable or non-object `run.json` is skipped and reported in
   `warnings[]`, and an unparsable `updated_at` falls back to mtime with its own warning.

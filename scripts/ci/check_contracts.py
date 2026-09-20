@@ -66,6 +66,12 @@ YYYY-MM-DD "<claim>" -->` in CLAUDE.md/AGENTS.md/docs/*.md), is a permanent
 WARN, never a failure -- see `recheck_by_warnings()`. It never contributes to
 the exit code, mirroring `model_cap_pointer_warnings()` in validate_skills.py.
 
+Phase 3 of docs/plans/dogfood-followups.md added `portable-invocation`, a
+Windows-portability check with two rules: no bare `python3 ` invocation in
+shipped skill/agent/template prose (a Microsoft Store stub trap -- see
+scripts/py.sh, GOTCHAS.md), and every `hooks/hooks.json` command starting
+with an interpreter token instead of a bare path.
+
 This targets the exact failure class a 2026-09 review found 46 instances of.
 Stdlib only, no model calls, runs in well under 5s.
 
@@ -375,9 +381,19 @@ def check_config_keys(files: list[Path], root: Path, registry: set[str]) -> list
 
 # ── Check 2: citations resolve ───────────────────────────────────────────────
 
+# Step 11 (docs/plans/dogfood-followups.md Phase 3): widened to see a
+# citation written as a runnable command, not just a bare path -- an optional
+# interpreter prefix (`bash `/`sh `/`python`/`python3 `/`py `), an optional
+# `scripts/py.sh ` between the prefix and the path (the wrapper this repo
+# routes every shipped Python command through), and trailing arguments before
+# the closing backtick. The interpreter/wrapper/argument text is matched, never
+# captured -- group(1) stays exactly the path portion, so citation_resolves()
+# and the historical-doc pointer check (~line 700) keep working unchanged.
 CITATION_RE = re.compile(
-    r"`((?:skills|scripts|templates|docs|agents|hooks|examples)/"
-    r"[A-Za-z0-9_./-]+\.(?:md|py|sh|json|template|txt))`"
+    r"`(?:(?:bash|sh|python3?|py)\s+)?(?:scripts/py\.sh\s+)?"
+    r"((?:skills|scripts|templates|docs|agents|hooks|examples)/"
+    r"[A-Za-z0-9_./-]+\.(?:md|py|sh|json|template|txt))"
+    r"(?:\s+[^`]*)?`"
 )
 
 LOAD_INSTRUCTION_RE = re.compile(r"\*{0,2}(?:Read|Load)\s+`([^`]+)`\s*now\b")
@@ -882,6 +898,94 @@ def check_header_list_counts(files: list[Path], root: Path) -> list[Finding]:
     return findings
 
 
+# ── portable-invocation (Windows-safe shipped commands) ─────────────────────
+#
+# Phase 3 of docs/plans/dogfood-followups.md. Two deterministic rules, both
+# about a command a consumer would copy-paste or a hook would literally exec:
+#
+#   (a) no bare `python3 ` invocation in shipped skill/agent/template prose --
+#       `python3` is commonly a Microsoft Store stub on Windows that resolves
+#       on PATH and then fails (see scripts/py.sh, GOTCHAS.md). This never
+#       touches scripts/*.sh's own `for c in python3 python py; do ...` probe
+#       idiom: scope_files() does not walk scripts/ at all, only the shipped
+#       prose trees every other check in this file already scans.
+#   (b) every hooks/hooks.json `command` starts with an interpreter token
+#       (`bash`, `python`, ...), never a bare path -- a `.sh`/`.py` path is
+#       not directly executable on Windows without the interpreter naming it.
+
+BARE_PYTHON3_RE = re.compile(r"\bpython3 ")
+
+# EXACT-STRING allowlist, same shape as CITATION_ALLOWLIST /
+# COLLAPSED_PAIR_ALLOWLIST: (file, 1-based line) pairs whose `python3 ` names
+# the anti-pattern in prose (warning against it, or narrating the probe
+# order) rather than a bare invocation a consumer would copy verbatim. Empty
+# today -- add an entry here, never widen the regex, if a future edit needs
+# one.
+BARE_PYTHON3_ALLOWLIST: dict[tuple[str, int], str] = {}
+
+
+def check_bare_python3(files: list[Path], root: Path) -> list[Finding]:
+    findings: list[Finding] = []
+    for path in files:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        rel = relposix(root, path)
+        for m in BARE_PYTHON3_RE.finditer(text):
+            line = text.count("\n", 0, m.start()) + 1
+            if (rel, line) in BARE_PYTHON3_ALLOWLIST:
+                continue
+            findings.append(
+                Finding(
+                    rel, line,
+                    "bare `python3 ` invocation -- python3 is commonly a "
+                    "Microsoft Store stub on Windows that resolves on PATH "
+                    "and then fails; route through `bash scripts/py.sh` or "
+                    "name the python3/python/py probe idiom instead",
+                    "portable-invocation",
+                )
+            )
+    return findings
+
+
+# Interpreter tokens a hooks/hooks.json `command` may start with -- the same
+# probe set scripts/py.sh uses (python3/python/py) plus bash/sh, the only
+# interpreters any shipped hook command names today.
+HOOK_INTERPRETER_TOKENS = {"bash", "sh", "python3", "python", "py"}
+
+# `"command": "<value>"` with the value's escaped-quote content captured raw
+# (`(?:[^"\\]|\\.)*`, the standard JSON-string-body pattern) -- read as text
+# with a line count, matching this file's own regex+line-count idiom, rather
+# than json.loads()-ing the whole tree and losing position information.
+HOOKS_JSON_COMMAND_RE = re.compile(r'"command"\s*:\s*"((?:[^"\\]|\\.)*)"')
+
+
+def check_hooks_json_interpreter(root: Path) -> list[Finding]:
+    hooks_json = root / "hooks" / "hooks.json"
+    if not hooks_json.is_file():
+        return []
+    text = hooks_json.read_text(encoding="utf-8", errors="replace")
+    rel = relposix(root, hooks_json)
+    findings: list[Finding] = []
+    for m in HOOKS_JSON_COMMAND_RE.finditer(text):
+        try:
+            command = json.loads(f'"{m.group(1)}"')
+        except json.JSONDecodeError:
+            command = m.group(1)
+        token = command.strip().strip("\"'").split(None, 1)[0] if command.strip() else ""
+        if token in HOOK_INTERPRETER_TOKENS:
+            continue
+        line = text.count("\n", 0, m.start()) + 1
+        findings.append(
+            Finding(
+                rel, line,
+                f"hooks.json command `{command}` does not start with an "
+                "interpreter token (bash/sh/python/python3/py) -- a bare "
+                "path is not directly executable on Windows",
+                "portable-invocation",
+            )
+        )
+    return findings
+
+
 # ── recheck-by pins (warn-only, never contributes to the exit code) ─────────
 
 RECHECK_BY_RE = re.compile(
@@ -1026,6 +1130,7 @@ def run_all(root: Path, phrases_file: Path) -> dict[str, list[Finding]]:
         "doc-status-markers": check_doc_status_markers(doc_files, root),
         "no-cardinality": check_cardinality_claims(cardinality_scope_files(root), root),
         "header-list-count": check_header_list_counts(header_list_scope_files(root), root),
+        "portable-invocation": check_bare_python3(files, root) + check_hooks_json_interpreter(root),
     }
 
 
@@ -1084,6 +1189,10 @@ metadata:
 One bad config key: `models.totally_bogus_key`.
 
 One bad citation: `templates/does-not-exist-xyz.md`.
+
+One bad PREFIXED citation (Step 11: must still be reported): `bash scripts/does-not-exist-prefixed.sh`.
+
+One good PREFIXED citation (Step 11: resolves, must NOT be reported): `bash skills/testskill/SKILL.md`.
 
 One forbidden phrase: badphrase appears right here.
 
@@ -1302,6 +1411,53 @@ def self_test_header_list_count() -> bool:
     return ok
 
 
+def self_test_portable_invocation() -> bool:
+    """Phase 3: one violation of each portable-invocation rule -- a bare
+    `python3 ` invocation in shipped prose, and a hooks/hooks.json command
+    that names a bare path instead of an interpreter token."""
+    with tempfile.TemporaryDirectory(prefix="check_contracts_selftest_portinv_") as tmp:
+        root = Path(tmp)
+        skill_dir = root / "skills" / "testskill"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: testskill\ndescription: synthetic\n---\n\n"
+            "Run it with `python3 scripts/foo.py` to verify.\n",
+            encoding="utf-8",
+        )
+        hooks_dir = root / "hooks"
+        hooks_dir.mkdir(parents=True)
+        (hooks_dir / "hooks.json").write_text(
+            json.dumps({
+                "hooks": {
+                    "Stop": [{
+                        "matcher": "*",
+                        "hooks": [{
+                            "type": "command",
+                            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/next-action.sh\"",
+                        }],
+                    }],
+                },
+            }, indent=2),
+            encoding="utf-8",
+        )
+        findings = (
+            check_bare_python3(scope_files(root), root)
+            + check_hooks_json_interpreter(root)
+        )
+
+    python3_hits = [f for f in findings if "bare `python3 `" in f.message]
+    hooks_hits = [f for f in findings if "hooks.json command" in f.message]
+    ok = len(findings) == 2 and len(python3_hits) == 1 and len(hooks_hits) == 1
+    status = "OK" if ok else "FAIL"
+    print(
+        f"[{status}] portable-invocation: expected 2 violation(s) (one bare "
+        f"python3, one bare hooks.json path), caught {len(findings)}"
+    )
+    for f in findings:
+        print(f"    {f.path}:{f.line}: {f.message}")
+    return ok
+
+
 def self_test() -> int:
     with tempfile.TemporaryDirectory(prefix="check_contracts_selftest_") as tmp:
         root = Path(tmp)
@@ -1323,7 +1479,7 @@ def self_test() -> int:
     ok = True
     expectations = {
         "config-keys": 1,
-        "citations": 1,
+        "citations": 2,
         "forbidden-phrases": 1,
         "collapsed-pairs": 1,
         "portable-frontmatter": 1,
@@ -1348,6 +1504,8 @@ def self_test() -> int:
     if not self_test_no_cardinality():
         ok = False
     if not self_test_header_list_count():
+        ok = False
+    if not self_test_portable_invocation():
         ok = False
 
     if not ok:

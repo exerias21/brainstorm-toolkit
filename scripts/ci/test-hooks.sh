@@ -5,7 +5,11 @@
 # hook -- it earns a place here on scope alone; see its own header for why it
 # is not under scripts/hooks/), scripts/hooks/next-action.sh (interpreter
 # probe + the .next-action seam's dedup/staleness/depth-warning contract),
-# and scripts/hooks/run-cost-report.sh (recency-based envelope selection).
+# scripts/hooks/run-cost-report.sh (recency-based envelope selection), and
+# scripts/close-tasks.sh (trailer-only `_manual_`/`_followup_` matching, the
+# phase-aware `reconcile` refinement, `board`'s `manual` field, and `rows`'
+# first-run row lookup -- this
+# script's FIRST CI coverage).
 #
 # Builds fresh scratch project dirs under /tmp, feeds each hook sample stdin JSON
 # against a `.claude/project.json`, and asserts on stdout with `grep -q`. Mirrors
@@ -24,6 +28,7 @@ GATE_HOOK="$PLUGIN_ROOT/scripts/hooks/stop-gate.sh"
 PROTECT_TESTS="$PLUGIN_ROOT/scripts/protect-tests.sh"
 NEXT_ACTION_HOOK="$PLUGIN_ROOT/scripts/hooks/next-action.sh"
 COST_HOOK="$PLUGIN_ROOT/scripts/hooks/run-cost-report.sh"
+CLOSE_TASKS="$PLUGIN_ROOT/scripts/close-tasks.sh"
 ROOT_TMP="/tmp/test-hooks-$$"
 
 cleanup() { rm -rf "$ROOT_TMP" || true; }
@@ -535,6 +540,152 @@ if grep -q '"cost"' "$d/.claude/pipeline/zzz-older/run.json"; then
 fi
 [ -f "$d/.claude/pipeline/aaa-newer/.cost-reported" ] || fail "expected .cost-reported marker in aaa-newer"
 [ -f "$d/.claude/pipeline/zzz-older/.cost-reported" ] && fail "unexpected .cost-reported marker in zzz-older"
+ok
+
+# ── close-tasks.sh: trailer-only tag matching, `_manual_` exemptions, the
+#    phase-aware reconcile refinement, and board's `manual` field (dogfood-
+#    followups Phase 2 step 8 -- this script's FIRST CI coverage) ──────────
+
+ct_dir() {
+  local d="$ROOT_TMP/ct-$1"
+  mkdir -p "$d/.claude/pipeline" "$d/plans"
+  printf '%s' "$d"
+}
+
+# Fixture rows contain literal em dashes (U+2014) -- write via printf so the
+# bytes land as UTF-8 regardless of the host's default encoding.
+run_ct() {
+  local proj="$1"; shift
+  set +e
+  CT_OUT="$(cd "$proj" && bash "$CLOSE_TASKS" "$@" 2>&1)"
+  CT_RC=$?
+  set -e
+  CT_OUT="$(printf '%s' "$CT_OUT" | tr -d '\r')"
+}
+
+CASE="close-tasks board: trailer-only matching -- a title merely mentioning a tag is not tagged"
+d="$(ct_dir 01)"
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [ ] (P1) Row mentioning _manual_ in prose, not tagged \xe2\x80\x94 plans/a.md\n' >> "$d/TASKS.md"
+printf -- '- [ ] (P1) Row with a real manual tag \xe2\x80\x94 plans/a.md _manual_\n' >> "$d/TASKS.md"
+printf -- '- [ ] (P1) Row mentioning pr_followup_of in prose, not tagged \xe2\x80\x94 plans/a.md\n' >> "$d/TASKS.md"
+printf -- '- [ ] (P1) Row with a real followup tag \xe2\x80\x94 plans/a.md _followup_\n' >> "$d/TASKS.md"
+run_ct "$d" board --file TASKS.md
+assert_rc "$CT_RC" 0
+BOARD01="$d/board.json"
+printf '%s' "$CT_OUT" > "$BOARD01"
+set +e
+PY_OUT="$(bash "$PLUGIN_ROOT/scripts/py.sh" - "$BOARD01" <<'PYEOF'
+import json, sys
+d = json.load(open(sys.argv[1], encoding='utf-8'))
+tasks = d['tasks']
+assert tasks[0]['manual'] is False, "prose mention of _manual_ must not set manual=true"
+assert '_manual_' in tasks[0]['title'], "prose mention of _manual_ must survive in title"
+assert tasks[1]['manual'] is True, "a real trailing _manual_ tag must set manual=true"
+assert '_manual_' not in tasks[1]['title'], "a real _manual_ tag must be stripped from title"
+assert tasks[2]['followup'] is False, "prose mention (pr_followup_of) must not set followup=true"
+assert 'pr_followup_of' in tasks[2]['title'], "pr_followup_of must survive stripping intact"
+assert tasks[3]['followup'] is True, "a real trailing _followup_ tag must set followup=true"
+assert '_followup_' not in tasks[3]['title'], "a real _followup_ tag must be stripped from title"
+print("OK")
+PYEOF
+)"
+PY_RC=$?
+set -e
+[ "$PY_RC" -eq 0 ] || fail "board trailer-only assertions failed: $PY_OUT"
+ok
+
+CASE="close-tasks reconcile: exempts _manual_ and _followup_, still catches a forgotten row"
+d="$(ct_dir 02)"
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [ ] (P1) Deliberately open manual row \xe2\x80\x94 plans/b.md _manual_\n' >> "$d/TASKS.md"
+printf -- '- [ ] (P1) Deliberately open followup row \xe2\x80\x94 plans/b.md _followup_\n' >> "$d/TASKS.md"
+printf -- '- [ ] (P1) Forgotten close-out row \xe2\x80\x94 plans/b.md\n' >> "$d/TASKS.md"
+mkdir -p "$d/.claude/pipeline/plan-b"
+cat > "$d/.claude/pipeline/plan-b/run.json" <<'EOF'
+{"schema_version": 1, "feature_slug": "plan-b", "plan_file": "plans/b.md", "status": "complete"}
+EOF
+run_ct "$d" reconcile --file TASKS.md
+assert_rc "$CT_RC" 0
+assert_match "$CT_OUT" '"terminal_envelope_open_rows"'
+assert_match "$CT_OUT" 'Forgotten close-out row'
+assert_no_match "$CT_OUT" 'Deliberately open manual row'
+assert_no_match "$CT_OUT" 'Deliberately open followup row'
+
+CASE="close-tasks reconcile: phase-aware -- silent on a parked later phase, fires on the taken one"
+d="$(ct_dir 03)"
+printf '#### Phase 1 -- foo\n\nbody\n\n#### Phase 2 -- bar\n\nbody\n' > "$d/plans/c.md"
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [ ] (P1) Phase 2 work not yet due \xe2\x80\x94 plans/c.md _plan: c_ \xc2\xb7 _phase: 2_\n' >> "$d/TASKS.md"
+printf -- '- [ ] (P1) Phase 1 work somehow still open \xe2\x80\x94 plans/c.md _plan: c_ \xc2\xb7 _phase: 1_\n' >> "$d/TASKS.md"
+mkdir -p "$d/.claude/pipeline/plan-c"
+cat > "$d/.claude/pipeline/plan-c/run.json" <<'EOF'
+{"schema_version": 1, "feature_slug": "plan-c", "plan_file": "plans/c.md", "status": "complete",
+ "data": {"scope_gate": {"taken_phases": [1]}}}
+EOF
+run_ct "$d" reconcile --file TASKS.md
+assert_rc "$CT_RC" 0
+assert_match "$CT_OUT" 'Phase 1 work somehow still open'
+assert_no_match "$CT_OUT" 'Phase 2 work not yet due'
+
+CASE="close-tasks reconcile: phase_tag_without_heading fires on an OPEN row, not on a CLOSED [x] row"
+d="$(ct_dir 04)"
+printf '#### Phase 1 -- foo\n\nbody\n' > "$d/plans/e.md"
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [ ] (P1) Open row tagged with a phase the plan never declares \xe2\x80\x94 plans/e.md _plan: e_ \xc2\xb7 _phase: 2_\n' >> "$d/TASKS.md"
+printf '\n## Done\n' >> "$d/TASKS.md"
+printf -- '- [x] (P1) Closed row tagged with a phase the plan never declares \xe2\x80\x94 plans/e.md _plan: e_ \xc2\xb7 _phase: 3_ _completed_at: 2026-01-01T00:00:00Z_\n' >> "$d/TASKS.md"
+run_ct "$d" reconcile --file TASKS.md
+assert_rc "$CT_RC" 0
+assert_match "$CT_OUT" '"phase_tag_without_heading"'
+assert_match "$CT_OUT" 'Open row tagged with a phase the plan never declares'
+assert_no_match "$CT_OUT" 'Closed row tagged with a phase the plan never declares'
+
+CASE="close-tasks rows: first run (no envelope on disk) still reports tagged rows"
+d="$(ct_dir 05)"
+# No run.json anywhere under .claude/pipeline -- this is the exact incident
+# shape: `reconcile | grep <slug>` only sees EXISTING envelopes, so a first
+# run for a plan always reads zero rows even though tagged rows are open.
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [ ] (P1) Open row, no work started yet \xe2\x80\x94 plans/rowplan.md _plan: rowplan_ \xc2\xb7 _phase: 1_\n' >> "$d/TASKS.md"
+printf -- '- [~] (P1) In-progress row this run is taking \xe2\x80\x94 plans/rowplan.md _plan: rowplan_ \xc2\xb7 _phase: 1_\n' >> "$d/TASKS.md"
+printf -- '- [ ] (P2) Followup-tagged row, deliberately open \xe2\x80\x94 plans/rowplan.md _plan: rowplan_ \xc2\xb7 _phase: 2_ _followup_\n' >> "$d/TASKS.md"
+printf -- '- [ ] (P2) Manual-only row \xe2\x80\x94 plans/rowplan.md _plan: rowplan_ \xc2\xb7 _phase: 2_ _manual_\n' >> "$d/TASKS.md"
+printf '\n## Done\n' >> "$d/TASKS.md"
+printf -- '- [x] (P1) Already-closed row from an earlier phase \xe2\x80\x94 plans/rowplan.md _plan: rowplan_ \xc2\xb7 _phase: 1_ _completed_at: 2026-01-01_\n' >> "$d/TASKS.md"
+printf -- '- [ ] (P1) A different plan entirely, must be excluded \xe2\x80\x94 plans/otherplan.md _plan: otherplan_ \xc2\xb7 _phase: 1_\n' >> "$d/TASKS.md"
+run_ct "$d" rows --plan rowplan --plan-file plans/rowplan.md
+assert_rc "$CT_RC" 0
+ROWS05="$d/rows.json"
+printf '%s' "$CT_OUT" > "$ROWS05"
+set +e
+PY_OUT="$(bash "$PLUGIN_ROOT/scripts/py.sh" - "$ROWS05" <<'PYEOF'
+import json, sys
+d = json.load(open(sys.argv[1], encoding='utf-8'))
+assert d['match_key'] == 'rowplan', d
+m = d['matched']
+by_line = {r['line']: r for r in m}
+assert len(m) == 5, f"expected 5 rowplan rows (first run, zero envelopes), got {len(m)}: {m}"
+assert not any('otherplan' in r['text'] for r in m), "a row tagged for a DIFFERENT plan must be excluded"
+open_row = next(r for r in m if 'Open row, no work started yet' in r['text'])
+assert open_row['state'] == 'open' and open_row['phase'] == 1
+assert open_row['followup'] is False and open_row['manual'] is False
+inprog_row = next(r for r in m if 'In-progress row this run is taking' in r['text'])
+assert inprog_row['state'] == 'in_progress' and inprog_row['phase'] == 1
+followup_row = next(r for r in m if 'Followup-tagged row' in r['text'])
+assert followup_row['state'] == 'open' and followup_row['phase'] == 2
+assert followup_row['followup'] is True and followup_row['manual'] is False
+manual_row = next(r for r in m if 'Manual-only row' in r['text'])
+assert manual_row['state'] == 'open' and manual_row['phase'] == 2
+assert manual_row['manual'] is True and manual_row['followup'] is False
+done_row = next(r for r in m if 'Already-closed row' in r['text'])
+assert done_row['state'] == 'done' and done_row['phase'] == 1
+print("OK")
+PYEOF
+)"
+PY_RC=$?
+set -e
+[ "$PY_RC" -eq 0 ] || fail "rows assertions failed: $PY_OUT"
 ok
 
 echo

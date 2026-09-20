@@ -51,9 +51,10 @@ judge's questions, which happens in the judge command's own project.
 - **Planned:** resolution will check the environment variable `TYPESAFE_API_KEY` first (the
   setting will let a repo name a different variable), then a user-level credentials file at
   `${XDG_CONFIG_HOME:-~/.config}/brainstorm-toolkit/credentials` — outside every repo, so one
-  setup covers all of them. That file will be written by a planned setup command,
-  `bash scripts/jev-key.sh set`, which reads the key with hidden terminal input so it never
-  appears on screen or in a command's argument list. **That script does not exist yet.**
+  setup covers all of them. That file will be written by a planned setup command (working
+  name `jev-key.sh`, run with a `set` action), which reads the key with hidden terminal input
+  so it never appears on screen or in a command's argument list. **That script does not exist
+  yet.**
 - **Never:** in a repo's `.claude/project.json` (a plugin-only install never gets that file's
   gitignore entry, and models open `project.json` routinely), in a consumer repo's `.env` (it
   belongs to the application, and is one of the most commonly committed-by-accident files

@@ -55,13 +55,17 @@ regardless of verbosity — the per-dispatch `model:` line, gate verdicts, PAUSE
 ## Stage 0 — Resolve input
 
 - **Plan file** (path ending `.md` that exists) → use as the plan, like `/sdlc`.
-  **Also scan `TASKS.md` for `Active / Pending` rows referencing this plan** — by the
-  `_plan: <slug>_` marker `/brainstorm` appends, falling back to the `— plans/<slug>.md`
-  path for legacy untagged rows. **Do not mark them `[~]` yet** — the **Scope gate** below
-  (after `parse.json`) decides which rows are in scope this run and marks only those. Stage
-  6's close-out flips taken rows via `scripts/close-tasks.sh`. Without this scan the close-out
-  has nothing to resolve, which is why a finished plan used to close nothing on this runtime.
-  A run matching no rows updates no `TASKS.md` — expected, not a miss.
+  **Look up this plan's `TASKS.md` rows by calling `scripts/close-tasks.sh rows --plan
+  <slug> --plan-file <path>`** (slug = plan basename minus extension) — never `reconcile |
+  grep <slug>`: `reconcile` only reports drift against *existing* pipeline envelopes, so on
+  a first run for this plan it returns zero rows even though correctly-tagged rows are open
+  (a live miss on 2026-09-20). `rows` matches the `_plan: <slug>_` marker `/brainstorm`
+  appends, falling back to a legacy path-substring match for untagged rows. **Do not mark
+  them `[~]` yet** — the **Scope gate** below (after `parse.json`) decides which rows are in
+  scope this run and marks only those. Stage 6's close-out flips taken rows via
+  `scripts/close-tasks.sh`. Without this lookup the close-out has nothing to resolve, which
+  is why a finished plan used to close nothing on this runtime. A `rows` call returning no
+  `matched[]` updates no `TASKS.md` — expected, not a miss.
 **If `.claude/project.json` is absent while `project.json.example` is present, warn once
 here** — every gated setting (`models.cap`, `pipeline.*`, test commands) is silently inert
 and the run reports `cap: none`.
@@ -71,7 +75,8 @@ and the run reports `cap: none`.
 - **Task range** (`N-M`, `task-N..task-M`, `tasks N-M`) → resolve every
   `Active / Pending` row in range; execute as a batch (changes accumulate in the
   working tree — see Stage 6 range semantics; this skill never commits). Record
-  the resolved ids in `run.json.data.task_range`.
+  the resolved ids in `run.json.data.task_range`. **Skip a `_manual_` row** —
+  leave it `Active / Pending` and report it, never execute it.
 - **Ad-hoc description** → create a new row + task file via `/task`'s procedure,
   which already writes `.claude/pipeline/task-<N>-<slug>/run.json` at
   `in_progress`. **Reuse that `task-<N>-<slug>` as this run's slug** — one
@@ -118,21 +123,11 @@ append `parse` to `run.json.stages_completed` — Stage 2's gate reads it and ca
 
 **Scope gate (plan-file runs only).** Immediately after `parse.json` is written, decide how
 much of this plan to take this run — skip for task-id / range / ad-hoc / `--queue` inputs
-(already bounded) and for `--no-scope-gate` (whole-plan execution). Compute size from
-`parse.json` plus surfaces touched (`skills/sdlc/templates/changed-files-gate.md`) — the same
-quantities `skills/brainstorm/SKILL.md`'s `plan size: <n> steps across <m> files, <k>
-surface(s)` line already prints at authoring time. **Prefer the plan's own `#### Phase N`
-boundaries** — take the lowest phase with open rows, park the rest whole, never splitting a
-sequentially-dependent chain to hit a number; fall back to a step-count cut
-(`pipeline.scope.max_steps_per_run`, default `8`) only when the plan has no phases. **Honor an
-explicit DEFERRED marker** — never pull a phase the plan itself defers into scope. **Push back
-visibly, then proceed — never stop and ask**: print `scope gate: N steps across M files, K
-surface(s) — taking phase P (S steps); parking [...] — resume: <cmd>` always, even under
-`quiet`; record `run.json.data.scope_gate = {plan_total_steps, plan_phases, taken, parked,
-deferred, why, resume}`; mark `[~]` only on rows actually taken. On a partial take, run the
-shared **`## Park protocol`** in `skills/sdlc/templates/queue-mode.md` with `<resume-cmd>` =
-the recorded `resume` value — the same sentinel mechanics the queue loop uses, not a second
-implementation.
+(already bounded) and for `--no-scope-gate` (whole-plan execution). **Read
+`skills/sdlc/templates/scope-gate.md` now** and follow it: it sizes the plan, prefers the
+plan's own phase boundaries, handles a plan with zero rows and `_manual_`-only phases, runs a
+warn-only reconcile check before taking, records `run.json.data.scope_gate` (accumulating
+`taken_phases` across re-runs), and prints the verdict line.
 
 **Skill-repo detection** (automatic): if `.claude-plugin/marketplace.json` exists at repo root,
 switch to **Skill-repo mode** below for the rest of the run. **Vendored-skill guard:** if it is

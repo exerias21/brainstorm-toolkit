@@ -93,6 +93,12 @@ sentinel_confirm=()   # 0/1 per cmd, parallel to sentinel_cmds
 if [ -s "$NEXT_ACTION_FILE" ]; then
   if [ -n "$PY" ]; then
     while IFS="$(printf '\t')" read -r cflag cmd; do
+      # Strip a trailing CR here, at the read site -- a Windows Python's stdout is
+      # opened in text mode, which translates the emitted "\n" into "\r\n", so
+      # `read -r` (which splits on \n only) leaves the \r attached to $cmd. Left
+      # in, it rides into the joined systemMessage (seen live:
+      # "Next: /sdlc plans/X.md\r\n..."). $cflag gets the same treatment for symmetry.
+      cmd="${cmd%$'\r'}"; cflag="${cflag%$'\r'}"
       [ -n "$cmd" ] || continue
       sentinel_cmds+=("$cmd"); sentinel_confirm+=("$cflag")
       if [ "$cflag" = "1" ]; then
@@ -172,9 +178,14 @@ fi
 #    against noise: only `brainstorm-<slug>.md` (the pipeline-intended plans, not
 #    meta docs), only modified in the last 7 days (older ⇒ intentionally parked,
 #    not pending), and only when no .claude/pipeline/<slug>/ envelope exists.
+#    In a skill repo (.claude-plugin/marketplace.json at repo root -- same detection
+#    /sdlc itself uses), /brainstorm and /brainstorm-team write to docs/plans/ instead
+#    of plans/ (see docs/SEAM.md / skills/sdlc/templates/state-schema.md), so scan
+#    that directory there too -- excluding README.md, which indexes the plans rather
+#    than being one.
 PLANS_DIR="$PROJ/plans"
+pending=0
 if [ -d "$PLANS_DIR" ]; then
-  pending=0
   for pf in "$PLANS_DIR"/brainstorm-*.md; do
     [ -e "$pf" ] || continue
     [ -n "$(find "$pf" -mtime -7 2>/dev/null)" ] || continue
@@ -182,9 +193,20 @@ if [ -d "$PLANS_DIR" ]; then
     [ -d "$PROJ/.claude/pipeline/$slug" ] && continue
     pending=$((pending+1))
   done
-  if [ "$pending" -gt 0 ]; then
-    msgs+=("◆ ${pending} recent plan(s) awaiting a pipeline run. Run /sdlc-status for the recommended next step.")
-  fi
+fi
+if [ -f "$PROJ/.claude-plugin/marketplace.json" ] && [ -d "$PROJ/docs/plans" ]; then
+  for pf in "$PROJ/docs/plans"/*.md; do
+    [ -e "$pf" ] || continue
+    base="$(basename "$pf" .md)"
+    [ "$base" = "README" ] && continue
+    [ -n "$(find "$pf" -mtime -7 2>/dev/null)" ] || continue
+    slug="${base#team-brainstorm-}"; slug="${slug#brainstorm-}"
+    [ -d "$PROJ/.claude/pipeline/$slug" ] && continue
+    pending=$((pending+1))
+  done
+fi
+if [ "$pending" -gt 0 ]; then
+  msgs+=("◆ ${pending} recent plan(s) awaiting a pipeline run. Run /sdlc-status for the recommended next step.")
 fi
 
 # --- Auto-continue (L9) — OPT-IN, Claude-only, guardrailed. Turns a single

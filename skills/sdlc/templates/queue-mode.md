@@ -16,7 +16,8 @@ conditions are here.
 
 Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
 
-1. **Select** the next item — highest-priority `Active / Pending` row (`[~]` first).
+1. **Select** the next item — highest-priority `Active / Pending` row (`[~]` first),
+   **excluding `_manual_` rows** (a human-only row is never selected into the loop).
    Mark it `[~]`.
 2. **Run** the full pipeline (Stages 1.5–6) for that item as a single-item run — its
    own **canonical envelope** and its own shared 3-iteration fix budget. **Each item's
@@ -73,16 +74,20 @@ uses its recorded `run.json.data.scope_gate.resume`).
 *why*: the `.claude/.next-action` **sentinel is the ONLY thing the Stop hook reads and
 auto-surfaces**; `run.json.next_action` is a durable *fallback* that `/sdlc-status` reads **on
 demand** — it is **NOT** auto-surfaced. A park that sets only the envelope field is invisible
-and cannot self-continue. Run these exact appends (dedup + multi-slot, `docs/SEAM.md`):
+and cannot self-continue. Run these exact appends (multi-slot, **deduped by `cmd`, not the
+whole line** — the exact idiom `docs/SEAM.md` uses: `-F`/`-e` twice so a `cmd` containing regex
+metacharacters, like a plan path's `.md`, is never misread as a pattern):
 
 ```sh
 # (A) resume line — ALWAYS when work remains:
-line='{"cmd":"<resume-cmd>","source":"sdlc","confirm":false}'
-grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action
+cmd='<resume-cmd>'
+grep -qF -e "\"cmd\":\"$cmd\"" -e "\"cmd\": \"$cmd\"" .claude/.next-action 2>/dev/null \
+  || echo "{\"cmd\":\"$cmd\",\"source\":\"sdlc\",\"confirm\":false}" >> .claude/.next-action
 # (B) if it parked on a confirm:true action (a commit/rebuild the human must run FIRST),
 #     ALSO append that action so the hook surfaces it:
-line='{"cmd":"<the confirm action>","source":"sdlc","confirm":true}'
-grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action
+cmd='<the confirm action>'
+grep -qF -e "\"cmd\":\"$cmd\"" -e "\"cmd\": \"$cmd\"" .claude/.next-action 2>/dev/null \
+  || echo "{\"cmd\":\"$cmd\",\"source\":\"sdlc\",\"confirm\":true}" >> .claude/.next-action
 ```
 
 **Do NOT rely on `run.json.next_action` alone** — the sentinel `echo` above is mandatory on

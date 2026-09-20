@@ -9,7 +9,24 @@
 # run that died there never touched TASKS.md) and can't drift between copies --
 # all three runtimes invoke this file with the same one-line call.
 #
-# Three subcommands:
+# Four subcommands:
+#
+#   rows --plan SLUG [--file TASKS.md] [--plan-file PLAN.md]
+#     Read-only row lookup, added after a live miss on 2026-09-20: a
+#     `subagent-git-guard` run used `reconcile | grep <slug>` as its row scan,
+#     but `reconcile` only reports drift against EXISTING pipeline envelopes,
+#     so a first run (no envelope on disk yet) always reads zero rows -- the
+#     scope gate took its zero-row fallback and close-out matched nothing
+#     while four correctly-tagged rows sat open. `rows` reads TASKS.md alone,
+#     no envelope involved, so a first run reports the same tagged rows a
+#     tenth run would. Reuses the SAME `_plan:` key matching (and its legacy
+#     path-substring fallback against --plan-file) that `close --scope plan`
+#     uses, and the same `parse_row`/trailer helpers `board` uses -- one
+#     parser, three callers. Prints `{match_key, matched[]}`; each `matched[]`
+#     entry is `{line, text, state, phase, followup, manual}` with `state` one
+#     of `open`/`in_progress`/`done` (unlike `close`, which never reports a
+#     `[x]` row at all -- `rows` reports every state so a caller can tell
+#     "already done" from "never tagged").
 #
 #   close --file TASKS.md --scope plan --key SLUG --plan-file PLAN.md [--dry-run]
 #     Closes every `[~]` row (never `[ ]`/`[x]`) tagged `_plan: SLUG_`, moving
@@ -38,8 +55,14 @@
 #       - a `[x]` row filed outside ## Done
 #       - a `[ ]`/`[~]` row filed under ## Done  (TASKS.md:62 in this repo, live)
 #       - a `complete`/`completed` envelope whose matched TASKS.md row(s) are
-#         still open
+#         still open -- `_followup_` and `_manual_` rows are exempted (both
+#         mean "deliberately left open"); when the envelope recorded
+#         `data.scope_gate.taken_phases`, a row's own `_phase: N_` tag outside
+#         that list is read as a legitimately-parked later phase, not drift
+#         (envelopes with no `taken_phases` keep the un-refined behavior)
 #       - an `in_progress` envelope with no TASKS.md row referencing it at all
+#       - a row's `_phase: N_` tag naming a phase its OWN plan file has no
+#         `#### Phase N` heading for (independent of any envelope)
 #     The envelope<->row join key is the envelope DIRECTORY NAME plus any of
 #     `plan_file` / `input` / `data.plan_target` -- several envelopes on disk
 #     in this repo wrote the latter two instead of the canonical field, so a
@@ -86,14 +109,26 @@ fi
 usage() {
   cat >&2 <<'EOF'
 Usage:
+  close-tasks.sh rows --plan SLUG [--file TASKS.md] [--plan-file PLAN.md]
+    Read-only. Reports every TASKS.md row tagged `_plan: SLUG_` (any state,
+    any section, no pipeline envelope involved) -- a first run reports the
+    same rows a tenth run would. Untagged legacy rows fall back to a
+    path-substring match against --plan-file, same as `close --scope plan`.
+    Prints `{match_key, matched[]}`; each entry is `{line, text, state, phase,
+    followup, manual}` with `state` one of `open`/`in_progress`/`done`.
   close-tasks.sh close --file TASKS.md --scope plan --key SLUG --plan-file PLAN.md [--dry-run]
   close-tasks.sh close --file TASKS.md --scope resolved --ids-file FILE [--dry-run]
   close-tasks.sh reconcile --file TASKS.md [--pipeline-dir .claude/pipeline] [--apply]
     Mark a row `_followup_` (or `_followup: why_`) to say it was left open ON
-    PURPOSE after its plan completed. reconcile then stops reporting it as
-    drift, while a row that is merely forgotten still is. Without the marker a
-    completed plan that spawned N follow-ups reports N phantom drifts and
-    buries the one case the check exists for.
+    PURPOSE after its plan completed, or `_manual_` to say only a human can do
+    it. reconcile then stops reporting either as drift, while a row that is
+    merely forgotten still is. Both tags count ONLY in the row's trailer (the
+    text after the last ` -- `) -- a title that merely mentions `_manual_` or
+    `_followup_` in prose is not tagged. When an envelope recorded which
+    phases it took (`data.scope_gate.taken_phases`), a still-open row whose
+    `_phase: N_` tag names a phase outside that list is read as a
+    legitimately-parked later phase, not drift. Also flags a row's `_phase:
+    N_` tag naming a phase its own plan file has no `#### Phase N` heading for.
   close-tasks.sh board --file TASKS.md [--repo-name NAME] [--pipeline-dir .claude/pipeline]
     Read-only. Emits one JSON object: TASKS.md rows (tasks[], in FILE ORDER so
     `line` round-trips to source) + pipeline envelopes (runs[], newest-first
@@ -113,6 +148,7 @@ SUBCMD="$1"; shift
 FILE="TASKS.md"
 SCOPE=""
 KEY=""
+PLAN=""
 PLAN_FILE=""
 IDS_FILE=""
 PIPELINE_DIR=".claude/pipeline"
@@ -125,6 +161,7 @@ while [ $# -gt 0 ]; do
     --file) FILE="$2"; shift 2 ;;
     --scope) SCOPE="$2"; shift 2 ;;
     --key) KEY="$2"; shift 2 ;;
+    --plan) PLAN="$2"; shift 2 ;;
     --plan-file) PLAN_FILE="$2"; shift 2 ;;
     --ids-file) IDS_FILE="$2"; shift 2 ;;
     --pipeline-dir) PIPELINE_DIR="$2"; shift 2 ;;
@@ -164,13 +201,43 @@ PLAN_PATH_RE = re.compile(r'[\w./-]*plans/[\w./-]+\.md')
 # buried the one signal the check exists for. Bare `_followup_` or
 # `_followup: why_` both count.
 FOLLOWUP_RE = re.compile(r'_followup(?::\s*[^_]+?)?_')
+# A row only a HUMAN can do -- the scope gate never takes it or marks it `[~]`,
+# the queue Select and task-range paths skip it, and reconcile exempts it
+# exactly like FOLLOWUP_RE. Bare flag, no value.
+MANUAL_RE = re.compile(r'_manual_')
 # Strips one or more chained `_key: value_` markers (joined by ` \xb7 `) off a
 # row's tail so `title` reads as prose, not "prose _plan: x_ \xb7 _phase: 1_".
 TAG_STRIP_RE = re.compile(r'\s*(?:\xb7\s*)?_[a-z_]+:\s*[^_]+?_')
 # Valueless flags need their own pattern: TAG_STRIP_RE requires `key: value`,
 # and widening it to make the colon optional would swallow ordinary `_italics_`
 # out of every title. Enumerate the bare flags instead.
-BARE_TAG_STRIP_RE = re.compile(r'\s*(?:\xb7\s*)?_followup_')
+BARE_TAG_STRIP_RE = re.compile(r'\s*(?:\xb7\s*)?_(?:followup|manual)_')
+# `#### Phase N` heading finder -- used by reconcile's phase_tag_without_heading
+# check to confirm a row's `_phase: N_` tag actually names a phase its plan file
+# declares.
+PLAN_HEADING_RE = re.compile(r'^####\s+Phase\s+(\d+)\b')
+
+
+def trailer(line):
+    """The text after the LAST ' -- ' (space, U+2014 em dash, space) on a row --
+    the only place `_manual_` / `_followup_` count as a tag. Matching the whole
+    line (as FOLLOWUP_RE/BARE_TAG_STRIP_RE used to) means a row whose PROSE
+    merely mentions one of these words -- e.g. one documenting `pr_followup_of`,
+    or one of this very plan's own rows discussing `_manual_` -- is misread as
+    tagged. No ' -- ' on the row at all means no trailer, hence no tag.
+    """
+    idx = line.rfind(' — ')
+    return line[idx + 3:] if idx != -1 else ''
+
+
+def strip_bare_tags(text):
+    """BARE_TAG_STRIP_RE, confined to the trailer (see `trailer()` above) so a
+    title merely mentioning `_followup_`/`_manual_` in prose is not mangled by
+    display-stripping the same way whole-line matching would be."""
+    idx = text.rfind(' — ')
+    if idx == -1:
+        return text
+    return text[:idx + 3] + BARE_TAG_STRIP_RE.sub('', text[idx + 3:])
 
 
 def read_lines(path):
@@ -243,9 +310,31 @@ def insert_into_done(lines, closed_lines):
     return new_lines
 
 
+def plan_base_of(plan_file):
+    """The basename-minus-extension of a plan file path, or '' when no path
+    was given -- shared by every legacy path-substring fallback so `close
+    --scope plan` and `rows` derive it identically."""
+    return os.path.splitext(os.path.basename(plan_file))[0] if plan_file else ''
+
+
+def plan_row_key_match(line, key, plan_base, plan_file):
+    """Does this row belong to plan `key`? An explicit `_plan: KEY_` tag wins
+    outright (matching key -> True, any OTHER key -> False, never falls
+    through to the path guess). Only a legacy row with no `_plan:` tag at all
+    falls back to a path-substring match against --plan-file/its basename.
+    Returns (is_match, has_different_tag) so callers that care about
+    surfacing a near-miss (`close --scope plan`'s `unmatched`) can, and
+    callers that don't (`rows`) can ignore the second value."""
+    tagm = PLAN_TAG_RE.search(line)
+    if tagm:
+        return (tagm.group(1) == key), (tagm.group(1) != key)
+    legacy_hit = bool((plan_file and plan_file in line) or (plan_base and plan_base in line))
+    return legacy_hit, False
+
+
 def cmd_close_plan(lines, key, plan_file):
     sections = parse_sections(lines)
-    plan_base = os.path.splitext(os.path.basename(plan_file))[0] if plan_file else ''
+    plan_base = plan_base_of(plan_file)
     matched, unmatched, close_idx = [], [], []
     for i, line in enumerate(lines):
         m = ROW_RE.match(line)
@@ -257,21 +346,53 @@ def cmd_close_plan(lines, key, plan_file):
         state = m.group(2)
         if state != '~':
             continue  # only rows THIS run's Stage 0 marked in-progress
-        tagm = PLAN_TAG_RE.search(line)
-        if tagm:
-            tag = tagm.group(1)
-            if tag == key:
-                matched.append(line)
-                close_idx.append(i)
-            elif plan_base and (plan_base in line or (plan_file and plan_file in line)):
-                unmatched.append(line)
-            # else: tagged for a different plan entirely -- not our concern
-        else:
-            # legacy row, no _plan: tag -- fall back to path-substring match
-            if (plan_file and plan_file in line) or (plan_base and plan_base in line):
-                matched.append(line)
-                close_idx.append(i)
+        is_match, has_different_tag = plan_row_key_match(line, key, plan_base, plan_file)
+        if is_match:
+            matched.append(line)
+            close_idx.append(i)
+        elif has_different_tag and plan_base and (plan_base in line or (plan_file and plan_file in line)):
+            unmatched.append(line)
+        # else: tagged for a different plan entirely (and no path hint), or a
+        # legacy row that doesn't even path-match -- not our concern
     return matched, unmatched, close_idx
+
+
+STATE_LABEL = {'x': 'done', '~': 'in_progress', ' ': 'open'}
+
+
+def cmd_rows_plan(lines, key, plan_file):
+    """Every row tagged for plan `key`, in ANY section and ANY checkbox state
+    -- unlike cmd_close_plan (which only ever touches `[~]` rows outside
+    ## Done), this is a pure read used to answer "what rows exist for this
+    plan RIGHT NOW", with no pipeline envelope involved at all. That's what
+    makes a first run (no envelope on disk yet) report the same rows a tenth
+    run would -- the bug `reconcile | grep` had."""
+    plan_base = plan_base_of(plan_file)
+    matched = []
+    for i, line in enumerate(lines):
+        if not ROW_RE.match(line):
+            continue
+        is_match, _has_different_tag = plan_row_key_match(line, key, plan_base, plan_file)
+        if not is_match:
+            continue
+        fields = parse_row(line)
+        matched.append({
+            'line': i + 1,
+            'text': line.strip(),
+            'state': STATE_LABEL.get(fields['state'], 'open'),
+            'phase': fields['phase'],
+            'followup': fields['followup'],
+            'manual': fields['manual'],
+        })
+    return matched
+
+
+def do_rows(args):
+    lines = read_lines(args.file)
+    matched = cmd_rows_plan(lines, args.plan, args.plan_file)
+    result = {"match_key": args.plan, "matched": matched}
+    print(json.dumps(result, indent=2))
+    return 0
 
 
 def cmd_close_resolved(lines, needles):
@@ -411,7 +532,7 @@ def parse_row(line):
     pm = PRIORITY_RE.match(body)
     priority = f'P{pm.group(1)}' if pm else None
     title_full = body[pm.end():].lstrip() if pm else body
-    title = BARE_TAG_STRIP_RE.sub('', TAG_STRIP_RE.sub('', title_full)).rstrip()
+    title = strip_bare_tags(TAG_STRIP_RE.sub('', title_full)).rstrip()
     plan_m = PLAN_PATH_RE.search(title_full)
     plan = plan_m.group(0) if plan_m else None
     # The plan path rides in its own field, so leaving it in `title` too makes
@@ -434,8 +555,12 @@ def parse_row(line):
         'completed_at': completed_at,
         # Additive field -- does NOT bump `schema` (see the schema-version rule
         # in the usage block). Lets a board mark a row as deferred-on-purpose
-        # rather than merely open.
-        'followup': bool(FOLLOWUP_RE.search(line)),
+        # rather than merely open. Trailer-only (see `trailer()`): a title
+        # merely mentioning `_followup_` is not tagged.
+        'followup': bool(FOLLOWUP_RE.search(trailer(line))),
+        # Additive field, same rule: a row only a human can do. Trailer-only
+        # for the same reason `followup` is.
+        'manual': bool(MANUAL_RE.search(trailer(line))),
     }
 
 
@@ -537,6 +662,7 @@ def do_board(args):
             'started_at': started_at,
             'completed_at': fields['completed_at'],
             'followup': fields['followup'],
+            'manual': fields['manual'],
             'line': i + 1,
         })
 
@@ -596,6 +722,45 @@ def do_reconcile(args):
                 "detail": f"row is checked '[x]' but filed under ## {sec}, not ## Done",
             })
 
+    # Zero-noise structural check: a row's `_phase: N_` tag naming a phase its
+    # OWN plan file does not declare as `#### Phase N` -- independent of any
+    # envelope, so it fires even when no pipeline run ever touched the plan.
+    # OPEN rows only ([ ]/[~], same "not x" test as terminal_envelope_open_rows
+    # above): a closed `[x]` row is already done and can't be acted on, so
+    # flagging it is noise, not a finding.
+    plan_headings_cache = {}
+    for i, line in enumerate(lines):
+        row_m = ROW_RE.match(line)
+        if not row_m or row_m.group(2) == 'x':
+            continue
+        phase_m = PHASE_RE.search(line)
+        if not phase_m:
+            continue
+        plan_m = PLAN_PATH_RE.search(line)
+        if not plan_m:
+            continue
+        plan_path = plan_m.group(0)
+        if plan_path not in plan_headings_cache:
+            try:
+                with open(plan_path, encoding='utf-8') as f:
+                    plan_lines = f.read().splitlines()
+                plan_headings_cache[plan_path] = {
+                    int(hm.group(1)) for pl in plan_lines
+                    for hm in [PLAN_HEADING_RE.match(pl)] if hm
+                }
+            except Exception:
+                plan_headings_cache[plan_path] = None  # unreadable -- not this check's job
+        headings = plan_headings_cache[plan_path]
+        if headings is None:
+            continue
+        phase_n = int(phase_m.group(1))
+        if phase_n not in headings:
+            drift.append({
+                "type": "phase_tag_without_heading",
+                "line": i + 1, "row": line.strip(), "plan": plan_path, "phase": phase_n,
+                "detail": f"row tagged _phase: {phase_n}_ but {plan_path} has no '#### Phase {phase_n}' heading",
+            })
+
     pdir = args.pipeline_dir
     envelopes = []
     if pdir and os.path.isdir(pdir):
@@ -627,9 +792,33 @@ def do_reconcile(args):
             # surfaced it and deferred it. Counting those as drift is how this
             # check cries wolf: a completed plan that spawned N follow-ups
             # reports N phantom drifts, and the real case (a close-out that
-            # genuinely did not fire) is lost in them.
+            # genuinely did not fire) is lost in them. `_manual_` is exempted
+            # the same way -- a human-only row, never taken by the scope gate.
             open_rows = [r for r in matching_rows
-                         if r[2] != 'x' and not FOLLOWUP_RE.search(r[1])]
+                         if r[2] != 'x'
+                         and not FOLLOWUP_RE.search(trailer(r[1]))
+                         and not MANUAL_RE.search(trailer(r[1]))]
+            # Phase-aware refinement: when the envelope recorded WHICH phases it
+            # actually took (`data.scope_gate.taken_phases`, additive -- absent
+            # on every envelope written before this field existed, which keep
+            # today's un-refined behavior above), a row's own `_phase: N_` tag
+            # that names a phase NOT in that list is a legitimately-parked later
+            # phase, not drift -- this is what stops a finished plan's own
+            # parked-on-purpose rows from being reported every time (the
+            # `flow-gap-fixes` Phase 5 rows this plan's Direction cites).
+            # A row with no `_phase:` tag at all can't be judged this way, so it
+            # keeps being reported, same as before this refinement existed.
+            data = run.get('data') or {}
+            scope_gate = data.get('scope_gate') if isinstance(data, dict) else None
+            taken_phases = scope_gate.get('taken_phases') if isinstance(scope_gate, dict) else None
+            if isinstance(taken_phases, list) and taken_phases:
+                refined = []
+                for r in open_rows:
+                    phase_m = PHASE_RE.search(r[1])
+                    if phase_m and int(phase_m.group(1)) not in taken_phases:
+                        continue  # parked later phase -- not this envelope's drift
+                    refined.append(r)
+                open_rows = refined
             if open_rows:
                 drift.append({
                     "type": "terminal_envelope_open_rows",
@@ -730,6 +919,7 @@ def main(argv):
     a.file = 'TASKS.md'
     a.scope = ''
     a.key = ''
+    a.plan = ''
     a.plan_file = ''
     a.ids_file = ''
     a.pipeline_dir = '.claude/pipeline'
@@ -744,6 +934,8 @@ def main(argv):
             a.scope = next(it)
         elif tok == '--key':
             a.key = next(it)
+        elif tok == '--plan':
+            a.plan = next(it)
         elif tok == '--plan-file':
             a.plan_file = next(it)
         elif tok == '--ids-file':
@@ -757,7 +949,9 @@ def main(argv):
         elif tok == '--repo-name':
             a.repo_name = next(it)
 
-    if sub == 'close':
+    if sub == 'rows':
+        return do_rows(a)
+    elif sub == 'close':
         return do_close(a)
     elif sub == 'reconcile':
         return do_reconcile(a)
@@ -774,6 +968,10 @@ PYEOF
 
 ARGS=("$SUBCMD" "--file" "$FILE")
 case "$SUBCMD" in
+  rows)
+    ARGS+=("--plan" "$PLAN")
+    [ -n "$PLAN_FILE" ] && ARGS+=("--plan-file" "$PLAN_FILE")
+    ;;
   close)
     ARGS+=("--scope" "$SCOPE")
     [ -n "$KEY" ] && ARGS+=("--key" "$KEY")

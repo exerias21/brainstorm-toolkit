@@ -18,6 +18,9 @@ __pycache__/
 # Consumer-side artifacts (this is a plugin repo, not a consumer)
 plans/
 !docs/plans/
+# /plan-html would otherwise write a *tracked* .html sibling beside a
+# docs/plans/<slug>.md plan (a skill repo's /brainstorm output lands there).
+docs/plans/*.html
 TASKS.md
 GOTCHAS.md
 DECISIONS.md

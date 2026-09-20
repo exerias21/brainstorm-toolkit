@@ -92,7 +92,9 @@ plan-conformance axis back**; **human-only rows carry a `_manual_` tag**.
      `taken`. **Accumulate it:** a re-run of `/sdlc <plan>` reuses the slug and overwrites the
      envelope (the `flow-gap-fixes` Phase 2 envelope is already gone), so union with the prior value
      before writing.
-   Files: `skills/sdlc/templates/scope-gate.md` (new), the three `/sdlc` legs, `CLAUDE.md`, `AGENTS.md`.
+   Files: `skills/sdlc/templates/scope-gate.md` (new), the three `/sdlc` legs, `CLAUDE.md`, `AGENTS.md`
+   (add `scope-gate` to the template inventory list), `skills/sdlc/templates/state-schema.md` (document
+   `data.scope_gate` and its `taken_phases` / accumulate rule).
 6. **`_manual_` in every row selector, matched only in the tag trailer.** Revision 1 fixed only the
    scope gate; the tag leaks through three more paths:
    - `skills/sdlc/templates/queue-mode.md` Select (`:18-19`) picks "the highest-priority
@@ -131,14 +133,19 @@ plan-conformance axis back**; **human-only rows carry a `_manual_` tag**.
     `no-cardinality`; this will be the tenth) and cites "the existing five checks" (`run_all` registers
     nine). (a) No bare `python3 ` in `scope_files()` (probe idiom and prose *about* it exempt via the
     existing allowlist convention); (b) every `hooks/hooks.json` command starts with an interpreter
-    token. `--self-test` case seeded with one violation of each. Files: `scripts/ci/check_contracts.py`.
+    token. `--self-test` case seeded with one violation of each. **Where it is documented:** the
+    check's own docstring plus its `--self-test` case — do **not** add a count of the checks anywhere,
+    and do not write "the ten checks" in prose: `no-cardinality` exists to reject exactly that, and the
+    stale "five checks"/"check 7" wording in the older spec is the failure being repeated. Files: `scripts/ci/check_contracts.py`.
 11. **The citation check sees `bash scripts/…` citations.** Widen `CITATION_RE` (`:378-381`) to accept
     an optional `bash `/`sh `/`python3? `/`py ` prefix, an optional `scripts/py.sh `, and arguments
     before the closing backtick. **Measured by the validator:** 28 new citations get checked; exactly
     **one** fails — `docs/JEV.md:55` `` `bash scripts/jev-key.sh set` ``, a planned script cited on
     purpose. Reword that sentence (describe the command without the path form) rather than allowlist
     a path that does not exist. `CITATION_RE` also feeds the historical-doc pointer check (`:695`);
-    widening only makes that more lenient. Negative test required. Files:
+    widening only makes that more lenient. **Negative test home:** the `citations` case inside
+    `check_contracts.py --self-test`, seeded with a prefixed citation whose path does not exist (it must
+    be reported) alongside one that does (it must not) — not a new harness. Files:
     `scripts/ci/check_contracts.py`, `docs/JEV.md`.
 12. **`/flowsim` writes the cache its step 0 reads** (`plans/flowsim-<slug>.json`, the file
     `state-schema.md:282` already calls its canonical output): the flows array plus `written_at`,
@@ -146,10 +153,10 @@ plan-conformance axis back**; **human-only rows carry a `_manual_` tag**.
     it now writes one file of its own. One leg; no overlays. Files: `skills/flowsim/SKILL.md`.
 13. **`/brainstorm` writes `docs/plans/<topic-slug>.md` in a skill repo**, detected as `/sdlc` does,
     and uses that path in the rows, the sentinel and the hand-off lines; elsewhere unchanged. Tell
-    Step 6 to tag human-only rows `_manual_` in the trailer. **Two legs** (canonical: 8 body sites —
-    `:192, 195, 200, 209, 270, 295, 315, 318` — leaving the description and the `~/.claude/plans`
-    mention alone; Copilot: 7 — `:167, 169, 171, 184, 224, 229, 235`); Codex falls through to
-    Copilot's overlay (`setup.sh:213-219`). Edit each site by hand. **Knock-ons in the same step:**
+    Step 6 to tag human-only rows `_manual_` in the trailer. **Two legs.** The plan's original per-line counts were wrong — the Stage 1.5 paths check measured
+    7 canonical and 5 Copilot sites, so **grep and edit every occurrence rather than trusting a count**
+    (leave the description and the `~/.claude/plans` mention alone); Codex falls through to Copilot's
+    overlay (`setup.sh:213-219`). Edit each site by hand. **Knock-ons in the same step:**
     `scripts/hooks/next-action.sh:178` scans only `plans/brainstorm-*.md`, so extend the pending-plan
     nudge to `docs/plans/*.md` in a skill repo; `/plan-html` would write a *tracked*
     `docs/plans/<slug>.html` beside the plan — add `docs/plans/*.html` to this repo's `.gitignore`;
@@ -157,7 +164,37 @@ plan-conformance axis back**; **human-only rows carry a `_manual_` tag**.
     `docs/plans/README.md`'s index (it lists 5 of 11 plans). Files: `skills/brainstorm/SKILL.md`,
     `copilot/skills/brainstorm/SKILL.md`, `scripts/hooks/next-action.sh`, `.gitignore`,
     `skills/sdlc/templates/state-schema.md`, `docs/plans/README.md`.
-14. **Version bump.** Files: `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`.
+    **Added by the Stage 1.5 completeness check — four more sites the original list missed:**
+    `skills/brainstorm-team/SKILL.md` writes `plans/team-brainstorm-<slug>.md` and would re-introduce
+    the same drift, so it takes the same skill-repo rule **in both legs — its Copilot overlay
+    `copilot/skills/brainstorm-team/SKILL.md` too, which Codex also falls through to** (the first pass
+    updated only the canonical, and Stage 5 caught it); `skills/plan-html/SKILL.md`'s "don't write
+    `.html` outside `plans/`" guard must accept `docs/plans/` in a skill repo; `docs/CONVENTIONS.md`'s
+    path table gains the skill-repo row; `docs/BOARD-JSON.md`'s `plan` field description follows.
+    Readers that take a plan path as an argument (`/sdlc`, `/flowsim`) need no change.
+14. **`close-tasks.sh` gains a row lookup, and `/sdlc` Stage 0 calls it instead of grepping.** Added
+    after a live miss on 2026-09-20: the `subagent-git-guard` run used `reconcile | grep <slug>` as its
+    row scan, but `reconcile` only reports drift against *existing* envelopes, so a first run always
+    reads zero rows — the scope gate took the zero-row fallback and close-out matched nothing while
+    four correctly-tagged rows sat open. Add `rows --plan <key> [--file TASKS.md]`, printing the same
+    JSON shape `close` uses (`{match_key, matched[]}` with each row's line, state, phase, tags), and
+    have Stage 0's plan-file branch plus `scope-gate.md`'s phase selection call it. **A first run must
+    never report zero rows when tagged rows exist** — cover that exact case in `test-hooks.sh`. Files:
+    `scripts/close-tasks.sh`, `skills/sdlc/templates/scope-gate.md`, the three `/sdlc` legs,
+    `scripts/ci/test-hooks.sh`.
+15. **Strip `\r` in `next-action.sh`'s sentinel read loop.** Windows Python writes CRLF, so a parsed
+    `cmd` carries a trailing CR into the joined `systemMessage` — observed live through the 0.8.0
+    plugin hook on `poc-contractor`: `"Next: /sdlc plans/COVERAGE_CLOSURE_PLAN.md\r\n⚠ 2 stale…"`.
+    Strip it where the loop reads, not at the emit site (the CR enters with the field). Files:
+    `scripts/hooks/next-action.sh`.
+16. **The whole-line sentinel dedup snippet survives in two places.** `f739a5e` fixed only `SEAM.md`;
+    `queue-mode.md`'s Park protocol and `/brainstorm` Step 8 still `grep -qF "$line"`, so the same
+    `cmd` re-appended with a different `source` slips past. Dedup on `cmd`, per `docs/SEAM.md`. Files:
+    `skills/sdlc/templates/queue-mode.md`, `skills/brainstorm/SKILL.md`,
+    `copilot/skills/brainstorm/SKILL.md`.
+17. **Version bump**, 0.12.0 -> 0.13.0 (0.12.0 is the uncommitted `subagent-git-guard` bump; each
+    commit that ships content carries its own). Files: `.claude-plugin/plugin.json`,
+    `.claude-plugin/marketplace.json`.
 
 *(Backlog hygiene done at authoring time: three stale rows closed with evidence; the conflicting
 "docs/plans is the wrong home" row closed as decided; the `portable-invocation` row and the duplicate

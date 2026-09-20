@@ -227,7 +227,7 @@ fails the build if any cited template does not resolve in a fresh install.
 Each stage's body lives in **one** template there — `output-verbosity`, `resumption`,
 `stage-1.5-sanity-check`, `stage-2-gate`, `stage-2-implement`, `stage-2a/2b/2c`,
 `stage-3-evals`, `fix-loop`, `stage-5-validate`, `stage-5.7-review-fix`, `stage-5.9-cleanup`,
-`stage-6-handoff`, `secret-scan`, `stage-5-skill-repo`, `changed-files-gate`,
+`stage-6-handoff`, `secret-scan`, `stage-5-skill-repo`, `changed-files-gate`, `scope-gate`,
 `convention-grounding`, `envelope-staleness`, `models`, `state-schema` — and
 `skills/sdlc/SKILL.md` stays thin per stage: a short
 framing paragraph, the gate/skip rule that decides *whether* to run, and a
