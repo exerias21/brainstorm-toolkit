@@ -147,6 +147,8 @@ Agent(
     Do not modify the test itself unless the error clearly indicates a test bug
     (stale selector, wrong assertion) rather than a product bug.
 
+    GIT: never run a git command that writes — no stash, commit, checkout, switch, reset, restore, rebase, merge, clean, or branch creation. The working tree holds the user's uncommitted work; git that only reads (status, diff, log, show) is fine. If you need a clean baseline, report it as a blocker instead.
+
     If the test file references auth setup or navigation patterns, check
     {test.e2e_patterns_file} for repo-specific conventions before editing.
 

@@ -7,7 +7,11 @@ Stage 5 and Stage 5.7/5.8 fix the same way, so the loop and its pause are specif
 **The loop.** On a gate failure: parse the structured results; for each failure extract test
 name, expected-vs-actual, file path, function; dispatch **one fix agent** — **Sonnet by default**
 (Opus only on `--model opus`), per `skills/sdlc/templates/models.md` — told to fix *only* those failures
-with no refactor; re-run the gate. Repeat to a maximum of **3 iterations, shared across Stage
+with no refactor, and given this line verbatim in its prompt:
+
+> GIT: never run a git command that writes — no stash, commit, checkout, switch, reset, restore, rebase, merge, clean, or branch creation. The working tree holds the user's uncommitted work; git that only reads (status, diff, log, show) is fine. If you need a clean baseline, report it as a blocker instead.
+
+Then re-run the gate. Repeat to a maximum of **3 iterations, shared across Stage
 5's gates** (Stage 5.7/5.8 has its own separate budget).
 
 **The pause.** On budget exhaustion, emit this block, inferring the class from *the failing

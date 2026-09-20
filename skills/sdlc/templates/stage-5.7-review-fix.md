@@ -110,7 +110,11 @@ via `--no-review`/`enabled: false`, or the docs-only/no-surface auto-off gate in
 ## Stage 5.8 — Fix loop
 
 Only runs when Stage 5.7 produced **≥1 confirmed finding**. A fix-planner (reviewer model) drafts
-a structured fix spec per confirmed finding, applying the `auto_fixable` rubric below.
+a structured fix spec per confirmed finding, applying the `auto_fixable` rubric below. Every fix
+agent's prompt includes this line verbatim — a sub-agent never sees the orchestrator's template,
+so it must be quoted into the dispatched prompt, not cross-referenced:
+
+> GIT: never run a git command that writes — no stash, commit, checkout, switch, reset, restore, rebase, merge, clean, or branch creation. The working tree holds the user's uncommitted work; git that only reads (status, diff, log, show) is fine. If you need a clean baseline, report it as a blocker instead.
 
 **`auto_fixable` rubric (default-deny):** a finding is `auto_fixable: true` only if it corrects an
 existing explicit contract (plan acceptance criterion, docstring/type signature, schema, test

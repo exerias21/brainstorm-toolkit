@@ -90,7 +90,10 @@ When `mode` is not `"off"` and at least one finding is `safe_to_apply`, dispatch
 `general-purpose` agent — Sonnet by default, same model-line convention as above — given exactly
 the confirmed `safe_to_apply` findings and their `minimal_fix`, to make **only** those edits, no
 others. This is "the cleanup agent" that needs `Edit`, and it is the only point in this stage
-that writes to the working tree. It never touches a file outside the Stage 0 scope above.
+that writes to the working tree. It never touches a file outside the Stage 0 scope above. This
+agent never sees the orchestrator's template, so its prompt must quote this line verbatim:
+
+> GIT: never run a git command that writes — no stash, commit, checkout, switch, reset, restore, rebase, merge, clean, or branch creation. The working tree holds the user's uncommitted work; git that only reads (status, diff, log, show) is fine. If you need a clean baseline, report it as a blocker instead.
 
 ## Re-validate — mandatory when anything was applied
 

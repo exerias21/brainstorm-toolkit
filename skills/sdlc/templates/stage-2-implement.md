@@ -38,5 +38,6 @@ GROUND IN THE LIVE CODE FIRST (before writing any code):
   take a shortcut. Scope creep here is invisible to the tests (nothing fails)
   and invisible to the plan check (it flags missing steps, not extra ones), so
   this instruction is the only thing preventing it.
+GIT: never run a git command that writes — no stash, commit, checkout, switch, reset, restore, rebase, merge, clean, or branch creation. The working tree holds the user's uncommitted work; git that only reads (status, diff, log, show) is fine. If you need a clean baseline, report it as a blocker instead.
 - After implementation, run: git diff --stat to summarize changes.
 ```

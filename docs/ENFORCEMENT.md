@@ -58,3 +58,21 @@ materially bigger, stateful check than the two shipped hooks, and nobody has bui
 Until someone does, this rule stays exactly where `docs/PROSE-FIDELITY.md`'s prescriptive-prose
 lever leaves it: the fix is tighter prose, not a hook, unless a future measurement shows the
 tighter prose still isn't followed.
+
+## The sub-agent git-write guard — a CI pin instead of a hook
+
+On 2026-09-19 in poc-contractor, an `/sdlc` implement sub-agent ran `git stash` on its own
+initiative, next to uncommitted Phase 1 work. `/sdlc` promises "no git writes at all"
+(`skills/sdlc/SKILL.md`), but that promise lives in the *orchestrator's* skill text — a
+dispatched sub-agent never reads it, so the rule simply didn't reach the agent that needed it.
+The fix is a canonical guard sentence quoted verbatim into every prompt that dispatches a
+file-editing sub-agent (`stage-2-implement.md`, `stage-2b-dispatch.md`, `fix-loop.md`,
+`stage-5.7-review-fix.md`, `stage-5.9-cleanup.md`, `agents/e2e-test-runner.md`). A deterministic `PreToolUse` hook
+blocking `git stash|commit|checkout|reset…` during an `in_progress` envelope was considered and
+deferred (`docs/plans/subagent-git-guard.md`): real protection, but a new hook for a failure seen
+once. Instead, the guard sentence is pinned in `scripts/ci/forbidden-phrases.txt` (the row matching a
+unique fragment of the sentence) — deleting it from any of the six prompts drops that file's
+occurrence count below the pin, which `check_contracts.py` reports as a stale-pin finding.
+That is CI enforcement of the *prose's presence*, not of the sub-agent's actual behavior — a
+narrower guarantee than a hook, chosen because the failure has only happened once. Revisit trigger:
+a second incident after this pin landed.
