@@ -47,7 +47,10 @@ nothing surfaced it before. Run `bash scripts/close-tasks.sh reconcile --file TA
 (add `--apply` only after a single confirmation; without it the command writes nothing).
 It reports drift in **both** directions — a terminal envelope whose rows are still open, a
 `[~]` row with no or a non-terminal envelope, a `[x]` filed under `Active / Pending`, and a
-`[ ]`/`[~]` filed under `Done`. Print `drift_count` and one line per finding; say
+`[ ]`/`[~]` filed under `Done`. A `_followup_` or `_manual_` row is exempt from the
+terminal-envelope open-row finding — it was left open on purpose, not forgotten. A row whose
+`_phase: N_` tag names a phase its own plan file has no `#### Phase N` heading for is
+reported too. Print `drift_count` and one line per finding; say
 `backlog: no drift` when clean. Skip silently when `scripts/close-tasks.sh` is absent
 (`--no-copy-scripts` installs).
 8. **Print a 3–7 line summary**:
@@ -81,8 +84,11 @@ match wins; stop at the first hit:
    verbatim. Never consume the sentinel here; this skill is read-only.
 4. **A plan file with no pipeline run** → `/sdlc <plan>`.
 5. **`[~]` in-progress TASKS.md row** → `/sdlc task-<N>`.
-6. **`[ ]` pending rows** → the top one: `/task` if small and bounded, `/sdlc` if it
-   needs the full pipeline.
+6. **`[ ]` pending rows** → the top one that is not tagged `_manual_` in its trailer (the
+   text after the last ` — `; human-only work every dispatch path refuses — see
+   `templates/TASKS.md.template`), falling through to the next pending row when it is:
+   `/task` if small and bounded, `/sdlc` if it needs the full pipeline. If every remaining
+   pending row is `_manual_`, say so instead of recommending a command.
 7. **Nothing queued** → `/brainstorm` for ideation, or `/repo-health` for a hygiene sweep.
 
 Print it as `Next: <command>  — <reason>`. **Recommend only; never execute.**

@@ -60,9 +60,11 @@ Execution tiers — how much process the ask deserves:
                             | --queue [N] (attended backlog loop)
 
   Stage 2 (implement) auto-decomposes a large multi-surface plan (>=2
-  disjoint surfaces, >=6 steps) into focused per-lane subagents + a
-  converge step; small / single-surface plans run one agent. No flag —
-  the gate is automatic. Threshold: agents.decompose_min_tasks (default 6).
+  disjoint surfaces, AND >=6 steps OR >=12 files touched) into focused
+  per-lane subagents + a converge step; small / single-surface plans run
+  one agent. No flag — the gate is automatic. Thresholds:
+  agents.decompose_min_tasks (default 6) OR agents.decompose_min_files
+  (default 12).
 ```
 
 Cost control — two INDEPENDENT model axes. Keep them straight:
@@ -118,11 +120,6 @@ Ideation family — pick by ambiguity, not by topic:
   /brainstorm --vet <mode> → adds a multi-lens vet pass (light|deep|ultra)
                              for ambiguous / high-stakes plans
   /brainstorm-team [topic] → multi-agent product/competitive research team
-```
-
-Convention skills — load a house pattern before writing code:
-
-```
 ```
 
 ---

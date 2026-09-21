@@ -363,9 +363,11 @@ pytest evals, and `scripts/ci/skill-eval.py`'s headless outcome evals on a fixtu
    `templates/project.json.example`; every repo-path citation resolves (and a `docs/` file a
    skill says to *load* is a placement error); no forbidden (rename-invalidated) phrase
    survives; no sentence names the same command twice; no Copilot/Codex overlay declares a
-   Claude-only frontmatter key; and `.claude-plugin/plugin.json`'s `version` moved when
-   shipped content did — an unmoved version leaves every consumer on a stale cached plugin,
-   silently. `--self-test` exercises each one against a synthetic tree.
+   Claude-only frontmatter key; no shipped line invokes a bare `python3` (the Windows
+   Store-stub trap) and no `hooks.json` command lacks an interpreter token; and
+   `.claude-plugin/plugin.json`'s `version` moved when shipped content did — an unmoved
+   version leaves every consumer on a stale cached plugin, silently. `--self-test` exercises
+   each one against a synthetic tree.
 3. Running `bash scripts/ci/test-hooks.sh` — the regression harness for the **deterministic
    controls** that back policy instead of prose — the two wired hooks
    (`scripts/hooks/enforce-model-cap.sh`, `scripts/hooks/stop-gate.sh`) and the

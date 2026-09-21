@@ -36,14 +36,12 @@ flowchart TD
     PLAN --> SDLC["/sdlc — full pipeline"]
     SDLC --> PIPE
 
-    subgraph PIPE ["Pipeline — one 3-iteration fix budget across 4/5/5.5/5.6"]
+    subgraph PIPE ["Pipeline — one 3-iteration fix budget in Stage 5"]
       direction TB
-      S1["1 · Parse plan"] --> S15["1.5 · Sanity check (3 Haiku, parallel)"]
+      S0["0 · Resolve input + scope gate (plan-file runs) — never blocks"] --> S15["1.5 · Sanity check (3 Haiku, parallel)"]
       S15 --> S2["2 · Implement (Sonnet-first; auto single-agent OR decompose→lanes→converge)"]
-      S2 --> S3["3 · Generate evals"] --> S4["4 · Eval + fix loop"]
-      S4 --> S5["5 · Validate (/test-check: logs · unit · e2e)"] --> S55["5.5 · Plan-validate"]
-      S55 --> S56["5.6 · Flowsim (plan⇄code narrative trace)"]
-      S56 --> S57["5.7 Review + 5.8 Fix (independent reviewer, opt-in)"]
+      S2 --> S3["3 · Generate evals"] --> S5["5 · Validate (test-runner: logs · unit · e2e + plan requirements/flow agent; shared fix loop)"]
+      S5 --> S57["5.7 Review + 5.8 Fix (independent reviewer, opt-in)"]
       S57 -.->|"opt-in"| S59["5.9 · Cleanup pass (over-engineering + docstring-currency, opt-in)"]
     end
 
