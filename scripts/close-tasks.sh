@@ -118,7 +118,10 @@ Usage:
     followup, manual}` with `state` one of `open`/`in_progress`/`done`.
   close-tasks.sh close --file TASKS.md --scope plan --key SLUG --plan-file PLAN.md [--dry-run]
   close-tasks.sh close --file TASKS.md --scope resolved --ids-file FILE [--dry-run]
-  close-tasks.sh reconcile --file TASKS.md [--pipeline-dir .claude/pipeline] [--apply]
+  close-tasks.sh reconcile --file TASKS.md [--pipeline-dir .claude/pipeline] [--apply] [--json]
+    (--json is a documented no-op: reconcile's output is always one JSON object
+    on stdout, with or without the flag -- it exists so a caller following the
+    header contract above is never rejected with "unknown arg".)
     Mark a row `_followup_` (or `_followup: why_`) to say it was left open ON
     PURPOSE after its plan completed, or `_manual_` to say only a human can do
     it. reconcile then stops reporting either as drift, while a row that is
@@ -167,6 +170,7 @@ while [ $# -gt 0 ]; do
     --pipeline-dir) PIPELINE_DIR="$2"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     --apply) APPLY=1; shift ;;
+    --json) shift ;;  # documented no-op -- reconcile's output is always JSON, flag or not
     --repo-name) REPO_NAME="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "{\"error\":\"unknown arg: $1\"}" >&2; usage; exit 2 ;;

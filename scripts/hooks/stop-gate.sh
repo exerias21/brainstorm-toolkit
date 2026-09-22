@@ -31,7 +31,8 @@
 #       systemMessage saying this gate stood down; next-action.sh owns the
 #       block in that event. PEEK only -- this hook never deletes the
 #       sentinel; next-action.sh is the sole consumer (docs/SEAM.md).
-#   (c) `pipeline.loop.auto_continue: true` -> exit 0 with a systemMessage.
+#   (c) `pipeline.loop.auto_continue: true` (or its legacy flat alias
+#       `pipeline.auto_continue: true`) -> exit 0 with a systemMessage.
 #       next-action.sh can only ever emit decision:block from inside its
 #       auto-continue path, itself gated on this same knob -- so standing
 #       down here whenever the knob is true makes the two hooks mutually
@@ -147,9 +148,16 @@ fi
 # decision:block when pipeline.loop.auto_continue is true, so standing down
 # here whenever that same knob is true makes the two hooks mutually exclusive
 # by construction -- no sentinel-timing race between two parallel Stop hooks.
-auto_continue="$(jget "$PROJECT_JSON" '.pipeline.loop.auto_continue' 'false')"
+# Canonical key is the nested `pipeline.loop.auto_continue` (project.json.example,
+# docs/SEAM.md); the legacy flat `pipeline.auto_continue` is accepted as an alias
+# so the mutual exclusion holds for either spelling -- next-action.sh resolves
+# the same two keys (never "anywhere in the file") the same way.
+auto_continue="$(jget "$PROJECT_JSON" '.pipeline.loop.auto_continue' '')"
+if [ "$auto_continue" != "true" ]; then
+  auto_continue="$(jget "$PROJECT_JSON" '.pipeline.auto_continue' 'false')"
+fi
 if [ "$auto_continue" = "true" ]; then
-  emit_message "stop-gate: standing down — pipeline.loop.auto_continue is true, so next-action.sh may block this event; the two hooks are mutually exclusive by config."
+  emit_message "stop-gate: standing down — pipeline.loop.auto_continue (or its legacy alias pipeline.auto_continue) is true, so next-action.sh may block this event; the two hooks are mutually exclusive by config."
   exit 0
 fi
 
@@ -161,6 +169,10 @@ if [ -s "$HOPS_FILE" ]; then hops="$(cat "$HOPS_FILE" 2>/dev/null)"; fi
 case "$hops" in ''|*[!0-9]*) hops=0;; esac
 if [ "$hops" -ge "$max_hops" ]; then
   emit_message "stop-gate: standing down — hop budget ($max_hops) reached without a green test.unit run; investigate manually."
+  # Reset the counter so the budget is per continuation chain, not permanent --
+  # without this, one exhausted run disables the gate forever (mirrors
+  # next-action.sh's own hop-budget reset on every print/park path).
+  rm -f "$HOPS_FILE" 2>/dev/null || true
   exit 0
 fi
 

@@ -100,8 +100,10 @@ order is the difference between "usually closes" and "closes."
 
    **State write — right here, before step 4.** `stage-outputs/handoff.json` =
    `{branch, files_changed[], committed: false, suggested_commit_msg, data: {tasks: {match_key,
-   matched[], closed[], moved[], unmatched[]}}}`. **Always set `run.json.status` to a terminal
-   value** (`complete`, or `paused` if you stopped mid-pipeline) **now** — never leave it
+   matched[], closed[], moved[], unmatched[]}}}`. **Always set `run.json.status` to a settled
+   value** (`complete` when finished, or `paused` — a resumable state that `--resume` picks
+   up, not a terminal one; see `skills/sdlc/templates/state-schema.md` — if you stopped
+   mid-pipeline) **now** — never leave it
    `in_progress`, and never defer this past step 4's confirm prompt, or `/repo-health` and
    `/sdlc-status` will (correctly) flag it as a stale run and `TASKS.md` will show rows still
    open on a run that actually finished. **Also set `run.json.next_action = {cmd, confirm}`**

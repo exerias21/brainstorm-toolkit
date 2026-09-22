@@ -96,7 +96,7 @@ every park. Then run the **no-hook nudge** (SEAM2): `grep -rlqs 'next-action'
 2>/dev/null` — if that finds nothing, the line is inert; tell the user to enable the
 plugin or onboard, or the loop can't continue.
 
-With the sentinel written, the Stop hook surfaces the resume — and with `pipeline.auto_continue:
+With the sentinel written, the Stop hook surfaces the resume — and with `pipeline.loop.auto_continue:
 true`, **executes** it: the loop self-advances batch→batch hands-off until a `confirm:true`
 action, a blocked/failed item, or the `pipeline.loop.max_hops` budget parks it. End with a
 per-item results table (item → status → parked?).

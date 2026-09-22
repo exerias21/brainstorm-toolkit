@@ -205,6 +205,7 @@ writing nothing is a failed onboarding, not a cautious one:
    .claude/pipeline/
    .claude/.next-action
    .claude/.auto-continue-hops
+   .claude/.stop-gate-hops
    .claude/project.json
    TASKS.md
    plans/

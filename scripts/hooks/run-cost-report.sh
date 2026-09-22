@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # brainstorm-toolkit — end-of-run cost report.
 #
-# Prints what a pipeline run actually cost, ONCE, when the run reaches a terminal state.
+# Prints what a pipeline run actually cost, once per status, when the run reaches a settled
+# state (complete/failed/paused — see the per-status-marker note below for why `paused`,
+# which is resumable rather than terminal, still gets reported and can be reported again).
 # Replaces the earlier mid-run context-threshold nag, which was wrong three ways: it was a
 # lagging indicator (the tokens were already spent), it fired mid-plan where clearing is
 # explicitly unsafe (docs/LOOP-HYGIENE.md), and it was tuned on a multi-day multi-command
@@ -16,7 +18,7 @@
 # can change a decision. It is not a suggestion to split anything: a big run is fine when the
 # context is real work. Compare peak against how much of it was genuinely working state.
 #
-# Best-effort and FAIL-SOFT: silent (exit 0) with no terminal run, no transcript, or no
+# Best-effort and FAIL-SOFT: silent (exit 0) with no settled run, no transcript, or no
 # JSON parser.
 set -u
 
@@ -131,12 +133,19 @@ if [ -f .claude/project.json ]; then
   [ "$enabled" = "off" ] && exit 0
 fi
 
-# Report only for a run that JUST reached a terminal state, and only once per
-# run. Multiple terminal, unreported envelopes can coexist (a concurrent
-# /task and /sdlc run, say), so pick the one that finished MOST RECENTLY --
-# track max `updated_at` (ISO-8601 sorts lexically) and assign only on a
-# beat, rather than reassigning unconditionally on every match, which made
-# the alphabetically-last glob entry win regardless of recency.
+# Report only for a run that JUST reached a settled state, and only once PER
+# STATUS -- `complete`/`failed` are terminal; `paused` is a settled, resumable
+# state (skills/sdlc/templates/state-schema.md), not a dead end, so a paused
+# run that later resumes and completes must be reported again for that later
+# completion. The `.cost-reported` marker therefore records WHICH status it
+# reported, not merely that it fired once -- a bare marker file made a run
+# resumed-from-paused's eventual completion silently unreported forever.
+# Multiple settled, unreported (for their CURRENT status) envelopes can
+# coexist (a concurrent /task and /sdlc run, say), so pick the one that
+# settled MOST RECENTLY -- track max `updated_at` (ISO-8601 sorts lexically)
+# and assign only on a beat, rather than reassigning unconditionally on every
+# match, which made the alphabetically-last glob entry win regardless of
+# recency.
 envelope=""; slug=""; best_updated=""
 for f in .claude/pipeline/*/run.json; do
   [ -f "$f" ] || continue
@@ -144,7 +153,10 @@ for f in .claude/pipeline/*/run.json; do
   case "$st" in
     complete|completed|failed|paused)
       d="$(dirname "$f")"
-      [ -f "$d/.cost-reported" ] && continue
+      if [ -f "$d/.cost-reported" ]; then
+        reported_status="$(cat "$d/.cost-reported" 2>/dev/null || true)"
+        [ "$reported_status" = "$st" ] && continue
+      fi
       upd="$(jget "$f" '.updated_at')"
       if [ -z "$envelope" ] || [ "$upd" \> "$best_updated" ]; then
         envelope="$f"; slug="$(basename "$d")"; best_updated="$upd"
@@ -195,7 +207,10 @@ turns="${1:-0}"; avg="${2:-0}"; peak="${3:-0}"; cread="${4:-0}"; usd="${5:-0}"
 
 status="$(jget "$envelope" '.status' '?')"
 write_cost "$envelope" "$turns" "$avg" "$peak" "$cread" "$usd"
-: > "$(dirname "$envelope")/.cost-reported" 2>/dev/null || true
+# Record WHICH status this report covers (not just that a report happened) --
+# a later status change on this same envelope (paused -> complete) must be
+# reported again; the skip check above compares against this value.
+printf '%s' "$status" > "$(dirname "$envelope")/.cost-reported" 2>/dev/null || true
 
 msg="[run cost] ${slug} (${status}) - ${turns} turns, avg context $((avg/1000))k, peak $((peak/1000))k, cache-read $((cread/1000000))M, ~\$${usd}.
 Cost scales turns x context, so peak is the number that compounds. A big run is fine when the

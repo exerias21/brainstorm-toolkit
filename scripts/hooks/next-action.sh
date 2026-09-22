@@ -28,7 +28,8 @@
 # (`.codex/hooks.json`; Codex has a Stop hook with the same decision:block contract).
 # All consume `systemMessage` from stdout JSON identically for the printed hint.
 #
-# Auto-continue (L9, OPT-IN, default OFF): with `pipeline.auto_continue: true` in
+# Auto-continue (L9, OPT-IN, default OFF): with `pipeline.loop.auto_continue: true`
+# (legacy flat alias `pipeline.auto_continue: true` also accepted) in
 # .claude/project.json, on Claude Code OR Codex (both honor Stop-hook decision:block),
 # a SINGLE non-confirm sentinel is EXECUTED (return
 # {"decision":"block","reason":"Continue with: <cmd>"}) instead of printed — the
@@ -129,13 +130,24 @@ for raw in sys.stdin:
         continue  # dedup by cmd (SEAM.md: dedup key is cmd, not the raw line)
     # Drop an entry whose plan/target file no longer exists (or was already
     # delivered) -- a stale pointer left over from a finished/abandoned run.
+    # Checked ONLY on the target argument (the first whitespace token after
+    # the command word, e.g. "plans/x.md" in "/sdlc plans/x.md"), and NEVER
+    # for /gotcha -- a /gotcha command argument is free prose, and prose can
+    # legitimately mention a bare repo-relative path (e.g. remember that
+    # skills/sdlc/templates/models.md is loaded first) that does not exist at
+    # this consumer root (it ships under .claude/skills/ once installed).
+    # Scanning every whitespace token, as this used to, misread that mention
+    # as a stale command-target pointer and silently ate the gotcha reminder
+    # -- contradicting the "must not be silently eaten" contract this drop
+    # exists to keep (docs/SEAM.md).
     dropped = False
-    for tok in cmd.split():
+    parts = cmd.split()
+    if len(parts) > 1 and parts[0] != "/gotcha":
+        tok = parts[1]
         if "/" in tok and (tok.endswith(".md") or tok.endswith(".json")):
             path = tok if os.path.isabs(tok) else os.path.join(proj, tok)
             if not os.path.exists(path):
                 dropped = True
-                break
     if dropped:
         continue
     seen.add(cmd)
@@ -214,7 +226,10 @@ fi
 #     (feeds `reason` back to the model as its next instruction) instead of a
 #     printed hint — the session becomes the loop, the sentinel its program
 #     counter. DEFAULT OFF: with the knob unset, behavior is unchanged (print).
-#     Guardrails (non-negotiable): (1) opt-in `pipeline.auto_continue: true`;
+#     Guardrails (non-negotiable): (1) opt-in `pipeline.loop.auto_continue: true`
+#     (canonical; the legacy flat `pipeline.auto_continue: true` is accepted as
+#     an alias, same resolution stop-gate.sh uses for its own mutual-exclusion
+#     check);
 #     (2) never a `confirm:true` action (those always park to a printed hint);
 #     (3) a hop budget bounds the chain like the 3-iteration fix budget bounds a
 #     fix loop; (4) runtime must support Stop-hook decision:block — Claude
@@ -226,9 +241,32 @@ fi
 #     lossless for a --queue/auto-continue run) is documented in docs/LOOP-HYGIENE.md.
 HOPS_FILE="$PROJ/.claude/.auto-continue-hops"
 PROJECT_JSON="$PROJ/.claude/project.json"
+# Resolve the knob at its two documented paths ONLY -- canonical nested
+# `pipeline.loop.auto_continue`, falling back to the legacy flat
+# `pipeline.auto_continue` -- never "anywhere in the file" (a plain substring
+# grep previously matched an unrelated object nested arbitrarily deep that
+# merely happened to contain a same-named key). Same two-key resolution
+# stop-gate.sh uses, so the mutual-exclusion contract holds for either
+# spelling.
+auto_continue_on="false"
+if [ -n "$PY" ] && [ -f "$PROJECT_JSON" ]; then
+  auto_continue_on="$("$PY" -c '
+import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        d = json.load(f)
+except Exception:
+    d = {}
+p = d.get("pipeline") if isinstance(d, dict) else None
+p = p if isinstance(p, dict) else {}
+loop = p.get("loop") if isinstance(p.get("loop"), dict) else {}
+val = loop["auto_continue"] if "auto_continue" in loop else p.get("auto_continue")
+print("true" if val is True else "false")
+' "$PROJECT_JSON" 2>/dev/null)"
+  case "$auto_continue_on" in true) ;; *) auto_continue_on="false" ;; esac
+fi
 if { [ -n "${CLAUDE_PROJECT_DIR:-}" ] || [ -n "${CODEX_HOME:-}" ]; } \
-   && [ -f "$PROJECT_JSON" ] \
-   && grep -Eq '"auto_continue"[[:space:]]*:[[:space:]]*true' "$PROJECT_JSON" 2>/dev/null \
+   && [ "$auto_continue_on" = "true" ] \
    && [ "${#sentinel_cmds[@]}" -eq 1 ] \
    && [ "${sentinel_confirm[0]:-1}" = "0" ] \
    && [ -n "$PY" ]; then
@@ -238,7 +276,9 @@ if { [ -n "${CLAUDE_PROJECT_DIR:-}" ] || [ -n "${CODEX_HOME:-}" ]; } \
   case "$remaining" in ''|*[!0-9]*) remaining="$max_hops";; esac
   if [ "$remaining" -gt 0 ]; then
     printf '%s' "$((remaining - 1))" > "$HOPS_FILE"
-    "$PY" -c 'import json,sys; print(json.dumps({"decision":"block","reason":"Continue with: "+sys.argv[1]}))' "${sentinel_cmds[0]}"
+    # The command goes in on stdin, never argv: Git Bash rewrites a leading-"/" argument
+    # for a native Windows python ("/sdlc x" -> "C:/Program Files/Git/sdlc x").
+    printf '%s' "${sentinel_cmds[0]}" | "$PY" -c 'import json,sys; print(json.dumps({"decision":"block","reason":"Continue with: "+sys.stdin.read()}))'
     exit 0
   fi
   # Budget exhausted -> park (print) and reset the chain.

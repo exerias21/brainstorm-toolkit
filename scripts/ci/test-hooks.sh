@@ -298,6 +298,30 @@ out="$(run_gate "$d" '{}')"
 assert_no_match "$out" '"decision"'
 assert_match "$out" '"systemMessage"'
 
+CASE="gate: legacy FLAT pipeline.auto_continue alias also stands down (mutual exclusion holds either spelling)"
+d="$(gate_dir 11)"
+gate_envelope_in_progress "$d"
+cat > "$d/.claude/project.json" <<'EOF'
+{"pipeline": {"stop_gate": "tests", "auto_continue": true}, "test": {"unit": "echo boom && exit 1"}}
+EOF
+out="$(run_gate "$d" '{}')"
+assert_no_match "$out" '"decision"'
+assert_match "$out" '"systemMessage"'
+
+CASE="gate: hop budget resets on standdown -- the NEXT Stop runs tests again instead of standing down forever"
+d="$(gate_dir 12)"
+gate_envelope_in_progress "$d"
+cat > "$d/.claude/project.json" <<'EOF'
+{"pipeline": {"stop_gate": "tests", "loop": {"max_hops": 2}}, "test": {"unit": "exit 1"}}
+EOF
+printf '2' > "$d/.claude/.stop-gate-hops"
+out="$(run_gate "$d" '{}')"
+assert_no_match "$out" '"decision"'
+assert_match "$out" 'hop budget'
+out="$(run_gate "$d" '{}')"
+assert_match "$out" '"decision": "block"'
+assert_match "$out" 'stop-gate: tests red'
+
 # ── scripts/protect-tests.sh: arm / verify / disarm -- a CLI, not a wired
 #    hook (see its own header), included here per the widened scope above ──
 
@@ -489,6 +513,25 @@ assert_empty "$out"
 [ -f "$d/.claude/.next-action" ] && fail "an all-stale sentinel should still be consumed (parsed, then removed)"
 ok
 
+CASE="next-action: a genuinely stale /sdlc pointer to a missing plan is still dropped"
+d="$(na_dir 05b)"
+echo '{"cmd":"/sdlc docs/plans/missing.md","source":"brainstorm","confirm":false}' > "$d/.claude/.next-action"
+out="$(run_na "$d" "")"
+assert_empty "$out"
+[ -f "$d/.claude/.next-action" ] && fail "a stale /sdlc target pointer should still be consumed (parsed, then removed)"
+ok
+
+CASE="next-action: a /gotcha entry whose PROSE mentions a bare path is never dropped"
+d="$(na_dir 05c)"
+# Consumer root has no skills/ tree at all (it lives under .claude/skills/ once
+# installed) -- the drop logic must not read this bare-path mention in the
+# gotcha's prose as a stale command-target pointer.
+echo '{"cmd":"/gotcha remember that skills/sdlc/templates/models.md is loaded first","source":"sdlc","confirm":false}' > "$d/.claude/.next-action"
+out="$(run_na "$d" "")"
+assert_match "$out" 'Next: /gotcha remember that skills/sdlc/templates/models.md is loaded first'
+[ -f "$d/.claude/.next-action" ] && fail ".next-action should be consumed once rendered"
+ok
+
 CASE="seam: appending a duplicate cmd with a different source does not grow the file"
 d="$(na_dir 06)"
 file="$d/.claude/.next-action"
@@ -502,6 +545,32 @@ seam_append_dedup "$file" "/gotcha dup write test" "sdlc"
 seam_append_dedup "$file" "/gotcha dup write test" "task"
 lines="$(wc -l < "$file" | tr -d ' ')"
 [ "$lines" -eq 1 ] || fail "expected 1 line after a duplicate cmd from a different source, got $lines"
+ok
+
+CASE="next-action: auto-continue ignores an unrelated nested 'auto_continue' key (not 'anywhere' matching)"
+d="$(na_dir 07)"
+cat > "$d/.claude/project.json" <<'EOF'
+{"other_feature": {"nested": {"auto_continue": true}}, "pipeline": {}}
+EOF
+echo '{"cmd":"/gotcha unrelated-key test","source":"sdlc","confirm":false}' > "$d/.claude/.next-action"
+out="$(env -u BRAINSTORM_PYTHON CLAUDE_PROJECT_DIR="$d" bash "$NEXT_ACTION_HOOK" </dev/null)"
+assert_no_match "$out" '"decision"'
+assert_match "$out" 'Next: /gotcha unrelated-key test'
+[ -f "$d/.claude/.auto-continue-hops" ] && fail "auto-continue must not engage for an unrelated nested auto_continue key"
+ok
+
+CASE="next-action: legacy flat pipeline.auto_continue alias still engages auto-continue"
+d="$(na_dir 08)"
+cat > "$d/.claude/project.json" <<'EOF'
+{"pipeline": {"auto_continue": true}}
+EOF
+echo '{"cmd":"/gotcha flat-alias test","source":"sdlc","confirm":false}' > "$d/.claude/.next-action"
+# The exact reason text is asserted too: the cmd reaches python on stdin, so Git Bash
+# on Windows can no longer rewrite the leading "/gotcha" into "C:/Program Files/Git/gotcha".
+out="$(env -u BRAINSTORM_PYTHON CLAUDE_PROJECT_DIR="$d" bash "$NEXT_ACTION_HOOK" </dev/null)"
+assert_match "$out" '"decision": "block"'
+assert_match "$out" 'Continue with: /gotcha flat-alias test'
+assert_no_match "$out" 'Program Files'
 ok
 
 # ── run-cost-report.sh: newest-terminal-envelope selection (step 7) ────────
@@ -540,6 +609,39 @@ if grep -q '"cost"' "$d/.claude/pipeline/zzz-older/run.json"; then
 fi
 [ -f "$d/.claude/pipeline/aaa-newer/.cost-reported" ] || fail "expected .cost-reported marker in aaa-newer"
 [ -f "$d/.claude/pipeline/zzz-older/.cost-reported" ] && fail "unexpected .cost-reported marker in zzz-older"
+ok
+
+CASE="cost-report: a paused run is reported, then reported AGAIN once it later completes"
+d="$ROOT_TMP/cost-02"
+mkdir -p "$d/.claude/pipeline/run-x"
+cat > "$d/.claude/pipeline/run-x/run.json" <<'EOF'
+{"status": "paused", "updated_at": "2026-09-18T12:00:00Z"}
+EOF
+cat > "$d/transcript.jsonl" <<'EOF'
+{"message": {"usage": {"input_tokens": 100, "cache_read_input_tokens": 10, "cache_creation_input_tokens": 5, "output_tokens": 50}}}
+EOF
+out="$(run_cost "$d" "{\"transcript_path\": \"$d/transcript.jsonl\"}")"
+assert_match "$out" '"systemMessage"'
+[ -f "$d/.claude/pipeline/run-x/.cost-reported" ] || fail "expected .cost-reported marker after the paused report"
+marker1="$(cat "$d/.claude/pipeline/run-x/.cost-reported" 2>/dev/null | tr -d '\r')"
+[ "$marker1" = "paused" ] || fail "expected the marker to record the reported status 'paused', got: $marker1"
+
+# A second Stop while still paused (no status change) must NOT re-report.
+out2="$(run_cost "$d" "{\"transcript_path\": \"$d/transcript.jsonl\"}")"
+assert_empty "$out2"
+
+# The run resumes and completes -- flip status, same envelope.
+cat > "$d/.claude/pipeline/run-x/run.json" <<'EOF'
+{"status": "complete", "updated_at": "2026-09-19T12:00:00Z"}
+EOF
+out3="$(run_cost "$d" "{\"transcript_path\": \"$d/transcript.jsonl\"}")"
+assert_match "$out3" '"systemMessage"'
+marker2="$(cat "$d/.claude/pipeline/run-x/.cost-reported" 2>/dev/null | tr -d '\r')"
+[ "$marker2" = "complete" ] || fail "expected the marker to be updated to 'complete' after the second report, got: $marker2"
+
+# A second Stop at complete (no further status change) must NOT report again.
+out4="$(run_cost "$d" "{\"transcript_path\": \"$d/transcript.jsonl\"}")"
+assert_empty "$out4"
 ok
 
 # ── close-tasks.sh: trailer-only tag matching, `_manual_` exemptions, the
@@ -687,6 +789,13 @@ PY_RC=$?
 set -e
 [ "$PY_RC" -eq 0 ] || fail "rows assertions failed: $PY_OUT"
 ok
+
+CASE="close-tasks reconcile: --json is accepted as a documented no-op (output is always JSON)"
+d="$(ct_dir 06)"
+printf '## Active / Pending\n' > "$d/TASKS.md"
+run_ct "$d" reconcile --file TASKS.md --json
+assert_rc "$CT_RC" 0
+assert_match "$CT_OUT" '"drift_count"'
 
 echo
 echo "test-hooks.sh: all cases ok"
