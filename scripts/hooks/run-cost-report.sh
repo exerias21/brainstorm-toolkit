@@ -24,13 +24,35 @@ set -u
 
 [ -t 0 ] && exit 0
 
-# Probe that the interpreter RUNS, not merely that it is on PATH: on Windows `python3` is
-# commonly a Microsoft Store stub that resolves and then exits non-zero.
+# Project root, resolved before the interpreter probe below -- the probe's second
+# tier reads .claude/project.json off of it.
+PROJ="${CLAUDE_PROJECT_DIR:-}"
+if [ -z "$PROJ" ]; then
+  if _gr="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -n "$_gr" ]; then PROJ="$_gr"; else PROJ="$PWD"; fi
+fi
+
+# Three-tier resolution matching scripts/py.sh / next-action.sh's inline copy of it:
+# $BRAINSTORM_PYTHON > .claude/project.json's top-level `python` key > probe
+# python3/python/py -- each candidate proven to RUN, not merely resolved on PATH
+# (a Windows Store python3 stub resolves and then exits non-zero). A prior version
+# of this probe only tried python3/python/py, so a machine with neither on PATH but
+# a working interpreter named by either setting fell through to jq alone, or to
+# nothing at all when jq was also absent.
 JQ=""; PY=""
 if command -v jq >/dev/null 2>&1 && echo '{}' | jq -e . >/dev/null 2>&1; then JQ="jq"; fi
-for c in python3 python py; do
-  if command -v "$c" >/dev/null 2>&1 && "$c" -c 'pass' >/dev/null 2>&1; then PY="$c"; break; fi
-done
+if [ -n "${BRAINSTORM_PYTHON:-}" ] && "${BRAINSTORM_PYTHON}" -c 'pass' >/dev/null 2>&1; then
+  PY="$BRAINSTORM_PYTHON"
+fi
+if [ -z "$PY" ] && [ -f "$PROJ/.claude/project.json" ]; then
+  PY="$(sed -n 's/.*"python"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+        "$PROJ/.claude/project.json" 2>/dev/null | head -n 1)"
+  if [ -n "$PY" ] && ! "$PY" -c 'pass' >/dev/null 2>&1; then PY=""; fi
+fi
+if [ -z "$PY" ]; then
+  for c in python3 python py; do
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c 'pass' >/dev/null 2>&1; then PY="$c"; break; fi
+  done
+fi
 [ -n "$JQ" ] || [ -n "$PY" ] || exit 0
 
 jget() {
@@ -49,11 +71,6 @@ try:
 except Exception: print(d)' "$_f" "$_p" "$_d" 2>/dev/null || printf '%s' "$_d"
   fi
 }
-
-PROJ="${CLAUDE_PROJECT_DIR:-}"
-if [ -z "$PROJ" ]; then
-  if _gr="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -n "$_gr" ]; then PROJ="$_gr"; else PROJ="$PWD"; fi
-fi
 
 # Persist the five numbers into the envelope's `data.cost` (schema:
 # skills/sdlc/templates/state-schema.md). Additive-only and atomic (tmp +
@@ -133,6 +150,46 @@ if [ -f .claude/project.json ]; then
   [ "$enabled" = "off" ] && exit 0
 fi
 
+# This session's start, so a settled envelope from BEFORE this session ever
+# started can never have this session's transcript stats written into it (a
+# repo with older envelopes that predate the `.cost-reported` marker used to
+# get exactly that -- a stale run reported and its data.cost overwritten on
+# every Stop). Derived from the transcript itself: the first timestamped JSONL
+# entry (transcripts are append-only, so the first `.timestamp` field seen is
+# the session's start), falling back to the transcript file's creation time
+# when no line carries one. If neither can be determined, stand down rather
+# than fall back to the old unbounded behavior.
+if [ -n "$PY" ]; then
+  session_start="$("$PY" -c 'import json,os,sys,datetime
+path=sys.argv[1]
+ts=None
+try:
+    with open(path,encoding="utf-8",errors="replace") as f:
+        for line in f:
+            line=line.strip()
+            if not line: continue
+            try: d=json.loads(line)
+            except Exception: continue
+            t=d.get("timestamp")
+            if t:
+                ts=t; break
+except Exception:
+    pass
+if not ts:
+    try:
+        ct=os.path.getctime(path)
+        ts=datetime.datetime.utcfromtimestamp(ct).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except Exception:
+        ts=""
+print(ts)' "$transcript" 2>/dev/null)"
+else
+  session_start="$(jq -r 'select(.timestamp != null) | .timestamp' "$transcript" 2>/dev/null | head -n 1)"
+  if [ -z "$session_start" ]; then
+    session_start="$(date -u -r "$transcript" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || true)"
+  fi
+fi
+[ -n "$session_start" ] || exit 0
+
 # Report only for a run that JUST reached a settled state, and only once PER
 # STATUS -- `complete`/`failed` are terminal; `paused` is a settled, resumable
 # state (skills/sdlc/templates/state-schema.md), not a dead end, so a paused
@@ -158,6 +215,14 @@ for f in .claude/pipeline/*/run.json; do
         [ "$reported_status" = "$st" ] && continue
       fi
       upd="$(jget "$f" '.updated_at')"
+      # An envelope that settled BEFORE this session started must never have
+      # THIS session's transcript stats written into it. Mark it silently
+      # (recording the status, same as a real report would) so it is not
+      # re-evaluated on every future Stop, but never touch its data.cost.
+      if [ -n "$upd" ] && [ "$upd" \< "$session_start" ]; then
+        printf '%s' "$st" > "$d/.cost-reported" 2>/dev/null || true
+        continue
+      fi
       if [ -z "$envelope" ] || [ "$upd" \> "$best_updated" ]; then
         envelope="$f"; slug="$(basename "$d")"; best_updated="$upd"
       fi

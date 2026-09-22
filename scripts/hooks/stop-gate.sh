@@ -179,12 +179,52 @@ fi
 timeout_s="$(jget "$PROJECT_JSON" '.pipeline.stop_gate_timeout' '300')"
 case "$timeout_s" in ''|*[!0-9]*) timeout_s=300;; esac
 
-output="$(cd "$PROJ" 2>/dev/null && timeout "$timeout_s" bash -c "$test_cmd" 2>&1)"
-rc=$?
+# Resolve a timeout runner BEFORE running anything, rather than hard-coding
+# `timeout` -- stock macOS has no `timeout(1)` (it ships neither GNU nor BSD
+# coreutils' version) unless the user installed coreutils, and bash then
+# reports the literal "timeout: command not found" as exit 127 -- the exact
+# code this script already uses to mean "test.unit is missing". Without this
+# resolution, that collision made the gate silently stand down on stock macOS
+# instead of running the suite, on every single Stop. `command -v` here
+# proves each wrapper resolves; unlike the python probes elsewhere in this
+# hook family a wrapper only needs to exist on PATH, not "prove it runs" --
+# `timeout`/`gtimeout`/`perl` don't have a Store-stub failure mode.
+RUNNER=""
+if command -v timeout >/dev/null 2>&1; then
+  RUNNER="timeout"
+elif command -v gtimeout >/dev/null 2>&1; then
+  RUNNER="gtimeout"
+elif command -v perl >/dev/null 2>&1; then
+  RUNNER="perl"
+fi
+
+case "$RUNNER" in
+  timeout|gtimeout)
+    output="$(cd "$PROJ" 2>/dev/null && "$RUNNER" "$timeout_s" bash -c "$test_cmd" 2>&1)"
+    rc=$?
+    ;;
+  perl)
+    # perl ships with macOS by default even without coreutils. `alarm` fires
+    # SIGALRM after $timeout_s seconds; its handler is the process default
+    # (kill) both before AND after `exec` replaces this perl process with
+    # bash, so this behaves like `timeout N bash -c CMD` for our purposes.
+    output="$(cd "$PROJ" 2>/dev/null && perl -e 'alarm shift; exec @ARGV' "$timeout_s" bash -c "$test_cmd" 2>&1)"
+    rc=$?
+    ;;
+  *)
+    # No wrapper at all: run WITHOUT a time limit rather than never running
+    # the suite -- a hung test.unit is a smaller failure than a gate that
+    # never enforces anything. Flagged below so it isn't silently unbounded.
+    output="$(cd "$PROJ" 2>/dev/null && bash -c "$test_cmd" 2>&1)"
+    rc=$?
+    ;;
+esac
 
 # Never block on a missing command (exit 127 is the shell's own signal for
 # "command not found", portable across single- and compound-command test.unit
-# values, e.g. `cd web && pnpm test`).
+# values, e.g. `cd web && pnpm test`). Reached only when the TEST command
+# itself is missing -- $RUNNER, when set, was already proven to resolve
+# above, so a 127 here can no longer be misattributed to the timeout wrapper.
 if [ "$rc" -eq 127 ]; then
   emit_message "stop-gate: standing down — test.unit command not found ($test_cmd)."
   exit 0
@@ -192,6 +232,9 @@ fi
 
 if [ "$rc" -eq 0 ]; then
   rm -f "$HOPS_FILE" 2>/dev/null || true
+  if [ -z "$RUNNER" ]; then
+    emit_message "stop-gate: tests green, but ran with NO time limit — no timeout, gtimeout, or perl found on PATH to bound test.unit."
+  fi
   exit 0
 fi
 
@@ -202,5 +245,9 @@ tail_out="${tail_out:0:1200}"
 if [ -z "$tail_out" ]; then
   tail_out="(command produced no output; exit code ${rc})"
 fi
-emit_block "stop-gate: tests red — ${tail_out}"
+reason="stop-gate: tests red — ${tail_out}"
+if [ -z "$RUNNER" ]; then
+  reason="stop-gate: tests red (ran with NO time limit — no timeout, gtimeout, or perl found on PATH) — ${tail_out}"
+fi
+emit_block "$reason"
 exit 0

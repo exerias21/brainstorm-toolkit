@@ -72,3 +72,33 @@ if [[ "$missing" -gt 0 ]]; then
 fi
 
 echo "[setup-roundtrip] OK: all $(echo "$SKILL_NAMES" | wc -w | tr -d ' ') marketplace skills installed."
+
+# 4. Stop-gate hook timeout assertion: stop-gate.sh runs the project's test.unit
+#    suite inline (up to 300s by its own internal default) before deciding whether
+#    to block. A Stop hook entry with no timeout, or a too-short one, falls back to
+#    (or hits) the host's shorter default and the gate fails OPEN on a slow suite --
+#    the exact bug this asserts against regressing. Checked in the copy-scripts
+#    Claude settings.json produced by step (1) above.
+echo "[setup-roundtrip] (4/4) stop-gate hook timeout assertion"
+STOP_GATE_SETTINGS="$ROOT_TMP/copy/.claude/settings.json"
+if [[ ! -f "$STOP_GATE_SETTINGS" ]]; then
+  echo "[setup-roundtrip] FAIL: $STOP_GATE_SETTINGS not found" >&2
+  exit 1
+fi
+STOP_GATE_TIMEOUT="$("$PY" -c '
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+for entry in data.get("hooks", {}).get("Stop", []):
+    for h in entry.get("hooks", []) or []:
+        if "stop-gate.sh" in (h.get("command") or ""):
+            print(h.get("timeout", ""))
+' "$STOP_GATE_SETTINGS" | tr -d '\r')"
+if [[ -z "$STOP_GATE_TIMEOUT" ]]; then
+  echo "[setup-roundtrip] FAIL: stop-gate Stop hook has no timeout set in $STOP_GATE_SETTINGS (fails open on a slow test suite)" >&2
+  exit 1
+fi
+if [[ "$STOP_GATE_TIMEOUT" -lt 300 ]]; then
+  echo "[setup-roundtrip] FAIL: stop-gate Stop hook timeout is ${STOP_GATE_TIMEOUT}s, want >= 300s" >&2
+  exit 1
+fi
+echo "[setup-roundtrip] OK: stop-gate Stop hook timeout is ${STOP_GATE_TIMEOUT}s (>= 300s)"

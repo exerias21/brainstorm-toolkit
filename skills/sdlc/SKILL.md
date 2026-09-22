@@ -72,8 +72,13 @@ Detect the argument shape:
    This is the primary path and the one that exercises the full pipeline
    (Stage 5's plan check has a plan to check against). **Look up this plan's
    `TASKS.md` rows by calling `scripts/close-tasks.sh rows --plan <slug>
-   --plan-file <path>`** (the slug is the plan's basename minus extension) —
-   never `reconcile | grep <slug>`: `reconcile` only reports drift against
+   --plan-file <path>`** — compute `<slug>` here using the **Derive `slug`** rule
+   below (basename minus extension, minus a leading `brainstorm-` /
+   `team-brainstorm-` / `pbi-NNN-` / `task-NNN-` prefix) **before** this call, not
+   the raw basename: `/brainstorm` tags rows with the *stripped* slug
+   (`_plan: add-orders_`, never `_plan: brainstorm-add-orders_`), so passing the
+   raw basename used to match zero rows even when correctly-tagged rows were
+   open — never `reconcile | grep <slug>`: `reconcile` only reports drift against
    *existing* pipeline envelopes, so on a first run for this plan it always
    returns zero rows even though correctly-tagged rows are sitting open (a
    live miss on 2026-09-20). `rows` reads TASKS.md alone, matching the

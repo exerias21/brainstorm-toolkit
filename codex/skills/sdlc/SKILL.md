@@ -56,7 +56,11 @@ regardless of verbosity — the per-dispatch `model:` line, gate verdicts, PAUSE
 
 - **Plan file** (path ending `.md` that exists) → use as the plan, like `/sdlc`.
   **Look up this plan's `TASKS.md` rows by calling `scripts/close-tasks.sh rows --plan
-  <slug> --plan-file <path>`** (slug = plan basename minus extension) — never `reconcile |
+  <slug> --plan-file <path>`** — compute `<slug>` here with the **Derive `slug`** rule below
+  (basename minus extension, minus a leading `brainstorm-`/`team-brainstorm-`/`pbi-NNN-`/
+  `task-NNN-` prefix), not the raw basename: `/brainstorm` tags rows with the *stripped* slug
+  (`_plan: add-orders_`, never `_plan: brainstorm-add-orders_`), so the raw basename used to
+  match zero rows even when correctly-tagged rows were open — never `reconcile |
   grep <slug>`: `reconcile` only reports drift against *existing* pipeline envelopes, so on
   a first run for this plan it returns zero rows even though correctly-tagged rows are open
   (a live miss on 2026-09-20). `rows` matches the `_plan: <slug>_` marker `/brainstorm`

@@ -39,6 +39,14 @@ Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
    or `phase-0`). Queue/phase bookkeeping is **additive in `data.*`**
    (`data.queue_mode: true`, `data.phase`, `data.tasks_done[]`) — never rename a canonical
    key (it is `feature_slug`/`plan_file`, not `slug`/`plan`) or overwrite `stage`.
+   **Also write `data.tasks.resolved = ["<substring unique to this row>"]`** at envelope
+   creation — a single-entry array, the same shape a task-id/range/ad-hoc run writes at its
+   own Stage 0 (`skills/sdlc/SKILL.md` Stage 0). Use the row's linked
+   `plans/tasks/task-N-<slug>.md` path when it has one, otherwise a unique substring of the
+   row text itself. Stage 6's close-out (`stage-6-handoff.md`) reads this field to close
+   **exactly** this item's row via `close-tasks.sh close --scope resolved` — omit it and
+   close-out falls back to `--scope plan`, which sweeps in every sibling row sharing this
+   item's `_plan:` key too.
 3. **Stop conditions** (checked after each item — *every stop is a parked
    next-action, never a dead end*):
    - `stop_on: pause` (**always on**) — item ends `paused`/`failed` → write its

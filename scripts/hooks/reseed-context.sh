@@ -38,11 +38,29 @@ trigger=""; event=""
 # the reseed never happened -- the one mechanism that carries state across a
 # compaction, absent exactly when you cannot tell. Both sibling hooks already
 # degrade to python; this one did not.
+#
+# Three-tier resolution matching scripts/py.sh / next-action.sh's inline copy
+# of it: $BRAINSTORM_PYTHON > .claude/project.json's top-level `python` key >
+# probe python3/python/py, each candidate proven to RUN. The final reseed
+# message below is emitted ONLY through $PY (there is no jq path for it), so a
+# probe that only tried python3/python/py silently dropped the reseed on any
+# machine whose working interpreter was reachable only via one of those two
+# settings -- exactly the machine this fallback exists for.
 JQ=""; PY=""
 if command -v jq >/dev/null 2>&1 && echo '{}' | jq -e . >/dev/null 2>&1; then JQ="jq"; fi
-for c in python3 python py; do
-  if command -v "$c" >/dev/null 2>&1 && "$c" -c 'pass' >/dev/null 2>&1; then PY="$c"; break; fi
-done
+if [ -n "${BRAINSTORM_PYTHON:-}" ] && "${BRAINSTORM_PYTHON}" -c 'pass' >/dev/null 2>&1; then
+  PY="$BRAINSTORM_PYTHON"
+fi
+if [ -z "$PY" ] && [ -f "$PROJ/.claude/project.json" ]; then
+  PY="$(sed -n 's/.*"python"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+        "$PROJ/.claude/project.json" 2>/dev/null | head -n 1)"
+  if [ -n "$PY" ] && ! "$PY" -c 'pass' >/dev/null 2>&1; then PY=""; fi
+fi
+if [ -z "$PY" ]; then
+  for c in python3 python py; do
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c 'pass' >/dev/null 2>&1; then PY="$c"; break; fi
+  done
+fi
 [ -n "$JQ" ] || [ -n "$PY" ] || exit 0
 
 # jget <file|-> <dotted.path[,alt.path]> [default]

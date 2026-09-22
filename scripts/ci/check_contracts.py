@@ -39,9 +39,9 @@ checks:
                        (setup.sh strips them for the Copilot/Codex install
                        paths only).
 
-Phase 1 of docs/plans/flow-gap-fixes.md widened checks 1-4's file scope to
-CLAUDE.md, AGENTS.md and docs/*.md (previously skills/copilot/codex/agents/
-templates only) and added three more:
+Checks 1-4's file scope also covers CLAUDE.md, AGENTS.md and docs/*.md (not
+just skills/copilot/codex/agents/templates), and three more checks cover
+facts only those wider files can state:
 
   6. Doc status markers -- every docs/*.md declares `Live contract` or
                        `Historical design record` in its header. A historical
@@ -66,8 +66,8 @@ YYYY-MM-DD "<claim>" -->` in CLAUDE.md/AGENTS.md/docs/*.md), is a permanent
 WARN, never a failure -- see `recheck_by_warnings()`. It never contributes to
 the exit code, mirroring `model_cap_pointer_warnings()` in validate_skills.py.
 
-Phase 3 of docs/plans/dogfood-followups.md added `portable-invocation`, a
-Windows-portability check with two rules: no bare `python3 ` invocation in
+The `portable-invocation` check is a Windows-portability check with two
+rules: no bare `python3 ` invocation in
 shipped skill/agent/template prose (a Microsoft Store stub trap -- see
 scripts/py.sh, GOTCHAS.md), and every `hooks/hooks.json` command starting
 with an interpreter token instead of a bare path.
@@ -87,6 +87,7 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import os
 import re
 import subprocess
 import sys
@@ -101,7 +102,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 SKILL_TREE_DIRS = ("skills", "copilot", "codex")
 
-# Cross-Module Touchpoint (docs/plans/skill-evals-2-fixture-harness.md):
+# Cross-Module Touchpoint:
 # evals/skills/fixtures/** is a committed MOCK CONSUMER REPO for
 # scripts/ci/skill-eval.py, not toolkit prose -- it legitimately contains
 # things these checks would otherwise flag (its own AGENTS.md, TASKS.md, a
@@ -381,9 +382,9 @@ def check_config_keys(files: list[Path], root: Path, registry: set[str]) -> list
 
 # ── Check 2: citations resolve ───────────────────────────────────────────────
 
-# Step 11 (docs/plans/dogfood-followups.md Phase 3): widened to see a
-# citation written as a runnable command, not just a bare path -- an optional
-# interpreter prefix (`bash `/`sh `/`python`/`python3 `/`py `), an optional
+# Widened to see a citation written as a runnable command, not just a bare
+# path -- an optional interpreter prefix (`bash `/`sh `/`python`/`python3 `/
+# `py `), an optional
 # `scripts/py.sh ` between the prefix and the path (the wrapper this repo
 # routes every shipped Python command through), and trailing arguments before
 # the closing backtick. The interpreter/wrapper/argument text is matched, never
@@ -900,8 +901,8 @@ def check_header_list_counts(files: list[Path], root: Path) -> list[Finding]:
 
 # ── portable-invocation (Windows-safe shipped commands) ─────────────────────
 #
-# Phase 3 of docs/plans/dogfood-followups.md. Two deterministic rules, both
-# about a command a consumer would copy-paste or a hook would literally exec:
+# Two deterministic rules, both about a command a consumer would copy-paste
+# or a hook would literally exec:
 #
 #   (a) no bare `python3 ` invocation in shipped skill/agent/template prose --
 #       `python3` is commonly a Microsoft Store stub on Windows that resolves
@@ -1074,13 +1075,30 @@ def check_version_freshness(root: Path) -> list[Finding]:
             return ""
         return r.stdout.strip() if r.returncode == 0 else ""
 
+    # A shallow (depth-limited) checkout -- e.g. actions/checkout@v4's default --
+    # makes this check unreliable rather than merely empty: the truncated boundary
+    # commit reads to git as adding the whole file from scratch, so `-L` can find a
+    # "version_commit" (the boundary commit itself) even though the real history is
+    # missing. That collapses the version_commit..HEAD range and lets shipped-but-
+    # unbumped changes pass with ZERO findings instead of skipping loudly. Detected
+    # directly via `rev-parse --is-shallow-repository` rather than relying on
+    # version_commit failing to resolve, which this scenario does not reproduce.
+    if git("rev-parse", "--is-shallow-repository") == "true":
+        msg = "version-freshness: skipped -- shallow clone, cannot see history"
+        print(msg, file=sys.stderr)
+        if os.environ.get("GITHUB_ACTIONS"):
+            print(f"::warning::{msg}", file=sys.stderr)
+        return []
+
     # The commit that last CHANGED the version string, not merely touched the file.
     version_commit = ""
     log = git("log", "--format=%H", "-L", "/\"version\"/,+1:.claude-plugin/plugin.json")
     if log:
         version_commit = log.splitlines()[0].strip()
     if not version_commit:
-        return []  # shallow clone, no git, or unparseable -- do not invent a failure
+        # No git, or an unparseable repo -- do not invent a failure. A shallow
+        # clone is handled above, before this can be reached via that path.
+        return []
 
     ts = git("show", "-s", "--format=%ct", version_commit)
     if not ts.isdigit():
@@ -1412,9 +1430,9 @@ def self_test_header_list_count() -> bool:
 
 
 def self_test_portable_invocation() -> bool:
-    """Phase 3: one violation of each portable-invocation rule -- a bare
-    `python3 ` invocation in shipped prose, and a hooks/hooks.json command
-    that names a bare path instead of an interpreter token."""
+    """Self-test for portable-invocation: one violation of each rule -- a
+    bare `python3 ` invocation in shipped prose, and a hooks/hooks.json
+    command that names a bare path instead of an interpreter token."""
     with tempfile.TemporaryDirectory(prefix="check_contracts_selftest_portinv_") as tmp:
         root = Path(tmp)
         skill_dir = root / "skills" / "testskill"

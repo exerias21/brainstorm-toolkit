@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # test-hooks.sh — regression harness for the deterministic controls that make
 # policy DETERMINISTIC instead of prose-enforced: scripts/hooks/enforce-model-cap.sh,
-# scripts/hooks/stop-gate.sh, scripts/protect-tests.sh (a CLI, not a wired
-# hook -- it earns a place here on scope alone; see its own header for why it
-# is not under scripts/hooks/), scripts/hooks/next-action.sh (interpreter
-# probe + the .next-action seam's dedup/staleness/depth-warning contract),
-# scripts/hooks/run-cost-report.sh (recency-based envelope selection), and
+# scripts/hooks/stop-gate.sh (envelope/test states plus its timeout-runner
+# resolution -- timeout/gtimeout/perl fallback), scripts/protect-tests.sh (a CLI,
+# not a wired hook -- it earns a place here on scope alone; see its own header
+# for why it is not under scripts/hooks/), scripts/hooks/next-action.sh
+# (interpreter probe + the .next-action seam's dedup/staleness/depth-warning
+# contract), scripts/hooks/run-cost-report.sh (recency-based envelope selection,
+# the this-session bound on which envelope may be reported, and its three-tier
+# interpreter resolution), scripts/hooks/reseed-context.sh (three-tier
+# interpreter resolution -- this script's FIRST CI coverage), and
 # scripts/close-tasks.sh (trailer-only `_manual_`/`_followup_` matching, the
 # phase-aware `reconcile` refinement, `board`'s `manual` field, and `rows`'
-# first-run row lookup -- this
-# script's FIRST CI coverage).
+# first-run row lookup).
 #
 # Builds fresh scratch project dirs under /tmp, feeds each hook sample stdin JSON
 # against a `.claude/project.json`, and asserts on stdout with `grep -q`. Mirrors
@@ -28,6 +31,7 @@ GATE_HOOK="$PLUGIN_ROOT/scripts/hooks/stop-gate.sh"
 PROTECT_TESTS="$PLUGIN_ROOT/scripts/protect-tests.sh"
 NEXT_ACTION_HOOK="$PLUGIN_ROOT/scripts/hooks/next-action.sh"
 COST_HOOK="$PLUGIN_ROOT/scripts/hooks/run-cost-report.sh"
+RESEED_HOOK="$PLUGIN_ROOT/scripts/hooks/reseed-context.sh"
 CLOSE_TASKS="$PLUGIN_ROOT/scripts/close-tasks.sh"
 ROOT_TMP="/tmp/test-hooks-$$"
 
@@ -59,6 +63,70 @@ assert_rc() {
   [ "$1" -eq "$2" ] || fail "expected exit $2, got $1"
   ok
 }
+
+# Blinds `command -v <name>` for a fixed set of names to whatever runs "$@",
+# WITHOUT touching the real jq/python3/etc. on this host's PATH -- used to
+# prove a hook's fallback resolution (BRAINSTORM_PYTHON or a
+# .claude/project.json `python` key) actually engages instead of a real match
+# on this machine masking a broken probe. Defining `command` as a shell
+# function only takes effect for the DURATION of "$@" (it delegates to the
+# real builtin via `builtin command` for every other name), and every call
+# site below invokes this inside a `$(...)` command substitution, which bash
+# always runs in a subshell -- so the shadow function never escapes to affect
+# any later test in this file, with no explicit unset required.
+#
+# NOTE: this only fools code that EXPLICITLY calls `command -v NAME` before
+# acting. stop-gate.sh's PRE-FIX timeout/gtimeout resolution has no such
+# check -- it invokes `timeout ...` directly -- so blinding `command -v
+# timeout` here does nothing to it (the real /usr/bin/timeout is still
+# reachable via ordinary PATH lookup); confirmed by hand while writing the
+# step-10 tests below. Proving THAT bug needs build_restricted_path instead.
+hide_from_command_v() {
+  local hidden="$1"; shift
+  # shellcheck disable=SC2317  # invoked indirectly via `command -v` lookups below
+  command() {
+    local _h
+    if [ "${1:-}" = "-v" ]; then
+      for _h in $HIDE_FROM_COMMAND_V; do
+        [ "${2:-}" = "$_h" ] && return 1
+      done
+    fi
+    builtin command "$@"
+  }
+  export -f command
+  HIDE_FROM_COMMAND_V="$hidden" "$@"
+}
+
+# Builds a scratch bin dir wired up as a real, restricted PATH: a tiny wrapper
+# script per essential tool (bash/sh/perl/jq/python*/coreutils basics),
+# resolved from THIS host's actual PATH, EXCLUDING every name in $1. Unlike
+# hide_from_command_v, this changes what a bare `foo ...` invocation actually
+# finds -- required to prove stop-gate.sh's PRE-FIX behavior (which shells
+# out to `timeout` with no existence check) and its POST-FIX ladder both.
+#
+# Each entry is a wrapper SCRIPT that `exec`s the real tool's resolved
+# absolute path, not a symlink -- a symlinked native .exe (perl.exe on this
+# Windows/MSYS host) fails to load its shared libraries when run from outside
+# its real install directory ("error while loading shared libraries"), since
+# the OS's DLL search follows the invoked path's directory. A wrapper script
+# instead execs the ORIGINAL absolute path, so the OS loads the real .exe
+# from its real directory and DLL resolution is unaffected.
+build_restricted_path() {
+  local exclude="$1" bindir="$2"
+  rm -rf "$bindir"; mkdir -p "$bindir"
+  local essential="bash sh perl jq python3 python py cat grep sed tail wc rm mkdir mv cp chmod dirname basename tr head ls"
+  local name resolved skip ex
+  for name in $essential; do
+    resolved="$(command -v "$name" 2>/dev/null || true)"
+    [ -n "$resolved" ] || continue
+    skip=0
+    for ex in $exclude; do [ "$name" = "$ex" ] && skip=1; done
+    [ "$skip" -eq 1 ] && continue
+    printf '#!/bin/sh\nexec "%s" "$@"\n' "$resolved" > "$bindir/$name"
+    chmod +x "$bindir/$name"
+  done
+}
+BASH_ABS="$(command -v bash)"
 
 # ── enforce-model-cap.sh: the eleven-payload matrix ─────────────────────────
 # Each case gets its own scratch project dir so state never leaks between cases.
@@ -322,6 +390,36 @@ out="$(run_gate "$d" '{}')"
 assert_match "$out" '"decision": "block"'
 assert_match "$out" 'stop-gate: tests red'
 
+CASE="gate: timeout AND gtimeout both unresolvable -- falls back to perl and still runs+blocks (stock-macOS shape)"
+d="$(gate_dir 13)"
+gate_envelope_in_progress "$d"
+cat > "$d/.claude/project.json" <<'EOF'
+{"pipeline": {"stop_gate": "tests"}, "test": {"unit": "echo boom && exit 1"}}
+EOF
+# A REAL restricted PATH (see build_restricted_path) -- this is the exact
+# stock-macOS shape: no coreutils `timeout(1)` at all, but perl ships by
+# default. Before the fix, this hook shelled out to `timeout` unconditionally
+# with no existence check; bash's own "timeout: command not found" is exit
+# 127, which this hook mapped to "test.unit command not found" and stood
+# down WITHOUT ever running the suite.
+build_restricted_path "timeout gtimeout" "$ROOT_TMP/rp-13"
+out="$(PATH="$ROOT_TMP/rp-13" CLAUDE_PROJECT_DIR="$d" "$BASH_ABS" "$GATE_HOOK" <<<'{}')"
+assert_match "$out" '"decision": "block"'
+assert_match "$out" 'stop-gate: tests red'
+assert_no_match "$out" 'command not found'
+
+CASE="gate: no timeout/gtimeout/perl at all -- runs with NO limit rather than standing down, and says so"
+d="$(gate_dir 14)"
+gate_envelope_in_progress "$d"
+cat > "$d/.claude/project.json" <<'EOF'
+{"pipeline": {"stop_gate": "tests"}, "test": {"unit": "echo boom && exit 1"}}
+EOF
+build_restricted_path "timeout gtimeout perl" "$ROOT_TMP/rp-14"
+out="$(PATH="$ROOT_TMP/rp-14" CLAUDE_PROJECT_DIR="$d" "$BASH_ABS" "$GATE_HOOK" <<<'{}')"
+assert_match "$out" '"decision": "block"'
+assert_match "$out" 'NO time limit'
+assert_no_match "$out" 'command not found'
+
 # ── scripts/protect-tests.sh: arm / verify / disarm -- a CLI, not a wired
 #    hook (see its own header), included here per the widened scope above ──
 
@@ -426,8 +524,8 @@ printf 'def test_w():\n    assert False\n' > "$d/tests/test_w.py"
 run_pt "$d" arm tests/test_w.py --slug does-not-exist
 assert_rc "$PT_RC" 0
 
-# ── next-action.sh: interpreter probe (step 6) and the .next-action seam's
-#    dedup / staleness / depth-warning contract (step 10c) ─────────────────
+# ── next-action.sh: interpreter probe and the .next-action seam's
+#    dedup / staleness / depth-warning contract ────────────────────────────
 
 na_dir() {
   local d="$ROOT_TMP/na-$1"
@@ -573,7 +671,7 @@ assert_match "$out" 'Continue with: /gotcha flat-alias test'
 assert_no_match "$out" 'Program Files'
 ok
 
-# ── run-cost-report.sh: newest-terminal-envelope selection (step 7) ────────
+# ── run-cost-report.sh: newest-terminal-envelope selection ─────────────────
 
 cost_dir() {
   local d="$ROOT_TMP/cost-$1"
@@ -585,10 +683,14 @@ EOF
 {"status": "complete", "updated_at": "2026-09-01T00:00:00Z"}
 EOF
   # Synthetic JSONL transcript -- run-cost-report.sh exits early unless
-  # `.transcript_path` names an existing file.
+  # `.transcript_path` names an existing file. The first line's `timestamp`
+  # fixes this session's start well before EITHER envelope's `updated_at`,
+  # so the this-session bound never excludes either candidate here
+  # -- this fixture is about recency tie-breaking, not session bounding
+  # (that has its own dedicated case below).
   cat > "$d/transcript.jsonl" <<'EOF'
-{"message": {"usage": {"input_tokens": 100, "cache_read_input_tokens": 10, "cache_creation_input_tokens": 5, "output_tokens": 50}}}
-{"message": {"usage": {"input_tokens": 120, "cache_read_input_tokens": 20, "cache_creation_input_tokens": 0, "output_tokens": 60}}}
+{"timestamp": "2026-08-01T00:00:00Z", "message": {"usage": {"input_tokens": 100, "cache_read_input_tokens": 10, "cache_creation_input_tokens": 5, "output_tokens": 50}}}
+{"timestamp": "2026-08-01T00:05:00Z", "message": {"usage": {"input_tokens": 120, "cache_read_input_tokens": 20, "cache_creation_input_tokens": 0, "output_tokens": 60}}}
 EOF
   printf '%s' "$d"
 }
@@ -617,8 +719,12 @@ mkdir -p "$d/.claude/pipeline/run-x"
 cat > "$d/.claude/pipeline/run-x/run.json" <<'EOF'
 {"status": "paused", "updated_at": "2026-09-18T12:00:00Z"}
 EOF
+# Session start (from the transcript's first timestamp) is well before both
+# this envelope's initial `updated_at` and its later completed `updated_at` --
+# this fixture is about the paused->complete re-report contract, not session
+# bounding.
 cat > "$d/transcript.jsonl" <<'EOF'
-{"message": {"usage": {"input_tokens": 100, "cache_read_input_tokens": 10, "cache_creation_input_tokens": 5, "output_tokens": 50}}}
+{"timestamp": "2026-09-01T00:00:00Z", "message": {"usage": {"input_tokens": 100, "cache_read_input_tokens": 10, "cache_creation_input_tokens": 5, "output_tokens": 50}}}
 EOF
 out="$(run_cost "$d" "{\"transcript_path\": \"$d/transcript.jsonl\"}")"
 assert_match "$out" '"systemMessage"'
@@ -644,9 +750,132 @@ out4="$(run_cost "$d" "{\"transcript_path\": \"$d/transcript.jsonl\"}")"
 assert_empty "$out4"
 ok
 
+CASE="cost-report: a lone envelope that settled BEFORE this session started is never reported, only marked"
+# A single stale envelope, with nothing newer competing for selection -- this
+# is the shape of the real bug: the OLD code picked "whichever unreported
+# settled envelope has the highest updated_at" with NO floor, so a repo whose
+# only candidate predates this session got THIS session's transcript stats
+# written into a run it took no part in, on every Stop. A two-envelope
+# fixture (old + fresh) can't discriminate pre-fix from post-fix here: since
+# a later moment always sorts as a larger `updated_at`, "the fresh one has
+# the higher updated_at" and "the fresh one is at/after session start" are
+# the same fact, so the old (buggy) recency-only selection would have picked
+# the fresh envelope anyway, coincidentally. Only a LONE stale candidate
+# exposes the missing bound.
+d="$ROOT_TMP/cost-03"
+mkdir -p "$d/.claude/pipeline/old-run"
+# Session start (from the transcript's first timestamp) is 2026-09-20;
+# old-run settled a full 19 days before that -- it predates this session.
+cat > "$d/.claude/pipeline/old-run/run.json" <<'EOF'
+{"status": "complete", "updated_at": "2026-09-01T00:00:00Z"}
+EOF
+cat > "$d/transcript.jsonl" <<'EOF'
+{"timestamp": "2026-09-20T00:00:00Z", "message": {"usage": {"input_tokens": 100, "cache_read_input_tokens": 10, "cache_creation_input_tokens": 5, "output_tokens": 50}}}
+EOF
+old_before="$(cat "$d/.claude/pipeline/old-run/run.json")"
+out="$(run_cost "$d" "{\"transcript_path\": \"$d/transcript.jsonl\"}")"
+assert_empty "$out"
+old_after="$(cat "$d/.claude/pipeline/old-run/run.json")"
+[ "$old_before" = "$old_after" ] || fail "old-run's run.json (pre-session envelope) must be byte-for-byte unchanged, got: $old_after"
+grep -q '"cost"' "$d/.claude/pipeline/old-run/run.json" && fail "old-run must never get data.cost written -- it predates this session"
+[ -f "$d/.claude/pipeline/old-run/.cost-reported" ] || fail "old-run should still be marked (silently) so it is not reconsidered every Stop"
+marker="$(cat "$d/.claude/pipeline/old-run/.cost-reported" 2>/dev/null | tr -d '\r')"
+[ "$marker" = "complete" ] || fail "expected old-run's silent marker to record its status 'complete', got: $marker"
+ok
+
+CASE="cost-report: a fresh envelope (updated_at at/after session start) is still reported normally"
+d="$ROOT_TMP/cost-04"
+mkdir -p "$d/.claude/pipeline/fresh-run"
+cat > "$d/.claude/pipeline/fresh-run/run.json" <<'EOF'
+{"status": "complete", "updated_at": "2026-09-21T00:00:00Z"}
+EOF
+cat > "$d/transcript.jsonl" <<'EOF'
+{"timestamp": "2026-09-20T00:00:00Z", "message": {"usage": {"input_tokens": 100, "cache_read_input_tokens": 10, "cache_creation_input_tokens": 5, "output_tokens": 50}}}
+EOF
+out="$(run_cost "$d" "{\"transcript_path\": \"$d/transcript.jsonl\"}")"
+assert_match "$out" '"systemMessage"'
+assert_match "$out" 'fresh-run'
+grep -q '"cost"' "$d/.claude/pipeline/fresh-run/run.json" || fail "fresh-run (this session's own work) should have data.cost written"
+[ -f "$d/.claude/pipeline/fresh-run/.cost-reported" ] || fail "expected .cost-reported marker in fresh-run after a real report"
+ok
+
+# ── interpreter resolution: run-cost-report.sh and reseed-context.sh
+#    must resolve $BRAINSTORM_PYTHON and .claude/project.json's `python` key
+#    the same way scripts/py.sh / next-action.sh do, not just probe
+#    python3/python/py -- proven here with jq AND all three probed names
+#    blinded via hide_from_command_v, so a real match on THIS host can't mask
+#    a broken fallback. ─────────────────────────────────────────────────────
+
+REAL_PY_NAME="$(bash "$PLUGIN_ROOT/scripts/py.sh" --print 2>/dev/null | tr -d '\r')"
+REAL_PY_ABS="$(command -v "$REAL_PY_NAME" 2>/dev/null || true)"
+
+cost_dir_single() {
+  local d="$ROOT_TMP/cost-hidden-$1"
+  mkdir -p "$d/.claude/pipeline/run-only"
+  cat > "$d/.claude/pipeline/run-only/run.json" <<'EOF'
+{"status": "complete", "updated_at": "2026-01-01T00:00:01Z"}
+EOF
+  cat > "$d/transcript.jsonl" <<'EOF'
+{"timestamp": "2026-01-01T00:00:00Z", "message": {"usage": {"input_tokens": 100, "cache_read_input_tokens": 10, "cache_creation_input_tokens": 5, "output_tokens": 50}}}
+EOF
+  printf '%s' "$d"
+}
+
+if [ -z "$REAL_PY_ABS" ]; then
+  echo "[skip] cost-report/reseed interpreter-resolution cases: could not resolve an absolute python path on this host"
+else
+  CASE="cost-report: BRAINSTORM_PYTHON resolves the interpreter when jq/python3/python/py all fail to resolve"
+  d="$(cost_dir_single 01)"
+  out="$(hide_from_command_v "jq python3 python py" env BRAINSTORM_PYTHON="$REAL_PY_ABS" CLAUDE_PROJECT_DIR="$d" bash "$COST_HOOK" <<<"{\"transcript_path\": \"$d/transcript.jsonl\"}")"
+  assert_match "$out" '"systemMessage"'
+  grep -q '"cost"' "$d/.claude/pipeline/run-only/run.json" || fail "expected data.cost written via the BRAINSTORM_PYTHON fallback"
+
+  CASE="cost-report: .claude/project.json's python key resolves the interpreter when jq/python3/python/py all fail to resolve"
+  d="$(cost_dir_single 02)"
+  cat > "$d/.claude/project.json" <<EOF
+{"python": "$REAL_PY_ABS"}
+EOF
+  out="$(hide_from_command_v "jq python3 python py" env -u BRAINSTORM_PYTHON CLAUDE_PROJECT_DIR="$d" bash "$COST_HOOK" <<<"{\"transcript_path\": \"$d/transcript.jsonl\"}")"
+  assert_match "$out" '"systemMessage"'
+  grep -q '"cost"' "$d/.claude/pipeline/run-only/run.json" || fail "expected data.cost written via the project.json python-key fallback"
+fi
+
+# ── reseed-context.sh: interpreter resolution -- this script's
+#    FIRST CI coverage. The final reseed message is emitted ONLY through $PY
+#    (no jq path exists for it), so this also proves the hook doesn't go
+#    silent -- exactly the failure the fix addresses. ───────────────────────
+
+reseed_dir() {
+  local d="$ROOT_TMP/reseed-$1"
+  mkdir -p "$d/.claude/pipeline/demo-slug"
+  cat > "$d/.claude/pipeline/demo-slug/run.json" <<'EOF'
+{"status": "in_progress", "feature_slug": "demo-slug", "stage": "implement"}
+EOF
+  printf '%s' "$d"
+}
+
+if [ -z "$REAL_PY_ABS" ]; then
+  echo "[skip] reseed-context interpreter-resolution cases: could not resolve an absolute python path on this host"
+else
+  CASE="reseed-context: BRAINSTORM_PYTHON resolves the interpreter when jq/python3/python/py all fail to resolve"
+  d="$(reseed_dir 01)"
+  out="$(hide_from_command_v "jq python3 python py" env BRAINSTORM_PYTHON="$REAL_PY_ABS" CLAUDE_PROJECT_DIR="$d" bash "$RESEED_HOOK" <<<'{"source":"compact","hook_event_name":"SessionStart"}')"
+  assert_match "$out" '"additionalContext"'
+  assert_match "$out" 'demo-slug'
+
+  CASE="reseed-context: .claude/project.json's python key resolves the interpreter when jq/python3/python/py all fail to resolve"
+  d="$(reseed_dir 02)"
+  cat > "$d/.claude/project.json" <<EOF
+{"python": "$REAL_PY_ABS"}
+EOF
+  out="$(hide_from_command_v "jq python3 python py" env -u BRAINSTORM_PYTHON CLAUDE_PROJECT_DIR="$d" bash "$RESEED_HOOK" <<<'{"source":"compact","hook_event_name":"SessionStart"}')"
+  assert_match "$out" '"additionalContext"'
+  assert_match "$out" 'demo-slug'
+fi
+
 # ── close-tasks.sh: trailer-only tag matching, `_manual_` exemptions, the
-#    phase-aware reconcile refinement, and board's `manual` field (dogfood-
-#    followups Phase 2 step 8 -- this script's FIRST CI coverage) ──────────
+#    phase-aware reconcile refinement, and board's `manual` field (this
+#    script's FIRST CI coverage) ────────────────────────────────────────────
 
 ct_dir() {
   local d="$ROOT_TMP/ct-$1"
@@ -796,6 +1025,46 @@ printf '## Active / Pending\n' > "$d/TASKS.md"
 run_ct "$d" reconcile --file TASKS.md --json
 assert_rc "$CT_RC" 0
 assert_match "$CT_OUT" '"drift_count"'
+
+CASE="close-tasks rows: raw plan-file basename (prefixed) and Stage 0's stripped slug both match rows tagged with the stripped slug"
+d="$(ct_dir 07)"
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [ ] (P1) Row for add-orders \xe2\x80\x94 plans/brainstorm-add-orders.md _plan: add-orders_\n' >> "$d/TASKS.md"
+printf -- '- [ ] (P1) Row for a different plan, must stay excluded \xe2\x80\x94 plans/other.md _plan: other_\n' >> "$d/TASKS.md"
+run_ct "$d" rows --plan add-orders --plan-file plans/brainstorm-add-orders.md
+assert_rc "$CT_RC" 0
+assert_match "$CT_OUT" 'Row for add-orders'
+assert_no_match "$CT_OUT" 'Row for a different plan'
+run_ct "$d" rows --plan brainstorm-add-orders --plan-file plans/brainstorm-add-orders.md
+assert_rc "$CT_RC" 0
+assert_match "$CT_OUT" 'Row for add-orders'
+assert_no_match "$CT_OUT" 'Row for a different plan'
+
+CASE="close-tasks close --scope plan: raw plan-file basename (unstripped --key) closes the same [~] row the stripped slug would"
+d="$(ct_dir 08)"
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [~] (P1) In-progress row for add-orders \xe2\x80\x94 plans/brainstorm-add-orders.md _plan: add-orders_\n' >> "$d/TASKS.md"
+run_ct "$d" close --file TASKS.md --scope plan --key brainstorm-add-orders --plan-file plans/brainstorm-add-orders.md --dry-run
+assert_rc "$CT_RC" 0
+assert_match "$CT_OUT" 'In-progress row for add-orders'
+assert_no_match "$CT_OUT" '"closed": \[\]'
+
+CASE="close-tasks reconcile --apply: terminal envelope closes only the [~] row, leaves the [ ] row reported but untouched"
+d="$(ct_dir 09)"
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [~] (P1) In-progress row taken this run \xe2\x80\x94 plans/d.md _plan: d_\n' >> "$d/TASKS.md"
+printf -- '- [ ] (P1) Parked row the scope gate never started \xe2\x80\x94 plans/d.md _plan: d_\n' >> "$d/TASKS.md"
+mkdir -p "$d/.claude/pipeline/plan-d"
+cat > "$d/.claude/pipeline/plan-d/run.json" <<'EOF'
+{"schema_version": 1, "feature_slug": "plan-d", "plan_file": "plans/d.md", "status": "complete"}
+EOF
+run_ct "$d" reconcile --file TASKS.md --apply
+assert_rc "$CT_RC" 0
+assert_match "$CT_OUT" 'Parked row the scope gate never started'
+assert_match "$CT_OUT" '"closed 1 row(s) belonging to terminal envelope(s)"'
+AFTER="$(cat "$d/TASKS.md")"
+assert_match "$AFTER" '\[x\] (P1) In-progress row taken this run'
+assert_match "$AFTER" '\[ \] (P1) Parked row the scope gate never started'
 
 echo
 echo "test-hooks.sh: all cases ok"

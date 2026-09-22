@@ -33,8 +33,8 @@
 #     each to ## Done with a `_completed_at:` stamp. A row tagged with a
 #     DIFFERENT `_plan:` value that still looks like it belongs to this plan
 #     (its text contains the plan file's basename) is reported in `unmatched`
-#     instead of guessed-closed -- this is the writer/reader key-mismatch case
-#     (docs/plans/tasks-md-closeout.md step 2). Legacy rows with no `_plan:`
+#     instead of guessed-closed -- this is the writer/reader key-mismatch case.
+#     Legacy rows with no `_plan:`
 #     tag at all fall back to a path-substring match against --plan-file.
 #     NEVER touches `[ ]` rows -- re-entry rows Stage 6 itself appends land as
 #     `[ ]`, so a later `--resume` reaching Stage 6 again can never close its
@@ -70,10 +70,16 @@
 #     should catch.
 #     `--apply` requires one external confirmation (the caller's job, mirroring
 #     `/sdlc-status --prune-stale`) and then: moves a bidirectionally-drifted
-#     row to the section matching its own checkbox state, and closes rows
-#     belonging to a terminal envelope that still show them open. It never
-#     touches an `in_progress` envelope with no matching row -- there is no
-#     safe automatic fix for "orchestrator forgot to write the row."
+#     row to the section matching its own checkbox state, and closes ONLY the
+#     `[~]` rows belonging to a terminal envelope that still show them open --
+#     a `[ ]` row referencing that same envelope (never taken by this run's
+#     scope gate -- a phase-less plan cut by step count parks later rows `[ ]`
+#     with no `_phase:` tag, so the `taken_phases` exemption above can't apply
+#     to them) is still REPORTED in `drift` so a human sees it, but is never
+#     auto-closed -- the same restriction `close --scope plan` already applies
+#     ("only rows THIS run's Stage 0 marked in-progress"). It never touches an
+#     `in_progress` envelope with no matching row -- there is no safe automatic
+#     fix for "orchestrator forgot to write the row."
 #
 #   board --file TASKS.md [--repo-name NAME] [--pipeline-dir .claude/pipeline]
 #     Read-only, always -- no flags exist to make it write. Joins TASKS.md rows
@@ -220,6 +226,21 @@ BARE_TAG_STRIP_RE = re.compile(r'\s*(?:\xb7\s*)?_(?:followup|manual)_')
 # check to confirm a row's `_phase: N_` tag actually names a phase its plan file
 # declares.
 PLAN_HEADING_RE = re.compile(r'^####\s+Phase\s+(\d+)\b')
+# The well-known plan-name prefixes a caller's plan-file basename may still
+# carry (docs/CONVENTIONS.md Slug derivation step 2) even though `/brainstorm`
+# et al. tag rows with the ALREADY-STRIPPED slug -- a caller that passes the
+# raw basename (`brainstorm-add-orders`) instead of the Stage 0-derived slug
+# (`add-orders`) must still match the `_plan: add-orders_` tag that was
+# actually written. Stripped from BOTH sides of the comparison in
+# `plan_row_key_match` so either spelling of the key matches the same rows.
+PLAN_PREFIX_RE = re.compile(r'^(?:brainstorm-|team-brainstorm-|pbi-\d+-|task-\d+-)')
+
+
+def normalize_plan_key(key):
+    """Strip one leading well-known prefix (PLAN_PREFIX_RE) from a plan
+    key/slug, so `brainstorm-add-orders` and `add-orders` normalize to the
+    same value for comparison."""
+    return PLAN_PREFIX_RE.sub('', key, count=1) if key else key
 
 
 def trailer(line):
@@ -326,12 +347,19 @@ def plan_row_key_match(line, key, plan_base, plan_file):
     outright (matching key -> True, any OTHER key -> False, never falls
     through to the path guess). Only a legacy row with no `_plan:` tag at all
     falls back to a path-substring match against --plan-file/its basename.
+    Both the tag's value and `key` are run through `normalize_plan_key` before
+    comparing, so a caller passing the raw plan-file basename
+    (`brainstorm-add-orders`) matches the same rows as one passing the
+    Stage 0-derived, already-stripped slug (`add-orders`) -- one shared
+    matcher, so `rows` and `close --scope plan` can never disagree on this.
     Returns (is_match, has_different_tag) so callers that care about
     surfacing a near-miss (`close --scope plan`'s `unmatched`) can, and
     callers that don't (`rows`) can ignore the second value."""
     tagm = PLAN_TAG_RE.search(line)
     if tagm:
-        return (tagm.group(1) == key), (tagm.group(1) != key)
+        tag_key = normalize_plan_key(tagm.group(1))
+        norm_key = normalize_plan_key(key)
+        return (tag_key == norm_key), (tag_key != norm_key)
     legacy_hit = bool((plan_file and plan_file in line) or (plan_base and plan_base in line))
     return legacy_hit, False
 
@@ -808,8 +836,8 @@ def do_reconcile(args):
             # today's un-refined behavior above), a row's own `_phase: N_` tag
             # that names a phase NOT in that list is a legitimately-parked later
             # phase, not drift -- this is what stops a finished plan's own
-            # parked-on-purpose rows from being reported every time (the
-            # `flow-gap-fixes` Phase 5 rows this plan's Direction cites).
+            # parked-on-purpose rows (deliberately left for a later phase the
+            # run never took) from being reported every time.
             # A row with no `_phase:` tag at all can't be judged this way, so it
             # keeps being reported, same as before this refinement existed.
             data = run.get('data') or {}
@@ -883,7 +911,15 @@ def do_reconcile(args):
             new_lines = remaining
             applied.append(f"moved {len(moved_out)} row(s) out of Done, {len(moved_in)} row(s) into Done (checkbox-matched section)")
 
-        # Close rows for terminal envelopes that still show them open.
+        # Close rows for terminal envelopes that still show them open -- `[~]`
+        # ONLY. A `[ ]` row referencing the same terminal envelope was never
+        # taken by this run's scope gate (a phase-less plan cut by step count
+        # parks later rows `[ ]` with no `_phase:` tag, so the `taken_phases`
+        # exemption above can't apply), so --apply must not be the back door
+        # that closes a row nobody started -- `close --scope plan` already
+        # enforces the identical rule for a live run ("only rows THIS run's
+        # Stage 0 marked in-progress"). The `[ ]` row stays in `drift` above so
+        # a human still sees it; it is simply never auto-closed here.
         terminal_open = [d for d in drift if d["type"] == "terminal_envelope_open_rows"]
         if terminal_open:
             close_idx = []
@@ -892,9 +928,11 @@ def do_reconcile(args):
                 for row_text in d["rows"]:
                     for i, line in enumerate(new_lines):
                         if line.strip() == row_text and ROW_RE.match(line):
-                            sec = section_for(sections3, i)
-                            if sec and sec.lower() != 'done':
-                                close_idx.append(i)
+                            row_m = ROW_RE.match(line)
+                            if row_m.group(2) == '~':
+                                sec = section_for(sections3, i)
+                                if sec and sec.lower() != 'done':
+                                    close_idx.append(i)
                             break
             if close_idx:
                 close_idx_set = set(close_idx)

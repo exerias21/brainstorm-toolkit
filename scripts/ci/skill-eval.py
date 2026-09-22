@@ -9,8 +9,6 @@ headlessly via `claude -p`, and grades the resulting tree with deterministic
 assertions -- no LLM graders. Every case records `total_cost_usd` from the
 CLI's JSON result, so the same run doubles as a cost-regression test.
 
-Design doc: docs/plans/skill-evals-2-fixture-harness.md.
-
 Usage:
   python scripts/ci/skill-eval.py --case sdlc-status-readout
   python scripts/ci/skill-eval.py --all
@@ -979,12 +977,23 @@ def run_case(name: str, args: argparse.Namespace, results_root: Path) -> dict:
     cost_regression = None
     baseline_cost = baseline.get(name, {}).get("total_cost_usd") if isinstance(baseline.get(name), dict) else None
     actual_cost = cost_total if cost_seen else None
-    if baseline_cost is not None and actual_cost is not None and baseline_cost > 0:
-        if actual_cost > 2 * baseline_cost:
-            cost_regression = (
-                f"{name}: cost {actual_cost:.4f} exceeds 2x baseline {baseline_cost:.4f}"
-            )
-            overall_pass = False
+    # No baseline entry means the 2x cost-regression guard below cannot run at all --
+    # that must be visible, not a silent skip, or a case can go unbounded on cost
+    # indefinitely with every other check still green. Never invent a number here:
+    # a baseline only means something when it comes from a real, paid run.
+    baseline_status = "ok"
+    if baseline_cost is None:
+        baseline_status = "no baseline - cost guard not applied"
+        print(
+            f"[{name}] WARNING: {baseline_status}. Record one with a real run: "
+            f"python scripts/ci/skill-eval.py --case {name} --update-baseline "
+            "(only after every assertion for this case passes)."
+        )
+    elif actual_cost is not None and baseline_cost > 0 and actual_cost > 2 * baseline_cost:
+        cost_regression = (
+            f"{name}: cost {actual_cost:.4f} exceeds 2x baseline {baseline_cost:.4f}"
+        )
+        overall_pass = False
 
     result = {
         "case": name,
@@ -998,6 +1007,7 @@ def run_case(name: str, args: argparse.Namespace, results_root: Path) -> dict:
         "num_turns": turns_total if turns_seen else None,
         "duration_ms": duration_total if duration_seen else None,
         "cost_regression": cost_regression,
+        "baseline_status": baseline_status,
         "findings": findings,
     }
     safe_write_text(
@@ -1093,12 +1103,16 @@ def update_baseline(results: list[dict], run_id: str) -> None:
 def write_summary(results: list[dict], results_root: Path) -> None:
     total = len(results)
     passed = sum(1 for r in results if r["overall_pass"])
+    no_baseline_cases = [
+        r["case"] for r in results if r.get("baseline_status", "ok") != "ok"
+    ]
     summary = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "total": total,
         "passed": passed,
         "failed": total - passed,
         "overall": "PASS" if passed == total and total > 0 else "FAIL" if total else "SKIP",
+        "no_baseline_cases": no_baseline_cases,
         "cases": results,
     }
     safe_write_text(
@@ -1108,6 +1122,12 @@ def write_summary(results: list[dict], results_root: Path) -> None:
     lines = ["# Skill evals summary", ""]
     lines.append(f"timestamp: {summary['timestamp']}")
     lines.append(f"overall: {summary['overall']} ({passed}/{total} cases)")
+    if no_baseline_cases:
+        lines.append(
+            f"no baseline (cost guard not applied): {', '.join(no_baseline_cases)} -- "
+            "record with `python scripts/ci/skill-eval.py --case NAME --update-baseline` "
+            "after a real, paid run in which every assertion passes"
+        )
     lines.append("")
     lines.append("| case | pass | cost | turns | seconds |")
     lines.append("|---|---|---|---|---|")
@@ -1123,6 +1143,8 @@ def write_summary(results: list[dict], results_root: Path) -> None:
             lines.append(f"|   - {a['type']} ({mark}) | | | | {a['message'][:200]} |")
         if r["cost_regression"]:
             lines.append(f"|   - cost regression | | | | {r['cost_regression']} |")
+        if r.get("baseline_status", "ok") != "ok":
+            lines.append(f"|   - baseline | | | | {r['baseline_status']} |")
     safe_write_text(results_root / "summary.md", "\n".join(lines) + "\n", roots=[RESULTS_DIR])
 
 

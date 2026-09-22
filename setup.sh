@@ -422,10 +422,14 @@ hook_merge_py() {
 # Install the Stop hook into the consumer's Claude Code settings file so the
 # next-action sentinel is surfaced after Claude finishes a turn. Idempotent:
 # checks for the exact command string before appending.
-# $1 = hook script basename (default next-action.sh), $2 = label for the log line.
+# $1 = hook script basename (default next-action.sh), $2 = label for the log line,
+# $3 = optional timeout in seconds (matches hooks/hooks.json's per-hook timeout;
+# omit to leave the host default in place, as next-action.sh and
+# run-cost-report.sh do -- they are fast by design and don't need one).
 install_stop_hook_claude() {
   local script="${1:-next-action.sh}"
   local label="${2:-next-action}"
+  local timeout="${3:-}"
   local settings="$TARGET/.claude/settings.json"
   local cmd
   if [[ "$COPY_SCRIPTS" -eq 1 ]]; then
@@ -436,7 +440,11 @@ install_stop_hook_claude() {
     cmd="bash $hook_path_escaped"
   fi
   if ! command -v jq >/dev/null 2>&1; then
-    hook_merge_py "$settings" "Stop" "$cmd" "Claude Stop hook for $label" || return 1
+    if [[ -n "$timeout" ]]; then
+      hook_merge_py "$settings" "Stop" "$cmd" "Claude Stop hook for $label" --timeout "$timeout" || return 1
+    else
+      hook_merge_py "$settings" "Stop" "$cmd" "Claude Stop hook for $label" || return 1
+    fi
     return
   fi
   mkdir -p "$(dirname "$settings")"
@@ -450,10 +458,13 @@ install_stop_hook_claude() {
     return
   fi
   local tmp; tmp="$(mktemp)"
-  if jq --arg cmd "$cmd" '
+  if jq --arg cmd "$cmd" --argjson timeout "${timeout:-null}" '
     .hooks //= {} |
     .hooks.Stop //= [] |
-    .hooks.Stop += [{ "hooks": [{ "type": "command", "command": $cmd }] }]
+    .hooks.Stop += [{ "hooks": [(
+      { "type": "command", "command": $cmd } +
+      (if $timeout == null then {} else { "timeout": $timeout } end)
+    )] }]
   ' "$settings" > "$tmp" && mv "$tmp" "$settings"; then
     echo "  wrote: $settings (added Stop hook for $label)"
   else
@@ -630,7 +641,11 @@ install_stop_gate_codex() {
     cmd="bash $sg_path_escaped"
   fi
   if ! command -v jq >/dev/null 2>&1; then
-    hook_merge_py "$hook_file" "Stop" "$cmd" "Codex stop-gate Stop hook" --timeout 10 || return 1
+    # 310s, not the other Codex hooks' 10s: this hook runs the project's test.unit suite
+    # inline (stop-gate.sh's own internal default is up to 300s) before deciding whether to
+    # block, so a short timeout kills the test run and the gate fails OPEN. Must match the
+    # jq branch below and hooks/hooks.json's shipped plugin timeout.
+    hook_merge_py "$hook_file" "Stop" "$cmd" "Codex stop-gate Stop hook" --timeout 310 || return 1
     return
   fi
   if false; then
@@ -768,7 +783,12 @@ if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
     echo "[hooks] Claude SessionStart reseed hook"
     install_reseed_hook_claude
     install_stop_hook_claude run-cost-report.sh run-cost-report
-    install_stop_hook_claude stop-gate.sh stop-gate
+    # stop-gate.sh runs the project's test.unit suite inline (up to 300s by its
+    # own internal default/pipeline.stop_gate_timeout) before deciding whether
+    # to block -- an unset timeout here falls back to the host's default Stop
+    # hook timeout, which can be shorter, making the gate fail OPEN on a slow
+    # suite. 310s matches hooks/hooks.json's shipped plugin timeout.
+    install_stop_hook_claude stop-gate.sh stop-gate 310
     echo "[hooks] Claude PreToolUse model-cap hook"
     install_pretooluse_hook_claude
   fi

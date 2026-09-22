@@ -5,8 +5,7 @@
 # POSIX-style repo-relative path) for files where the phrase is a CORRECT
 # statement (an attribution sentence, a documented DO-NOT list, a negated
 # fact) rather than the dead claim this row exists to catch. Keep entries
-# editable here rather than in code, per the plan this file was seeded from
-# (docs/plans/skill-evals-1-contract-checks.md).
+# editable here rather than in code.
 #
 # Each allow-glob entry pins an EXPECTED OCCURRENCE COUNT for that phrase in
 # that file: `path/glob:N` means exactly N legitimate occurrences are known to

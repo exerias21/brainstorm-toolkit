@@ -51,9 +51,9 @@ order is the difference between "usually closes" and "closes."
      from session memory, because there is no session memory to read.
    - **Task id / range / ad-hoc-description / queue item** (no `_plan:` key applies, or —
      for a queue item — applying the plan key would sweep in its siblings):
-     write the resolved row id(s) from Stage 0's `run.json.data.tasks.resolved[]` (or the
-     queue item's own per-item envelope, `skills/sdlc/templates/queue-mode.md`) one per line
-     to a temp file and run
+     write the resolved row id(s) from `run.json.data.tasks.resolved[]` — written at Stage 0
+     for a task-id/range/ad-hoc run, or at envelope creation for a queue item
+     (`skills/sdlc/templates/queue-mode.md`) — one per line to a temp file and run
      `bash scripts/close-tasks.sh close --file TASKS.md --scope resolved --ids-file <file>`.
      This closes **exactly** those rows — a queued item's siblings sharing its `_plan:` key
      are never touched, because this scope never looks at the `_plan:` tag at all.
