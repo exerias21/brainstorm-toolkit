@@ -122,7 +122,9 @@ part — a two-line pure function needs one sentence:
 2. **How, when the mechanism is non-obvious.** Skip when the body is three
    obvious lines.
 3. **Why this way** — the load-bearing part. What was the alternative, and what
-   does this choice buy or cost?
+   does this choice buy or cost? Write the reason itself, in the docstring — never as a pointer
+   to a plan, ticket, or design file; those don't ship with the code and won't be there for the
+   next reader to follow.
 4. **What breaks if you change it.** Invariants, ordering constraints, the test
    that will fail.
 5. **Args/Returns/Raises** only where they add information the signature does not

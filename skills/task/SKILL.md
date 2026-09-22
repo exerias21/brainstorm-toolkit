@@ -91,7 +91,9 @@ Don't manufacture a hollow test, and don't punt the task to another skill.
 2. **Mark the TASKS.md row in-progress** (`[ ]` → `[~]`) and, on Claude, `TaskUpdate status:
    in_progress`.
 3. **Implement the change**, following existing patterns, until the test passes without
-   weakening it.
+   weakening it. COMMENTS: never reference the plan in code — no plan file paths, plan/phase/step
+   numbers, or TASKS.md rows in comments or docstrings. Write the reason itself; the plan does
+   not ship with the code and its numbering means nothing once it is gone.
 4. **Run the wider test suite** if one is configured (`/test-check` or the project's root test
    command).
 

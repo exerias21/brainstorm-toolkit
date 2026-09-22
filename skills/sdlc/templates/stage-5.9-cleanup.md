@@ -91,9 +91,11 @@ When `mode` is not `"off"` and at least one finding is `safe_to_apply`, dispatch
 the confirmed `safe_to_apply` findings and their `minimal_fix`, to make **only** those edits, no
 others. This is "the cleanup agent" that needs `Edit`, and it is the only point in this stage
 that writes to the working tree. It never touches a file outside the Stage 0 scope above. This
-agent never sees the orchestrator's template, so its prompt must quote this line verbatim:
+agent never sees the orchestrator's template, so its prompt must quote these two lines verbatim:
 
 > GIT: never run a git command that writes — no stash, commit, checkout, switch, reset, restore, rebase, merge, clean, or branch creation. The working tree holds the user's uncommitted work; git that only reads (status, diff, log, show) is fine. If you need a clean baseline, report it as a blocker instead.
+
+> COMMENTS: never reference the plan in code — no plan file paths, plan/phase/step numbers, or TASKS.md rows in comments or docstrings. Write the reason itself; the plan does not ship with the code and its numbering means nothing once it is gone.
 
 ## Re-validate — mandatory when anything was applied
 

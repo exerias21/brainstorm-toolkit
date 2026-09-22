@@ -39,5 +39,6 @@ GROUND IN THE LIVE CODE FIRST (before writing any code):
   and invisible to the plan check (it flags missing steps, not extra ones), so
   this instruction is the only thing preventing it.
 GIT: never run a git command that writes — no stash, commit, checkout, switch, reset, restore, rebase, merge, clean, or branch creation. The working tree holds the user's uncommitted work; git that only reads (status, diff, log, show) is fine. If you need a clean baseline, report it as a blocker instead.
+COMMENTS: never reference the plan in code — no plan file paths, plan/phase/step numbers, or TASKS.md rows in comments or docstrings. Write the reason itself; the plan does not ship with the code and its numbering means nothing once it is gone.
 - After implementation, run: git diff --stat to summarize changes.
 ```
