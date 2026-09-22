@@ -36,6 +36,9 @@ jobs:
           python scripts/ci/check_contracts.py
           python scripts/ci/check_contracts.py --self-test
 
+      - name: docstring-sync self-test
+        run: python skills/docstring-sync/scripts/docstring_check.py --self-test
+
       - name: Install Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code
 

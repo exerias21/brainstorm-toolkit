@@ -41,6 +41,7 @@ starts.
 | `/brainstorm-team` | host (Opus) | 6 × Sonnet teammates (4 parallel, 2 sequential) | 60k–150k | $0.20–$0.70 |
 | `/brainstorm` | host (Opus) | 4 × Sonnet wildcard lenses (parallel); `--vet` adds a review pass | 20k–60k | $0.04–$0.20 |
 | `/code-tour` | host model | none (AST script + docstring authoring) | 20k–60k | $0.10–$0.60 |
+| `/docstring-sync` | host model | none (Phase 1 has no fan-out) | 10k–40k | $0.05–$0.30 |
 | `/dead-code-review` | host (Opus) | up to 5 lenses (2 × Haiku, 2 × Sonnet, 1 × Opus-tier), only those the repo has | 60k–180k | $0.20–$0.75 |
 | `/sdlc` | host (Opus) | 3 × Haiku (sanity) + 1 × Sonnet (implement) + 1 × Haiku (test-runner) + 1 × Sonnet (plan check); review stage opt-in | 90k–280k | $0.85–$3.00 |
 
@@ -55,6 +56,12 @@ is turn count × context size (delegate, stay `quiet`, keep the plan small), not
 
 **Notes / caveats**:
 
+- **`/docstring-sync` Phase 1 cost is dominated by the host editing flagged files
+  inline, not by the scan.** The mechanical script (pointer, placeholder, param/
+  return checks) is a free, no-model pass; the tokens in the row above are the
+  host model reading the rewrite rules and rewriting only the symbols the script
+  flagged (typically 10–20% of scanned docstrings) — there is no sub-agent
+  fan-out until Phase 2 adds triage.
 - The "host model" / "orchestrator" is whichever model is running the
   Claude Code or Copilot session; the toolkit doesn't pin it. Costs
   above assume Opus for Plan-mode-bearing and fan-out-heavy skills

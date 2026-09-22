@@ -419,15 +419,19 @@ judgment beyond the edit itself.
 
 ### Open Questions
 
-- **Canonical `verify-claim` shape, and a batch form.** `jev-verify` asks three Nouls with a
-  code band; `docs/plans/jev-integration.md:274-282` designs a Choice (`supported` /
-  `overgeneralized` / `contradicted` / `not-addressed`) plus a `scope_widened` Noul, one object per
-  call. This skill is agnostic — it consumes `{verdict, band}` — but Phase 5 cannot start until the
-  owner picks one and the verb accepts an array.
-- **Default for an unrecoverable reason and for ticket refs.** Recommended: keep the bare
-  instruction minus the pointer and list it for the human; tickets are in scope only when
-  pointer-only (a durable tracker URL beside a written reason is not rot). The alternative —
-  deleting bare "Do not reintroduce" lines — loses a guard nobody can re-derive.
+**Decided by the owner (2026-09-22), so neither is open any more:**
+
+- **The three Nouls are canonical.** `verify-claim` asks `supported` / `overgeneralized` /
+  `contradicted` per claim, with the band computed in code — the shape `~/.claude/skills/jev-verify/`
+  already runs and the one this session used on real review findings. The Choice form sketched at
+  `docs/plans/jev-integration.md:274-282` is not adopted; if that plan ships its verb, it takes this
+  shape. Still to settle when Phase 5 starts: the verb must accept an array, since a run sends
+  hundreds of claims.
+- **An unrecoverable reason keeps the rule and loses the pointer**, and the line goes on the
+  unresolved list for a human. Tickets count only when the comment is nothing but the pointer.
+  **The owner's framing, which belongs in the skill's voice too: a plan reference never belonged in
+  a docstring to begin with.** The COMMENTS rule in every code-writing prompt is the prevention;
+  this skill is remediation for code written before it existed.
 - **Where shadow verdicts live.** `judge.py` appends to an envelope's `judge.jsonl`, and this skill
   has no envelope (creating one under `.claude/pipeline/` would read as a stalled run to
   `/sdlc-status`). Recommended: the run report is the record; revisit if calibration needs more.

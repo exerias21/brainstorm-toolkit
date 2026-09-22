@@ -50,6 +50,11 @@ If the repo already has good documentation in places, say so and propose filling
 gaps rather than rewriting. Replacing an author's accurate explanation with your
 own paraphrase destroys information and reads as churn in the diff.
 
+For docstrings that exist but no longer match the code — stale claims, drifted
+params, rotted plan pointers — route to `/docstring-sync` instead: it repairs
+existing documentation with minimal edits, where this skill adds teaching depth
+to a codebase for a learning audience.
+
 ### Step 2 — Survey before you write
 
 Run the bundled audit to find the real gap:

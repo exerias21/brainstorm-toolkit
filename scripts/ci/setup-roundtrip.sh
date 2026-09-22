@@ -73,6 +73,29 @@ fi
 
 echo "[setup-roundtrip] OK: all $(echo "$SKILL_NAMES" | wc -w | tr -d ' ') marketplace skills installed."
 
+# 3b. Reverse marketplace assertion: every skills/*/SKILL.md directory must be
+#     named in marketplace.json's plugins[0].skills list. Nothing else catches
+#     this today -- validate_skills.py only checks *agent* registration, and
+#     the forward check above only proves a REGISTERED skill installs, never
+#     that a skill DIRECTORY got registered in the first place.
+echo "[setup-roundtrip] (3b) reverse marketplace registration assertion"
+
+unregistered=0
+for skill_dir in "$PLUGIN_ROOT"/skills/*/; do
+  [[ -f "${skill_dir}SKILL.md" ]] || continue
+  dir_name="$(basename "$skill_dir")"
+  if ! printf '%s\n' "$SKILL_NAMES" | grep -qx "$dir_name"; then
+    echo "[setup-roundtrip] FAIL: skills/$dir_name/SKILL.md exists but is not registered in $MARKETPLACE" >&2
+    unregistered=$((unregistered + 1))
+  fi
+done
+
+if [[ "$unregistered" -gt 0 ]]; then
+  echo "[setup-roundtrip] FAIL: $unregistered skill dir(s) exist under skills/ but are not registered in marketplace.json" >&2
+  exit 1
+fi
+echo "[setup-roundtrip] OK: every skills/*/SKILL.md is registered in marketplace.json."
+
 # 4. Stop-gate hook timeout assertion: stop-gate.sh runs the project's test.unit
 #    suite inline (up to 300s by its own internal default) before deciding whether
 #    to block. A Stop hook entry with no timeout, or a too-short one, falls back to
