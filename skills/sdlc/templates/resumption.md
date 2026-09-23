@@ -17,18 +17,27 @@ failure evidence you're resuming to fix**. Behavior:
    try to reconcile. (Optional/additive: a per-stage `prompt_hash` mismatch —
    the *toolkit* changed a stage's prompt since the run — may *warn* rather than
    reject; skip the check entirely when the field is absent.)
-3. Determine the resume point: every stage whose `stage-outputs/<stage>.json`
-   shows `status: "pass"` (equivalently, every name already in
-   `run.json.stages_completed`) is **skipped and its output reused**. Resume at
-   the first non-passing stage — normally the one `run.json.stage` names / the
-   one that paused.
-4. If a reused stage-output references a file that no longer exists (e.g. the
+3. **Reconcile before trusting it.** If `run.json.stages_completed` is shorter than the
+   passing sidecars actually on disk (a stage advanced its sidecar but the orchestrator never
+   wrote it back to `run.json` — measured live at 31+ minutes stale on one run), rebuild it as
+   a **union, never a replacement**: every name already in `stages_completed` that
+   legitimately has no sidecar (today, only `secret-scan` — see `secret-scan.md` and
+   `state-schema.md`) **plus** every `stage-outputs/<stage>.json` whose `status` is `"pass"`,
+   in canonical pipeline order. Never shrink `stages_completed` to match the sidecar count —
+   that silently drops `secret-scan` and reintroduces the exact sidecar ⇔ `stages_completed`
+   false equivalence the next step corrects.
+4. Determine the resume point: a stage is done when its `stage-outputs/<stage>.json` shows
+   `status: "pass"` — **except `secret-scan`, which writes no sidecar by design** and is done
+   when its name is already in the (reconciled) `run.json.stages_completed`. Done stages are
+   **skipped and their output reused**. Resume at the first non-passing stage — normally the
+   one `run.json.stage` names / the one that paused.
+5. If a reused stage-output references a file that no longer exists (e.g. the
    plan was edited to remove a step) → reject with a clear error; don't be
    clever.
-5. If the paused stage no longer exists in the current pipeline (a toolkit
+6. If the paused stage no longer exists in the current pipeline (a toolkit
    upgrade split it) → "stage `<old>` no longer in pipeline — start fresh." (A
    `--resume-from <stage>` override is a possible future addition; not v1.)
-6. From the resume point onward, behave **identically to a fresh run** — same
+7. From the resume point onward, behave **identically to a fresh run** — same
    gates, same **shared 3-iteration fix budget** (it starts fresh for the
    resumed stages), same envelope updates; set `run.json.status = "in_progress"`
    on pickup.

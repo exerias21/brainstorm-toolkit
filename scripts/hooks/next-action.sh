@@ -28,7 +28,8 @@
 # (`.codex/hooks.json`; Codex has a Stop hook with the same decision:block contract).
 # All consume `systemMessage` from stdout JSON identically for the printed hint.
 #
-# Auto-continue (L9, OPT-IN, default OFF): with `pipeline.auto_continue: true` in
+# Auto-continue (L9, OPT-IN, default OFF): with `pipeline.loop.auto_continue: true`
+# (legacy flat alias `pipeline.auto_continue: true` also accepted) in
 # .claude/project.json, on Claude Code OR Codex (both honor Stop-hook decision:block),
 # a SINGLE non-confirm sentinel is EXECUTED (return
 # {"decision":"block","reason":"Continue with: <cmd>"}) instead of printed — the
@@ -54,6 +55,26 @@ elif _gr="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -n "$_gr" ]; then
 fi
 NEXT_ACTION_FILE="$PROJ/.claude/.next-action"
 
+# Resolve a working Python by matching scripts/py.sh's full contract, not
+# merely "on PATH" (a Windows Store `python3` stub satisfies `command -v`
+# and then exits non-zero) -- this script calls python3 at three separate
+# sites below, so it needs the resolved value, not py.sh's one-shot `exec`
+# tail. Order: $BRAINSTORM_PYTHON -> .claude/project.json `python` -> probe
+# python3/python/py, each proven to RUN. One resolver's contract, matched
+# here rather than sourced, per scripts/py.sh's own header.
+PY="${BRAINSTORM_PYTHON:-}"
+if [ -n "$PY" ] && ! "$PY" -c 'pass' >/dev/null 2>&1; then PY=""; fi
+if [ -z "$PY" ] && [ -f "$PROJ/.claude/project.json" ]; then
+  PY="$(sed -n 's/.*"python"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+        "$PROJ/.claude/project.json" 2>/dev/null | head -n 1)"
+  if [ -n "$PY" ] && ! "$PY" -c 'pass' >/dev/null 2>&1; then PY=""; fi
+fi
+if [ -z "$PY" ]; then
+  for c in python3 python py; do
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c 'pass' >/dev/null 2>&1; then PY="$c"; break; fi
+  done
+fi
+
 # Collect messages. Two kinds, by design:
 #   - TRANSIENT hint: the .next-action sentinel — fires once, then deleted.
 #   - CONDITION-DERIVED warning: recomputed from live state every Stop and
@@ -71,8 +92,14 @@ msgs=()
 sentinel_cmds=()      # raw cmds, for the auto-continue decision (L9)
 sentinel_confirm=()   # 0/1 per cmd, parallel to sentinel_cmds
 if [ -s "$NEXT_ACTION_FILE" ]; then
-  if command -v python3 >/dev/null 2>&1; then
+  if [ -n "$PY" ]; then
     while IFS="$(printf '\t')" read -r cflag cmd; do
+      # Strip a trailing CR here, at the read site -- a Windows Python's stdout is
+      # opened in text mode, which translates the emitted "\n" into "\r\n", so
+      # `read -r` (which splits on \n only) leaves the \r attached to $cmd. Left
+      # in, it rides into the joined systemMessage (seen live:
+      # "Next: /sdlc plans/X.md\r\n..."). $cflag gets the same treatment for symmetry.
+      cmd="${cmd%$'\r'}"; cflag="${cflag%$'\r'}"
       [ -n "$cmd" ] || continue
       sentinel_cmds+=("$cmd"); sentinel_confirm+=("$cflag")
       if [ "$cflag" = "1" ]; then
@@ -80,8 +107,10 @@ if [ -s "$NEXT_ACTION_FILE" ]; then
       else
         msgs+=("Next: $cmd")
       fi
-    done < <(python3 -c '
-import json, sys
+    done < <("$PY" -c '
+import json, os, sys
+proj = sys.argv[1] if len(sys.argv) > 1 else "."
+seen = set()
 for raw in sys.stdin:
     s = raw.strip()
     if not s:
@@ -91,14 +120,50 @@ for raw in sys.stdin:
         if not isinstance(obj, dict):
             raise ValueError
         cmd = str(obj.get("cmd", "")).strip()
-        if not cmd:
-            continue
-        print(("1" if obj.get("confirm") else "0") + "\t" + cmd)
+        confirm = "1" if obj.get("confirm") else "0"
     except (ValueError, TypeError):
-        print("0\t" + s)  # not JSON -> legacy bare command (never confirm)
-' < "$NEXT_ACTION_FILE")
+        cmd = s  # not JSON -> legacy bare command (never confirm)
+        confirm = "0"
+    if not cmd:
+        continue
+    if cmd in seen:
+        continue  # dedup by cmd (SEAM.md: dedup key is cmd, not the raw line)
+    # Drop an entry whose plan/target file no longer exists (or was already
+    # delivered) -- a stale pointer left over from a finished/abandoned run.
+    # Checked ONLY on the target argument (the first whitespace token after
+    # the command word, e.g. "plans/x.md" in "/sdlc plans/x.md"), and NEVER
+    # for /gotcha -- a /gotcha command argument is free prose, and prose can
+    # legitimately mention a bare repo-relative path (e.g. remember that
+    # skills/sdlc/templates/models.md is loaded first) that does not exist at
+    # this consumer root (it ships under .claude/skills/ once installed).
+    # Scanning every whitespace token, as this used to, misread that mention
+    # as a stale command-target pointer and silently ate the gotcha reminder
+    # -- contradicting the "must not be silently eaten" contract this drop
+    # exists to keep (docs/SEAM.md).
+    dropped = False
+    parts = cmd.split()
+    if len(parts) > 1 and parts[0] != "/gotcha":
+        tok = parts[1]
+        if "/" in tok and (tok.endswith(".md") or tok.endswith(".json")):
+            path = tok if os.path.isabs(tok) else os.path.join(proj, tok)
+            if not os.path.exists(path):
+                dropped = True
+    if dropped:
+        continue
+    seen.add(cmd)
+    print(confirm + "\t" + cmd)
+' "$PROJ" < "$NEXT_ACTION_FILE")
+    # Only the branch that actually parsed the file may consume it -- on an
+    # interpreter that resolves but fails to run, NEXT_ACTION_FILE must
+    # survive so the sentinel is not silently eaten with zero output.
+    rm -f "$NEXT_ACTION_FILE"
   fi
-  rm -f "$NEXT_ACTION_FILE"
+  # A parked seam (more than one distinct pending action) must announce
+  # itself -- a parked hook otherwise looks identical to a hook with
+  # nothing to say (docs/SEAM.md).
+  if [ "${#sentinel_cmds[@]}" -gt 1 ]; then
+    msgs+=("⚠ ${#sentinel_cmds[@]} actions pending — seam parked")
+  fi
 fi
 
 # 2. Condition-derived: a pipeline run left in_progress/paused with a stale
@@ -125,9 +190,14 @@ fi
 #    against noise: only `brainstorm-<slug>.md` (the pipeline-intended plans, not
 #    meta docs), only modified in the last 7 days (older ⇒ intentionally parked,
 #    not pending), and only when no .claude/pipeline/<slug>/ envelope exists.
+#    In a skill repo (.claude-plugin/marketplace.json at repo root -- same detection
+#    /sdlc itself uses), /brainstorm and /brainstorm-team write to docs/plans/ instead
+#    of plans/ (see docs/SEAM.md / skills/sdlc/templates/state-schema.md), so scan
+#    that directory there too -- excluding README.md, which indexes the plans rather
+#    than being one.
 PLANS_DIR="$PROJ/plans"
+pending=0
 if [ -d "$PLANS_DIR" ]; then
-  pending=0
   for pf in "$PLANS_DIR"/brainstorm-*.md; do
     [ -e "$pf" ] || continue
     [ -n "$(find "$pf" -mtime -7 2>/dev/null)" ] || continue
@@ -135,9 +205,20 @@ if [ -d "$PLANS_DIR" ]; then
     [ -d "$PROJ/.claude/pipeline/$slug" ] && continue
     pending=$((pending+1))
   done
-  if [ "$pending" -gt 0 ]; then
-    msgs+=("◆ ${pending} recent plan(s) awaiting a pipeline run. Run /sdlc-status for the recommended next step.")
-  fi
+fi
+if [ -f "$PROJ/.claude-plugin/marketplace.json" ] && [ -d "$PROJ/docs/plans" ]; then
+  for pf in "$PROJ/docs/plans"/*.md; do
+    [ -e "$pf" ] || continue
+    base="$(basename "$pf" .md)"
+    [ "$base" = "README" ] && continue
+    [ -n "$(find "$pf" -mtime -7 2>/dev/null)" ] || continue
+    slug="${base#team-brainstorm-}"; slug="${slug#brainstorm-}"
+    [ -d "$PROJ/.claude/pipeline/$slug" ] && continue
+    pending=$((pending+1))
+  done
+fi
+if [ "$pending" -gt 0 ]; then
+  msgs+=("◆ ${pending} recent plan(s) awaiting a pipeline run. Run /sdlc-status for the recommended next step.")
 fi
 
 # --- Auto-continue (L9) — OPT-IN, Claude-only, guardrailed. Turns a single
@@ -145,7 +226,10 @@ fi
 #     (feeds `reason` back to the model as its next instruction) instead of a
 #     printed hint — the session becomes the loop, the sentinel its program
 #     counter. DEFAULT OFF: with the knob unset, behavior is unchanged (print).
-#     Guardrails (non-negotiable): (1) opt-in `pipeline.auto_continue: true`;
+#     Guardrails (non-negotiable): (1) opt-in `pipeline.loop.auto_continue: true`
+#     (canonical; the legacy flat `pipeline.auto_continue: true` is accepted as
+#     an alias, same resolution stop-gate.sh uses for its own mutual-exclusion
+#     check);
 #     (2) never a `confirm:true` action (those always park to a printed hint);
 #     (3) a hop budget bounds the chain like the 3-iteration fix budget bounds a
 #     fix loop; (4) runtime must support Stop-hook decision:block — Claude
@@ -157,19 +241,44 @@ fi
 #     lossless for a --queue/auto-continue run) is documented in docs/LOOP-HYGIENE.md.
 HOPS_FILE="$PROJ/.claude/.auto-continue-hops"
 PROJECT_JSON="$PROJ/.claude/project.json"
+# Resolve the knob at its two documented paths ONLY -- canonical nested
+# `pipeline.loop.auto_continue`, falling back to the legacy flat
+# `pipeline.auto_continue` -- never "anywhere in the file" (a plain substring
+# grep previously matched an unrelated object nested arbitrarily deep that
+# merely happened to contain a same-named key). Same two-key resolution
+# stop-gate.sh uses, so the mutual-exclusion contract holds for either
+# spelling.
+auto_continue_on="false"
+if [ -n "$PY" ] && [ -f "$PROJECT_JSON" ]; then
+  auto_continue_on="$("$PY" -c '
+import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        d = json.load(f)
+except Exception:
+    d = {}
+p = d.get("pipeline") if isinstance(d, dict) else None
+p = p if isinstance(p, dict) else {}
+loop = p.get("loop") if isinstance(p.get("loop"), dict) else {}
+val = loop["auto_continue"] if "auto_continue" in loop else p.get("auto_continue")
+print("true" if val is True else "false")
+' "$PROJECT_JSON" 2>/dev/null)"
+  case "$auto_continue_on" in true) ;; *) auto_continue_on="false" ;; esac
+fi
 if { [ -n "${CLAUDE_PROJECT_DIR:-}" ] || [ -n "${CODEX_HOME:-}" ]; } \
-   && [ -f "$PROJECT_JSON" ] \
-   && grep -Eq '"auto_continue"[[:space:]]*:[[:space:]]*true' "$PROJECT_JSON" 2>/dev/null \
+   && [ "$auto_continue_on" = "true" ] \
    && [ "${#sentinel_cmds[@]}" -eq 1 ] \
    && [ "${sentinel_confirm[0]:-1}" = "0" ] \
-   && command -v python3 >/dev/null 2>&1; then
+   && [ -n "$PY" ]; then
   max_hops="$(grep -Eo '"max_hops"[[:space:]]*:[[:space:]]*[0-9]+' "$PROJECT_JSON" 2>/dev/null | grep -Eo '[0-9]+' | head -1)"
   [ -n "$max_hops" ] || max_hops=5
   if [ -s "$HOPS_FILE" ]; then remaining="$(cat "$HOPS_FILE" 2>/dev/null)"; else remaining="$max_hops"; fi
   case "$remaining" in ''|*[!0-9]*) remaining="$max_hops";; esac
   if [ "$remaining" -gt 0 ]; then
     printf '%s' "$((remaining - 1))" > "$HOPS_FILE"
-    python3 -c 'import json,sys; print(json.dumps({"decision":"block","reason":"Continue with: "+sys.argv[1]}))' "${sentinel_cmds[0]}"
+    # The command goes in on stdin, never argv: Git Bash rewrites a leading-"/" argument
+    # for a native Windows python ("/sdlc x" -> "C:/Program Files/Git/sdlc x").
+    printf '%s' "${sentinel_cmds[0]}" | "$PY" -c 'import json,sys; print(json.dumps({"decision":"block","reason":"Continue with: "+sys.stdin.read()}))'
     exit 0
   fi
   # Budget exhausted -> park (print) and reset the chain.
@@ -180,10 +289,11 @@ rm -f "$HOPS_FILE" 2>/dev/null || true
 
 [ ${#msgs[@]} -gt 0 ] || exit 0
 
-# Emit JSON with systemMessage (newline-joined). python3 handles escaping;
-# if it's absent, stay silent rather than risk invalid JSON. Never blocks.
-if command -v python3 >/dev/null 2>&1; then
-  python3 -c '
+# Emit JSON with systemMessage (newline-joined). $PY handles escaping; if no
+# working interpreter was resolved, stay silent rather than risk invalid
+# JSON. Never blocks.
+if [ -n "$PY" ]; then
+  "$PY" -c '
 import json, sys
 print(json.dumps({"systemMessage": "\n".join(sys.argv[1:])}))
 ' "${msgs[@]}"

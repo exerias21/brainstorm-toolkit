@@ -60,9 +60,11 @@ Execution tiers — how much process the ask deserves:
                             | --queue [N] (attended backlog loop)
 
   Stage 2 (implement) auto-decomposes a large multi-surface plan (>=2
-  disjoint surfaces, >=6 steps) into focused per-lane subagents + a
-  converge step; small / single-surface plans run one agent. No flag —
-  the gate is automatic. Threshold: agents.decompose_min_tasks (default 6).
+  disjoint surfaces, AND >=6 steps OR >=12 files touched) into focused
+  per-lane subagents + a converge step; small / single-surface plans run
+  one agent. No flag — the gate is automatic. Thresholds:
+  agents.decompose_min_tasks (default 6) OR agents.decompose_min_files
+  (default 12).
 ```
 
 Cost control — two INDEPENDENT model axes. Keep them straight:
@@ -120,11 +122,6 @@ Ideation family — pick by ambiguity, not by topic:
   /brainstorm-team [topic] → multi-agent product/competitive research team
 ```
 
-Convention skills — load a house pattern before writing code:
-
-```
-```
-
 ---
 
 ## Most-used commands
@@ -142,6 +139,9 @@ Convention skills — load a house pattern before writing code:
 | `/gotcha "..."` | Append a pitfall (auto-drafted at loop-exit on real traps) | after a bug bites |
 | `/repo-onboarding` | Regenerate AGENTS.md / project.json | new repo intake |
 | `/dead-code-review` | Multi-agent unused-code scan | pre-cleanup, monthly |
+| `/code-tour` | Why-focused docstrings + a guided reading path (`TOUR.md`) | onboarding someone new to the repo |
+| `/brainstorm-team [topic]` | Multi-agent product/competitive research team | heavy autonomous product research |
+| `/plan-html {plan}` | Render a markdown plan as a shareable single-file HTML page | handing a plan to a stakeholder |
 
 ---
 

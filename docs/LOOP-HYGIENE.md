@@ -1,5 +1,7 @@
 # Loop context hygiene — keeping long `--queue`/auto-continue runs cheap
 
+> **✓ Live contract — current and maintained.**
+
 Reference doc. **Not shipped by `setup.sh`** into consumers (zero token weight there) — a
 maintainer/deployment guide. It explains how the toolkit keeps a long-running loop's token cost
 down, what ships to do it, and the escalation for when a single session is still too heavy.
@@ -86,7 +88,7 @@ that can fire anywhere). As of mid-2026:
 - **A hook can't trigger compaction.** `PreCompact` is gate-only (blocks/observes an already-triggered
   compaction; never initiates one). And no hook event carries token counts, so a hook can't even detect
   "context is large."
-- **The agent can't invoke `/compact` itself.** `/compact` is explicitly excluded from what the `Skill`
+- **The agent can't invoke `/compact` itself** — it is explicitly excluded from what the `Skill`
   tool may run (the old `SlashCommand` tool was folded into `Skill`). The tracking request
   (claude-code #19877) is open, unresolved, and not on the roadmap.
 - **The threshold can't be scoped to the main session.** `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` applies to the
@@ -158,6 +160,11 @@ for a genuinely long backlog, not a handful of items.
 > Note: Codex's own "Goal Mode" guidance recommends the *opposite* — keeping related work in one growing
 > session. That inherits every limitation above and doesn't solve context bloat; it's OpenAI's default,
 > not a fix for this problem.
+
+The opt-in `pipeline.stop_gate` Stop hook (`scripts/hooks/stop-gate.sh`) shares the same hop-bound
+shape as L9 auto-continue: it re-runs `test.unit` on every Stop while an `/sdlc` run is
+`in_progress`, but only up to `pipeline.loop.max_hops` (default 5) consecutive red runs before it
+stands down rather than looping forever on a failure the run can't self-fix.
 
 ## See also
 - `docs/SEAM.md` — the `.next-action` seam the Stop hook surfaces / the reseed hook points at.

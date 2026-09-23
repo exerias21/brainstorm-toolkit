@@ -1,0 +1,19 @@
+{
+  "_comment": "Measured 2026-09-05, Claude Code 2.1.261, models.cap sonnet, review stage off. Every figure comes from a run in which EVERY assertion for that case was green -- an unverified cost is not a baseline. A case fails when it exceeds 2x these. Refresh with: python scripts/ci/skill-eval.py --all --update-baseline",
+  "_runs": {
+    "plan-html-render": "2026-09-05-def06dea",
+    "gotcha-dedup": "2026-09-05-baa9df88",
+    "repo-onboarding-keys": "2026-09-05-75f23d48",
+    "sdlc-status-readout": "2026-09-05-20e92922",
+    "sdlc-two-step": "2026-09-05-20e92922",
+    "task-health-endpoint": "2026-09-05-20e92922"
+  },
+  "cases": {
+    "plan-html-render": 0.866,
+    "gotcha-dedup": 0.8063,
+    "repo-onboarding-keys": 1.0071,
+    "sdlc-status-readout": 0.279,
+    "sdlc-two-step": 1.7335,
+    "task-health-endpoint": 0.5751
+  }
+}

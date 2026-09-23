@@ -11,6 +11,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # check_contracts.py's version-freshness check walks commit history
+          # (git log -L on plugin.json's version line) to find shipped content
+          # that moved without a version bump. A depth-1 (shallow) clone hides
+          # that history: fetch-depth 0 gets the full history this check needs.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -24,3 +30,31 @@ jobs:
         run: |
           bash setup.sh --target /tmp/install-refs-probe --tools all
           python scripts/ci/check_install_refs.py /tmp/install-refs-probe
+
+      - name: contract checks
+        run: |
+          python scripts/ci/check_contracts.py
+          python scripts/ci/check_contracts.py --self-test
+
+      - name: docstring-sync self-test
+        run: python skills/docstring-sync/scripts/docstring_check.py --self-test
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: official plugin validator (claude plugin validate)
+        run: |
+          # `claude plugin validate` is a local, static manifest/skill/agent check --
+          # confirmed to run and exit 0 with no ANTHROPIC_API_KEY/OAuth token and an
+          # empty HOME, so it needs no auth here. The npm install above is what makes
+          # this step actually execute instead of always taking the guard below; keep
+          # the guard as a loud fallback (not a silent green check) in case that
+          # install ever fails on a runner image change.
+          if ! command -v claude >/dev/null 2>&1; then
+            echo "::warning::official plugin validator SKIPPED -- claude CLI not on PATH after npm install; plugin was NOT validated"
+            exit 0
+          fi
+          claude plugin validate .
+
+      - name: hook regression harness
+        run: bash scripts/ci/test-hooks.sh

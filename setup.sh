@@ -58,6 +58,13 @@ case "$TOOLS" in
 esac
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# A missing target used to fail here with a bare `cd: No such file or directory`, which is how
+# CI's install-refs step (and the documented `--target /tmp/test-repo` smoke install) broke on a
+# fresh runner. Create it, and say so, so a typo'd path is visible rather than silent.
+if [[ ! -d "$TARGET" ]]; then
+  mkdir -p "$TARGET" || { echo "setup.sh: cannot create --target $TARGET" >&2; exit 1; }
+  echo "note: created --target $TARGET (it did not exist)." >&2
+fi
 TARGET="$(cd "$TARGET" && pwd)"
 
 if [[ "$PLUGIN_ROOT" == "$TARGET" ]]; then
@@ -104,6 +111,37 @@ copy_tree_if_new() {
     local from="$src/$rel" to="$dest/$rel"
     copy_if_new "$from" "$to"
   done
+}
+
+install_overlay() {
+  # install_overlay <overlay_dir> <canonical_dir> <dest>
+  # The overlay's SKILL.md replaces the canonical one, but the canonical skill's runtime
+  # resources (templates/, references/, scripts/, assets/) still ship unless the overlay
+  # carries its own copy of that directory. Overlays therefore cite the same
+  # `skills/<name>/templates/<file>` paths the canonical does instead of inlining the bodies.
+  local overlay="$1" canon="$2" dest="$3" sub
+  copy_tree_if_new "$overlay" "$dest"
+  for sub in templates references scripts assets; do
+    if [[ -d "$canon/$sub" && ! -d "$overlay/$sub" ]]; then
+      copy_tree_if_new "$canon/$sub" "$dest/$sub"
+    fi
+  done
+}
+
+# Agent Skills portable subset is name/description/license/metadata/compatibility/
+# allowed-tools. Claude-only keys are kept for the Claude install and stripped here,
+# because a strict Copilot/Codex consumer rejects unknown frontmatter keys outright.
+# Idempotent: on a file that's already stripped, neither awk condition matches, so the
+# file is rewritten byte-for-byte identical (safe to call on skip-on-exist paths too).
+strip_nonportable_frontmatter() {
+  local f="$1"
+  [[ -f "$f" ]] || return 0
+  local tmp; tmp="$(mktemp)"
+  awk '
+    /^---[[:space:]]*$/ { fence++ ; print ; next }
+    fence == 1 && /^(argument-hint|disable-model-invocation):/ { next }
+    { print }
+  ' "$f" > "$tmp" && mv "$tmp" "$f"
 }
 
 delete_if_exists() {
@@ -155,10 +193,13 @@ for skill_dir in "$PLUGIN_ROOT"/skills/*/; do
     # Overlay pattern: prefer copilot/skills/<name>/ if it exists (Copilot-optimized version)
     copilot_override="$PLUGIN_ROOT/copilot/skills/$name"
     if [[ -d "$copilot_override" ]]; then
-      copy_tree_if_new "$copilot_override" "$TARGET/.github/skills/$name"
+      install_overlay "$copilot_override" "$skill_dir" "$TARGET/.github/skills/$name"
     else
       copy_tree_if_new "$skill_dir" "$TARGET/.github/skills/$name"
     fi
+    # Copilot documents only the portable frontmatter subset; a strict consumer
+    # hard-errors on Claude-only keys (argument-hint, disable-model-invocation).
+    strip_nonportable_frontmatter "$TARGET/.github/skills/$name/SKILL.md"
   fi
 
   if [[ "$want_codex" -eq 1 ]] && applies_to_includes "$skill_dir" codex; then
@@ -172,12 +213,15 @@ for skill_dir in "$PLUGIN_ROOT"/skills/*/; do
     codex_override="$PLUGIN_ROOT/codex/skills/$name"
     copilot_override="$PLUGIN_ROOT/copilot/skills/$name"
     if [[ -d "$codex_override" ]]; then
-      copy_tree_if_new "$codex_override" "$TARGET/.agents/skills/$name"
+      install_overlay "$codex_override" "$skill_dir" "$TARGET/.agents/skills/$name"
     elif [[ -d "$copilot_override" ]]; then
-      copy_tree_if_new "$copilot_override" "$TARGET/.agents/skills/$name"
+      install_overlay "$copilot_override" "$skill_dir" "$TARGET/.agents/skills/$name"
     else
       copy_tree_if_new "$skill_dir" "$TARGET/.agents/skills/$name"
     fi
+    # Same portable-subset rule as the Copilot install above -- Codex documents
+    # only name/description/license/metadata/compatibility/allowed-tools.
+    strip_nonportable_frontmatter "$TARGET/.agents/skills/$name/SKILL.md"
   fi
 done
 
@@ -223,11 +267,14 @@ install_shared_templates() {
       sed -i.bak "s|\`skills/|\`$root/skills/|g" "$f" && rm -f "$f.bak"
       hit=1
     fi
-    # Seed templates only (*.template). A skill-local `templates/<x>.md` resolves relative to
-    # the skill dir already and MUST NOT be rewritten -- doing so would break /brainstorm
-    # and cheatsheet, which ship their own templates/ dirs.
-    if grep -q '`templates/[A-Za-z0-9._-]*\.template`' "$f" 2>/dev/null; then
-      sed -i.bak "s|\`templates/\([A-Za-z0-9._-]*\.template\)\`|\`$root/templates/\1\`|g" "$f" && rm -f "$f.bak"
+    # Seed templates only -- the actual repo-root seed names (templates/*.template), never
+    # a skill-local `templates/<x>.template`. A skill-local ref resolves relative to the
+    # skill dir already and MUST NOT be rewritten -- doing so mangled
+    # skills/plan-html/SKILL.md's `templates/plan.html.template` pointer (skill-local AND a
+    # .template, so the old broad match caught it) into a nonexistent root-prefixed path.
+    # Named alternation, not a broad *.template glob -- see setup.sh's seed-template list above.
+    if grep -qE '`templates/(AGENTS\.md|TASKS\.md|CHEATSHEET\.md)\.template`' "$f" 2>/dev/null; then
+      sed -i.bak -E "s#\`templates/(AGENTS\.md|TASKS\.md|CHEATSHEET\.md)\.template\`#\`$root/templates/\1.template\`#g" "$f" && rm -f "$f.bak"
       hit=1
     fi
     [[ "$hit" -eq 1 ]] && n=$((n+1))
@@ -348,13 +395,41 @@ ensure_gitignored() {
   fi
 }
 
+# jq-free fallback for every hook merge below.
+#
+# WHY: these installers used to `return` early when jq was absent, printing a
+# "skip:" line and letting the install report success. A full --tools claude run
+# on a machine without jq therefore shipped ZERO hooks -- the .next-action seam,
+# the reseed, the cost report, the stop-gate and the model-cap PreToolUse hook
+# all silently missing, with the only evidence in mid-install chatter. Observed
+# on 2026-09-10. python3 is already a hard dependency of this repo, so this
+# costs nothing that was not already required.
+# $1=file  $2=event  $3=command  $4=label  [$5=--matcher X | --timeout N ...]
+hook_merge_py() {
+  local file="$1" event="$2" cmd="$3" label="$4"; shift 4
+  local py=""
+  for c in python3 python py; do
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c pass >/dev/null 2>&1; then py="$c"; break; fi
+  done
+  if [[ -z "$py" ]]; then
+    echo "  skip: neither jq nor python found — add this manually to $file:"
+    echo "        {\"hooks\":{\"$event\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\"}]}]}}"
+    return 1
+  fi
+  "$py" "$PLUGIN_ROOT/scripts/merge-hook.py" "$file" "$event" "$cmd" --label "$label" "$@"
+}
+
 # Install the Stop hook into the consumer's Claude Code settings file so the
 # next-action sentinel is surfaced after Claude finishes a turn. Idempotent:
 # checks for the exact command string before appending.
-# $1 = hook script basename (default next-action.sh), $2 = label for the log line.
+# $1 = hook script basename (default next-action.sh), $2 = label for the log line,
+# $3 = optional timeout in seconds (matches hooks/hooks.json's per-hook timeout;
+# omit to leave the host default in place, as next-action.sh and
+# run-cost-report.sh do -- they are fast by design and don't need one).
 install_stop_hook_claude() {
   local script="${1:-next-action.sh}"
   local label="${2:-next-action}"
+  local timeout="${3:-}"
   local settings="$TARGET/.claude/settings.json"
   local cmd
   if [[ "$COPY_SCRIPTS" -eq 1 ]]; then
@@ -365,9 +440,11 @@ install_stop_hook_claude() {
     cmd="bash $hook_path_escaped"
   fi
   if ! command -v jq >/dev/null 2>&1; then
-    echo "  skip: jq not installed — cannot safely merge Claude hook config."
-    echo "        Install jq and re-run, or add this manually to $settings:"
-    echo "        {\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\"}]}]}}"
+    if [[ -n "$timeout" ]]; then
+      hook_merge_py "$settings" "Stop" "$cmd" "Claude Stop hook for $label" --timeout "$timeout" || return 1
+    else
+      hook_merge_py "$settings" "Stop" "$cmd" "Claude Stop hook for $label" || return 1
+    fi
     return
   fi
   mkdir -p "$(dirname "$settings")"
@@ -381,15 +458,61 @@ install_stop_hook_claude() {
     return
   fi
   local tmp; tmp="$(mktemp)"
-  if jq --arg cmd "$cmd" '
+  if jq --arg cmd "$cmd" --argjson timeout "${timeout:-null}" '
     .hooks //= {} |
     .hooks.Stop //= [] |
-    .hooks.Stop += [{ "hooks": [{ "type": "command", "command": $cmd }] }]
+    .hooks.Stop += [{ "hooks": [(
+      { "type": "command", "command": $cmd } +
+      (if $timeout == null then {} else { "timeout": $timeout } end)
+    )] }]
   ' "$settings" > "$tmp" && mv "$tmp" "$settings"; then
     echo "  wrote: $settings (added Stop hook for $label)"
   else
     rm -f "$tmp"
     echo "  error: failed to update $settings with Claude Stop hook" >&2
+    return 1
+  fi
+}
+
+# Install the PreToolUse(Agent) model-cap hook into the consumer's Claude settings. The
+# script is inert until project.json sets pipeline.enforce_cap: true, so wiring it is safe by
+# default. Same idempotent jq merge as the Stop hook, keyed on the exact command string.
+install_pretooluse_hook_claude() {
+  local script="enforce-model-cap.sh"
+  local settings="$TARGET/.claude/settings.json"
+  local cmd
+  if [[ "$COPY_SCRIPTS" -eq 1 ]]; then
+    cmd="bash scripts/hooks/$script"
+  else
+    local hook_path_escaped
+    printf -v hook_path_escaped '%q' "$PLUGIN_ROOT/scripts/hooks/$script"
+    cmd="bash $hook_path_escaped"
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    hook_merge_py "$settings" "PreToolUse" "$cmd" "Claude PreToolUse model-cap hook" --matcher Agent || return 1
+    return
+  fi
+  if false; then
+    echo "  skip: jq not installed — add this manually to $settings if you want cap enforcement:"
+    echo "        {\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Agent\",\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\"}]}]}}"
+    return
+  fi
+  mkdir -p "$(dirname "$settings")"
+  [[ -f "$settings" ]] || echo '{}' > "$settings"
+  if jq -e --arg cmd "$cmd" 'any(.hooks.PreToolUse[]?.hooks[]?; .command == $cmd)' "$settings" >/dev/null 2>&1; then
+    echo "  skip: Claude PreToolUse model-cap hook already wired ($cmd)"
+    return
+  fi
+  local tmp; tmp="$(mktemp)"
+  if jq --arg cmd "$cmd" '
+    .hooks //= {} |
+    .hooks.PreToolUse //= [] |
+    .hooks.PreToolUse += [{ "matcher": "Agent", "hooks": [{ "type": "command", "command": $cmd }] }]
+  ' "$settings" > "$tmp" && mv "$tmp" "$settings"; then
+    echo "  wrote: $settings (added PreToolUse model-cap hook; inert until pipeline.enforce_cap: true)"
+  else
+    rm -f "$tmp"
+    echo "  error: failed to update $settings with the PreToolUse hook" >&2
     return 1
   fi
 }
@@ -472,6 +595,10 @@ install_context_watch_codex() {
     cmd="bash $cw_path_escaped"
   fi
   if ! command -v jq >/dev/null 2>&1; then
+    hook_merge_py "$hook_file" "Stop" "$cmd" "Codex run-cost-report Stop hook" --timeout 10 || return 1
+    return
+  fi
+  if false; then
     echo "  skip: jq not installed — add a run-cost-report Stop hook manually to $hook_file:"
     echo "        {\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\",\"timeout\":10}]}]}}"
     return
@@ -494,6 +621,56 @@ install_context_watch_codex() {
   else
     rm -f "$tmp"
     echo "  error: failed to update $hook_file with Codex run-cost-report hook" >&2
+    return 1
+  fi
+}
+
+# Install the Codex stop-gate Stop hook by jq-MERGING a third entry into
+# .codex/hooks.json's Stop array. Same pattern as install_context_watch_codex (that
+# one can't be reused: it skips-on-exist and writes the whole file, so it would never
+# add a THIRD hook to an existing Stop array). Idempotent by command string. Inert
+# unless pipeline.stop_gate: "tests" is set -- see scripts/hooks/stop-gate.sh.
+install_stop_gate_codex() {
+  local hook_file="$TARGET/.codex/hooks.json"
+  local cmd
+  if [[ "$COPY_SCRIPTS" -eq 1 ]]; then
+    cmd='bash "$(git rev-parse --show-toplevel)/scripts/hooks/stop-gate.sh"'
+  else
+    local sg_path_escaped
+    printf -v sg_path_escaped '%q' "$PLUGIN_ROOT/scripts/hooks/stop-gate.sh"
+    cmd="bash $sg_path_escaped"
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    # 310s, not the other Codex hooks' 10s: this hook runs the project's test.unit suite
+    # inline (stop-gate.sh's own internal default is up to 300s) before deciding whether to
+    # block, so a short timeout kills the test run and the gate fails OPEN. Must match the
+    # jq branch below and hooks/hooks.json's shipped plugin timeout.
+    hook_merge_py "$hook_file" "Stop" "$cmd" "Codex stop-gate Stop hook" --timeout 310 || return 1
+    return
+  fi
+  if false; then
+    echo "  skip: jq not installed — add a stop-gate Stop hook manually to $hook_file:"
+    echo "        {\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\",\"timeout\":310}]}]}}"
+    return
+  fi
+  mkdir -p "$(dirname "$hook_file")"
+  [[ -f "$hook_file" ]] || echo '{}' > "$hook_file"
+  if jq -e --arg cmd "$cmd" '
+        any(.hooks.Stop[]?.hooks[]?; .command == $cmd)
+      ' "$hook_file" >/dev/null 2>&1; then
+    echo "  skip: Codex stop-gate hook already wired ($cmd)"
+    return
+  fi
+  local tmp; tmp="$(mktemp)"
+  if jq --arg cmd "$cmd" '
+    .hooks //= {} |
+    .hooks.Stop //= [] |
+    .hooks.Stop += [{ "hooks": [{ "type": "command", "command": $cmd, "timeout": 310 }] }]
+  ' "$hook_file" > "$tmp" && mv "$tmp" "$hook_file"; then
+    echo "  wrote: $hook_file (added stop-gate Stop hook; inert until pipeline.stop_gate: \"tests\")"
+  else
+    rm -f "$tmp"
+    echo "  error: failed to update $hook_file with Codex stop-gate hook" >&2
     return 1
   fi
 }
@@ -554,6 +731,10 @@ install_reseed_hook_claude() {
     cmd="bash $reseed_path_escaped"
   fi
   if ! command -v jq >/dev/null 2>&1; then
+    hook_merge_py "$settings" "SessionStart" "$cmd" "Claude SessionStart reseed hook" --matcher "compact|clear" || return 1
+    return
+  fi
+  if false; then
     echo "  skip: jq not installed — add SessionStart reseed hook manually to $settings:"
     echo "        {\"hooks\":{\"SessionStart\":[{\"matcher\":\"compact|clear\",\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\"}]}]}}"
     return
@@ -590,6 +771,7 @@ echo "[gitignore]"
 ensure_gitignored ".claude/pipeline/"
 ensure_gitignored ".claude/.next-action"
 ensure_gitignored ".claude/.auto-continue-hops"
+ensure_gitignored ".claude/.stop-gate-hops"
 ensure_gitignored ".claude/project.json"
 ensure_gitignored "TASKS.md"
 ensure_gitignored "plans/"
@@ -601,6 +783,14 @@ if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
     echo "[hooks] Claude SessionStart reseed hook"
     install_reseed_hook_claude
     install_stop_hook_claude run-cost-report.sh run-cost-report
+    # stop-gate.sh runs the project's test.unit suite inline (up to 300s by its
+    # own internal default/pipeline.stop_gate_timeout) before deciding whether
+    # to block -- an unset timeout here falls back to the host's default Stop
+    # hook timeout, which can be shorter, making the gate fail OPEN on a slow
+    # suite. 310s matches hooks/hooks.json's shipped plugin timeout.
+    install_stop_hook_claude stop-gate.sh stop-gate 310
+    echo "[hooks] Claude PreToolUse model-cap hook"
+    install_pretooluse_hook_claude
   fi
   if [[ "$want_copilot" -eq 1 ]]; then
     echo "[hooks] Copilot Stop hook"
@@ -612,6 +802,7 @@ if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
     install_stop_hook_codex
     install_reseed_hook_codex
     install_context_watch_codex
+    install_stop_gate_codex
   fi
 else
   echo "[hooks] skipped (--no-hooks)"

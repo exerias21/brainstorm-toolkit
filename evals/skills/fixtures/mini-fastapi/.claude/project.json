@@ -1,0 +1,16 @@
+{
+  "test": {
+    "unit": "pytest -q"
+  },
+  "models": {
+    "cap": "sonnet"
+  },
+  "pipeline": {
+    "output": {
+      "verbosity": "quiet"
+    },
+    "review_fix": {
+      "enabled": false
+    }
+  }
+}

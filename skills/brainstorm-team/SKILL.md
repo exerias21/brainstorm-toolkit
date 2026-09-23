@@ -1,7 +1,8 @@
 ---
 name: brainstorm-team
 description: >
-  Launches a coordinated multi-agent team (5 agents in parallel) to produce a complete
+  Launches a coordinated 6-agent team (4 researching in parallel, then synthesis and
+  blueprints) to produce a complete
   product strategy document: competitive research, codebase mapping, UX critique, ranked
   feature list, and detailed implementation blueprints. Use when the user wants heavy
   autonomous product research or says "brainstorm team", "what should we build next",
@@ -29,7 +30,7 @@ Agent teams must be enabled. Check or set:
 
 ## What This Skill Does
 
-Creates a 6-agent team with specialized roles that work in parallel to produce a complete product strategy document. The team:
+Creates a 6-agent team with specialized roles to produce a complete product strategy document. The team:
 
 1. **Researches** the competitive landscape (internet search)
 2. **Maps** the codebase architecture and identifies opportunities
@@ -89,7 +90,7 @@ Wait for teammates 1-4 to report findings, then synthesize a ranked top-10 featu
 Teammate 6 — Implementation Planner:
 Wait for the Strategist's top 10, then write detailed implementation blueprints for the top 3 following the project's existing patterns (data model, services, endpoints, UI components, integrations). **Bind each blueprint to the Architect's reuse inventory** — cite the existing pattern/module each step extends (`path:line`), and call out explicitly any place you must introduce a *new* pattern and why no existing one fits. Don't reinvent what the codebase already has. Also write 2-3 opportunistic "wild card" ideas you spotted while planning — these are separate from the Lateral Thinker's lens Wildcards and live in their own section.
 
-Coordination: Teammates 1-4 work in parallel. Teammate 5 starts after 1-4 report. Teammate 6 starts after 5 finalizes. All teammates message each other when they find cross-domain insights. Final output is written by the orchestrator (you) — see "Output Format" below — to `plans/team-brainstorm-<topic-slug>.md` at the repo root.
+Coordination: Teammates 1-4 work in parallel. Teammate 5 starts after 1-4 report. Teammate 6 starts after 5 finalizes. All teammates message each other when they find cross-domain insights. Final output is written by the orchestrator (you) — see "Output Format" below — to `plans/team-brainstorm-<topic-slug>.md` (or `docs/plans/team-brainstorm-<topic-slug>.md` in a skill repo) at the repo root.
 ```
 
 ### Focused Team (Module-Specific)
@@ -111,22 +112,30 @@ Create an agent team with 3 teammates:
 2. Architect+Strategist (combined): map codebase, then rank features — weighing the Wildcards alongside conventional candidates.
 3. Planner: blueprint top 3.
 
-Output to `plans/team-brainstorm-<topic-slug>.md` at the repo root (use the Write tool — see "Output Format" below) — must include a Wildcards section even when the quick variant is used.
+Output to `plans/team-brainstorm-<topic-slug>.md` (or `docs/plans/team-brainstorm-<topic-slug>.md` in a skill repo) at the repo root (use the Write tool — see "Output Format" below) — must include a Wildcards section even when the quick variant is used.
 ```
 
 ## Output Format
 
+**Skill-repo detection** (same idiom `/sdlc` uses): if `.claude-plugin/marketplace.json`
+exists at repo root, this repo is itself a markdown-skill plugin — write the document to
+`docs/plans/team-brainstorm-<topic-slug>.md` instead (same `team-brainstorm-` prefix, just
+alongside this repo's own plans, so it never collides with a plain `/brainstorm` plan on the
+same topic-slug). Otherwise use the ordinary `plans/team-brainstorm-<topic-slug>.md` path
+below.
+
 **Use the `Write` tool** to save the assembled document to
-`plans/team-brainstorm-<topic-slug>.md` at the **repo root** (the consumer
+`plans/team-brainstorm-<topic-slug>.md` (or `docs/plans/team-brainstorm-<topic-slug>.md` in a
+skill repo) at the **repo root** (the consumer
 project's working directory) — NOT under `.claude/`. Derive `<topic-slug>` from
 the session's topic the same way `/brainstorm` does (lowercase, hyphenated,
 ≤40 chars). A topic-specific name means repeated runs don't clobber each other;
 fall back to `team-brainstorm-results.md` only if the topic is truly generic
 ("what should we build next?"). Plan Mode internal storage and `.claude/` are
-not where downstream skills look. Create the `plans/` directory if it doesn't
+not where downstream skills look. Create the parent directory if it doesn't
 exist (Write creates parent dirs automatically).
 
-The team produces `plans/team-brainstorm-<topic-slug>.md` with sections:
+The team produces `plans/team-brainstorm-<topic-slug>.md` (or `docs/plans/team-brainstorm-<topic-slug>.md` in a skill repo) with sections:
 1. Competitive Landscape
 2. Codebase Map & Technical Assessment
 3. Conventions & reuse (the Architect's live-code reuse inventory: dominant patterns with `path:line`, shared utilities to reuse, and any doc drift found — blueprints in §6 bind to this)
@@ -143,8 +152,8 @@ Sections 7 and 8 (Wild Cards and Lens Divergence) are both preserved — they co
 Don't stop at the results file. Once the user picks features to build, turn the
 chosen blueprint(s) into delivery rather than waiting for them to re-issue a
 command:
-- Render the results for a visual read if useful: `/plan-html plans/team-brainstorm-<topic-slug>.md`.
-- Hand a chosen blueprint to the pipeline — `/sdlc <plan>` (full pipeline,
-  hands you the validated changes; safe default, no git writes) or `/sdlc <plan>`
-  (→ PR; confirm first). Continue whichever flow has been used this session;
-  default to `/sdlc`.
+- Render the results for a visual read if useful: `/plan-html plans/team-brainstorm-<topic-slug>.md`
+  (or `docs/plans/team-brainstorm-<topic-slug>.md` in a skill repo).
+- Hand a chosen blueprint to the pipeline — `/sdlc <plan>` (full pipeline; hands you
+  the validated changes, no git writes). Continue whichever flow has been used this
+  session.

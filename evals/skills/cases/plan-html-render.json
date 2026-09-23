@@ -1,0 +1,21 @@
+{
+  "name": "plan-html-render",
+  "prompt": "/plan-html plans/two-step.md",
+  "max_budget_usd": 1.5,
+  "assertions": [
+    {
+      "type": "glob_exists",
+      "pattern": "**/*.html"
+    },
+    {
+      "type": "file_not_matches",
+      "glob": "**/*.html",
+      "pattern": "https?://|<script src="
+    },
+    {
+      "type": "file_matches",
+      "glob": "**/*.html",
+      "pattern": "<style"
+    }
+  ]
+}

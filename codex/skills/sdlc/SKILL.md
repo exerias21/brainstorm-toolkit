@@ -7,29 +7,25 @@ description: >
   No commit, no branch, no push, no PR. Codex overlay of the canonical skill --
   every stage runs inline (sequential, no parallel sub-agents). Use /task instead for a
   single small TDD fix with no plan.
-argument-hint: "<plan-file | task-id | task-range | description> [--resume] [--queue [N]]"
 metadata:
   brainstorm-toolkit-applies-to: codex
-disable-model-invocation: true
 ---
 
 # sdlc (Codex Edition — Sequential)
 
-Sequential Codex edition. The canonical skill uses parallel agent dispatch for the
-sanity-check on Claude; this overlay runs every stage inline, because Codex CLI's 2026
-Agent Skills spec doesn't drive that fan-out. (Codex has native subagents and its own
-plan mode; what it lacks is a usable per-subagent model override — see the cap note
-below.) This overlay tracks the Copilot one closely; tune independently if Codex
-behavior diverges. Same stages, same shared templates, same terminal action: **no git
-writes** — it hands you a validated tree to commit.
+Sequential Codex edition — every stage runs inline rather than as a parallel dispatch. Same
+stages, same shared templates, same terminal action: **no git writes** — it hands you a
+validated tree to commit.
 
-**Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/models.md`, a plugin-repo citation) is honored wherever sub-agents are dispatched. **The cap is advisory on this runtime** — set your session model to the cap tier for the savings.
-
-> **Why advisory here is a Codex-specific story.** Codex *does* have native subagents (`.codex/agents/*.toml`, parallel, `max_threads`) — it is not structurally inline-only the way Copilot is. What blocks tiering is that **per-subagent model override is reported regressed upstream** (subagents inherit the parent model), so the Haiku/Sonnet fan-out runs single-model: functional, but with none of the per-stage cost savings. Reported 2026-07-13 from research, **not verified against a real Codex install**, and it may already be fixed — see the Codex entry under *Runtime regimes* in `models.md` before relying on it either way.
+**Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/models.md`) is honored wherever sub-agents are dispatched. **The cap is advisory on this runtime** (why: *Runtime regimes* in `models.md`) — set your session model to the cap tier for the savings.
 
 > **`skills/sdlc/templates/*` paths below are real, installed files on this runtime.**
 > `setup.sh` ships that shared template tree alongside the skills and rewrites the citation
 > prefix, so open the templates the stages name rather than relying on anything inlined here.
+
+Every sub-agent dispatch in the templates below runs **inline in this session** on this
+runtime. Keep the discipline the dispatch enforced: report only the structured summary,
+never paste raw tool or runner output into your context.
 
 ## When to use
 
@@ -59,63 +55,111 @@ regardless of verbosity — the per-dispatch `model:` line, gate verdicts, PAUSE
 ## Stage 0 — Resolve input
 
 - **Plan file** (path ending `.md` that exists) → use as the plan, like `/sdlc`.
+  **Look up this plan's `TASKS.md` rows by calling `scripts/close-tasks.sh rows --plan
+  <slug> --plan-file <path>`** — compute `<slug>` here with the **Derive `slug`** rule below
+  (basename minus extension, minus a leading `brainstorm-`/`team-brainstorm-`/`pbi-NNN-`/
+  `task-NNN-` prefix), not the raw basename: `/brainstorm` tags rows with the *stripped* slug
+  (`_plan: add-orders_`, never `_plan: brainstorm-add-orders_`), so the raw basename used to
+  match zero rows even when correctly-tagged rows were open — never `reconcile |
+  grep <slug>`: `reconcile` only reports drift against *existing* pipeline envelopes, so on
+  a first run for this plan it returns zero rows even though correctly-tagged rows are open
+  (a live miss on 2026-09-20). `rows` matches the `_plan: <slug>_` marker `/brainstorm`
+  appends, falling back to a legacy path-substring match for untagged rows. **Do not mark
+  them `[~]` yet** — the **Scope gate** below (after `parse.json`) decides which rows are in
+  scope this run and marks only those. Stage 6's close-out flips taken rows via
+  `scripts/close-tasks.sh`. Without this lookup the close-out has nothing to resolve, which
+  is why a finished plan used to close nothing on this runtime. A `rows` call returning no
+  `matched[]` updates no `TASKS.md` — expected, not a miss.
+**If `.claude/project.json` is absent while `project.json.example` is present, warn once
+here** — every gated setting (`models.cap`, `pipeline.*`, test commands) is silently inert
+and the run reports `cap: none`.
+
 - **Task id** (`task-NNN` or a row number) → read that row + linked task file;
   its `parent_plan:` becomes the Stage 5 plan target.
 - **Task range** (`N-M`, `task-N..task-M`, `tasks N-M`) → resolve every
   `Active / Pending` row in range; execute as a batch (changes accumulate in the
   working tree — see Stage 6 range semantics; this skill never commits). Record
-  the resolved ids in `run.json.data.task_range`.
-- **Ad-hoc description** → create a new row + task file via `/task`'s procedure.
-  No plan, so Stage 5's plan check self-skips.
-- **`--queue [N]`** (attended backlog loop) → select `Active / Pending` rows by
-  priority (top `N` or `pipeline.loop.max_items`, default 5; `P1>P2>P3`, `[~]`
-  first) and loop the pipeline over them, **re-scanning `TASKS.md` between items**
-  so rows added mid-run join the loop. Stop conditions (`pipeline.loop.*`): a
-  `paused`/`failed` item **parks** the loop (write its `/sdlc-status` hint to
-  `.claude/.next-action`), a `confirm:true` next action parks it, and
-  `max_items` / `max_consecutive_failures` (default 2) bound it. **No git writes;
-  every park is a written next-action, never a dead end.** Each item's envelope
-  stays **canonical** (`state-schema.md`: `feature_slug`/`plan_file` keys, required
-  fields, canonical stage names — never `slug`/`plan` or `phase-*` stages; queue/phase
-  data goes in `data.*`) with a **distinct per-item slug** `<plan-slug>-<row-id>` (never
-  the shared plan slug — items would collide on one envelope dir). On park: set
-  `run.json.status = "paused"` + `run.json.next_action = {cmd, confirm}`, **and — mandatory,
-  don't skip it —** append the sentinel line:
-  `line='{"cmd":"/sdlc <plan> --queue","source":"sdlc","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action`
-  (plus a `confirm:true` line for the confirm action if it parked on one). The **sentinel is
-  the ONLY thing the Stop hook surfaces**; `run.json.next_action` alone is invisible, so a park
-  that sets only the envelope field leaves the loop dead.
-- **Long runs — context hygiene:** a many-hour loop accumulates context in the one orchestrator
-  session. Codex's `PostCompact` reseed hook (shipped via `.codex/hooks.json`) keeps auto-compaction
-  lossless for the loop; config knobs + the fresh-`codex exec`-per-item escalation are in
-  `docs/LOOP-HYGIENE.md` (plugin repo).
+  the resolved ids in `run.json.data.task_range`. **Skip a `_manual_` row** —
+  leave it `Active / Pending` and report it, never execute it.
+- **Ad-hoc description** → create a new row + task file via `/task`'s procedure,
+  which already writes `.claude/pipeline/task-<N>-<slug>/run.json` at
+  `in_progress`. **Reuse that `task-<N>-<slug>` as this run's slug** — one
+  envelope, not two, the same rule `queue-mode.md` applies to a row with a
+  linked task file — rather than deriving a second slug from the description
+  text, which orphans the `/task`-written envelope `in_progress` forever.
+  **Adopting this envelope means `/sdlc` owns it**: set `run.json.pipeline: "sdlc"`
+  (not `"task"`) and record the additive `data.adopted_from: "task"`
+  (`state-schema.md`). No plan, so Stage 5's plan check self-skips.
 
-Mark resolved rows `[~]`. Derive `slug` per `docs/CONVENTIONS.md`. Capture
-`base_commit = git rev-parse HEAD` and initialize `.claude/pipeline/<slug>/`
-with `pipeline: "sdlc"`, `base_commit`, `status: "in_progress"`, **and the
+**Task-id / range / ad-hoc runs have no `_plan:` key** — that tag exists only on plan-file
+rows — so Stage 6 cannot close them by key. **Persist the resolved row id(s) at Stage 0**
+into `run.json.data.tasks.resolved[]`, one entry per row, each a substring unique to that
+row (its linked `plans/tasks/task-N-<slug>.md` path is the natural choice). Stage 6 closes
+exactly those entries via `scripts/close-tasks.sh close --scope resolved --ids-file`, never
+a fuzzy match. Skip this and the row is marked `[~]` here and never closed — the same
+close-out failure the plan-file scan above exists to prevent.
+- **`--queue [N]`** → resolve this flag first; on any other input skip without opening the
+  template. When it *is* `--queue`, **read `skills/sdlc/templates/queue-mode.md` now** and run
+  it (selection, per-item slug, stop conditions, re-scan, park protocol and its mandatory
+  sentinel). Codex's `PostCompact` reseed hook (`.codex/hooks.json`) keeps
+  auto-compaction lossless for a long loop; escalations in `docs/LOOP-HYGIENE.md` (plugin repo).
+
+Mark resolved rows `[~]` — task id / range / ad-hoc / `--queue` mark immediately; a plan-file
+run marks only the rows the **Scope gate** below takes, once `parse.json` exists to size them.
+Derive `slug`: the plan filename minus its extension, minus a leading
+`brainstorm-` / `team-brainstorm-` / `pbi-NNN-` / `task-NNN-` prefix, lowercased, every character
+outside `[a-z0-9-]` replaced with `-`, runs collapsed, ends trimmed; it must match
+`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$` or the run stops with a clear error (maintainer record:
+`docs/CONVENTIONS.md`). Capture
+`base_commit = git rev-parse HEAD` and initialize `.claude/pipeline/<slug>/` with the
+canonical `run.json` (schema: `skills/sdlc/templates/state-schema.md`) — `pipeline: "sdlc"`,
+`base_commit`, `status: "in_progress"`, **and the
 computed required fields that get dropped otherwise (DQ6):**
 `plan_hash: "sha256:$(sha256sum <plan> | cut -d' ' -f1)"`, `started_at` = `updated_at`
 = `"$(date -u +%Y-%m-%dT%H:%M:%SZ)"`. Omitting them breaks `--resume` + staleness detection.
 
-**`--resume`:** if `--resume` was passed, read the existing `run.json` instead of
-re-initializing — reject on a `plan_hash` mismatch, skip stages whose sidecar shows
-`status: "pass"`, and resume at the first non-passing one (follows `/sdlc`'s
-Resumption rules; error if there's no prior run).
+**Then parse the plan.** Read the resolved plan/task file(s) fully and extract the feature
+name, the implementation steps (numbered lists with file paths, or checkbox rows), the files to
+create or modify, the acceptance criteria ("expected"/"should"/"must"/"verify" language) and
+cross-module touchpoints. **Write `stage-outputs/parse.json`** with `data.feature_name`,
+`data.files_to_change`, `data.implementation_step_count`, `data.acceptance_criteria_count` and
+append `parse` to `run.json.stages_completed` — Stage 2's gate reads it and cannot run without it.
 
-**Continuity detection** (prompt, never auto) — same logic as `/sdlc`: **skip
+**Scope gate (plan-file runs only).** Immediately after `parse.json` is written, decide how
+much of this plan to take this run — skip for task-id / range / ad-hoc / `--queue` inputs
+(already bounded) and for `--no-scope-gate` (whole-plan execution). **Read
+`skills/sdlc/templates/scope-gate.md` now** and follow it: it sizes the plan, prefers the
+plan's own phase boundaries, handles a plan with zero rows and `_manual_`-only phases, runs a
+warn-only reconcile check before taking, records `run.json.data.scope_gate` (accumulating
+`taken_phases` across re-runs), and prints the verdict line.
+
+**Skill-repo detection** (automatic): if `.claude-plugin/marketplace.json` exists at repo root,
+switch to **Skill-repo mode** below for the rest of the run. **Vendored-skill guard:** if it is
+absent but the plan's changed files target `.claude/skills/**`, `.github/skills/**` or
+`.agents/skills/**`, **stop and report** — those edits belong upstream in the canonical toolkit
+repo, not in a consumer's pipeline.
+
+
+**`--resume`:** if `--resume` was passed, **read `skills/sdlc/templates/resumption.md` now**
+and follow it instead of re-initializing — reject on a `plan_hash` mismatch, reconcile
+`stages_completed` as a union with on-disk sidecars, skip stages whose sidecar shows
+`status: "pass"`, and resume at the first non-passing one; error if there's no prior run.
+
+**Continuity detection** (prompt, never auto) — the shared scan in
+`skills/sdlc/templates/envelope-staleness.md`, same logic as `/sdlc`: **skip
 entirely on the `main_branch`** (merges make every run an ancestor there — pure
 noise). On a feature branch, take only the **single most-recently-updated** run
 whose `base_commit` is an ancestor of HEAD, and prompt **only** if it's
-non-terminal OR complete with HEAD advanced past its recorded `commit_sha`
+non-terminal OR complete with HEAD advanced past its recorded `base_commit`
 (a follow-up landed outside the pipeline). One prompt at most, or none.
 
 ## Stage 1.5 — Sanity check
 
-Run `/sdlc` Stage 1.5 inline (sequential pre-flight). Not gated, not optional.
-For a range, run once over the combined set. Stop and report on a real blocker.
-`agents.sanity_focuses` selects which checks run (default all three); on this
-runtime `models.sanity` is advisory like every tier — set your session
-model instead.
+**Read `skills/sdlc/templates/stage-1.5-sanity-check.md` now** and run it inline (sequential
+pre-flight — no parallel focus agents on this runtime). Not gated, not optional. For a range,
+run once over the combined set. Stop and report on a real blocker. `agents.sanity_focuses`
+selects which checks run (default all three); on this runtime `models.sanity` is advisory
+like every tier — set your session model instead.
 
 ## Stage 2 — Implement
 
@@ -127,9 +171,18 @@ guards against is real here too, though, and the mitigation is different — kee
 short and hand off at stage boundaries (`docs/LOOP-HYGIENE.md`), because every file you write
 stays in your context for the rest of the run.
 
+**`stage-2a-decompose.md` / `stage-2b-dispatch.md` / `stage-2c-converge.md` — not applicable on
+this runtime.** They exist only to fan Stage 2 out across parallel sub-agents; with no
+sub-agent seam here there is nothing to fan out to. Always take the single-agent path below,
+regardless of plan size.
 
-Run `/sdlc` Stage 2 inline, including its **auto-gate** (**read
-`skills/sdlc/templates/stage-2-gate.md` now**), preceded by **live-code grounding**.
+**Read `skills/sdlc/templates/stage-2-implement.md` now**, before writing any files, then run
+`/sdlc` Stage 2 inline, including its **auto-gate** (**read `skills/sdlc/templates/stage-2-gate.md`
+now** — it computes `surfaces_touched` via `skills/sdlc/templates/changed-files-gate.md` and
+records the decision for `implement.json`'s summary even though the route it can pick on this
+runtime is always single-agent), preceded by **live-code grounding**.
+**State write:** after implementing, write `stage-outputs/implement.json` yourself and append
+`implement` to `run.json.stages_completed`.
 
 **Live-code grounding** — **read `skills/sdlc/templates/convention-grounding.md` now** and follow it before writing any file. Scope the recon to the feature's target area, never the whole repo.
 
@@ -169,81 +222,61 @@ inline pass instead of a parallel dispatch. Everything else — lens selection, 
 axis, the verify pass, the circuit breaker, the `auto_fixable` rubric, the fix-loop modes and
 budget, the oscillation guard — is the same, including the sidecar shapes at the end of that file.
 
+## Stage 5.9 — Cleanup pass
+
+**Opt-in, OFF by default** (`pipeline.cleanup.enabled: true` / `--cleanup`; `--no-cleanup` wins
+OFF; auto-off if Stage 5 isn't green, `implement` skipped, or no code surface touched — append
+`cleanup` to `stages_skipped`). Else **read `skills/sdlc/templates/stage-5.9-cleanup.md` now**.
+
 ## Stage 6 — Hand off (no commit, no git writes)
 
-Run the full pipeline, then **stop at the edge of git**. No commit, branch,
-push, PR, or `/review`. You review and commit.
+Run the full pipeline, then **stop at the edge of git**. Do NOT run `git add`, `git commit`,
+`git checkout -b`, `git push`, `gh pr create`, or `/review` — leave the working tree exactly
+as the pipeline produced it. You review and commit.
 
-1. Secret scan the changed files (gitleaks if available, regex-fallback
-   otherwise). **Warn-only** — surface findings (file:line) but never block.
-   HIGH findings get a `⚠ HIGH:` prefix; worth scrubbing before you commit.
-2. **Report, don't commit.** Show `git diff --stat`, the files changed, and a
-   suggested commit message. Do NOT run `git add`, `git commit`,
-   `git checkout -b`, `git push`, `gh pr create`, or `/review`. Leave the tree
-   as the pipeline produced it.
-   ```
-   Suggested (run yourself):
-     git add <files>
-     git commit -m "feat: <title>"
-   ```
-   **Co-author trailer**: only when `.claude/project.json` `coauthor_trailer` is
-   `true`, end the suggested message with a blank line and
-   `Co-Authored-By: Claude <noreply@anthropic.com>`. Absent or `false` ⇒ none.
-   **Range**: changes from all tasks accumulate in the tree; you slice the
-   commits when you review.
-3. **Capture at loop-exit + seam** — run the shared protocol in
-   `.agents/skills/gotcha/SKILL.md` (canonical: `skills/gotcha/SKILL.md`).
-   Auto-draft a gotcha entry **only** on an objective trigger — a fix-loop
-   that **failed-then-recovered**, or the user voicing surprise — route it
-   through gotcha's dedup, one-tap confirm. A clean run stays silent (no
-   vibe-gating). If capture is **declined/deferred**, drop the seam
-   sentinel — append ONE structured line deduped by `cmd` (see `docs/SEAM.md`):
-   `line='{"cmd":"/gotcha <drafted text>","source":"sdlc","confirm":false}'; grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action`
-   (never a bare `/gotcha`). Codex **does** have a Stop hook (`.codex/hooks.json`, shipped
-   by the plugin / `setup.sh`) that surfaces this — but until it's wired **and the `.codex/`
-   dir is trusted** (`/hooks`), also print an inline `Next: /gotcha <drafted text>` line in
-   the Stage 7 report as the fallback, so the suggestion isn't silently lost.
-4. Mark each resolved `TASKS.md` row `[x]`, move to `Done`, set
-   `status: completed` in the task file(s) — work is done and validated; only
-   the commit is left to you.
-5. **Leave re-entry rows** so the queue keeps the follow-up: when a
-   manifest/lockfile/Dockerfile changed (deploy-delta), append
-   `- [ ] (P1) rebuild <env> for {feature-slug} (dependency change — rebuild, not restart) — plans/{feature-slug}.md`;
-   and a `- [ ] (P2) verify {feature-slug} deployed — `/repo-health` plans/{feature-slug}.md`
-   row closes the loop the same way `/sdlc` Stage 6 does.
-   **Then print the manual-verification line** from `.claude/project.json` `stack.*` (all
-   keys optional): `stack.rebuild` on the deploy-delta case (a dependency changed, so a
-   plain restart runs stale code), otherwise `stack.up`; append `stack.url` when set.
-   **Printed, never auto-run** — you asked for a validated tree, not a running one. If a
-   needed key is absent, name the key instead of guessing a command.
-
-Write `stage-outputs/handoff.json` =
-`{branch, files_changed[], committed: false, suggested_commit_msg}`. **Always
-set `run.json.status` to a terminal value** (`complete`, or `paused` if you
-stopped mid-pipeline) before exiting — never leave it `in_progress`, or
-`/repo-health` and `/sdlc-status` will (correctly) flag it as a stale run. **Also set
-`run.json.next_action = {cmd, confirm}`** (L8) to the proposed follow-up
-(`/repo-health` on complete; `/sdlc-status` on pause) so
-`/sdlc-status` recovers the handoff after the sentinel fires; omit when there's none. This holds
-for **retro / validation-only runs** too (Stage 2 skipped because the code
-already landed): advance `run.json.stage`/`stages_completed` as each validation
-sidecar is written, add `implement` to `stages_skipped`, and close on a terminal
-`status` — never leave a `parse`-stage envelope `in_progress` with sidecars
-already on disk.
+**Read `skills/sdlc/templates/stage-6-handoff.md` now** and run it inline (no sub-agent seam
+on this runtime — the secret scan and the gotcha capture protocol both run in-session; gotcha's
+canonical skill is `skills/gotcha/SKILL.md`, installed here at `.agents/skills/gotcha/SKILL.md`).
+It carries the diff report and suggested commit message, the `TASKS.md` close-out and re-entry
+rows, and the terminal state write.
 
 ## Stage 7 — Report
 
 Summarize: branch the changes sit on (uncommitted), files changed, suggested
 commit message, eval pass/fail, test-check summary, the Stage 5 plan check —
 requirements verdict plus the flowsim flow trace and whether it was witnessed or
-advisory (or "skipped — no plan target") — and anything left open. Make clear **nothing was
-committed** — the next move is yours.
+advisory (or "skipped — no plan target") — and anything left open. **Always print
+`tasks: N closed, M moved (K matched)`** from Stage 6's `handoff.json` `data.tasks`,
+including `tasks: 0 closed (0 matched)` when nothing matched — that line is what turns a
+silent close-out miss into a visible one; when `unmatched` is non-empty add
+`(U unmatched — see /sdlc-status --reconcile)`. If the delivered diff
+departs from the plan (a step skipped, reordered, or solved differently), say where and why in
+one line each — the `plan-conformance-validator`'s partial/missing rows are the source. Make clear **nothing
+was committed** — the next move is yours.
+
+## Skill-repo mode (auto-detected)
+
+Active when `.claude-plugin/marketplace.json` exists at repo root. A skill repo has no test
+surface, so three stages change; every other stage runs unmodified.
+
+| Stage | Skill-repo behavior |
+|---|---|
+| Stage 3 — Generate evals | **skip** — append `generate-evals` to `run.json.stages_skipped` |
+| Stage 5 — Validate | **substitute the test half only** with `skills/sdlc/templates/stage-5-skill-repo.md` (validator, marketplace registration, template-reference resolution, setup.sh dry install; soft: line ceilings, README drift, overlay parity) — **the plan-vs-diff check stays on** whenever there is a plan target: requirements gate as normal, flow is advisory-only (no test evidence to witness it). Writes `validate.json` with `data.mode = "skill-repo"` |
+| Stage 5.7 — Adversarial review | **adapt when enabled, never self-skip** — still opt-in/OFF-by-default per Stages 5.7/5.8 above; when it's ON, a docs-only diff is the code surface here |
+
+## Safety rules
+
+- **Stop on ambiguity** — unclear plan steps: pause and ask.
+- **Stop on repeated failures** — a fix loop that exhausts its budget reports rather than grinding.
+- **Don't fix pre-existing failures** — only what this run introduced; `preexisting[]` is reported, never gated on.
+- **Autonomy overrides interactive output styles** — the explicit invocation wins; run autonomously.
 
 ## Gotchas
 
 - **Does no git writes.** No commit, branch, push, PR, or `/review`. Hands you
   a validated tree; you commit.
-- **Stage 5's plan check runs whenever there's a plan to check.**
+- **Stage 5's plan check runs whenever there's a plan to check.** It skips only
   when there is no plan target — not behind a frontmatter knob.
 - **Don't fork the shared templates.** Stage bodies live once in
   `skills/sdlc/templates/`; edit the template, never copy it here.

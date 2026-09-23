@@ -1,0 +1,16 @@
+{
+  "name": "gotcha-dedup",
+  "prompt": "/gotcha \"pytest needs PYTHONPATH=. here\"",
+  "max_budget_usd": 0.6,
+  "repeat": 2,
+  "assertions": [
+    {
+      "type": "count_occurrences",
+      "file": "GOTCHAS.md",
+      "text": "(?m)^###\\s",
+      "equals": 1,
+      "mode": "regex",
+      "_why": "dedup means ONE ENTRY, not one mention. The first run legitimately writes a single entry whose body names PYTHONPATH=. more than once (claim + correction), so a raw substring count reads 2 and looks like a dedup failure when dedup actually worked. Count entry headings."
+    }
+  ]
+}

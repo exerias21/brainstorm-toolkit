@@ -1,5 +1,7 @@
 # Prose fidelity — prescriptive steps get followed, abstract steps get improvised
 
+> **✓ Live contract — current and maintained.**
+
 A design lesson from dogfooding the loop skills against real work (2026-07). It is the
 single most useful thing we learned about *why* a skill sometimes does exactly what its
 SKILL.md says and sometimes freelances — and what to do about it.
@@ -59,10 +61,15 @@ make **that** part prescriptive even while the content stays free.
 
 ## Corollary
 
-Prose-hardening is a *cheaper* fidelity lever than porting a step to the deterministic
-Workflow (which can't improvise because it's code). Reach for the Workflow when a step must
-be mechanically guaranteed at scale; reach for prescriptive prose first when the step just
-needs to be *followed*. The DQ fixes are the existence proof that the cheap lever works.
+Prose-hardening is a *cheaper* fidelity lever than building a deterministic control for the same
+step. Reach for prescriptive prose first when the step just needs to be *followed*; reach for a
+small, testable deterministic control — a hook, or a plain CLI like `scripts/protect-tests.sh` —
+only when the step must be mechanically guaranteed regardless of whether the model reads the
+prose at all. **Never reach for a Workflow**: this repo deleted its Workflow
+(`sdlc-pipeline.workflow.js`, 1,398 lines) precisely because it was a second expression of the
+same prose with no automated guard, and it drifted. See `CLAUDE.md`'s "When a rule earns a hook,
+not just prose" for the routing rule and `docs/ENFORCEMENT.md` for worked examples of which way
+real cases fell. The DQ fixes are the existence proof that the cheap prose lever works.
 
 ## Evidence trail
 

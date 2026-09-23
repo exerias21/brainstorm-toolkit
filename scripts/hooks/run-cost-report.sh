@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # brainstorm-toolkit — end-of-run cost report.
 #
-# Prints what a pipeline run actually cost, ONCE, when the run reaches a terminal state.
+# Prints what a pipeline run actually cost, once per status, when the run reaches a settled
+# state (complete/failed/paused — see the per-status-marker note below for why `paused`,
+# which is resumable rather than terminal, still gets reported and can be reported again).
 # Replaces the earlier mid-run context-threshold nag, which was wrong three ways: it was a
 # lagging indicator (the tokens were already spent), it fired mid-plan where clearing is
 # explicitly unsafe (docs/LOOP-HYGIENE.md), and it was tuned on a multi-day multi-command
@@ -16,19 +18,41 @@
 # can change a decision. It is not a suggestion to split anything: a big run is fine when the
 # context is real work. Compare peak against how much of it was genuinely working state.
 #
-# Best-effort and FAIL-SOFT: silent (exit 0) with no terminal run, no transcript, or no
+# Best-effort and FAIL-SOFT: silent (exit 0) with no settled run, no transcript, or no
 # JSON parser.
 set -u
 
 [ -t 0 ] && exit 0
 
-# Probe that the interpreter RUNS, not merely that it is on PATH: on Windows `python3` is
-# commonly a Microsoft Store stub that resolves and then exits non-zero.
+# Project root, resolved before the interpreter probe below -- the probe's second
+# tier reads .claude/project.json off of it.
+PROJ="${CLAUDE_PROJECT_DIR:-}"
+if [ -z "$PROJ" ]; then
+  if _gr="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -n "$_gr" ]; then PROJ="$_gr"; else PROJ="$PWD"; fi
+fi
+
+# Three-tier resolution matching scripts/py.sh / next-action.sh's inline copy of it:
+# $BRAINSTORM_PYTHON > .claude/project.json's top-level `python` key > probe
+# python3/python/py -- each candidate proven to RUN, not merely resolved on PATH
+# (a Windows Store python3 stub resolves and then exits non-zero). A prior version
+# of this probe only tried python3/python/py, so a machine with neither on PATH but
+# a working interpreter named by either setting fell through to jq alone, or to
+# nothing at all when jq was also absent.
 JQ=""; PY=""
 if command -v jq >/dev/null 2>&1 && echo '{}' | jq -e . >/dev/null 2>&1; then JQ="jq"; fi
-for c in python3 python py; do
-  if command -v "$c" >/dev/null 2>&1 && "$c" -c 'pass' >/dev/null 2>&1; then PY="$c"; break; fi
-done
+if [ -n "${BRAINSTORM_PYTHON:-}" ] && "${BRAINSTORM_PYTHON}" -c 'pass' >/dev/null 2>&1; then
+  PY="$BRAINSTORM_PYTHON"
+fi
+if [ -z "$PY" ] && [ -f "$PROJ/.claude/project.json" ]; then
+  PY="$(sed -n 's/.*"python"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+        "$PROJ/.claude/project.json" 2>/dev/null | head -n 1)"
+  if [ -n "$PY" ] && ! "$PY" -c 'pass' >/dev/null 2>&1; then PY=""; fi
+fi
+if [ -z "$PY" ]; then
+  for c in python3 python py; do
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c 'pass' >/dev/null 2>&1; then PY="$c"; break; fi
+  done
+fi
 [ -n "$JQ" ] || [ -n "$PY" ] || exit 0
 
 jget() {
@@ -48,10 +72,69 @@ except Exception: print(d)' "$_f" "$_p" "$_d" 2>/dev/null || printf '%s' "$_d"
   fi
 }
 
-PROJ="${CLAUDE_PROJECT_DIR:-}"
-if [ -z "$PROJ" ]; then
-  if _gr="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -n "$_gr" ]; then PROJ="$_gr"; else PROJ="$PWD"; fi
-fi
+# Persist the five numbers into the envelope's `data.cost` (schema:
+# skills/sdlc/templates/state-schema.md). Additive-only and atomic (tmp +
+# os.replace, the idiom at scripts/merge-hook.py:89-97) because this Stop
+# hook mutates run.json, which stop-gate.sh, --resume's plan_hash check and
+# close-tasks.sh reconcile all read -- a half-written file corrupts every one
+# of them. Reads the whole file and rewrites only `data.cost`, so every other
+# field (including anything `--resume` validates) survives untouched.
+# Best-effort: any failure here is swallowed, never fails the run.
+write_cost() {
+  _env="$1"; _turns="$2"; _avg="$3"; _peak="$4"; _cread="$5"; _usd="$6"
+  _reported_at="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || true)"
+  [ -n "$_reported_at" ] || return 0
+  if [ -n "$PY" ]; then
+    "$PY" - "$_env" "$_turns" "$_avg" "$_peak" "$_cread" "$_usd" "$_reported_at" <<'PY' 2>/dev/null || true
+import json, os, sys
+path, turns, avg, peak, cread, usd, reported_at = sys.argv[1:8]
+try:
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+except Exception:
+    sys.exit(0)
+if not isinstance(data, dict):
+    sys.exit(0)
+d = data.get("data")
+if not isinstance(d, dict):
+    d = {}
+try:
+    d["cost"] = {
+        "turns": int(turns),
+        "avg_context_tokens": int(avg),
+        "peak_context_tokens": int(peak),
+        "cache_read_tokens": int(cread),
+        "estimated_usd": float(usd),
+        "reported_at": reported_at,
+    }
+except Exception:
+    sys.exit(0)
+data["data"] = d
+tmp = path + ".tmp"
+try:
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, path)
+except OSError:
+    try:
+        os.unlink(tmp)
+    except OSError:
+        pass
+PY
+  elif [ -n "$JQ" ]; then
+    _tmp="${_env}.tmp"
+    if jq --argjson turns "$_turns" --argjson avg "$_avg" --argjson peak "$_peak" \
+          --argjson cread "$_cread" --argjson usd "$_usd" --arg reported_at "$_reported_at" \
+          '.data = ((.data // {}) + {cost: {turns:$turns, avg_context_tokens:$avg, peak_context_tokens:$peak, cache_read_tokens:$cread, estimated_usd:$usd, reported_at:$reported_at}})' \
+          "$_env" > "$_tmp" 2>/dev/null; then
+      mv "$_tmp" "$_env" 2>/dev/null || rm -f "$_tmp" 2>/dev/null
+    else
+      rm -f "$_tmp" 2>/dev/null
+    fi
+  fi
+  return 0
+}
 
 input="$(cat 2>/dev/null || true)"
 [ -n "$input" ] || exit 0
@@ -67,16 +150,82 @@ if [ -f .claude/project.json ]; then
   [ "$enabled" = "off" ] && exit 0
 fi
 
-# Report only for a run that JUST reached a terminal state, and only once per run.
-envelope=""; slug=""
+# This session's start, so a settled envelope from BEFORE this session ever
+# started can never have this session's transcript stats written into it (a
+# repo with older envelopes that predate the `.cost-reported` marker used to
+# get exactly that -- a stale run reported and its data.cost overwritten on
+# every Stop). Derived from the transcript itself: the first timestamped JSONL
+# entry (transcripts are append-only, so the first `.timestamp` field seen is
+# the session's start), falling back to the transcript file's creation time
+# when no line carries one. If neither can be determined, stand down rather
+# than fall back to the old unbounded behavior.
+if [ -n "$PY" ]; then
+  session_start="$("$PY" -c 'import json,os,sys,datetime
+path=sys.argv[1]
+ts=None
+try:
+    with open(path,encoding="utf-8",errors="replace") as f:
+        for line in f:
+            line=line.strip()
+            if not line: continue
+            try: d=json.loads(line)
+            except Exception: continue
+            t=d.get("timestamp")
+            if t:
+                ts=t; break
+except Exception:
+    pass
+if not ts:
+    try:
+        ct=os.path.getctime(path)
+        ts=datetime.datetime.utcfromtimestamp(ct).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except Exception:
+        ts=""
+print(ts)' "$transcript" 2>/dev/null)"
+else
+  session_start="$(jq -r 'select(.timestamp != null) | .timestamp' "$transcript" 2>/dev/null | head -n 1)"
+  if [ -z "$session_start" ]; then
+    session_start="$(date -u -r "$transcript" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || true)"
+  fi
+fi
+[ -n "$session_start" ] || exit 0
+
+# Report only for a run that JUST reached a settled state, and only once PER
+# STATUS -- `complete`/`failed` are terminal; `paused` is a settled, resumable
+# state (skills/sdlc/templates/state-schema.md), not a dead end, so a paused
+# run that later resumes and completes must be reported again for that later
+# completion. The `.cost-reported` marker therefore records WHICH status it
+# reported, not merely that it fired once -- a bare marker file made a run
+# resumed-from-paused's eventual completion silently unreported forever.
+# Multiple settled, unreported (for their CURRENT status) envelopes can
+# coexist (a concurrent /task and /sdlc run, say), so pick the one that
+# settled MOST RECENTLY -- track max `updated_at` (ISO-8601 sorts lexically)
+# and assign only on a beat, rather than reassigning unconditionally on every
+# match, which made the alphabetically-last glob entry win regardless of
+# recency.
+envelope=""; slug=""; best_updated=""
 for f in .claude/pipeline/*/run.json; do
   [ -f "$f" ] || continue
   st="$(jget "$f" '.status')"
   case "$st" in
     complete|completed|failed|paused)
       d="$(dirname "$f")"
-      [ -f "$d/.cost-reported" ] && continue
-      envelope="$f"; slug="$(basename "$d")"
+      if [ -f "$d/.cost-reported" ]; then
+        reported_status="$(cat "$d/.cost-reported" 2>/dev/null || true)"
+        [ "$reported_status" = "$st" ] && continue
+      fi
+      upd="$(jget "$f" '.updated_at')"
+      # An envelope that settled BEFORE this session started must never have
+      # THIS session's transcript stats written into it. Mark it silently
+      # (recording the status, same as a real report would) so it is not
+      # re-evaluated on every future Stop, but never touch its data.cost.
+      if [ -n "$upd" ] && [ "$upd" \< "$session_start" ]; then
+        printf '%s' "$st" > "$d/.cost-reported" 2>/dev/null || true
+        continue
+      fi
+      if [ -z "$envelope" ] || [ "$upd" \> "$best_updated" ]; then
+        envelope="$f"; slug="$(basename "$d")"; best_updated="$upd"
+      fi
       ;;
   esac
 done
@@ -99,8 +248,9 @@ for line in open(sys.argv[1],encoding="utf-8",errors="replace"):
     turns+=1; tot+=ctx; peak=max(peak,ctx)
     out+=u.get("output_tokens") or 0; cr+=r; cw+=w; inp+=i
 avg=tot//turns if turns else 0
-# Rough relative spend, opus rates: in 15 / cache-write 18.75 / cache-read 1.50 / out 75 per Mtok.
-usd=(inp*15.0 + cw*18.75 + cr*1.50 + out*75.0)/1e6
+# Rough relative spend at Opus 5 list (2026-06): in 5 / cache-write 6.25 / cache-read 0.50 / out 25 per Mtok.
+# Every turn is priced at Opus regardless of model -- an upper bound, not a bill.
+usd=(inp*5.0 + cw*6.25 + cr*0.50 + out*25.0)/1e6
 print(f"{turns} {avg} {peak} {cr} {usd:.2f}")' "$transcript" 2>/dev/null)"
 else
   stats="$(jq -rs '
@@ -109,10 +259,10 @@ else
     | [ $u[] | (.input_tokens//0)+(.cache_read_input_tokens//0)+(.cache_creation_input_tokens//0) ] as $c
     | [ ($n|tostring), (if $n>0 then (($c|add)/$n|floor|tostring) else "0" end),
         (($c|max)//0|tostring), ([$u[]|.cache_read_input_tokens//0]|add|tostring),
-        ((([$u[]|.input_tokens//0]|add)*15.0
-          + ([$u[]|.cache_creation_input_tokens//0]|add)*18.75
-          + ([$u[]|.cache_read_input_tokens//0]|add)*1.50
-          + ([$u[]|.output_tokens//0]|add)*75.0)/1000000 | tostring) ]
+        ((([$u[]|.input_tokens//0]|add)*5.0
+          + ([$u[]|.cache_creation_input_tokens//0]|add)*6.25
+          + ([$u[]|.cache_read_input_tokens//0]|add)*0.50
+          + ([$u[]|.output_tokens//0]|add)*25.0)/1000000 | tostring) ]
     | join(" ")' "$transcript" 2>/dev/null)"
 fi
 [ -n "$stats" ] || exit 0
@@ -121,7 +271,11 @@ turns="${1:-0}"; avg="${2:-0}"; peak="${3:-0}"; cread="${4:-0}"; usd="${5:-0}"
 [ "$turns" -gt 0 ] 2>/dev/null || exit 0
 
 status="$(jget "$envelope" '.status' '?')"
-: > "$(dirname "$envelope")/.cost-reported" 2>/dev/null || true
+write_cost "$envelope" "$turns" "$avg" "$peak" "$cread" "$usd"
+# Record WHICH status this report covers (not just that a report happened) --
+# a later status change on this same envelope (paused -> complete) must be
+# reported again; the skip check above compares against this value.
+printf '%s' "$status" > "$(dirname "$envelope")/.cost-reported" 2>/dev/null || true
 
 msg="[run cost] ${slug} (${status}) - ${turns} turns, avg context $((avg/1000))k, peak $((peak/1000))k, cache-read $((cread/1000000))M, ~\$${usd}.
 Cost scales turns x context, so peak is the number that compounds. A big run is fine when the

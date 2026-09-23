@@ -1,0 +1,19 @@
+{
+  "name": "repo-onboarding-keys",
+  "prompt": "/repo-onboarding",
+  "max_budget_usd": 1.25,
+  "pre_setup_remove": [
+    ".claude/project.json"
+  ],
+  "assertions": [
+    {
+      "type": "json_keys_subset",
+      "file": ".claude/project.json",
+      "superset_file": ".claude/project.json.example"
+    },
+    {
+      "type": "file_exists",
+      "path": "AGENTS.md"
+    }
+  ]
+}
