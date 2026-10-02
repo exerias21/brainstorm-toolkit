@@ -2,13 +2,11 @@
 name: repo-onboarding
 description: >
   Inspect a repository and generate the cross-tool contract files this toolkit's
-  skills rely on: `AGENTS.md` (architecture + agent instructions), `TASKS.md`
-  (work queue), `.claude/project.json` (runner config), and `GOTCHAS.md` (pitfalls).
-  Use when onboarding a new repo to the workflow toolkit, when the user says "set up
-  this repo for the toolkit", "generate AGENTS.md", "create project.json", or asks how
-  the codebase is laid out, or when /onboard, /discovery, /codelearn, or /init-toolkit
-  is invoked. Replaces the separate
-  /codelearn skill — architecture discovery is part of onboarding here.
+  skills rely on: AGENTS.md, TASKS.md, .claude/project.json, and GOTCHAS.md. Use
+  when onboarding a new repo to the workflow toolkit, when the user says "set up
+  this repo for the toolkit", "generate AGENTS.md", "create project.json", or asks
+  how the codebase is laid out, or when /onboard, /discovery, /codelearn, or
+  /init-toolkit is invoked.
 metadata:
    brainstorm-toolkit-applies-to: claude copilot codex
 ---
@@ -118,7 +116,7 @@ proposing `sonnet` over omitting, per above.)
 **Interactive sessions only.** When there is nobody to answer — a headless `claude -p`
 run, a CI job, any non-interactive invocation — **do not ask and do not stop.** Take each
 row's documented default (`models.cap: "sonnet"`, review off, `coauthor_trailer: false`,
-`stack.*` as detected or omitted), then go straight to Steps 4–5 so the repo is actually
+`stack.*` as detected or omitted, the full default `.gitignore` set with no extra paths), then go straight to Steps 4–5 so the repo is actually
 onboarded, naming every assumed value in the Step 6 report so it is one edit to correct.
 
 First print the proposed `project.json` with a one-line rationale per detected key
@@ -162,10 +160,11 @@ first so "just accept" is one keystroke, and state the cost (or policy) directio
 | Ask | Key | Options (default first) |
 |---|---|---|
 | **Ceiling for every sub-agent fan-out — implementers, fix agents, sanity + review lenses.** The single biggest cost lever. | `models.cap` | `sonnet` (Sonnet-first standing default) · `haiku` (cheapest; fine for sweeps/monitoring) · `opus` (**no ceiling** — every stage runs at its own full default tier) · omit |
-| **Which model pre-flights your plan before any code is written** (Stage 1.5, never gated — it runs on *every* `/sdlc` run). Say plainly that the built-in is Haiku and that **`models.cap` cannot raise it** — this key is the only lever. | `models.sanity` / `agents.sanity_focuses` | omit → 3 Haiku agents (`paths`, `completeness`, `gotchas`) · `sonnet` (better judgment on `completeness`, which asks whether the plan hangs together) · fewer focuses to cut cost (`paths` is mechanical; drop `gotchas` when there's no `GOTCHAS.md`) |
+| **Which model pre-flights your plan before any code is written** (Stage 1.5, never gated — it runs on *every* `/sdlc` run). Say plainly that the built-in per-focus defaults are `paths=haiku`, `completeness=sonnet`, `gotchas=sonnet`, and that **`models.cap` cannot raise any of them** — `models.sanity` (a string for all focuses, or a per-focus map) is the only lever. | `models.sanity` / `agents.sanity_focuses` | omit → built-in defaults (`paths=haiku`, `completeness=sonnet`, `gotchas=sonnet`) · `opus` (raises every focus at once) · a map like `{"completeness": "opus"}` to raise just one · fewer focuses to cut cost (`paths` is mechanical; drop `gotchas` when there's no `GOTCHAS.md`) |
 | **Enable the adversarial Review→Fix stage?** Off unless you say yes — it never runs by accident. | `pipeline.review_fix.enabled` / `models.code_review` | `false` (default) · `true` + reviewer `opus` · `true` + reviewer `fable` (usage-billed, explicit opt-in) |
 | **How many review lenses?** Ask only if the stage was just enabled. One reviewer call per lens at the reviewer model, so this scales the stage's cost roughly linearly. | `agents.code_review_lenses` | omit → all four (`correctness`, `plan-alignment`, `config-env-docs`, `security`) · `["correctness", "security"]` (half cost; good default for app code) · `["correctness"]` (quarter cost; highest-yield single lens) |
 | **How do you bring this app up for manual verification?** Confirm or correct what was detected. | `stack.up` / `stack.rebuild` / `stack.url` | the detected compose/dev commands · corrected by the user · omit (skills then say which key is missing instead of guessing) |
+| **What should git ignore?** Not a config key — it decides what Step 5 appends to `.gitignore`. Multi-select over the toolkit files that are a genuine team choice (the machine-state entries in Step 5 are always ignored and never asked). State the trade per option: ignored = personal, no merge conflicts; tracked = shared with the team, survives a `git reset --hard`. Then ask for **any other paths** this repo wants ignored (local env files, scratch or output dirs the scan saw untracked) — and never propose a path that is already tracked without saying ignoring it won't untrack it. | `.gitignore` | all three checked (default): `.claude/project.json`, `TASKS.md`, `plans/` · uncheck any the team shares · plus free-text extra paths |
 | **Should commit messages this toolkit writes or suggests credit Claude as a co-author?** Not a cost lever — a disclosure choice, so it is off unless the user says yes. Mention that it also lands in any PR body a future step authors, and that some DCO / commit-lint setups reject unrecognized trailers. | `coauthor_trailer` | `false` (default — no trailer) · `true` (append `Co-Authored-By: Claude <noreply@anthropic.com>`) |
 
 Explain the interaction once, because it surprises people: **`models.cap` is a ceiling, not a
@@ -198,18 +197,22 @@ writing nothing is a failed onboarding, not a cautious one:
 5. **Update `.gitignore`.** The toolkit's working files are *local* working
    files — they churn every run, they are personal to whoever is driving, and
    they are a merge-conflict magnet in any repo with more than one contributor.
-   Ensure these lines are present (create `.gitignore` if missing; append under a
-   `# brainstorm-toolkit` comment — don't duplicate lines that already exist):
+   Write **only what Step 3's `.gitignore` answer chose** — the user decides what stays
+   out of git; don't append a fixed list over their answer. Create `.gitignore` if
+   missing; append under a `# brainstorm-toolkit` comment; don't duplicate lines that
+   already exist. The machine-state lines are always written (pure run state, never
+   useful in history); the rest only if selected, then any extra paths the user named:
    ```gitignore
    # brainstorm-toolkit — local working state, not shared contract
    .claude/pipeline/
    .claude/.next-action
    .claude/.auto-continue-hops
    .claude/.stop-gate-hops
-   .claude/project.json
-   TASKS.md
-   plans/
+   .claude/project.json   # if selected
+   TASKS.md               # if selected
+   plans/                 # if selected
    ```
+   Write the entries without the `# if selected` annotations.
 
    **Keep tracked:** `.claude/project.json.example` (the bootstrap template),
    `.claude/settings.json` (hook wiring the team does share), `AGENTS.md`,

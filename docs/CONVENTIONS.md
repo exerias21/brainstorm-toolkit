@@ -288,7 +288,7 @@ script surfaces as an allowlist entry with a reason, not a silent skip.
 
 **Stages**: opt-in. Existing skills using "Stage 1.5" prose remain. New skills, plus the run.json schema in Phase 1, use semantic names. Conversions of existing skills happen when those skills are edited for other reasons.
 
-**Line ceilings**: `CLAUDE.md`/`AGENTS.md` rule 3 formerly ran a two-tier house rule (≤100 lines
+**Line ceilings**: `AGENTS.md` rule 3 formerly ran a two-tier house rule (≤100 lines
 for a utility skill, ≤300 for an orchestration skill) with a three-row named-exceptions table
 for the skills that ran over it. `sdlc` (327 lines at last measurement) and `brainstorm` (332
 lines) were two of those three rows: `sdlc`'s length is the orchestration surface itself —

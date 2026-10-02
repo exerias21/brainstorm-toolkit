@@ -158,6 +158,12 @@ review: reviewer (<model>) and implementer (<tier>) resolve to the same tier —
 **The reviewer is never re-tiered on your behalf** — an explicit `models.code_review` /
 `--review-model` value is always the dispatched value (why: `docs/MODEL-AXES.md`).
 
+**Also surfaced at Stage 7.** Whenever this run's `review.json.data.independence ==
+"degraded"`, Stage 7's report adds one line so the collision is visible even to a reader who
+never opens `review.json`: `independence: degraded — findings surfaced only, never
+auto-fixed`. The same collision is additionally checked at Stage 0, before this stage has run
+at all — see `skills/sdlc/templates/models.md` "Independence".
+
 **Oscillation guard (fingerprint-based):** each confirmed finding gets a stable fingerprint —
 `file + ":" + lens + ":" + floor(line / 10)`. Persist `fixed_fingerprints[]` per loop iteration.
 Before approving a finding in loop `n+1`, check it against the union of all prior loops'

@@ -16,6 +16,19 @@ with no refactor, and given these two lines verbatim in its prompt:
 Then re-run the gate. Repeat to a maximum of **3 iterations, shared across Stage
 5's gates** (Stage 5.7/5.8 has its own separate budget).
 
+**Opt-in last-try escalation (`pipeline.fix_loop.escalate_last`, default `false`).** When true,
+only the **final** iteration of this budget dispatches its fix agent at
+`min(stage_tier + 1, effective_cap)` on the `haiku < sonnet < opus` ladder, and prints
+`model: <tier> (cap: <cap>, escalated)` in place of the ordinary dispatch line. Under the
+default `cap: sonnet`, `min(sonnet + 1, sonnet)` is a no-op — nothing changes. The case where it
+actually acts is `models.cap: "opus"` (or `--model opus`): iterations 1–2 dispatch at Sonnet
+(the fix agent's built-in tier — the cap only ever lowers, so `opus` doesn't raise it), and the
+last iteration dispatches at Opus. Without this key, every retry stays on the same tier by
+design — a fix loop is not a place to guess your way up the ladder silently. Excluded entirely
+from Stage 5.7/5.8: that stage has its own separate budget and Axis 2 (`models.code_review`) is
+not on this ladder, so there is nothing to escalate. `scripts/hooks/enforce-model-cap.sh` needs
+no change for this — an escalation that stays within the cap is never rewritten.
+
 **The pause.** On budget exhaustion, emit this block, inferring the class from *the failing
 stage's own* sidecar (`validate.json`, `review.json`):
 

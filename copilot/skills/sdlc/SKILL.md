@@ -119,6 +119,14 @@ otherwise (DQ6):** `plan_hash: "sha256:$(sha256sum <plan> | cut -d' ' -f1)"`, `s
 `updated_at` = `"$(date -u +%Y-%m-%dT%H:%M:%SZ)"`. Omitting them breaks `--resume` and
 `/sdlc-status`/`/repo-health` staleness detection.
 
+**Independence pre-check (before any spend).** If the review stage resolves ON
+(`--review-model <name>` or `pipeline.review_fix.enabled: true`; `--no-review` always wins
+OFF), compute whether `models.code_review` collides with the implementer's effective tier per
+`skills/sdlc/templates/models.md` "Independence" — **do not open
+`skills/sdlc/templates/stage-5.7-review-fix.md` for this**, it is opt-in and a default run must
+never load it. On a collision, print the same degraded line Stage 5.7 emits before dispatching
+now, before Stage 1.5 spends a token, rather than only surfacing it once Stage 5.7 runs.
+
 **Then parse the plan.** Read the resolved plan/task file(s) fully and extract the feature
 name, the implementation steps (numbered lists with file paths, or checkbox rows), the files to
 create or modify, the acceptance criteria ("expected"/"should"/"must"/"verify" language) and
@@ -156,8 +164,10 @@ and follow it instead of re-initializing — reject on a `plan_hash` mismatch, r
 **Read `skills/sdlc/templates/stage-1.5-sanity-check.md` now** and run it inline (sequential
 pre-flight — no parallel focus agents on this runtime). Not gated, not optional. For a range,
 run once over the combined set. Stop and report on a real blocker. `agents.sanity_focuses`
-selects which checks run (default all three); on this runtime `models.sanity` is advisory
-like every tier — set your session model instead.
+selects which checks run (default all three). Built-in per-focus defaults are `paths: haiku`,
+`completeness: sonnet`, `gotchas: sonnet` (`models.sanity` overrides via a string or a
+per-focus map) — on this runtime `models.sanity` is advisory like every tier, so set your
+session model instead.
 
 ## Stage 2 — Implement
 
@@ -195,6 +205,11 @@ runtime is always single-agent), preceded by **live-code grounding**.
 At the first gate failure, **read `skills/sdlc/templates/fix-loop.md` now**: fix only the named
 failures (no refactor), re-run the gate, 3 iterations max, then emit its PAUSE block and set
 `run.json.status = "paused"`. Stage 5.7/5.8 has its own separate budget.
+
+**`pipeline.fix_loop.escalate_last` on this runtime.** There is no sub-agent seam to escalate —
+every fix attempt already runs inline in your session model, so a `true` value does not raise
+the last iteration's tier here. Instead, add one line to the PAUSE block:
+`Escalate: re-run with --model opus --resume`.
 
 ## Stage 5 — Validate (one stage)
 
@@ -246,8 +261,10 @@ advisory (or "skipped — no plan target") — and anything left open. **Always 
 `tasks: N closed, M moved (K matched)`** from Stage 6's `handoff.json` `data.tasks`,
 including `tasks: 0 closed (0 matched)` when nothing matched — that line is what turns a
 silent close-out miss into a visible one; when `unmatched` is non-empty add
-`(U unmatched — see /sdlc-status --reconcile)`. If the delivered diff
-departs from the plan (a step skipped, reordered, or solved differently), say where and why in
+`(U unmatched — see /sdlc-status --reconcile)`. When `review.json.data.independence ==
+"degraded"`, add the line `independence: degraded — findings surfaced only, never auto-fixed`
+(wording: `skills/sdlc/templates/stage-5.7-review-fix.md` "Independence enforcement"). If the
+delivered diff departs from the plan (a step skipped, reordered, or solved differently), say where and why in
 one line each — the `plan-conformance-validator`'s partial/missing rows are the source. Make clear **nothing
 was committed** — the next move is yours.
 

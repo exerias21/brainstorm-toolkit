@@ -49,6 +49,7 @@ This page mirrors `templates/project.json.example`; that file is the registry
   "models": {
     "cap": "sonnet",
     "sanity": null,
+    "planner": "opus",
     "code_review": "opus",
     "code_review_second_pass": "sonnet"
   },
@@ -90,6 +91,9 @@ This page mirrors `templates/project.json.example`; that file is the registry
     },
     "context": {
       "cost_report": "on"
+    },
+    "fix_loop": {
+      "escalate_last": false
     },
     "review_fix": {
       "enabled": false,
@@ -134,11 +138,30 @@ without upgrading the cheap ones. Per-run override `--model <tier>` (precedence:
 `models.cap` > default) wins both directions. **The fan-out is Sonnet-first by default:**
 out of the box `/sdlc` and `/brainstorm --vet ultra` run their fan-outs on Sonnet; `--model opus` is the deliberate opt-up.
 
-**The consequence worth knowing:** because the cap only *lowers*, a stage whose built-in
-tier is `haiku` cannot be raised by `models.cap` or `--model` at all. The per-stage key is
-the only lever, which is why `models.sanity` exists. It governs the **sanity check, which is
-Stage 1.5** (Stage 1 is plan parsing, which dispatches nothing; that is why the shorthand
-above starts at "sanity"). Stage 1.5 is never gated, so it runs on every single run.
+**The consequence worth knowing:** because the cap only *lowers*, a per-stage default cannot
+be raised by `models.cap` or `--model` at all. The per-stage key is the only lever, which is
+why `models.sanity` exists. It governs the **sanity check, which is Stage 1.5** (Stage 1 is
+plan parsing, which dispatches nothing; that is why the shorthand above starts at "sanity").
+Stage 1.5 is never gated, so it runs on every single run.
+
+`models.sanity` resolves **per focus**, not as one tier for the whole stage. Built-in
+defaults: `paths: haiku` (mechanical — does the file/symbol exist?), `completeness: sonnet`
+and `gotchas: sonnet` (both judgment calls — a cheap tier tends to misread "not yet
+implemented" as a plan gap). So only `paths` defaults to Haiku; the other two focuses
+already default to Sonnet. `models.sanity` accepts either a **string** (`haiku|sonnet|opus`,
+replaces every focus — the original shape, unchanged) or a **map** (`{"completeness":
+"opus"}`), where a focus missing from the map keeps its own built-in default. Either shape's
+resolved value then still passes through `models.cap` as usual. An invalid value (unknown
+tier, or a map entry that isn't one) falls through to that focus's own built-in default.
+Full contract: `skills/sdlc/templates/models.md` "Per-stage tiers (Axis 1)".
+
+**A third kind, `models.planner` — advisory, on neither axis.** Default `"opus"`
+(`haiku|sonnet|opus|fable`). It is not a dispatch tier: it never governs a sub-agent, and
+`models.cap` never lowers it. It is a session-model *recommendation* for `/brainstorm` and
+`/brainstorm-team`'s planning conversation, which runs on your host session model, not a
+sub-agent. Both skills print it once per session: "Planning runs on your session model.
+Recommended: `<planner>` — switch before the clarifying rounds if you aren't on it." An
+unrecognized value falls through to the default.
 
 `agents.*` sets **how many** agents each fan-out stage dispatches. Cost scales roughly
 linearly: one agent (or reviewer call) per entry, so trimming
@@ -149,6 +172,15 @@ stage. All of it governs sub-agents only, never the session orchestrator.
 (default `8`) — the fallback step-count cut used only when the plan has no `#### Phase N`
 headers to cut on instead. Task id / range / ad-hoc / `--queue` inputs never pass through this
 gate; `--no-scope-gate` forces whole-plan execution for a single run without touching the config.
+
+`pipeline.fix_loop.escalate_last` (default `false`) opts the **final** iteration of Stage 5's
+shared 3-iteration fix budget into `min(stage_tier + 1, effective_cap)` on the
+`haiku < sonnet < opus` ladder, printing `model: <tier> (cap: <cap>, escalated)`. Under the
+default `cap: sonnet` this is a no-op; the case where it acts is `models.cap: "opus"` (or
+`--model opus`), where iterations 1–2 run Sonnet and the last runs Opus. Excluded entirely
+from Stage 5.7/5.8, which has its own separate budget and whose reviewer axis
+(`models.code_review`) is not on this ladder. Without the key, every retry stays on the same
+tier by design.
 
 `pipeline.loop.*` tunes the backlog loop and is **entirely optional** (defaults
 shown above). `max_items` caps how many TASKS.md rows one `/sdlc --queue`
@@ -167,9 +199,11 @@ printing it, so the loop self-advances. It never chains a `confirm: true` action
 | `/test-check` | `test.*`, `logs.*` |
 | `/sdlc` | `gotchas_file`, `eval.*`, `main_branch`, delegates to `/test-check` |
 | `/gotcha` | `gotchas_file` |
-| `/brainstorm` | `modules`, `models.cap` |
+| `/brainstorm` | `modules`, `models.cap`, `models.planner` (session-model nudge) |
+| `/brainstorm-team` | `models.planner` (session-model nudge) |
 | `/sdlc`, `/brainstorm-team`, `/dead-code-review` | `models.cap` (sub-agent tier ceiling) |
-| `/sdlc` | `models.sanity` + `agents.sanity_focuses` (Stage 1.5 pre-flight; never gated, so it runs every time) |
+| `/sdlc` | `models.sanity` + `agents.sanity_focuses` (Stage 1.5 pre-flight, per focus; never gated, so it runs every time) |
+| `/sdlc` Stage 5 fix loop | `pipeline.fix_loop.escalate_last` (final-iteration escalation; excluded from Stage 5.7/5.8) |
 | `/sdlc` | `models.code_review`, `models.code_review_second_pass`, `agents.code_review_*` (axis 2; never capped) |
 | `/sdlc` | `pipeline.review_fix.*`: stage *behavior* only (`enabled`, `mode`). Opt-in, permanently off by default. (`blocking` was removed 2026-09: `/sdlc` does no git writes, so a HIGH finding is reported first in Stage 7, never gated) |
 | `/sdlc` | `agents.decompose_min_tasks` / `agents.decompose_min_files` (Stage 2 decompose gate) |

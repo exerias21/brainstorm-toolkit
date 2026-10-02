@@ -10,7 +10,7 @@ recommends the fix action. Everything below decomposes that one finding into con
 independently pullable levers.
 
 These are maintainer docs (they live in `docs/`, ship nowhere, per the placement rule in
-`CLAUDE.md`). No code or skill changes are made by this analysis — it is the map, not the work.
+`AGENTS.md`). No code or skill changes are made by this analysis — it is the map, not the work.
 
 ---
 

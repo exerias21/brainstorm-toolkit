@@ -67,7 +67,7 @@ small, testable deterministic control — a hook, or a plain CLI like `scripts/p
 only when the step must be mechanically guaranteed regardless of whether the model reads the
 prose at all. **Never reach for a Workflow**: this repo deleted its Workflow
 (`sdlc-pipeline.workflow.js`, 1,398 lines) precisely because it was a second expression of the
-same prose with no automated guard, and it drifted. See `CLAUDE.md`'s "When a rule earns a hook,
+same prose with no automated guard, and it drifted. See `AGENTS.md`'s "When a rule earns a hook,
 not just prose" for the routing rule and `docs/ENFORCEMENT.md` for worked examples of which way
 real cases fell. The DQ fixes are the existence proof that the cheap prose lever works.
 

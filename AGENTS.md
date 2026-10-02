@@ -137,6 +137,11 @@ repetition itself is required, not redundant.
    - Explanation, neighbour-routing and "what this skill is NOT" belong in the
      body, never the description. `gotcha` (464 chars) is the reference shape:
      what it does + one clear when.
+   - **Enforced, not just documented:** `scripts/ci/check_contracts.py`'s
+     `description-budget` check measures every `skills/*/SKILL.md` description
+     with a real frontmatter parse. Set total ≤7,500 chars and per-skill ≤600
+     chars are hard failures; per-skill >550 is a printed warning that does not
+     fail the check.
 5. **No inline templates or long checklists.** Reference `templates/*.template` files instead.
 6. **Graceful skip on missing config** — read `.claude/project.json` keys with fallbacks; skills must work with an empty or missing `project.json`.
 7. **Copilot uses Agent Skills, not prompt-file shims.** Consumer repos should receive `.github/skills/<name>/SKILL.md`, including any bundled resources referenced by the skill.
@@ -364,10 +369,12 @@ pytest evals, and `scripts/ci/skill-eval.py`'s headless outcome evals on a fixtu
    skill says to *load* is a placement error); no forbidden (rename-invalidated) phrase
    survives; no sentence names the same command twice; no Copilot/Codex overlay declares a
    Claude-only frontmatter key; no shipped line invokes a bare `python3` (the Windows
-   Store-stub trap) and no `hooks.json` command lacks an interpreter token; and
-   `.claude-plugin/plugin.json`'s `version` moved when shipped content did — an unmoved
-   version leaves every consumer on a stale cached plugin, silently. `--self-test` exercises
-   each one against a synthetic tree.
+   Store-stub trap) and no `hooks.json` command lacks an interpreter token; every skill's
+   frontmatter `description` stays inside its budget (`description-budget`: 600-char
+   per-skill / 7,500-char set-total fail, 550-char per-skill warn); and
+   `.claude-plugin/plugin.json`'s `version` moved when
+   shipped content did — an unmoved version leaves every consumer on a stale cached plugin,
+   silently. `--self-test` exercises each one against a synthetic tree.
 3. Running `bash scripts/ci/test-hooks.sh` — the regression harness for the **deterministic
    controls** that back policy instead of prose — the two wired hooks
    (`scripts/hooks/enforce-model-cap.sh`, `scripts/hooks/stop-gate.sh`) and the

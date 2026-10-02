@@ -3,7 +3,8 @@
 #
 # Exercises both copy-scripts and no-copy-scripts modes against scratch
 # targets in /tmp, then asserts every skill registered in
-# .claude-plugin/marketplace.json was actually installed by setup.sh.
+# .claude-plugin/marketplace.json's `brainstorm-toolkit` plugin was actually
+# installed by setup.sh where it should be, and only where it should be.
 #
 # Designed to run from any CI vendor (GHA, GitLab, Jenkins, CircleCI, …).
 # Non-zero exit on any failure.
@@ -28,16 +29,20 @@ echo "[setup-roundtrip] scratch:     $ROOT_TMP"
 echo
 
 # 1. Standard install: copy scripts/, both tools.
-echo "[setup-roundtrip] (1/3) setup.sh --tools both --target $ROOT_TMP/copy"
+echo "[setup-roundtrip] (1/4) setup.sh --tools both --target $ROOT_TMP/copy"
 bash "$PLUGIN_ROOT/setup.sh" --target "$ROOT_TMP/copy" --tools both >/dev/null
 
 # 2. Plugin-resident install: --no-copy-scripts, both tools.
-echo "[setup-roundtrip] (2/3) setup.sh --tools both --no-copy-scripts --target $ROOT_TMP/no-copy"
+echo "[setup-roundtrip] (2/4) setup.sh --tools both --no-copy-scripts --target $ROOT_TMP/no-copy"
 bash "$PLUGIN_ROOT/setup.sh" --target "$ROOT_TMP/no-copy" --tools both --no-copy-scripts >/dev/null
 
-# 3. Marketplace assertion: every entry in marketplace.json `plugins[0].skills`
+# 3. Marketplace assertion: every entry in the `brainstorm-toolkit` plugin's `skills` list
 #    must have produced a `.claude/skills/<name>/SKILL.md` in the copy target.
-echo "[setup-roundtrip] (3/3) marketplace assertion"
+#
+# The plugin is resolved BY NAME below, never by position (`data["plugins"][0]`): a future
+# second plugin in the same marketplace.json would otherwise mean positional indexing
+# silently checks the wrong plugin the moment ordering changes.
+echo "[setup-roundtrip] (3/4) marketplace assertion"
 
 MARKETPLACE="$PLUGIN_ROOT/.claude-plugin/marketplace.json"
 if [[ ! -f "$MARKETPLACE" ]]; then
@@ -50,12 +55,25 @@ fi
 # Store stub, which resolves but exits nonzero, and this step then failed locally while
 # passing on Linux CI.
 PY="$(bash "$PLUGIN_ROOT/scripts/py.sh" --print)" || { echo "[setup-roundtrip] FAIL: no working Python" >&2; exit 1; }
-SKILL_NAMES="$("$PY" -c '
+
+skill_names_for_plugin() {
+  # skill_names_for_plugin <plugin-name> -- print one basename per line, or nothing if the
+  # plugin isn't registered. Windows Python emits CRLF, so every caller pipes this through
+  # `tr -d '\r'` -- a bare CR on a line breaks every path but the last, the same bug the
+  # original SKILL_NAMES extraction below already guards against.
+  "$PY" -c '
 import json, sys, pathlib
 data = json.loads(pathlib.Path(sys.argv[1]).read_text())
-for p in data["plugins"][0]["skills"]:
-    print(pathlib.PurePosixPath(p).name)
-' "$MARKETPLACE" | tr -d '\r')"  # Windows Python emits CRLF; a trailing CR broke every path but the last
+name = sys.argv[2]
+for plugin in data["plugins"]:
+    if plugin.get("name") == name:
+        for p in plugin.get("skills", []):
+            print(pathlib.PurePosixPath(p).name)
+        break
+' "$MARKETPLACE" "$1"
+}
+
+SKILL_NAMES="$(skill_names_for_plugin brainstorm-toolkit | tr -d '\r')"
 
 missing=0
 for name in $SKILL_NAMES; do
@@ -74,11 +92,11 @@ fi
 echo "[setup-roundtrip] OK: all $(echo "$SKILL_NAMES" | wc -w | tr -d ' ') marketplace skills installed."
 
 # 3b. Reverse marketplace assertion: every skills/*/SKILL.md directory must be
-#     named in marketplace.json's plugins[0].skills list. Nothing else catches
-#     this today -- validate_skills.py only checks *agent* registration, and
-#     the forward check above only proves a REGISTERED skill installs, never
-#     that a skill DIRECTORY got registered in the first place.
-echo "[setup-roundtrip] (3b) reverse marketplace registration assertion"
+#     named in marketplace.json's `brainstorm-toolkit` plugin skills list. Nothing else
+#     catches this today -- validate_skills.py only checks *agent* registration, and the
+#     forward check above only proves a REGISTERED skill installs, never that a skill
+#     DIRECTORY got registered in the first place.
+echo "[setup-roundtrip] (3b) reverse marketplace registration assertion (core)"
 
 unregistered=0
 for skill_dir in "$PLUGIN_ROOT"/skills/*/; do

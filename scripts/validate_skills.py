@@ -50,6 +50,7 @@ MODEL_CAP_FAN_OUT_SKILLS = {
     "brainstorm",
     "brainstorm-team",
     "dead-code-review",
+    "docstring-sync",
 }
 MODEL_CAP_REF = "models.md"
 
@@ -535,7 +536,7 @@ def validate_agents(repo_root: Path) -> tuple[list[str], list[str], int]:
             else None
         )
 
-        # An agent definition is earned by an ENFORCED tools: restriction (CLAUDE.md,
+        # An agent definition is earned by an ENFORCED tools: restriction (AGENTS.md,
         # "When adding a sub-agent -- usually: don't"). Without one the file buys nothing
         # an inline role prompt wouldn't: description-driven auto-delegation is unused
         # here (every dispatch names its agent), and agents/ ships to Claude only.
@@ -548,7 +549,7 @@ def validate_agents(repo_root: Path) -> tuple[list[str], list[str], int]:
                 f"ENFORCED boundary; without one, prefer a role prompt in templates/ plus "
                 f"`subagent_type: general-purpose` and an explicit `model:` at the dispatch "
                 f"site. If this agent genuinely needs every tool, add it to TOOLS_EXEMPT "
-                f"here and record why in CLAUDE.md alongside e2e-test-runner"
+                f"here and record why in AGENTS.md alongside e2e-test-runner"
             )
 
         # The defect this check exists for: prose asserts a tier the frontmatter

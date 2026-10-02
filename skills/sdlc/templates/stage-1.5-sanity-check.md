@@ -20,20 +20,24 @@ cost roughly linearly (one agent per focus). `paths` is the cheapest and most me
 (file existence); `completeness` is the judgment-heavy one; `gotchas` is only useful when
 a `GOTCHAS.md` exists. An unrecognized focus name is ignored with one warning.
 
-**Which tier — `models.sanity`.** Built-in default is `haiku` for every
-focus. `.claude/project.json` `models.sanity` (`haiku|sonnet|opus`)
-**replaces that default for all focuses** when set. Reach for it when this stage is
-reviewing *plans* rather than checking paths: `paths` is genuinely mechanical, but
-`completeness` is asking "does this plan hang together?", which is the kind of judgment a
-stronger reader does better. Raising it costs on **every** run that reaches Stage 1.5 —
-which is every run, since the stage is never gated.
+**Which tier — `models.sanity`.** Built-in **per-focus** defaults: `paths: haiku` (mechanical —
+does the file/symbol exist?), `completeness: sonnet` and `gotchas: sonnet` (both judgment calls,
+and a cheap tier tends to report planned-but-unbuilt work as missing). `.claude/project.json`
+`models.sanity` accepts either a **string** (`haiku|sonnet|opus`,
+replaces the default for every focus — the original shape, unchanged) or a **map**
+(`{"completeness": "opus"}`), where a focus missing from the map keeps its built-in default. An
+invalid value (unknown tier, or a map entry that isn't one) falls through to that focus's own
+built-in default, per `skills/sdlc/templates/models.md` "Invalid input". Raising a focus costs
+on **every** run that reaches Stage 1.5 — which is every run, since the stage is never gated.
 
-The resolved tier then passes through the **model cap** (`models.cap` / `--model`) as usual —
-see `skills/sdlc/templates/models.md` for the ceiling rule and why `models.sanity` is the only
-way to raise this stage above its `haiku` default.
+Each focus's resolved value then still passes through the **model cap** (`models.cap` /
+`--model`) as usual — see `skills/sdlc/templates/models.md` for the ceiling rule and why
+`models.sanity` is the only way to raise a focus above its built-in default.
 
-Print `model: <tier> (cap: <cap|none>)` and the resolved focus list —
-`sanity focuses: <a, b, …> (N of 3 defaults)` — before dispatching.
+Print, per dispatched focus (not one resolved tier): `model: paths=<t>, completeness=<t>,
+gotchas=<t> (cap: <cap|none>)` — only the focuses `agents.sanity_focuses` actually dispatches —
+and the resolved focus list — `sanity focuses: <a, b, …> (N of 3 defaults)` — before
+dispatching.
 
 ### Processing results
 
@@ -89,7 +93,13 @@ Report a JSON array:
 **prompt**:
 
 ```
-Read the plan at {plan_file}. Check for common missing-step categories:
+Read the plan at {plan_file}.
+
+The plan describes work that does not exist yet. Never report a file, key, check or section as
+missing because it is not implemented yet. Report only steps the plan itself fails to include,
+or plan claims the current code contradicts.
+
+Check for common missing-step categories:
 1. Creates a DB migration → does the plan mention running/applying it? AND is
    the migration number collision-safe? Compute the next number as
    `max(existing) + 1`, but **warn that it is not collision-safe across
@@ -124,6 +134,10 @@ Report: [{check: "description", status: "pass/fail", detail: "..."}]
 
 ```
 Read the plan at {plan_file}.
+
+The plan describes work that does not exist yet. Never report a file, key, check or section as
+missing because it is not implemented yet. Report only steps the plan itself fails to include,
+or plan claims the current code contradicts.
 
 Then read the project's gotchas file — path is `gotchas_file` in
 `.claude/project.json` (default `GOTCHAS.md` at repo root).

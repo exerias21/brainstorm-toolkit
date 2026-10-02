@@ -2,7 +2,7 @@
 # brainstorm-toolkit — the ONE place that writes a decision to DECISIONS.md.
 #
 # WHY THIS EXISTS: the envelope records WHAT happened (stages, verdicts, files),
-# TASKS.md records WHAT IS LEFT, GOTCHAS.md records WHAT BIT US, CLAUDE.md
+# TASKS.md records WHAT IS LEFT, GOTCHAS.md records WHAT BIT US, AGENTS.md
 # records HOW TO WORK HERE. Nothing records WHY WE CHOSE X OVER Y -- that lives
 # only in the chat transcript and dies with the context window. A fresh session
 # then re-litigates a settled call, or worse, quietly reverses it.

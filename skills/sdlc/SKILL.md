@@ -140,6 +140,14 @@ outside `[a-z0-9-]` replaced with `-`, runs collapsed, ends trimmed; it must mat
 initialize the state envelope at `.claude/pipeline/<slug>/` with
 `pipeline: "sdlc"`, `base_commit`, `status: "in_progress"`.
 
+**Independence pre-check (before any spend).** If the review stage resolves ON
+(`--review-model <name>` or `pipeline.review_fix.enabled: true`; `--no-review` always wins
+OFF), compute whether `models.code_review` collides with the implementer's effective tier per
+`skills/sdlc/templates/models.md` "Independence" — **do not open
+`skills/sdlc/templates/stage-5.7-review-fix.md` for this**, it is opt-in and a default run must
+never load it. On a collision, print the same degraded line Stage 5.7 emits before dispatching
+now, before Stage 1.5 spends a token, rather than only surfacing it once Stage 5.7 runs.
+
 **Then parse the plan.** Read the resolved plan/task file(s) fully and extract:
 feature name/slug; implementation steps (numbered lists with file paths, or
 checkbox rows); files to create or modify (file paths, a table of files, or each
@@ -216,9 +224,10 @@ the long-run context-hygiene note.
 
 **Read `skills/sdlc/templates/stage-1.5-sanity-check.md` now** and run it (parallel focus
 agents on Claude; sequential on the overlays). It carries the orchestration and the per-focus
-prompts. This is full SDLC discipline — it is **not** gated or optional. The default is 3 Haiku
-agents; `models.sanity` and `agents.sanity_focuses` tune it, and because the cap only *lowers*,
-`models.sanity` is the only way to raise this stage.
+prompts. This is full SDLC discipline — it is **not** gated or optional. Built-in per-focus
+defaults are `paths: haiku`, `completeness: sonnet`, `gotchas: sonnet`; `models.sanity` (a
+string or a per-focus map) and `agents.sanity_focuses` tune it, and because the cap only
+*lowers*, `models.sanity` is the only way to raise a focus above its default.
 For a task range, run it once over the combined set before the implement loop.
 
 If the sanity check surfaces a blocker (plan references nonexistent files,
@@ -322,6 +331,9 @@ flow trace and whether it was witnessed or advisory (or "skipped — no plan tar
 Stage 6's `handoff.json` `data.tasks` — including `tasks: 0 closed (0 matched)` when
 nothing matched — this is the line that turns a silent close-out miss into a visible one;
 when `unmatched` is non-empty, add `(U unmatched — see /sdlc-status --reconcile)`.
+When `review.json.data.independence == "degraded"`, add the line `independence: degraded —
+findings surfaced only, never auto-fixed` (wording: `skills/sdlc/templates/stage-5.7-review-fix.md`
+"Independence enforcement").
 If the delivered diff departs from the plan (a step skipped,
 reordered, or solved differently), say where and why in one line each — the
 `plan-conformance-validator`'s

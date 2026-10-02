@@ -21,6 +21,11 @@ the user before producing an implementation plan.
 
 ### Step 1: Understand the Seed
 
+**Planner nudge (once per session).** Read `models.planner` from `.claude/project.json`
+(`haiku|sonnet|opus|fable`; default `"opus"` when the file, key, or value is missing or
+invalid — never detect the host model). Print once: `Planning runs on your session model.
+Recommended: <planner> — switch before the clarifying rounds if you aren't on it.`
+
 If the user gave a topic with `/brainstorm`, that's the seed; otherwise ask for one.
 
 **Ask before you explore — the gate is objective.** Ask clarifying questions when **any** of

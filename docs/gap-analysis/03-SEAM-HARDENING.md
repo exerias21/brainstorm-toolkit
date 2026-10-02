@@ -96,7 +96,7 @@ program counter.
 4. **Codex/Copilot degradation stated honestly**: Copilot's Stop hook contract would need
    verification for a block-equivalent; Codex has no hook at all — on those runtimes
    auto-continue simply doesn't exist and the printed hint remains the seam. This is a
-   Claude-only enhancement in exactly the sense `CLAUDE.md` rule 2 anticipates.
+   Claude-only enhancement in exactly the sense `AGENTS.md` rule 2 anticipates.
 
 ## Lever D — parity and honesty fixes (small, do regardless)
 

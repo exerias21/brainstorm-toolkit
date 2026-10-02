@@ -39,7 +39,7 @@ checks:
                        (setup.sh strips them for the Copilot/Codex install
                        paths only).
 
-Checks 1-4's file scope also covers CLAUDE.md, AGENTS.md and docs/*.md (not
+Checks 1-4's file scope also covers AGENTS.md and docs/*.md (not
 just skills/copilot/codex/agents/templates), and three more checks cover
 facts only those wider files can state:
 
@@ -53,7 +53,7 @@ facts only those wider files can state:
                        re-verified once the consolidated text exists.
   7. No cardinality  -- a number-word (`one`..`twenty`) immediately
                        followed by `checks`/`hooks`/`skills`/`agents`, outside
-                       fenced code, in CLAUDE.md/AGENTS.md/a `Live contract`
+                       fenced code, in AGENTS.md/a `Live contract`
                        doc: a derivable count that goes stale with no local
                        edit to catch it.
   8. Header-list-count -- where check 7's pattern is immediately followed by
@@ -62,7 +62,7 @@ facts only those wider files can state:
                        deleting the number there makes the sentence worse.
 
 A ninth mechanism, `recheck-by` pins (`<!-- assert-manual: recheck-by
-YYYY-MM-DD "<claim>" -->` in CLAUDE.md/AGENTS.md/docs/*.md), is a permanent
+YYYY-MM-DD "<claim>" -->` in AGENTS.md/docs/*.md), is a permanent
 WARN, never a failure -- see `recheck_by_warnings()`. It never contributes to
 the exit code, mirroring `model_cap_pointer_warnings()` in validate_skills.py.
 
@@ -71,6 +71,13 @@ rules: no bare `python3 ` invocation in
 shipped skill/agent/template prose (a Microsoft Store stub trap -- see
 scripts/py.sh, GOTCHAS.md), and every `hooks/hooks.json` command starting
 with an interpreter token instead of a bare path.
+
+The `description-budget` check measures every skill's frontmatter
+`description` field, parsed as real YAML (folded `>`, literal `|`, quoted,
+and plain scalars -- never counted with grep) across `skills/*/SKILL.md`.
+A total over 7,500 characters is a finding. Per skill: over 600 characters is
+a finding, and over 550 is a permanent WARN -- printed, never failing,
+same posture as the recheck-by mechanism below.
 
 This targets the exact failure class a 2026-09 review found 46 instances of.
 Stdlib only, no model calls, runs in well under 5s.
@@ -162,7 +169,7 @@ def _exclude_historical_docs(files: list[Path]) -> list[Path]:
 def scope_files(root: Path) -> list[Path]:
     """The file set every check but citations runs over: skills/**/*.md,
     copilot/**/*.md, codex/**/*.md, agents/*.md, templates/*.template,
-    CLAUDE.md, AGENTS.md, and non-recursive docs/*.md (minus any doc marked
+    AGENTS.md, and non-recursive docs/*.md (minus any doc marked
     `Historical design record` -- see `is_historical_doc()`).
 
     docs/ is walked with `glob()`, not `rglob()`: `docs/plans/**`,
@@ -184,18 +191,17 @@ def scope_files(root: Path) -> list[Path]:
     templates_dir = root / "templates"
     if templates_dir.is_dir():
         files.extend(sorted(templates_dir.glob("*.template")))
-    for name in ("CLAUDE.md", "AGENTS.md"):
-        f = root / name
-        if f.is_file():
-            files.append(f)
+    agents_md = root / "AGENTS.md"
+    if agents_md.is_file():
+        files.append(agents_md)
     files.extend(_exclude_historical_docs(docs_status_files(root)))
     return _exclude_fixtures(root, files)
 
 
 def citation_scope_files(root: Path) -> list[Path]:
     """Citations additionally cover README.md (paths only, per the plan's
-    Open Question: yes for paths, no for phrases) -- on top of the CLAUDE.md,
-    AGENTS.md and docs/*.md that scope_files() itself now covers."""
+    Open Question: yes for paths, no for phrases) -- on top of the AGENTS.md
+    and docs/*.md that scope_files() itself now covers."""
     files = scope_files(root)
     readme = root / "README.md"
     if readme.is_file():
@@ -748,7 +754,7 @@ def check_doc_status_markers(files: list[Path], root: Path) -> list[Finding]:
 # ── Check 7: no-cardinality (narrowed) ───────────────────────────────────────
 
 # Number-words only (`one`..`twenty`) -- the digit form (`5 hooks`) measured
-# 7 hits in CLAUDE.md + docs/*.md with 0 real defects and is left alone.
+# 7 hits in AGENTS.md + docs/*.md with 0 real defects and is left alone.
 NUMBER_WORDS: dict[str, int] = {
     "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
     "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
@@ -787,17 +793,16 @@ def strip_code_fences(text: str) -> str:
 
 
 def cardinality_scope_files(root: Path) -> list[Path]:
-    """no-cardinality's scope, per the plan: CLAUDE.md, AGENTS.md, and
+    """no-cardinality's scope, per the plan: AGENTS.md, and
     `Live contract` docs/*.md only -- never a `Historical design record` doc
     (a frozen tally is the point there) and never README.md (its one
     numbered claim is checked for list-length consistency instead, by
     check_header_list_counts, because deleting the number there would make
     the sentence worse)."""
     files: list[Path] = []
-    for name in ("CLAUDE.md", "AGENTS.md"):
-        f = root / name
-        if f.is_file():
-            files.append(f)
+    agents_md = root / "AGENTS.md"
+    if agents_md.is_file():
+        files.append(agents_md)
     files.extend(f for f in docs_status_files(root) if not is_historical_doc(f))
     return files
 
@@ -809,14 +814,12 @@ def cardinality_scope_files(root: Path) -> list[Path]:
 # fact (a fixed-size enumeration named in the same sentence, or a specific
 # case study), never a live check/hook/skill/agent count that could drift.
 NO_CARDINALITY_ALLOWLIST: dict[tuple[str, str], str] = {
-    ("CLAUDE.md", "two checks"): "the Migration policy grep pair enumerated "
+    ("AGENTS.md", "two checks"): "the Migration policy grep pair enumerated "
         "immediately below (1. collapsed pairs, 2. the fact the rename "
         "invalidated) -- a fixed, numbered list, not a check_contracts.py "
         "check count",
-    ("AGENTS.md", "two checks"): "same as CLAUDE.md (byte-identical) -- the "
-        "Migration policy grep pair",
     ("docs/CONVENTIONS.md", "two checks"): "the canonical source of the same "
-        "Migration policy grep pair CLAUDE.md/AGENTS.md mirror",
+        "Migration policy grep pair AGENTS.md states",
     ("docs/FLOW.md", "three agents"): "the toolkit's three target runtimes, "
         "named in the same sentence (Claude Code, GitHub Copilot, OpenAI "
         "Codex) -- a structural fact, not a driftable check/hook/skill/agent "
@@ -987,6 +990,216 @@ def check_hooks_json_interpreter(root: Path) -> list[Finding]:
     return findings
 
 
+# ── description-budget (skills/*/SKILL.md) ──────────────────────────────────
+#
+# Frontmatter `description` is resident on every session, every turn, on all
+# three runtimes -- AGENTS.md rule 4's budget. Measured here with a real
+# (stdlib-only) YAML scalar parser -- folded (`>`), literal (`|`), quoted
+# (single/double), and plain -- never `grep -c`, which would undercount a
+# folded scalar's wrapped lines as separate "descriptions" or miscount a
+# quoted one entirely.
+
+DESCRIPTION_SET_TOTAL_LIMIT = 7500
+DESCRIPTION_PER_SKILL_FAIL = 600
+DESCRIPTION_PER_SKILL_WARN = 550
+
+_DESCRIPTION_KEY_RE = re.compile(r"^description:(.*)$")
+_BLOCK_SCALAR_INDICATOR_RE = re.compile(r"^([>|])([+-]?)(\d*)\s*$")
+
+
+def _dedent_block_lines(lines: list[str]) -> list[str]:
+    """Strip the common leading indentation of a YAML block scalar's body,
+    determined from its first non-blank line (frontmatter descriptions never
+    mix indentation levels, so a single base indent is sufficient)."""
+    indents = [len(line) - len(line.lstrip(" ")) for line in lines if line.strip()]
+    if not indents:
+        return [line.strip() for line in lines]
+    base = min(indents)
+    return [line[base:] if len(line) >= base else line.lstrip(" ") for line in lines]
+
+
+def _fold_block_lines(lines: list[str]) -> str:
+    """YAML folded-scalar (`>`) semantics: a run of non-blank lines joins on
+    a single space; a blank line becomes a paragraph break. Frontmatter
+    descriptions in this repo are single paragraphs, but the paragraph case
+    is handled anyway rather than assumed away."""
+    paragraphs: list[str] = []
+    current: list[str] = []
+    for line in lines:
+        if line.strip() == "":
+            if current:
+                paragraphs.append(" ".join(current))
+                current = []
+        else:
+            current.append(line.strip())
+    if current:
+        paragraphs.append(" ".join(current))
+    return "\n".join(paragraphs)
+
+
+def _literal_block_lines(lines: list[str]) -> str:
+    """YAML literal-scalar (`|`) semantics: newlines are preserved verbatim
+    (chomping nuances aside -- irrelevant to a character-budget count)."""
+    return "\n".join(lines).rstrip("\n")
+
+
+def _find_unescaped_quote(text: str, quote: str, start: int) -> int | None:
+    i, n = start, len(text)
+    while i < n:
+        c = text[i]
+        if quote == '"' and c == "\\":
+            i += 2
+            continue
+        if c == quote:
+            if quote == "'" and i + 1 < n and text[i + 1] == "'":
+                i += 2  # '' is the single-quoted-scalar escape for a literal '
+                continue
+            return i
+        i += 1
+    return None
+
+
+def _unescape_double_quoted(s: str) -> str:
+    return (
+        s.replace('\\"', '"')
+        .replace("\\n", " ")
+        .replace("\\t", " ")
+        .replace("\\\\", "\\")
+    )
+
+
+def parse_yaml_description(frontmatter: str) -> str | None:
+    """Extract a top-level `description:` scalar's resolved text from a
+    SKILL.md frontmatter block, handling the four YAML scalar styles this
+    repo's skills actually use (folded, literal, quoted, plain) with stdlib
+    only. Returns None if no top-level `description:` key is present."""
+    lines = frontmatter.split("\n")
+    idx = None
+    tail = None
+    for i, line in enumerate(lines):
+        m = _DESCRIPTION_KEY_RE.match(line)
+        if m:
+            idx, tail = i, m.group(1)
+            break
+    if idx is None or tail is None:
+        return None
+    tail_stripped = tail.strip()
+
+    block_m = _BLOCK_SCALAR_INDICATOR_RE.match(tail_stripped)
+    if block_m:
+        style = block_m.group(1)
+        block_lines: list[str] = []
+        j = idx + 1
+        while j < len(lines):
+            line = lines[j]
+            if line.strip() == "" or line[:1] in (" ", "\t"):
+                block_lines.append(line)
+                j += 1
+                continue
+            break
+        block_lines = _dedent_block_lines(block_lines)
+        while block_lines and block_lines[-1].strip() == "":
+            block_lines.pop()  # default (clip) chomping
+        return _fold_block_lines(block_lines) if style == ">" else _literal_block_lines(block_lines)
+
+    if tail_stripped[:1] in ('"', "'"):
+        quote = tail_stripped[0]
+        combined = tail
+        start_search = combined.index(quote) + 1
+        close_idx = _find_unescaped_quote(combined, quote, start_search)
+        j = idx
+        while close_idx is None and j + 1 < len(lines):
+            j += 1
+            combined += "\n" + lines[j]
+            close_idx = _find_unescaped_quote(combined, quote, start_search)
+        if close_idx is None:
+            return tail_stripped.strip(quote)
+        open_idx = combined.index(quote)
+        inner = combined[open_idx + 1 : close_idx]
+        inner = re.sub(r"[ \t]*\n[ \t]*", " ", inner)
+        return _unescape_double_quoted(inner) if quote == '"' else inner.replace("''", "'")
+
+    # Plain scalar: the rest of this line, plus any indented continuation
+    # lines (plain scalars fold the same way folded ones do).
+    plain_lines = [tail_stripped] if tail_stripped else []
+    j = idx + 1
+    while j < len(lines):
+        line = lines[j]
+        if line.strip() == "" or not line[:1] in (" ", "\t"):
+            break
+        plain_lines.append(line.strip())
+        j += 1
+    return " ".join(plain_lines).strip()
+
+
+def _description_budget_scan(root: Path) -> dict[str, tuple[int, list[tuple[str, int]]]]:
+    """{set_name: (total_chars, [(relpath, length), ...])} -- `skills` is the
+    only set measured."""
+    result: dict[str, tuple[int, list[tuple[str, int]]]] = {}
+    sets: list[tuple[str, Path]] = []
+    skills_dir = root / "skills"
+    if skills_dir.is_dir():
+        sets.append(("skills", skills_dir))
+    for set_name, base in sets:
+        total = 0
+        per_file: list[tuple[str, int]] = []
+        for skill_md in sorted(base.glob("*/SKILL.md")):
+            text = skill_md.read_text(encoding="utf-8", errors="replace")
+            m = FRONTMATTER_BLOCK_RE.match(text)
+            if not m:
+                continue
+            desc = parse_yaml_description(m.group(1))
+            if desc is None:
+                continue
+            length = len(desc)
+            total += length
+            per_file.append((relposix(root, skill_md), length))
+        result[set_name] = (total, per_file)
+    return result
+
+
+def check_description_budget(root: Path) -> list[Finding]:
+    findings: list[Finding] = []
+    for set_name, (total, per_file) in _description_budget_scan(root).items():
+        for rel, length in per_file:
+            if length > DESCRIPTION_PER_SKILL_FAIL:
+                findings.append(
+                    Finding(
+                        rel, 1,
+                        f"frontmatter description is {length} chars, over the "
+                        f"{DESCRIPTION_PER_SKILL_FAIL}-char per-skill budget "
+                        f"(set '{set_name}')",
+                        "description-budget",
+                    )
+                )
+        if total > DESCRIPTION_SET_TOTAL_LIMIT:
+            findings.append(
+                Finding(
+                    f"{set_name}/*/SKILL.md", 0,
+                    f"'{set_name}' descriptions total {total} chars, over the "
+                    f"{DESCRIPTION_SET_TOTAL_LIMIT}-char set budget",
+                    "description-budget",
+                )
+            )
+    return findings
+
+
+def description_budget_warnings(root: Path) -> list[str]:
+    """Permanent WARN, never a failure: a per-skill description over 550
+    chars but at or under the 600-char fail threshold. Same posture as
+    `recheck_by_warnings()` -- printed, never contributing to the exit code."""
+    warnings: list[str] = []
+    for set_name, (_total, per_file) in _description_budget_scan(root).items():
+        for rel, length in per_file:
+            if DESCRIPTION_PER_SKILL_WARN < length <= DESCRIPTION_PER_SKILL_FAIL:
+                warnings.append(
+                    f"{rel}: frontmatter description is {length} chars, over "
+                    f"the {DESCRIPTION_PER_SKILL_WARN}-char warn threshold "
+                    f"(set '{set_name}')"
+                )
+    return warnings
+
+
 # ── recheck-by pins (warn-only, never contributes to the exit code) ─────────
 
 RECHECK_BY_RE = re.compile(
@@ -995,15 +1208,14 @@ RECHECK_BY_RE = re.compile(
 
 
 def recheck_by_scope_files(root: Path) -> list[Path]:
-    """CLAUDE.md, AGENTS.md, docs/*.md -- the pin's declared home per the
+    """AGENTS.md, docs/*.md -- the pin's declared home per the
     plan. A claim about the outside world is read by a maintainer, not
     re-read by a stage template on every /sdlc run, so this stays narrower
     than scope_files()'s skills/copilot/codex tree."""
     files: list[Path] = []
-    for name in ("CLAUDE.md", "AGENTS.md"):
-        f = root / name
-        if f.is_file():
-            files.append(f)
+    agents_md = root / "AGENTS.md"
+    if agents_md.is_file():
+        files.append(agents_md)
     files.extend(docs_status_files(root))
     return files
 
@@ -1149,6 +1361,7 @@ def run_all(root: Path, phrases_file: Path) -> dict[str, list[Finding]]:
         "no-cardinality": check_cardinality_claims(cardinality_scope_files(root), root),
         "header-list-count": check_header_list_counts(header_list_scope_files(root), root),
         "portable-invocation": check_bare_python3(files, root) + check_hooks_json_interpreter(root),
+        "description-budget": check_description_budget(root),
     }
 
 
@@ -1173,8 +1386,10 @@ def print_report(
 
     if warnings:
         # Permanent WARN, never contributes to `total` or the exit code --
-        # see recheck_by_warnings()'s docstring.
-        print(f"\nrecheck-by warnings: {len(warnings)} (does not affect exit code)")
+        # see recheck_by_warnings()'s and description_budget_warnings()'s
+        # docstrings. Both feed this one list; each warning's own text names
+        # which kind it is.
+        print(f"\nwarnings: {len(warnings)} (does not affect exit code)")
         for w in warnings:
             print(f"  {w}")
 
@@ -1384,7 +1599,7 @@ def self_test_no_cardinality() -> bool:
     code stripper this check introduces)."""
     with tempfile.TemporaryDirectory(prefix="check_contracts_selftest_card_") as tmp:
         root = Path(tmp)
-        (root / "CLAUDE.md").write_text(
+        (root / "AGENTS.md").write_text(
             "# Test\n\n"
             "There are four skills that matter here.\n\n"
             "```bash\n"
@@ -1476,6 +1691,96 @@ def self_test_portable_invocation() -> bool:
     return ok
 
 
+def _filler_description(char_count: int) -> str:
+    """A folded-block YAML `description:` field of approximately
+    `char_count` characters (a trailing partial word may be stripped,
+    landing a handful of chars short -- every seeded case below leaves
+    enough margin from its threshold for that not to matter)."""
+    word = "trigger word filler "
+    body = (word * (char_count // len(word) + 1))[:char_count].rstrip()
+    return f"description: >\n  {body}\n"
+
+
+def _write_description_budget_skill(base: Path, name: str, description_block: str) -> None:
+    skill_dir = base / name
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        f"---\nname: {name}\n{description_block}---\n\n# {name}\n",
+        encoding="utf-8",
+    )
+
+
+def self_test_description_budget_per_skill() -> bool:
+    """A single skill whose frontmatter `description` runs past the 600-char
+    per-skill fail threshold is caught; at 650 chars it stays nowhere near
+    the 7500-char set total, isolating this from the set-total case below."""
+    with tempfile.TemporaryDirectory(prefix="check_contracts_selftest_descbudget_") as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        skills_dir.mkdir(parents=True)
+        _write_description_budget_skill(skills_dir, "overlong", _filler_description(650))
+        findings = check_description_budget(root)
+
+    ok = len(findings) == 1 and "overlong" in findings[0].path
+    status = "OK" if ok else "FAIL"
+    print(
+        f"[{status}] description-budget per-skill: expected 1 violation(s) "
+        f"(a 650-char description over the 600-char per-skill cap), caught {len(findings)}"
+    )
+    for f in findings:
+        print(f"    {f.path}:{f.line}: {f.message}")
+    return ok
+
+
+def self_test_description_budget_total() -> bool:
+    """Fourteen skills, each individually well under both the 550-char warn
+    and 600-char fail per-skill thresholds, whose descriptions still sum
+    past the 7500-char set total: the set-total finding must fire alone,
+    with zero per-skill findings."""
+    with tempfile.TemporaryDirectory(prefix="check_contracts_selftest_descbudget_total_") as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        skills_dir.mkdir(parents=True)
+        for i in range(14):
+            _write_description_budget_skill(skills_dir, f"skill{i:02d}", _filler_description(540))
+        findings = check_description_budget(root)
+
+    ok = len(findings) == 1 and "total" in findings[0].message and "7500" in findings[0].message
+    status = "OK" if ok else "FAIL"
+    print(
+        f"[{status}] description-budget set-total: expected 1 violation(s) "
+        f"(14 x ~540-char descriptions clears the 7500 set cap with none "
+        f"individually over 600), caught {len(findings)}"
+    )
+    for f in findings:
+        print(f"    {f.path}:{f.line}: {f.message}")
+    return ok
+
+
+def self_test_description_budget_warning() -> bool:
+    """A description between the 550-char warn threshold and the 600-char
+    fail threshold is a warning, never a finding -- the warn-only path this
+    check adds alongside the file's existing recheck-by warn mechanism."""
+    with tempfile.TemporaryDirectory(prefix="check_contracts_selftest_descbudget_warn_") as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        skills_dir.mkdir(parents=True)
+        _write_description_budget_skill(skills_dir, "borderline", _filler_description(570))
+        findings = check_description_budget(root)
+        warnings = description_budget_warnings(root)
+
+    ok = len(findings) == 0 and len(warnings) == 1 and "borderline" in warnings[0]
+    status = "OK" if ok else "FAIL"
+    print(
+        f"[{status}] description-budget warn-only: expected 0 finding(s) + 1 "
+        f"warning (a 570-char description, between 550 and 600), caught "
+        f"{len(findings)} finding(s), {len(warnings)} warning(s)"
+    )
+    for w in warnings:
+        print(f"    {w}")
+    return ok
+
+
 def self_test() -> int:
     with tempfile.TemporaryDirectory(prefix="check_contracts_selftest_") as tmp:
         root = Path(tmp)
@@ -1525,6 +1830,12 @@ def self_test() -> int:
         ok = False
     if not self_test_portable_invocation():
         ok = False
+    if not self_test_description_budget_per_skill():
+        ok = False
+    if not self_test_description_budget_total():
+        ok = False
+    if not self_test_description_budget_warning():
+        ok = False
 
     if not ok:
         print("\nself-test FAILED")
@@ -1547,7 +1858,7 @@ def main(argv: list[str] | None = None) -> int:
 
     phrases_file = REPO_ROOT / "scripts" / "ci" / "forbidden-phrases.txt"
     results = run_all(REPO_ROOT, phrases_file)
-    warnings = recheck_by_warnings(REPO_ROOT)
+    warnings = recheck_by_warnings(REPO_ROOT) + description_budget_warnings(REPO_ROOT)
     return print_report(results, args.json, warnings)
 
 

@@ -239,6 +239,14 @@ printf '{ this is not valid json' > "$d/.claude/project.json"
 out="$(run_cap "$d" '{"tool_name":"Agent","tool_input":{"model":"opus","description":"do stuff"}}')"
 assert_empty "$out"
 
+CASE="cap: opus dispatch within an opus cap passes through untouched (the escalated final fix-loop iteration)"
+d="$(cap_dir 12)"
+cat > "$d/.claude/project.json" <<'EOF'
+{"pipeline": {"enforce_cap": true}, "models": {"cap": "opus"}}
+EOF
+out="$(run_cap "$d" '{"tool_name":"Agent","tool_input":{"model":"opus","description":"do stuff"}}')"
+assert_empty "$out"
+
 # ── stop-gate.sh: off-by-default, envelope/test states, and the two-blocker
 #    contention cases (stop_hook_active, pending sentinel) ──────────────────
 

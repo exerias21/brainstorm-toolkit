@@ -35,6 +35,11 @@ think out loud, explore the codebase, generate options, and iterate with the use
 converge on a concrete action plan before any code is written. Write no implementation code
 during Steps 1–7 — the discipline is a working agreement here, not a host-enforced sandbox.
 
+**Planner nudge (once per session).** Read `models.planner` from `.claude/project.json`
+(`haiku|sonnet|opus|fable`; default `"opus"` when the file, key, or value is missing or
+invalid — never detect the host model). Print once: `Planning runs on your session model.
+Recommended: <planner> — switch before the clarifying rounds if you aren't on it.`
+
 ### Step 1: Understand the Seed
 
 Start by understanding what the user wants to explore. If they gave a topic with `/brainstorm`,

@@ -64,7 +64,7 @@ should include every changed skill. If `setup.sh` errors out, it's a HARD fail
 
 ## SOFT checks (warn, don't block)
 
-### 5. Line-count ceiling per `CLAUDE.md` rule 3
+### 5. Line-count ceiling per `AGENTS.md` rule 3
 
 ```bash
 for f in skills/*/SKILL.md copilot/skills/*/SKILL.md codex/skills/*/SKILL.md; do
@@ -77,10 +77,10 @@ for f in skills/*/SKILL.md copilot/skills/*/SKILL.md codex/skills/*/SKILL.md; do
 done
 ```
 
-The ceiling is 500 lines, the Agent Skills spec limit (`CLAUDE.md` rule 3).
+The ceiling is 500 lines, the Agent Skills spec limit (`AGENTS.md` rule 3).
 Going over is a smell, not a blocker. Note the count in the Stage 7 report and move on.
 
-### 6. AGENTS.md / CLAUDE.md drift check
+### 6. README skills-table check
 
 If the change adds a new skill, slash-command, agent, or template, check that
 the skills table in `README.md` was updated. SOFT warning if not — easy to

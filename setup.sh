@@ -45,7 +45,7 @@ while [[ $# -gt 0 ]]; do
     --no-copy-scripts)   COPY_SCRIPTS=0; shift ;;
     --no-hooks)          INSTALL_HOOKS=0; shift ;;
     -h|--help)
-      sed -n '2,23p' "$0" | sed 's/^# *//'
+      sed -n '2,30p' "$0" | sed 's/^# *//'
       exit 0
       ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
@@ -176,54 +176,65 @@ applies_to_includes() {
 }
 
 # 1. Skills
+#
+# install_skills_tree is a parameterized version of what used to be a single inline loop
+# over skills/*/ -- extracted so the routing/overlay/frontmatter-stripping logic lives in
+# one place rather than a copy-pasted loop. Every skill installs into the SAME
+# .claude/skills/, .github/skills/, .agents/skills/ trees.
+install_skills_tree() {
+  # install_skills_tree <source_skills_dir>
+  local skills_src="$1" skill_dir name
+  for skill_dir in "$skills_src"/*/; do
+    [[ -d "$skill_dir" ]] || continue
+    name="$(basename "$skill_dir")"
+
+    if [[ "$want_claude" -eq 1 ]] && applies_to_includes "$skill_dir" claude; then
+      copy_tree_if_new "$skill_dir" "$TARGET/.claude/skills/$name"
+    fi
+
+    if [[ "$want_copilot" -eq 1 ]]; then
+      delete_if_exists "$TARGET/.github/prompts/$name.prompt.md"
+    fi
+
+    if [[ "$want_copilot" -eq 1 ]] && applies_to_includes "$skill_dir" copilot; then
+      # Overlay pattern: prefer copilot/skills/<name>/ if it exists (Copilot-optimized version)
+      copilot_override="$PLUGIN_ROOT/copilot/skills/$name"
+      if [[ -d "$copilot_override" ]]; then
+        install_overlay "$copilot_override" "$skill_dir" "$TARGET/.github/skills/$name"
+      else
+        copy_tree_if_new "$skill_dir" "$TARGET/.github/skills/$name"
+      fi
+      # Copilot documents only the portable frontmatter subset; a strict consumer
+      # hard-errors on Claude-only keys (argument-hint, disable-model-invocation).
+      strip_nonportable_frontmatter "$TARGET/.github/skills/$name/SKILL.md"
+    fi
+
+    if [[ "$want_codex" -eq 1 ]] && applies_to_includes "$skill_dir" codex; then
+      # Codex CLI scans $CWD/.agents/skills/<name>/SKILL.md per its Agent Skills spec.
+      # Codex has its own plan mode, but not Claude Code's Workflow tool or its
+      # Agent-tool parallel sub-agent fan-out, so the sequential Copilot overlay
+      # is the right fit. Fall through in this order:
+      #   1. codex/skills/<name>/   — a Codex-tuned override, if one exists
+      #   2. copilot/skills/<name>/ — the sequential Copilot overlay (correct for Codex)
+      #   3. skills/<name>/         — the canonical (Claude-shaped) skill as a last resort
+      codex_override="$PLUGIN_ROOT/codex/skills/$name"
+      copilot_override="$PLUGIN_ROOT/copilot/skills/$name"
+      if [[ -d "$codex_override" ]]; then
+        install_overlay "$codex_override" "$skill_dir" "$TARGET/.agents/skills/$name"
+      elif [[ -d "$copilot_override" ]]; then
+        install_overlay "$copilot_override" "$skill_dir" "$TARGET/.agents/skills/$name"
+      else
+        copy_tree_if_new "$skill_dir" "$TARGET/.agents/skills/$name"
+      fi
+      # Same portable-subset rule as the Copilot install above -- Codex documents
+      # only name/description/license/metadata/compatibility/allowed-tools.
+      strip_nonportable_frontmatter "$TARGET/.agents/skills/$name/SKILL.md"
+    fi
+  done
+}
+
 echo "[1/7] Skills"
-for skill_dir in "$PLUGIN_ROOT"/skills/*/; do
-  [[ -d "$skill_dir" ]] || continue
-  name="$(basename "$skill_dir")"
-
-  if [[ "$want_claude" -eq 1 ]] && applies_to_includes "$skill_dir" claude; then
-    copy_tree_if_new "$skill_dir" "$TARGET/.claude/skills/$name"
-  fi
-
-  if [[ "$want_copilot" -eq 1 ]]; then
-    delete_if_exists "$TARGET/.github/prompts/$name.prompt.md"
-  fi
-
-  if [[ "$want_copilot" -eq 1 ]] && applies_to_includes "$skill_dir" copilot; then
-    # Overlay pattern: prefer copilot/skills/<name>/ if it exists (Copilot-optimized version)
-    copilot_override="$PLUGIN_ROOT/copilot/skills/$name"
-    if [[ -d "$copilot_override" ]]; then
-      install_overlay "$copilot_override" "$skill_dir" "$TARGET/.github/skills/$name"
-    else
-      copy_tree_if_new "$skill_dir" "$TARGET/.github/skills/$name"
-    fi
-    # Copilot documents only the portable frontmatter subset; a strict consumer
-    # hard-errors on Claude-only keys (argument-hint, disable-model-invocation).
-    strip_nonportable_frontmatter "$TARGET/.github/skills/$name/SKILL.md"
-  fi
-
-  if [[ "$want_codex" -eq 1 ]] && applies_to_includes "$skill_dir" codex; then
-    # Codex CLI scans $CWD/.agents/skills/<name>/SKILL.md per its Agent Skills spec.
-    # Codex has its own plan mode, but not Claude Code's Workflow tool or its
-    # Agent-tool parallel sub-agent fan-out, so the sequential Copilot overlay
-    # is the right fit. Fall through in this order:
-    #   1. codex/skills/<name>/   — a Codex-tuned override, if one exists
-    #   2. copilot/skills/<name>/ — the sequential Copilot overlay (correct for Codex)
-    #   3. skills/<name>/         — the canonical (Claude-shaped) skill as a last resort
-    codex_override="$PLUGIN_ROOT/codex/skills/$name"
-    copilot_override="$PLUGIN_ROOT/copilot/skills/$name"
-    if [[ -d "$codex_override" ]]; then
-      install_overlay "$codex_override" "$skill_dir" "$TARGET/.agents/skills/$name"
-    elif [[ -d "$copilot_override" ]]; then
-      install_overlay "$copilot_override" "$skill_dir" "$TARGET/.agents/skills/$name"
-    else
-      copy_tree_if_new "$skill_dir" "$TARGET/.agents/skills/$name"
-    fi
-    # Same portable-subset rule as the Copilot install above -- Codex documents
-    # only name/description/license/metadata/compatibility/allowed-tools.
-    strip_nonportable_frontmatter "$TARGET/.agents/skills/$name/SKILL.md"
-  fi
-done
+install_skills_tree "$PLUGIN_ROOT/skills"
 
 # 1b. Shared skill templates — reachability fix.
 #

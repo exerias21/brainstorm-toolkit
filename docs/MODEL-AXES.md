@@ -28,21 +28,36 @@ gains the parameter.
 
 ---
 
+## Why Stage 1.5's `completeness` and `gotchas` focuses default to Sonnet (2026-09-25)
+
+All three Stage 1.5 focuses defaulted to Haiku until this date. On this repo's own dogfooding,
+the Haiku `completeness` check repeatedly reported planned-but-unbuilt work as a missing plan
+step — the check couldn't tell "the plan omitted this" from "the plan describes work that
+doesn't exist in the codebase yet." `paths` stayed Haiku (it's a mechanical existence check);
+`completeness` and `gotchas` moved to Sonnet, and the prompt itself was tightened at the same
+time to name the failure mode directly.
+
+---
+
 ## Runtime regimes
 
   `agent()` that omits `model` inherits the session tier and **bypasses the cap**, so every
   dispatch must be wrapped.
 - **Copilot** → stages run inline in the session model; the cap is **advisory** (no
   sub-agent tier to lower). The `agents.*` counts still apply.
-- **Codex** → advisory too, but for a different reason worth keeping straight. Codex *does*
-  have native subagents (`.codex/agents/*.toml`, parallel, `max_threads`) — it is not
-  structurally inline-only like Copilot. Per-subagent model
-  override **works today**: per OpenAI's docs, a custom agent file's `model` (and
-  `model_reasoning_effort`) takes precedence, resolving explicit spawn value > `[agents]`
-  default > parent's value. The remaining open bug is narrower — `model_provider` overrides
-  specifically are ignored (openai/codex#40858, reproduced on CLI v0.149.1) — which does not
-  affect the single-provider case this toolkit uses. So Codex fan-out tiering is no longer
-  blocked.
+- **Codex** → advisory, but for a different reason than Copilot's. The *product* is not
+  structurally inline-only: Codex has native subagents (`.codex/agents/*.toml`, parallel,
+  `max_threads`), and per-subagent model override **works today** — per OpenAI's docs, a
+  custom agent file's `model` (and `model_reasoning_effort`) takes precedence, resolving
+  explicit spawn value > `[agents]` default > parent's value. The remaining open bug is
+  narrower — `model_provider` overrides specifically are ignored (openai/codex#40858,
+  reproduced on CLI v0.149.1) — which does not affect the single-provider case this toolkit
+  uses. So the product-level blocker is gone. What is *not* gone is that **this toolkit's
+  Codex overlay dispatches no sub-agents at all** — every stage runs inline in the session
+  model — so there is no fan-out for a per-subagent override to apply to, and the cap stays
+  advisory here for that reason, not a product limitation. Codex executors (dispatching a GPT
+  model via `.codex/agents/*.toml` from this toolkit's stages) were considered and are **not
+  planned** — no current need, and it would require a real Codex install to verify.
 
   > Re-checked 2026-09-13 against https://learn.chatgpt.com/docs/agent-configuration/subagents,
   > superseding the 2026-07-13 "reported regressed" note this replaces.

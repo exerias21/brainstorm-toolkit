@@ -51,6 +51,11 @@ Treat these docs as **hints, not ground truth** — they may be stale. The
 authoritative source is the live code; the Codebase Architect teammate verifies
 against it (see below).
 
+**Planner nudge (once per session).** Read `models.planner` from `.claude/project.json`
+(`haiku|sonnet|opus|fable`; default `"opus"` when the file, key, or value is missing or
+invalid — never detect the host model). Print once: `Planning runs on your session model.
+Recommended: <planner> — switch before the clarifying rounds if you aren't on it.`
+
 Summarize findings into a 3-5 sentence "Project Context" block and inject it into each teammate's prompt below where marked `{PROJECT_CONTEXT}`.
 
 ## How to Invoke

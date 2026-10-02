@@ -44,8 +44,15 @@ step 6 and `.claude/project.json`'s `eval.runner` key.
 ## Tier 2 — headless outcome evals on a fixture repo (`scripts/ci/skill-eval.py`)
 
 The one tier that actually runs a skill. `evals/skills/fixtures/mini-fastapi/` is a tiny,
-committed FastAPI app; `scripts/ci/skill-eval.py` copies it into a temp dir per case, installs
-the toolkit into that copy exactly as a consumer would (`setup.sh --tools claude --no-hooks`),
+committed FastAPI app and the default fixture every case uses unless it names another one via
+the `fixture` key (below) — `evals/skills/fixtures/legacy-docstrings/`, used by
+`docstring-sync-legacy`, is the second one, planted with drifted docstrings/comments and a set
+of controls that must stay untouched. That case is **report-only** on purpose: a headless run has
+no channel to confirm, so `/docstring-sync` must report every finding and edit nothing. The
+edit-applying variant sits in `evals/skills/cases/pending/`, outside case discovery, until
+headless pre-approval is decided. `scripts/ci/skill-eval.py` copies the case's fixture into
+a temp dir, installs the toolkit into that copy exactly as a consumer would (`setup.sh --tools
+claude --no-hooks`),
 runs one skill headlessly (`claude -p <prompt> --output-format stream-json --permission-mode
 bypassPermissions --max-budget-usd <X>` — no `--max-turns`, that flag does not exist), and
 grades the resulting tree with deterministic assertions: file/JSON/git-state checks, never an
@@ -80,9 +87,23 @@ Drop a JSON file at `evals/skills/cases/<name>.json`:
 ```
 
 Optional keys: `repeat` (run the same prompt N times against the same fixture copy before
-asserting — used by `gotcha-dedup` to prove dedup, not duplication) and `pre_setup_remove`
+asserting — used by `gotcha-dedup` to prove dedup, not duplication); `pre_setup_remove`
 (paths deleted from the fixture copy before `setup.sh` runs — used by `repo-onboarding-keys`
-to simulate a repo with no `.claude/project.json` yet).
+to simulate a repo with no `.claude/project.json` yet); `fixture` (the fixture directory name
+under `evals/skills/fixtures/`, default `mini-fastapi` — every case that omits it is
+byte-for-byte unchanged; an unknown name is an immediate, loud `SystemExit`, the same class of
+hard stop an unknown `--case` name already gives).
+
+A fixture may also carry `_history/NN/` overlay directories (`docstring-sync-legacy` is the
+first to use this). The harness `git init`s a fresh commit history per run — a nested `.git`
+inside a fixture can't be committed, so a fixture that needs more than one commit (to give
+`git blame` something to compare, e.g. a body edited after its docstring) replays its states as
+overlays instead of shipping real git history: the fixture root minus `_history/` is copied and
+committed first, then each `_history/NN/` directory's files are copied over the working copy and
+committed in `NN` order (`_history/` itself is never copied into the working copy at all, so
+there is nothing to strip out afterward), and the last commit — baseline or the final overlay —
+becomes the case's `initial_head`. A fixture with no `_history/` behaves exactly as before this
+existed: one commit, unchanged.
 
 Implemented assertion types (`scripts/ci/skill-eval.py`'s `ASSERTION_FUNCS`): `tasks_row_added`,
 `glob_exists`, `pytest_green`, `git_head_unchanged`, `json_path`, `output_max_lines`,

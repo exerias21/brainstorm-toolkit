@@ -30,13 +30,15 @@ one validator misses.
 #### `none`
 Skip Step 6.5 entirely. Step 7 (single validator) runs alone.
 
-#### `light` — 3 Haiku agents in parallel
+#### `light` — Stage 1.5's 3 focus agents in parallel
 Reuse the three prompts at `skills/sdlc/templates/stage-1.5-sanity-check.md`
 (`paths`, `completeness`, `gotchas`) so vetting language is consistent across
 skills. Substitute `{plan_file}` = the saved plan path from Step 6 and
-`{feature_name}` = the topic slug. Haiku by default (`models.sanity` raises it), resolved per
-`skills/sdlc/templates/models.md`; print `model: <tier> (cap: <cap|none>)`, then dispatch all
-three in a single message. Cost: ~3 small agents, ~30s.
+`{feature_name}` = the topic slug. Per-focus defaults apply — `paths: haiku`
+(mechanical), `completeness: sonnet` and `gotchas: sonnet` (judgment) — each still capped,
+resolved per `skills/sdlc/templates/models.md`; print `model: paths=<t>, completeness=<t>,
+gotchas=<t> (cap: <cap|none>)`, then dispatch all three in a single message. Cost: ~3 small
+agents, ~30s.
 
 #### `deep` — `light` + 1 Sonnet stress-test agent
 After the 3 agents return, dispatch one agent — Sonnet by default, resolved per
