@@ -199,8 +199,10 @@ Read AGENTS.md/CLAUDE.md and the changed-file list. For every rule or "where thi
 pointer this change makes FALSE, emit a Fix row with the minimal edit. For a new durable
 invariant this change establishes, emit at most three Add rows of one line each. List what was
 checked and is still true. Report {"fix": [{rule, edit}], "add": [line], "checked_ok": [claim]}.
-Cap each list at 10. CLAUDE.md and AGENTS.md are byte-identical in this repo -- a Fix or Add row
-touching one must mirror the same edit into the other and say so in the row.
+Cap each list at 10. If both AGENTS.md and CLAUDE.md exist, diff them first: when they are
+identical, a Fix or Add row touching one must mirror the same edit into the other and say so in
+the row; when they already differ, treat them as independent files and skip the mirroring
+instruction. If only one of the two exists, there is nothing to mirror -- just check that file.
 ```
 
 ### Check 11 — Backlog drift (procedural, cheap)

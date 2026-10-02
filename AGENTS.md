@@ -108,7 +108,8 @@ repetition itself is required, not redundant.
 3. **Keep each SKILL.md under 500 lines.** That is the ceiling in the open Agent Skills
    spec (https://agentskills.io/specification), which Claude Code, Copilot and Codex all
    honor, and this repo adopts it unchanged rather than maintaining a stricter house number.
-   Nothing here is close: the largest skill is `brainstorm` at 332 lines. Note that 500 is a
+   Nothing here is close — run `wc -l skills/*/SKILL.md` for current sizes rather than
+   trusting a number here, since the largest file changes as skills grow. Note that 500 is a
    documented recommendation, not a validator-enforced hard error — no tool in the chain
    rejects a longer file.
 
@@ -125,7 +126,7 @@ repetition itself is required, not redundant.
    whole discovery listing at **8,000 characters** (or 2% of context) and
    silently shortens descriptions from the end — dropping skills entirely when
    over. Claude Code truncates each description at 1,536 chars and caps the
-   listing at ~1% of context. `setup.sh` installs the full 13-skill set, so this
+   listing at ~1% of context. `setup.sh` installs every skill under `skills/`, so this
    repo's descriptions are measured against those ceilings **as a set**.
 
    - Target **≤550 characters** per description; 600 is the ceiling.
@@ -153,7 +154,7 @@ repetition itself is required, not redundant.
 
 ## Unified contracts
 
-- **`AGENTS.md`** — repo-wide agent instructions. Consumer repos symlink (POSIX) or copy `CLAUDE.md` → `AGENTS.md`.
+- **`AGENTS.md`** — repo-wide agent instructions. `setup.sh` writes it from `templates/AGENTS.md.template`, then writes `CLAUDE.md` as a plain-file copy of it — deliberately not a symlink, since WSL/NTFS and Windows git both struggle with symlinks (indexing failures, IDE edits silently following the link). Consumers keep the two files in sync by hand after that.
 - **`TASKS.md`** — markdown checkbox list at repo root; the portable, durable task tracker. It is the **only** cross-tool backlog: `/sdlc-status`, the `--queue` loop and the Stop hooks all read it, and it survives the session (`/repo-health` does not read it today). Claude Code's native task list (`TaskCreate`/`TaskUpdate`) is a **separate, session-scoped progress indicator** — `/task` mirrors its one item and `/sdlc` mirrors its stage list, both Claude-only and both skipped silently elsewhere. Never let a decision depend on the native list, and never treat it as a substitute for a `TASKS.md` row: it is a view, not a record.
 - **`GOTCHAS.md`** — project-specific pitfalls; consulted by `/gotcha` and the sanity-check stage of `/sdlc`.
 - **`.claude/project.json`** — optional per-project config (test commands, eval runner, modules list); every key is optional, missing keys are skipped.

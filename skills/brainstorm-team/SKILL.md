@@ -53,8 +53,12 @@ against it (see below).
 
 **Planner nudge (once per session).** Read `models.planner` from `.claude/project.json`
 (`haiku|sonnet|opus|fable`; default `"opus"` when the file, key, or value is missing or
-invalid — never detect the host model). Print once: `Planning runs on your session model.
-Recommended: <planner> — switch before the clarifying rounds if you aren't on it.`
+invalid — never detect the host model). This nudge is about *your* work, not the team's: the 6
+teammates below dispatch at a fixed Sonnet (team-wide, capped per `models.cap`) regardless of
+your session model, so `models.planner` governs only the context-loading, scoping and
+final-assembly work you do directly. Print once: `Loading context and assembling the final
+document run on your session model. Recommended: <planner> — switch now if you aren't on it.
+The 6 teammates dispatch separately, at Sonnet.`
 
 Summarize findings into a 3-5 sentence "Project Context" block and inject it into each teammate's prompt below where marked `{PROJECT_CONTEXT}`.
 

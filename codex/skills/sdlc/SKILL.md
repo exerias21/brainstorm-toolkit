@@ -210,8 +210,10 @@ failures (no refactor), re-run the gate, 3 iterations max, then emit its PAUSE b
 
 **`pipeline.fix_loop.escalate_last` on this runtime.** There is no sub-agent seam to escalate —
 every fix attempt already runs inline in your session model, so a `true` value does not raise
-the last iteration's tier here. Instead, add one line to the PAUSE block:
-`Escalate: re-run with --model opus --resume`.
+the last iteration's tier here. `--model opus` doesn't help either — it only raises the
+(advisory) sub-agent cap, and there is no sub-agent dispatch on this runtime to raise. Instead,
+add one line to the PAUSE block: `Escalate: switch your session model to opus, then re-run with
+--resume`.
 
 ## Stage 5 — Validate (one stage)
 

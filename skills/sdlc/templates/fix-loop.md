@@ -21,8 +21,12 @@ only the **final** iteration of this budget dispatches its fix agent at
 `min(stage_tier + 1, effective_cap)` on the `haiku < sonnet < opus` ladder, and prints
 `model: <tier> (cap: <cap>, escalated)` in place of the ordinary dispatch line. Under the
 default `cap: sonnet`, `min(sonnet + 1, sonnet)` is a no-op — nothing changes. The case where it
-actually acts is `models.cap: "opus"` (or `--model opus`): iterations 1–2 dispatch at Sonnet
-(the fix agent's built-in tier — the cap only ever lowers, so `opus` doesn't raise it), and the
+actually acts is `models.cap: "opus"` set in config — **not** `--model opus`: that flag raises
+the dispatch itself (per `models.md`'s Resolution table, `--model <tier>` wins over the
+built-in stage default directly, every iteration), so under `--model opus` every iteration
+already runs at Opus and this key has nothing left to escalate. Under `models.cap: "opus"`
+alone, iterations 1–2 dispatch at Sonnet (the fix agent's built-in tier — a cap only ever
+lowers a dispatch, never raises one, so the raised ceiling alone doesn't move them), and the
 last iteration dispatches at Opus. Without this key, every retry stays on the same tier by
 design — a fix loop is not a place to guess your way up the ladder silently. Excluded entirely
 from Stage 5.7/5.8: that stage has its own separate budget and Axis 2 (`models.code_review`) is
