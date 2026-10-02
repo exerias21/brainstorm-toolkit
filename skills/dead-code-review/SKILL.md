@@ -37,7 +37,7 @@ resolve each per `skills/sdlc/templates/models.md` (`--model <tier>` > `project.
 the tier here). The fan-out is **Sonnet-first**, so the Opus tier runs Sonnet unless you opt up with
 `--model opus`; print `model: <tier> (cap: <cap|none>)` before each dispatch. NO subagents.
 
-**Read `skills/dead-code-review/references/lenses.md` now** — it carries the five lenses and
+**Read `references/lenses.md` (next to this SKILL.md) now** — it carries the five lenses and
 their per-surface checklists, plus the shared reporting contract.
 
 First resolve which lenses apply. The surfaces are **roles, not paths**: read

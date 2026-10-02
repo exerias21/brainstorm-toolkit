@@ -47,10 +47,31 @@ directives this skill itself interprets, marked below:
 | `--include-runtime-docstrings` *(skill directive, not a script flag)* | also rewrite docstrings the script marked `runtime_visible` (FastAPI/Flask route text, CLI `--help`, doctests) — off by default because these are behavior, not just documentation |
 
 **Flags the script itself accepts**, beyond the pass-through ones above
-(`bash scripts/py.sh skills/docstring-sync/scripts/docstring_check.py --help` is authoritative):
+(`bash scripts/py.sh <skill-dir>/scripts/docstring_check.py --help` is authoritative):
 `--json` (machine-readable output, used at Step 3), `--claims-out <file>` and `--verdicts-in
 <file>` (the triage step below), `--snapshot` (Step 6), `--verify-docs-only <file>` (Step 8), and
 `--self-test` (the script's own CI self-check — not part of this procedure).
+
+## Resolving this skill's own files
+
+A fresh install (`setup.sh`, or the Claude plugin cache) puts this skill's `scripts/` and
+`references/` under whatever directory holds this file — `.claude/skills/docstring-sync/`,
+`.github/skills/docstring-sync/`, `.agents/skills/docstring-sync/`, or the plugin's own
+`skills/docstring-sync/`. There is no `skills/docstring-sync/` at the repo root in any of those —
+that path only exists inside this plugin repo itself. Resolve this file's own directory now
+(Claude Code reports it as "Base directory for this skill"; Copilot and Codex resolve a skill's
+relative paths from its own root the same way, per the Agent Skills spec) and call it
+`<skill-dir>` for the rest of this file — every `<skill-dir>/scripts/...` and
+`<skill-dir>/references/...` path below is relative to it, never the repo root. `scripts/py.sh`
+is the one exception: it is the shared interpreter-resolver `setup.sh` ships to the *repo root*
+(see `scripts/py.sh` itself), so it stays repo-root-relative even though the script it runs does
+not — if `--no-copy-scripts` was used, `scripts/py.sh` was never installed and these commands
+have no interpreter to resolve through; invoke the Python inside `<skill-dir>/scripts/` directly
+in that case.
+
+A sub-agent you dispatch (Steps 4 and 7) never gets this resolution — it only sees the literal
+prompt text you hand it. Resolve `<skill-dir>` yourself before each dispatch and pass the
+resolved path, not the bare citation.
 
 ## Procedure
 
@@ -68,7 +89,7 @@ safety net regardless of whether tests exist.
 
 ### 3. Run the script — report counts per kind before touching anything
 
-Run `bash scripts/py.sh skills/docstring-sync/scripts/docstring_check.py <scope-flags> --json`.
+Run `bash scripts/py.sh <skill-dir>/scripts/docstring_check.py <scope-flags> --json`.
 Report the findings grouped by kind (`POINTER`, `PLACEHOLDER`, `THIN`, `MISSING`, `BODY_NEWER`)
 **before any file is touched** — a plan, not a surprise. `MISSING` is always report-only in this
 run; it never queues an edit. On `--report` or `--pointers-only`, stop here: print the summary
@@ -79,7 +100,7 @@ and end without triaging or editing anything.
 Skipped entirely on `--report` or `--pointers-only` — there is nothing to judge on either of
 those runs.
 
-Run `bash scripts/py.sh skills/docstring-sync/scripts/docstring_check.py <scope-flags>
+Run `bash scripts/py.sh <skill-dir>/scripts/docstring_check.py <scope-flags>
 --claims-out <scratch-file> --json` (a scratch path under the OS temp directory, same as Step 6's
 snapshot — nothing lands in the repo; pass `--all` through if the run was given it). Group the
 written claims by the leading path segment of each claim's id (`<path>::<symbol>::<sentence>`) so
@@ -87,14 +108,14 @@ each group is exactly one file's claims, plus that file's full source for any sy
 `oversized` list names instead of a capped evidence string.
 
 Dispatch one triage sub-agent per file group, using
-`skills/docstring-sync/references/triage-prompt.md` as the role prompt verbatim — **parallel,
+`<skill-dir>/references/triage-prompt.md` as the role prompt verbatim — **parallel,
 single message, multiple tool calls on Claude**; on Copilot and Codex, run each group inline and
 sequentially in this session, per the standing runtime note in `skills/repo-health/SKILL.md`.
 Before each dispatch, resolve the tier per `skills/sdlc/templates/models.md` and print `model:
 <tier> (cap: <cap|none>)` — Sonnet by default, `--model opus` the opt-up.
 
 Merge every sub-agent's `{id: {verdict, quote?}}` object into one verdicts file, then run
-`bash scripts/py.sh skills/docstring-sync/scripts/docstring_check.py <scope-flags> --verdicts-in
+`bash scripts/py.sh <skill-dir>/scripts/docstring_check.py <scope-flags> --verdicts-in
 <merged-file> --json` (same scope flags, including `--all`, as the `--claims-out` call above) to
 fold the results into `STALE` findings.
 
@@ -108,7 +129,7 @@ summary and stop. An opinion nobody confirmed must not become an edit.
 
 ### 6. Snapshot before editing
 
-Run `bash scripts/py.sh skills/docstring-sync/scripts/docstring_check.py <scope-flags> --snapshot`.
+Run `bash scripts/py.sh <skill-dir>/scripts/docstring_check.py <scope-flags> --snapshot`.
 Prints a path under the OS temp directory — nothing lands in the repo, so no new gitignore
 entry. Keep this path; Step 8 verifies against it.
 
@@ -119,9 +140,13 @@ run's `STALE`/`certain` findings from Step 4 — never a `suspect` finding, and 
 Batch that set by file, roughly 8 files per batch, capped overall at `--limit` files (default 25;
 a run that hits the cap says so and that a re-run continues from where this one stopped).
 
-Dispatch one rewrite sub-agent per batch, using
-`skills/docstring-sync/references/rewrite-prompt.md` as the role prompt verbatim — same
-parallel-Claude / inline-sequential-Copilot-Codex shape and the same `model: <tier> (cap:
+Dispatch one rewrite sub-agent per batch, using `<skill-dir>/references/rewrite-prompt.md` as the
+role prompt verbatim, **prefaced with the two absolute paths it asks the sub-agent to read**:
+`<skill-dir>/references/rewrite-rules.md` and the sibling code-tour skill's own
+`references/standards.md` (same parent directory as `<skill-dir>`, i.e.
+`<skill-dir>/../code-tour/references/standards.md`) — resolve both yourself and hand over the
+literal paths; the sub-agent has no base directory of its own to resolve a bare citation against.
+Same parallel-Claude / inline-sequential-Copilot-Codex shape and the same `model: <tier> (cap:
 <cap|none>)` print, per batch, before each dispatch. **Triage and rewrite are separate passes with
 the human confirmation between them: neither may both accuse and fix** — a pass that does both
 grades its own accusation (`skills/sdlc/templates/stage-5.9-cleanup.md`'s framing for the same
@@ -129,8 +154,8 @@ split). Roll up each sub-agent's `{symbol, action, unresolved}` list into the ru
 
 ### 8. Verify
 
-Run `bash scripts/py.sh skills/docstring-sync/scripts/docstring_check.py <scope-flags> --verify-docs-only <snapshot-path>`,
-then `bash scripts/py.sh skills/docstring-sync/scripts/docstring_check.py <touched-files> --json`.
+Run `bash scripts/py.sh <skill-dir>/scripts/docstring_check.py <scope-flags> --verify-docs-only <snapshot-path>`,
+then `bash scripts/py.sh <skill-dir>/scripts/docstring_check.py <touched-files> --json`.
 The first call proves the edit is docs-only: a Python file's AST with docstrings stripped must
 be unchanged, and every changed line in a non-Python file must be a comment or blank line. The
 second re-scans exactly the files you touched — **zero remaining `certain`-severity `POINTER`

@@ -64,7 +64,7 @@ Scan migration files and query live schema if available:
 Scan markdown files in `docs/`, `plans/`, and root:
 - Completed plans (feature fully shipped). **Prefer moving a genuinely historical document
   to an archive directory with a dated header over deleting it outright** — delete only what
-  is both stale AND unreferenced. Full lens detail: `skills/dead-code-review/references/lenses.md`.
+  is both stale AND unreferenced. Full lens detail: `references/lenses.md`, next to this SKILL.md.
 - Stale root markdown (one-time setup guides, old debugging notes).
 - Outdated docs that conflict with current CLAUDE.md / AGENTS.md.
 - Empty directories left from prior cleanup.

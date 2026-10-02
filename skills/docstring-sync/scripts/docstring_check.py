@@ -195,8 +195,18 @@ def _git_tracked_files(root: Path) -> set[str] | None:
 
 def _git_changed_files(root: Path) -> set[str] | None:
     """Tracked changes against HEAD plus untracked-not-ignored files --
-    read-only (`diff --name-only`, `ls-files --others`)."""
-    diffed = _run_git(["diff", "--name-only", "HEAD"], root)
+    read-only (`diff --name-only`, `ls-files --others`).
+
+    `--relative` on the diff call is load-bearing, not cosmetic: unlike
+    `ls-files` (already relative to `cwd` by default), `git diff
+    --name-only` prints paths relative to the repo's TOP LEVEL by default.
+    When `root` is a subdirectory of the repo, the two would disagree --
+    `root / <top-level-relative path>` doubles the subdirectory segment
+    (`pkg/pkg/a.py` resolved against a root already inside `pkg/` becomes
+    the nonexistent `pkg/pkg/pkg/a.py`), which is exactly the "unreadable"
+    failure `--changed` must not produce just because it was invoked from
+    somewhere other than the repo root."""
+    diffed = _run_git(["diff", "--relative", "--name-only", "HEAD"], root)
     others = _run_git(["ls-files", "--others", "--exclude-standard"], root)
     if diffed is None and others is None:
         return None
@@ -609,12 +619,17 @@ def _path_status(root: Path, rel_path: str) -> str:
 
 def scan_text_for_pointers(
     text: str, root: Path, rel_file: str, base_line: int, heuristic: bool,
-    in_usage_block: bool = False,
+    in_usage_block: bool = False, symbol: str | None = None,
 ) -> list[Finding]:
     """Scan one comment or docstring body for POINTER findings. `base_line`
     is the 1-based source line the text starts on (findings report the
     line the match itself falls on, computed from `base_line` plus the
-    number of newlines before the match)."""
+    number of newlines before the match). `symbol` is carried onto each
+    Finding unchanged -- callers scanning a symbol's own docstring (as
+    opposed to a bare comment or the module docstring, neither of which has
+    one) pass their qualified name so a plan/ticket pointer living inside a
+    function or class docstring is attributable the same way a THIN or
+    PLACEHOLDER finding on that symbol already is."""
     findings: list[Finding] = []
     spans: list[tuple[int, int]] = []
     plan_hits: list[tuple[int, int, str]] = []  # start, end, cited path
@@ -671,14 +686,14 @@ def scan_text_for_pointers(
                     path=rel_file, line=line_of(start), kind="POINTER", severity="suspect",
                     message=f"cites plan path `{cited_norm}` ({status}) inside what reads as a "
                             "usage example, not a justification for code -- confirm before acting",
-                    pointer_only=pointer_only, heuristic=heuristic,
+                    pointer_only=pointer_only, heuristic=heuristic, symbol=symbol,
                 ))
             else:
                 findings.append(Finding(
                     path=rel_file, line=line_of(start), kind="POINTER", severity="certain",
                     message=f"cites plan path `{cited_norm}` ({status}) -- plan references rot; "
                             "the reason belongs in the comment itself, not a pointer to it",
-                    pointer_only=pointer_only, heuristic=heuristic,
+                    pointer_only=pointer_only, heuristic=heuristic, symbol=symbol,
                 ))
         elif status in ("missing", "gitignored") and _in_backticks(start, end) \
                 and cited_norm.startswith(_TOOLKIT_TOPLEVEL_DIRS):
@@ -690,7 +705,7 @@ def scan_text_for_pointers(
             findings.append(Finding(
                 path=rel_file, line=line_of(start), kind="POINTER", severity="certain",
                 message=f"cites `{cited_norm}`, which is {status} -- a dangling reference",
-                pointer_only=pointer_only, heuristic=heuristic,
+                pointer_only=pointer_only, heuristic=heuristic, symbol=symbol,
             ))
         # else: tracked/untracked-present and not plan-like -- a durable
         # pointer (an ADR, a doc), left alone per the pointer policy. A
@@ -703,7 +718,7 @@ def scan_text_for_pointers(
                 path=rel_file, line=line_of(m.start()), kind="POINTER", severity="suspect",
                 message=f"bare plan numbering `{m.group(0)}` with no cited path -- "
                         "may be legitimate prose (a protocol's own steps); confirm before acting",
-                pointer_only=pointer_only, heuristic=heuristic,
+                pointer_only=pointer_only, heuristic=heuristic, symbol=symbol,
             ))
         if pointer_only:
             for m in ticket_hits:
@@ -711,7 +726,7 @@ def scan_text_for_pointers(
                     path=rel_file, line=line_of(m.start()), kind="POINTER", severity="suspect",
                     message=f"comment is only a ticket reference (`{m.group(0)}`) -- "
                             "confirm whether the reason should be inlined",
-                    pointer_only=True, heuristic=heuristic,
+                    pointer_only=True, heuristic=heuristic, symbol=symbol,
                 ))
 
     return findings
@@ -1174,6 +1189,7 @@ def check_symbol(
     node: ast.AST, qualified: str, rel_file: str, decorators: list[ast.expr],
     identifiers: set[str], string_constants: set[str], builtins_set: set[str],
     stdlib_modules: set[str], blame_map: dict[int, tuple[str, int]] | None,
+    root: Path,
 ) -> list[Finding]:
     findings: list[Finding] = []
     doc = ast.get_docstring(node, clean=False)
@@ -1188,6 +1204,19 @@ def check_symbol(
         if placeholder:
             findings.append(placeholder)
             return findings  # a placeholder has nothing else worth checking
+
+        # A function/class/method docstring is scanned for the same
+        # plan-path/TASKS.md/ticket POINTER rot a bare comment or the
+        # module docstring already is -- previously only those two were
+        # scanned, so a stale pointer living inside a SYMBOL's own
+        # docstring (the most common place to write one) was invisible to
+        # `--verify-docs-only`'s drift detection entirely. Distinct text
+        # from both the module docstring and every comment token, so this
+        # can never double-report a POINTER finding already produced by
+        # either of those.
+        findings.extend(scan_text_for_pointers(
+            doc, root, rel_file, doc_line, heuristic=False, symbol=qualified,
+        ))
 
         sections = parse_doc_sections(doc)
         if sections is not None:
@@ -1307,6 +1336,7 @@ def check_python_file(
         findings.extend(check_symbol(
             node, qualified, rel, decorators,
             identifiers, string_constants, builtins_set, stdlib_modules, blame_map,
+            root,
         ))
 
     return findings, None
@@ -1414,16 +1444,85 @@ def _ast_dump_without_docstrings(tree: ast.AST) -> str:
     return ast.dump(tree, annotate_fields=True, include_attributes=False)
 
 
-def _code_line_signature(text: str) -> str:
+# Per-extension comment syntax for `_code_line_signature`, the function that
+# backs the `--verify-docs-only` SAFETY GUARD. This is deliberately a
+# DIFFERENT, narrower table than `_COMMENT_PREFIXES` (used only by the
+# pointer-rot heuristic, where missing a comment just skips a weak check):
+# here, calling a line "comment-only" when it is actually code is the one
+# mistake this function must never make, since it is what tells a caller a
+# change was "docs only". A blind, language-blind prefix list flags a C
+# `#define`/`#include`, a pointer-deref `*p = 0;`, a pre-decrement `--i;`, a
+# Rust `#[attr]`, a JS/TS `#private` field, or a YAML `---` document marker
+# as "just a comment" purely because the line happens to start with a
+# character some OTHER language uses for comments.
+#
+# Fail-safe default: an extension not in this table gets NO entry in either
+# map below, so `has_block` is False and `line_comment` is None -- every
+# non-blank line counts as code, never as a comment it can discard.
+_LINE_COMMENT_BY_EXT: dict[str, str] = {
+    # C-family and other `//`-comment languages.
+    ".js": "//", ".ts": "//", ".jsx": "//", ".tsx": "//",
+    ".go": "//", ".rs": "//", ".java": "//",
+    ".c": "//", ".cc": "//", ".cpp": "//", ".h": "//", ".hpp": "//",
+    # `#`-comment languages -- NOT the C-family above, where `#` is
+    # preprocessor/attribute/private-field syntax, not a comment.
+    ".sh": "#", ".yml": "#", ".yaml": "#", ".toml": "#", ".rb": "#",
+    # `--`-comment languages this heuristic does not currently discover
+    # (not in `_HEURISTIC_TEXT_EXTS`), listed for completeness rather than
+    # silently mis-scanned if ever added there.
+    ".sql": "--", ".lua": "--", ".hs": "--",
+}
+# `/* ... */` block comments: only the languages above that actually support
+# them. `#`-comment and `--`-comment languages are never checked for a block
+# form here -- in YAML/TOML/shell/SQL/Lua, `/*`  is just ordinary text, not
+# comment syntax, so treating it as one would be its own false-safe bug.
+_BLOCK_COMMENT_EXTS = {
+    ".js", ".ts", ".jsx", ".tsx", ".go", ".rs", ".java",
+    ".c", ".cc", ".cpp", ".h", ".hpp",
+}
+
+
+def _code_line_signature(text: str, ext: str = "") -> str:
     """Non-Python fallback for the docs-only guard: every line that is not
-    blank and not a recognized comment line, joined -- a change here means
-    real code changed, not just a comment or docstring."""
-    lines = []
+    blank and not a recognized COMMENT line for `ext`'s own comment syntax,
+    joined -- a change here means real code changed, not just a comment or
+    docstring.
+
+    `ext` picks the comment syntax from `_LINE_COMMENT_BY_EXT` /
+    `_BLOCK_COMMENT_EXTS`; an unrecognized (or empty) `ext` strips nothing,
+    per the fail-safe default documented on those tables. A `/* */` block
+    comment's own state is tracked ACROSS lines, so a ` * `-prefixed
+    continuation line is only ever treated as a comment while an open block
+    is actually in progress -- never on its own, which is what let a bare
+    `*p = 0;` pointer-deref line get swallowed under the old blind-prefix
+    heuristic.
+    """
+    line_comment = _LINE_COMMENT_BY_EXT.get(ext)
+    has_block = ext in _BLOCK_COMMENT_EXTS
+    lines: list[str] = []
+    in_block = False
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped:
             continue
-        if any(stripped.startswith(p) for p in _COMMENT_PREFIXES):
+        if has_block:
+            if in_block:
+                end = stripped.find("*/")
+                if end == -1:
+                    continue  # still inside the open block comment
+                in_block = False
+                stripped = stripped[end + 2:].strip()
+                if not stripped:
+                    continue
+            if stripped.startswith("/*"):
+                close = stripped.find("*/", 2)
+                if close == -1:
+                    in_block = True
+                    continue
+                stripped = stripped[close + 2:].strip()
+                if not stripped:
+                    continue
+        if line_comment and stripped.startswith(line_comment):
             continue
         lines.append(stripped)
     return "\n".join(lines)
@@ -1444,7 +1543,10 @@ def build_snapshot(files: list[Path], root: Path) -> dict[str, dict]:
                 continue
             snapshot[rel] = {"kind": "python", "dump": _ast_dump_without_docstrings(tree)}
         else:
-            snapshot[rel] = {"kind": "text", "code_lines": _code_line_signature(text)}
+            snapshot[rel] = {
+                "kind": "text",
+                "code_lines": _code_line_signature(text, path.suffix.lower()),
+            }
     return snapshot
 
 
@@ -1474,7 +1576,7 @@ def verify_docs_only(snapshot_path: Path, root: Path) -> list[str]:
             if after_dump != before["dump"]:
                 violations.append(f"{rel}: non-docstring code changed (AST mismatch)")
         else:
-            after_lines = _code_line_signature(text)
+            after_lines = _code_line_signature(text, Path(rel).suffix.lower())
             if after_lines != before["code_lines"]:
                 violations.append(f"{rel}: a non-comment line changed (heuristic)")
     return violations
@@ -2047,6 +2149,268 @@ def f():
         if "has no effect" in buf_verdicts.getvalue():
             print(f"SELF-TEST FAIL: --all with --verdicts-in (no --claims-out) must not "
                   f"warn, got: {buf_verdicts.getvalue()!r}", file=sys.stderr)
+            ok = False
+    finally:
+        os.chdir(cwd_before)
+        shutil.rmtree(tmp, ignore_errors=True)
+    return ok
+
+
+def _self_test_language_aware_code_signature() -> bool:
+    """`_code_line_signature` must key its comment syntax off the file's
+    OWN extension, not a blind cross-language prefix list -- a C
+    `#define`/`#include`, a pointer-deref `*p = 0;`, a pre-decrement
+    `--i;`, a Rust `#[attr]`, a JS/TS `#private` field, and a YAML `---`
+    document marker must all count as CODE for their own language, so a
+    real edit to any of them is CAUGHT by `--verify-docs-only`, never
+    waved through as "docs only". A `/* ... */` block comment (including
+    a ` * ` continuation line) must still be recognized as a comment, so
+    editing only the text inside one stays clean."""
+    ok = True
+    tmp = Path(tempfile.mkdtemp(prefix="docstring_check_selftest_langaware_"))
+    try:
+        def assert_caught(rel: str, before: str, after: str, label: str) -> None:
+            nonlocal ok
+            target = _write(tmp, rel, before)
+            snapshot = build_snapshot([target], tmp)
+            snap_file = tmp / f"{rel.replace('/', '_')}.snapshot.json"
+            snap_file.write_text(json.dumps(snapshot), encoding="utf-8")
+            _write(tmp, rel, after)
+            violations = verify_docs_only(snap_file, tmp)
+            if not violations:
+                print(f"SELF-TEST FAIL: {label} -- a real code edit in {rel} was "
+                      "waved through as docs-only", file=sys.stderr)
+                ok = False
+
+        def assert_clean(rel: str, before: str, after: str, label: str) -> None:
+            nonlocal ok
+            target = _write(tmp, rel, before)
+            snapshot = build_snapshot([target], tmp)
+            snap_file = tmp / f"{rel.replace('/', '_')}.clean.snapshot.json"
+            snap_file.write_text(json.dumps(snapshot), encoding="utf-8")
+            _write(tmp, rel, after)
+            violations = verify_docs_only(snap_file, tmp)
+            if violations:
+                print(f"SELF-TEST FAIL: {label} -- a comment/docstring-only edit in "
+                      f"{rel} was flagged as code: {violations}", file=sys.stderr)
+                ok = False
+
+        # C: a #define line is a preprocessor directive, not a comment --
+        # and a bare pointer-deref line must not be swallowed by a blind
+        # "*"-prefix match either.
+        assert_caught(
+            "lang/c_define.c",
+            "#define MAX 10\nint f(void) { return MAX; }\n",
+            "#define MAX 20\nint f(void) { return MAX; }\n",
+            "C #define",
+        )
+        assert_caught(
+            "lang/c_pointer.c",
+            "int f(int *p) {\n    /* adjust */\n    *p = 0;\n    return 1;\n}\n",
+            "int f(int *p) {\n    /* adjust */\n    *p = 1;\n    return 1;\n}\n",
+            "C pointer-deref `*p = 0;`",
+        )
+        # C: editing only the text INSIDE a /* */ block (including a ` * `
+        # continuation line) must still read as docs-only.
+        assert_clean(
+            "lang/c_block_comment.c",
+            "/**\n * Old explanation.\n */\nint f(void) { return 1; }\n",
+            "/**\n * New, better explanation.\n */\nint f(void) { return 1; }\n",
+            "C /* */ block-comment-only edit",
+        )
+        # JS/TS: a pre-decrement statement and a `#private` field are both
+        # code, not comments, despite starting with "--" / "#".
+        assert_caught(
+            "lang/js_decrement.js",
+            "function tick(i) {\n    --i;\n    return i;\n}\n",
+            "function tick(i) {\n    ++i;\n    return i;\n}\n",
+            "JS pre-decrement `--i;`",
+        )
+        assert_caught(
+            "lang/js_private.js",
+            "class Foo {\n    #secret = 1;\n}\n",
+            "class Foo {\n    #secret = 2;\n}\n",
+            "JS `#private` field",
+        )
+        # Rust: a #[attr] line is an attribute, not a comment.
+        assert_caught(
+            "lang/rust_attr.rs",
+            "#[derive(Debug)]\nfn f() -> i32 {\n    1\n}\n",
+            "#[derive(Clone)]\nfn f() -> i32 {\n    1\n}\n",
+            "Rust `#[attr]`",
+        )
+        # YAML: a "---" document marker is structural, not a "--" comment.
+        assert_caught(
+            "lang/yaml_marker.yml",
+            "---\nkey: 1\n",
+            "----\nkey: 1\n",
+            "YAML `---` document marker",
+        )
+        # Negative control: an ordinary shell "#" comment is still
+        # correctly treated as a comment -- the fix must not regress the
+        # one case the old blind heuristic got right.
+        assert_clean(
+            "lang/sh_comment.sh",
+            "#!/usr/bin/env bash\n# old comment\necho hi\n",
+            "#!/usr/bin/env bash\n# new comment text\necho hi\n",
+            "shell comment-only edit",
+        )
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return ok
+
+
+def _self_test_docstring_pointer_scan() -> bool:
+    """A plan/ticket pointer living inside a FUNCTION or CLASS docstring
+    (not just a bare comment or the module docstring) must be scanned and
+    reported the same way, with the same severity/pointer-only rules, and
+    must carry that symbol's name -- and must not be double-reported
+    alongside the (textually distinct) module-docstring or comment scans."""
+    ok = True
+    tmp = Path(tempfile.mkdtemp(prefix="docstring_check_selftest_docpointer_"))
+    try:
+        _write(tmp, "symbol_pointer.py", '''\
+"""Module docstring, no pointer here."""
+
+
+def uses_plan_in_docstring():
+    """Mirrors the retry policy in plans/RETRY_POLICY.md -- do not change
+    the backoff formula without updating that doc too.
+    """
+    return 1
+
+
+def uses_tasks_row_in_docstring():
+    """See TASKS.md row 12."""
+    return 1
+
+
+class HasPlanPointer:
+    """Implements the design in docs/plans/LEGACY_DESIGN.md exactly."""
+
+    def method(self):
+        return 1
+''')
+        result = scan_paths([tmp / "symbol_pointer.py"], tmp, include_tests=True, pointers_only=False)
+        by_symbol: dict[str, list[Finding]] = {}
+        for f in result.findings:
+            if f.kind == "POINTER":
+                by_symbol.setdefault(f.symbol, []).append(f)
+
+        plan_findings = by_symbol.get("uses_plan_in_docstring", [])
+        if len(plan_findings) != 1 or plan_findings[0].severity != "certain" \
+                or plan_findings[0].pointer_only:
+            print(f"SELF-TEST FAIL: expected exactly one certain, non-pointer-only POINTER "
+                  f"finding on uses_plan_in_docstring's own docstring, got {plan_findings}",
+                  file=sys.stderr)
+            ok = False
+
+        tasks_findings = by_symbol.get("uses_tasks_row_in_docstring", [])
+        if len(tasks_findings) != 1 or not tasks_findings[0].pointer_only:
+            print(f"SELF-TEST FAIL: expected one pointer-only POINTER finding on "
+                  f"uses_tasks_row_in_docstring's docstring, got {tasks_findings}",
+                  file=sys.stderr)
+            ok = False
+
+        class_findings = by_symbol.get("HasPlanPointer", [])
+        if len(class_findings) != 1 or class_findings[0].severity != "certain":
+            print(f"SELF-TEST FAIL: expected one certain POINTER finding on the CLASS "
+                  f"docstring HasPlanPointer, got {class_findings}", file=sys.stderr)
+            ok = False
+
+        # No double-reporting: the module docstring carries no pointer, and
+        # the three symbol docstrings above must not ALSO surface under
+        # symbol=None (which would mean they got counted a second time via
+        # the module-doc or comment-token scan paths).
+        untagged = by_symbol.get(None, [])
+        if untagged:
+            print(f"SELF-TEST FAIL: unexpected un-attributed POINTER finding(s), "
+                  f"possible double-report: {untagged}", file=sys.stderr)
+            ok = False
+        total_pointer_findings = sum(len(v) for v in by_symbol.values())
+        if total_pointer_findings != 3:
+            print(f"SELF-TEST FAIL: expected exactly 3 POINTER findings total (one per "
+                  f"symbol docstring), got {total_pointer_findings}: {by_symbol}",
+                  file=sys.stderr)
+            ok = False
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return ok
+
+
+def _self_test_changed_from_subdir() -> bool:
+    """`--changed` run from a repo SUBDIRECTORY must resolve both tracked
+    and untracked paths against `root` (cwd) consistently -- `git diff
+    --name-only HEAD` prints paths relative to the repo's TOP LEVEL by
+    default while `git ls-files --others` is already cwd-relative; without
+    `--relative` on the diff call the two disagree the moment root is a
+    subdirectory, doubling the subdirectory segment and producing a path
+    that does not exist on disk. Skips gracefully if git is unavailable."""
+    git = shutil.which("git")
+    if git is None:
+        print("docstring_check.py --self-test: git unavailable, skipping "
+              "--changed-from-subdir checks", file=sys.stderr)
+        return True
+
+    ok = True
+    tmp = Path(tempfile.mkdtemp(prefix="docstring_check_selftest_subdir_"))
+    cwd_before = Path.cwd()
+    try:
+        def run(args: list[str]) -> None:
+            subprocess.run(
+                [git, *args], cwd=str(tmp), check=True, capture_output=True,
+                encoding="utf-8", errors="replace",
+            )
+
+        run(["init", "-q"])
+        run(["-c", "user.name=Docstring Sync Self-Test", "-c",
+             "user.email=selftest@example.invalid",
+             "commit", "-q", "--allow-empty", "-m", "init"])
+
+        _write(tmp, "pkg/pkg/a.py", "def f():\n    return 1\n")
+        run(["add", "pkg/pkg/a.py"])
+        run(["-c", "user.name=Docstring Sync Self-Test", "-c",
+             "user.email=selftest@example.invalid",
+             "commit", "-q", "-m", "add a.py"])
+
+        # A tracked change AND an untracked file, both under the
+        # subdirectory the scan will run from.
+        _write(tmp, "pkg/pkg/a.py", "def f():\n    return 2\n")
+        _write(tmp, "pkg/pkg/b.py", "def g():\n    return 1\n")
+
+        subdir_root = tmp / "pkg"
+        os.chdir(subdir_root)
+        changed = _git_changed_files(subdir_root)
+        if changed is None:
+            print("SELF-TEST FAIL: --changed-from-subdir got no usable git output",
+                  file=sys.stderr)
+            ok = False
+        else:
+            for rel in changed:
+                if not (subdir_root / rel).is_file():
+                    print(f"SELF-TEST FAIL: --changed-from-subdir resolved {rel!r} "
+                          f"against root {subdir_root} to a path that does not exist "
+                          f"on disk", file=sys.stderr)
+                    ok = False
+            if "pkg/a.py" not in changed:
+                print(f"SELF-TEST FAIL: expected the tracked change to resolve as "
+                      f"'pkg/a.py' relative to the subdirectory root, got {changed}",
+                      file=sys.stderr)
+                ok = False
+            if "pkg/b.py" not in changed:
+                print(f"SELF-TEST FAIL: expected the untracked file to resolve as "
+                      f"'pkg/b.py' relative to the subdirectory root, got {changed}",
+                      file=sys.stderr)
+                ok = False
+
+        found = discover(None, subdir_root, changed=True)
+        if not found:
+            print("SELF-TEST FAIL: discover(--changed) from a subdirectory found nothing",
+                  file=sys.stderr)
+            ok = False
+        elif not all(f.is_file() for f in found):
+            print(f"SELF-TEST FAIL: discover(--changed) from a subdirectory produced "
+                  f"unreadable paths: {found}", file=sys.stderr)
             ok = False
     finally:
         os.chdir(cwd_before)
@@ -2641,6 +3005,9 @@ def calc(x):
         ok = _self_test_nongit_fallback_root_ancestor() and ok
         ok = _self_test_dangling_ref_full_index() and ok
         ok = _self_test_all_flag_warning() and ok
+        ok = _self_test_language_aware_code_signature() and ok
+        ok = _self_test_docstring_pointer_scan() and ok
+        ok = _self_test_changed_from_subdir() and ok
 
         if ok:
             print("docstring_check.py --self-test: all assertions passed")

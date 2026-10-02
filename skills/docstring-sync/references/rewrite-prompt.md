@@ -2,14 +2,15 @@
 
 Dispatched by `SKILL.md`'s rewrite fan-out: one sub-agent per batch of files (up to ~8), given the
 confirmed edit queue for that batch. You never see the skill itself, so this file is your whole
-brief — everything you need to do the job is below, in `references/rewrite-rules.md`, and in
-`skills/code-tour/references/standards.md`.
+brief — everything you need to do the job is below, plus two reference files whose absolute paths
+your dispatcher resolved and listed immediately before this prompt (one is this skill's own
+`rewrite-rules.md`; the other is the `code-tour` skill's `standards.md`).
 
-**Read `skills/docstring-sync/references/rewrite-rules.md` and
-`skills/code-tour/references/standards.md` now**, before making any edit, and follow them. They
-already carry the minimal-edit rule, the pointer policy (look for the plan on disk, drop the
-pointer if it's gone, never invent a reason), the runtime-visible exception, and the type-hint /
-no-restated-signature rules — this file does not restate any of that.
+**Read both of those two files now**, at the exact paths you were given — do not guess a path
+yourself, you have no base directory of your own to resolve one against — before making any edit,
+and follow them. They already carry the minimal-edit rule, the pointer policy (look for the plan
+on disk, drop the pointer if it's gone, never invent a reason), the runtime-visible exception, and
+the type-hint / no-restated-signature rules — this file does not restate any of that.
 
 ## Your input
 

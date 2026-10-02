@@ -11,15 +11,17 @@ and this run is not the place to lose it. If a summary line is fine and only the
 section drifted, touch the `Returns` section.
 
 Keep the file's existing docstring convention (Google, NumPy, Sphinx, or plain) exactly as
-found. Converting between conventions is out of scope here — see `skills/code-tour/SKILL.md`
-and its `references/standards.md` for type-hint duplication and the no-restated-signature rule
-rather than restating either here; this file only adds what is specific to *repair*.
+found. Converting between conventions is out of scope here — see the sibling `code-tour` skill's
+`SKILL.md` and its `references/standards.md` for type-hint duplication and the no-restated-
+signature rule rather than restating either here; this file only adds what is specific to
+*repair*.
 
 ## The pointer policy
 
 A pointer to a **tracked, durable** file — an ADR, or an architecture doc committed alongside
-the code — is left alone. Those are the recommended home for system-level "why"
-(`skills/code-tour/references/standards.md`), and this skill's job is rot, not relocation.
+the code — is left alone. Those are the recommended home for system-level "why" (the sibling
+`code-tour` skill's `references/standards.md` is one example), and this skill's job is rot, not
+relocation.
 
 A pointer to a plan path, a `TASKS.md` row, plan/phase/step numbering, or a cited path that is
 missing or gitignored is the kind this skill exists to fix. So is a comment that is a ticket
@@ -36,9 +38,9 @@ When rewriting one:
    `# Do not reintroduce the retry wrapper here.` — the instruction survives, the dead path does
    not.
 3. **Never invent a reason.** If neither the on-disk plan nor the surrounding code explains
-   *why* the instruction exists, do not guess one (`skills/code-tour/SKILL.md`, on inventing
-   rationale). Keep the bare instruction as in step 2 and add the symbol to the unresolved list
-   for a human to fill in.
+   *why* the instruction exists, do not guess one (the sibling `code-tour` skill's `SKILL.md`, on
+   inventing rationale). Keep the bare instruction as in step 2 and add the symbol to the
+   unresolved list for a human to fill in.
 
 ## Runtime-visible docstrings
 
@@ -51,8 +53,9 @@ or executes, which is a behavior change wearing a docs-only disguise.
 ## Never restate, never guess
 
 - Don't repeat a type the annotation already carries, and don't restate the signature in prose
-  — `skills/code-tour/references/standards.md` covers both with their sourcing; follow it rather
-  than re-deriving it here.
+  — the sibling `code-tour` skill's `references/standards.md` (the second file your dispatcher
+  gave you the resolved path for) covers both with their sourcing; follow it rather than
+  re-deriving it here.
 - An edit you cannot verify against the function's actual body is not a fix. If the flagged
   claim's truth is genuinely ambiguous from the code alone, leave it and list it, rather than
   picking a plausible-sounding rewrite.

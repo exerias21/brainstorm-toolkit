@@ -57,7 +57,7 @@ Read the plan file. Extract:
 
 ## Stage 2 — Build the generated blocks
 
-**Read `skills/plan-html/references/blocks.md` now.** It carries all three, with the exact
+**Read `references/blocks.md` (next to this SKILL.md) now.** It carries all three, with the exact
 markup for each:
 
 - **2a — table of contents** from the plan's headings, with anchor ids that match the body.
