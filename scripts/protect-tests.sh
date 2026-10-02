@@ -282,6 +282,6 @@ if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))
 PYEOF
 
-"$PY" "$PYCORE" "$SUBCMD" "$PROJ" "$PIPELINE_DIR" "$SLUG" "${FILES[@]}"
+"$PY" "$PYCORE" "$SUBCMD" "$PROJ" "$PIPELINE_DIR" "$SLUG" "${FILES[@]+"${FILES[@]}"}"
 rc=$?
 exit $rc

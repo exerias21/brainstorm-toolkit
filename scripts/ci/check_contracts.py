@@ -1250,8 +1250,11 @@ def recheck_by_warnings(root: Path, today: date | None = None) -> list[str]:
 
 
 # Content that is SHIPPED to a consumer. A change under any of these is a
-# change to what an installed plugin actually runs.
-SHIPPED_GLOBS = ("skills", "agents", "copilot", "codex", "templates", "scripts")
+# change to what an installed plugin actually runs. `hooks/` is the
+# plugin-manifest hooks.json read via ${CLAUDE_PLUGIN_ROOT} by every Claude
+# Code install -- distinct from scripts/hooks/*.sh (covered by "scripts"
+# below), which is the hook implementations hooks.json points at.
+SHIPPED_GLOBS = ("skills", "agents", "copilot", "codex", "templates", "scripts", "hooks")
 
 # setup.sh:288-294 copies the whole `scripts/` tree and then strips these two
 # paths back out (scripts/ci/ tests THIS repo's installer, sync-global.sh

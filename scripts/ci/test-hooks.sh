@@ -128,6 +128,14 @@ build_restricted_path() {
 }
 BASH_ABS="$(command -v bash)"
 
+# A proven-RUNNING python, resolved once up front via scripts/py.sh's own
+# resolution order (not a bare `command -v python3`, which on this host
+# resolves to a broken Microsoft Store stub -- `command -v` succeeds, running
+# it does not). Used to build fakebin fixtures below that need a real working
+# interpreter under a different name (e.g. a `py` launcher fixture).
+REAL_PY_NAME="$(bash "$PLUGIN_ROOT/scripts/py.sh" --print 2>/dev/null | tr -d '\r')"
+REAL_PY_ABS="$(command -v "$REAL_PY_NAME" 2>/dev/null || true)"
+
 # ── enforce-model-cap.sh: the eleven-payload matrix ─────────────────────────
 # Each case gets its own scratch project dir so state never leaks between cases.
 
@@ -247,6 +255,40 @@ EOF
 out="$(run_cap "$d" '{"tool_name":"Agent","tool_input":{"model":"opus","description":"do stuff"}}')"
 assert_empty "$out"
 
+# ── cap: interpreter resolution -- finding 1. The probe used to try only
+#    python3/python, never `py`, so a machine whose ONLY working interpreter is
+#    the `py` launcher had enforce_cap silently do nothing. Blind python3/python
+#    from `command -v` (not the real ones on THIS host) and prove `py` alone
+#    still resolves the enforcement; then blind all three and prove the hook
+#    now WARNS instead of going silent. ───────────────────────────────────────
+
+CASE="cap: py launcher alone (python3/python hidden) still enforces the cap"
+d="$(cap_dir 13)"
+cat > "$d/.claude/project.json" <<'EOF'
+{"pipeline": {"enforce_cap": true}, "models": {"cap": "sonnet"}}
+EOF
+if [ -z "$REAL_PY_ABS" ]; then
+  echo "[skip] cap: py launcher fallback -- could not resolve an absolute python path on this host"
+else
+  fakebin="$ROOT_TMP/cap-fakebin-13"
+  mkdir -p "$fakebin"
+  printf '#!/bin/sh\nexec "%s" "$@"\n' "$REAL_PY_ABS" > "$fakebin/py"
+  chmod +x "$fakebin/py"
+  out="$(hide_from_command_v "python3 python" env PATH="$fakebin:$PATH" CLAUDE_PROJECT_DIR="$d" \
+        bash "$CAP_HOOK" <<<'{"tool_name":"Agent","tool_input":{"model":"opus","description":"do stuff"}}')"
+  assert_match "$out" '"model": "sonnet"'
+fi
+
+CASE="cap: no interpreter at all while enforce_cap:true -> visible systemMessage warning, never silent"
+d="$(cap_dir 14)"
+cat > "$d/.claude/project.json" <<'EOF'
+{"pipeline": {"enforce_cap": true}, "models": {"cap": "sonnet"}}
+EOF
+out="$(hide_from_command_v "python3 python py" env -u BRAINSTORM_PYTHON CLAUDE_PROJECT_DIR="$d" \
+      bash "$CAP_HOOK" <<<'{"tool_name":"Agent","tool_input":{"model":"opus","description":"do stuff"}}')"
+assert_match "$out" '"systemMessage"'
+assert_match "$out" 'enforce_cap is true but no working Python'
+
 # ── stop-gate.sh: off-by-default, envelope/test states, and the two-blocker
 #    contention cases (stop_hook_active, pending sentinel) ──────────────────
 
@@ -290,12 +332,18 @@ EOF
 out="$(run_gate "$d" '{}')"
 assert_empty "$out"
 
-CASE="gate: envelope in_progress + green tests -> silent"
+CASE="gate: envelope in_progress + green tests -> silent AFTER the first-run announcement"
 d="$(gate_dir 03)"
 gate_envelope_in_progress "$d"
 cat > "$d/.claude/project.json" <<'EOF'
 {"pipeline": {"stop_gate": "tests"}, "test": {"unit": "exit 0"}}
 EOF
+# The very first Stop of a run still names the exact command once (finding 4:
+# transparency before ever auto-running a shell command on your behalf) --
+# only the SECOND Stop on the same run is the old silent-on-green case.
+out="$(run_gate "$d" '{}')"
+assert_match "$out" '"systemMessage"'
+assert_match "$out" 'exit 0'
 out="$(run_gate "$d" '{}')"
 assert_empty "$out"
 
@@ -427,6 +475,51 @@ out="$(PATH="$ROOT_TMP/rp-14" CLAUDE_PROJECT_DIR="$d" "$BASH_ABS" "$GATE_HOOK" <
 assert_match "$out" '"decision": "block"'
 assert_match "$out" 'NO time limit'
 assert_no_match "$out" 'command not found'
+
+# ── gate: trust model -- finding 4, "a cloned repo runs arbitrary commands on
+#    Stop" closed by refusing test.unit when .claude/project.json is TRACKED
+#    by git (repo-supplied, not the person's own local/gitignored config) ────
+
+CASE="gate: TRACKED .claude/project.json -- stands down, never runs test.unit, even red"
+d="$ROOT_TMP/gate-15"
+mkdir -p "$d/.claude/pipeline/demo"
+gate_envelope_in_progress "$d"
+cat > "$d/.claude/project.json" <<'EOF'
+{"pipeline": {"stop_gate": "tests"}, "test": {"unit": "echo ran > marker.txt; exit 1"}}
+EOF
+(cd "$d" && git init -q && git config user.email t@t.com && git config user.name t \
+  && git add .claude/project.json && git commit -q -m "commit config")
+out="$(run_gate "$d" '{}')"
+assert_no_match "$out" '"decision"'
+assert_match "$out" '"systemMessage"'
+assert_match "$out" 'TRACKED by git'
+[ -f "$d/marker.txt" ] && fail "test.unit must never execute when .claude/project.json is tracked by git"
+ok
+
+CASE="gate: BRAINSTORM_TRUST_STOP_GATE=1 overrides the tracked-config stand-down"
+d="$ROOT_TMP/gate-16"
+mkdir -p "$d/.claude/pipeline/demo"
+gate_envelope_in_progress "$d"
+cat > "$d/.claude/project.json" <<'EOF'
+{"pipeline": {"stop_gate": "tests"}, "test": {"unit": "echo boom && exit 1"}}
+EOF
+(cd "$d" && git init -q && git config user.email t@t.com && git config user.name t \
+  && git add .claude/project.json && git commit -q -m "commit config")
+out="$(CLAUDE_PROJECT_DIR="$d" BRAINSTORM_TRUST_STOP_GATE=1 bash "$GATE_HOOK" <<<'{}')"
+assert_match "$out" '"decision": "block"'
+assert_match "$out" 'tests red'
+
+CASE="gate: UNTRACKED .claude/project.json inside a git repo still runs normally"
+d="$ROOT_TMP/gate-17"
+mkdir -p "$d/.claude/pipeline/demo"
+gate_envelope_in_progress "$d"
+(cd "$d" && git init -q)
+cat > "$d/.claude/project.json" <<'EOF'
+{"pipeline": {"stop_gate": "tests"}, "test": {"unit": "echo boom && exit 1"}}
+EOF
+out="$(run_gate "$d" '{}')"
+assert_match "$out" '"decision": "block"'
+assert_match "$out" 'tests red'
 
 # ── scripts/protect-tests.sh: arm / verify / disarm -- a CLI, not a wired
 #    hook (see its own header), included here per the widened scope above ──
@@ -679,6 +772,44 @@ assert_match "$out" 'Continue with: /gotcha flat-alias test'
 assert_no_match "$out" 'Program Files'
 ok
 
+CASE="next-action: auto-continue hop budget reads pipeline.loop.max_hops, not any nested max_hops key (finding 3)"
+d="$(na_dir 09)"
+# A decoy max_hops=999 nested somewhere unrelated -- the pre-fix grep matched the
+# FIRST "max_hops" anywhere in the file, which would have picked this decoy
+# instead of the real pipeline.loop.max_hops=1 and never hit the budget.
+cat > "$d/.claude/project.json" <<'EOF'
+{"other_feature": {"deep": {"max_hops": 999}}, "pipeline": {"loop": {"auto_continue": true, "max_hops": 1}}}
+EOF
+echo '{"cmd":"/gotcha max-hops path test","source":"sdlc","confirm":false}' > "$d/.claude/.next-action"
+out1="$(env -u BRAINSTORM_PYTHON CLAUDE_PROJECT_DIR="$d" bash "$NEXT_ACTION_HOOK" </dev/null)"
+assert_match "$out1" '"decision": "block"'
+assert_match "$out1" 'Continue with: /gotcha max-hops path test'
+echo '{"cmd":"/gotcha max-hops path test","source":"sdlc","confirm":false}' > "$d/.claude/.next-action"
+out2="$(env -u BRAINSTORM_PYTHON CLAUDE_PROJECT_DIR="$d" bash "$NEXT_ACTION_HOOK" </dev/null)"
+assert_no_match "$out2" '"decision"'
+assert_match "$out2" 'hop budget reached'
+
+CASE="next-action: an implausible .claude/project.json python value is rejected, falls back to the probe (finding 2)"
+d="$(na_dir 10)"
+# /usr/bin/true (or wherever it resolves): ignores all args and always exits 0,
+# so the OLD unvalidated resolution would have accepted it as "python" (it
+# passes the "-c 'pass' runs" proof) and then used it for every JSON read in
+# this hook, which `true` always satisfies with silent empty output -- the
+# sentinel would go unrendered. hooks_is_plausible_python must reject it by
+# basename (and its --version output never says "Python") before it is ever
+# treated as the resolved interpreter.
+TRUE_ABS="$(command -v true 2>/dev/null || true)"
+if [ -z "$TRUE_ABS" ]; then
+  echo "[skip] next-action implausible-python case: no 'true' binary found on this host"
+else
+  cat > "$d/.claude/project.json" <<EOF
+{"python": "$TRUE_ABS"}
+EOF
+  echo '{"cmd":"/gotcha plausibility test","source":"sdlc","confirm":false}' > "$d/.claude/.next-action"
+  out="$(run_na "$d" "")"
+  assert_match "$out" 'Next: /gotcha plausibility test'
+fi
+
 # ── run-cost-report.sh: newest-terminal-envelope selection ─────────────────
 
 cost_dir() {
@@ -812,10 +943,8 @@ ok
 #    the same way scripts/py.sh / next-action.sh do, not just probe
 #    python3/python/py -- proven here with jq AND all three probed names
 #    blinded via hide_from_command_v, so a real match on THIS host can't mask
-#    a broken fallback. ─────────────────────────────────────────────────────
-
-REAL_PY_NAME="$(bash "$PLUGIN_ROOT/scripts/py.sh" --print 2>/dev/null | tr -d '\r')"
-REAL_PY_ABS="$(command -v "$REAL_PY_NAME" 2>/dev/null || true)"
+#    a broken fallback. REAL_PY_NAME/REAL_PY_ABS are resolved once, near the
+#    top of this file (reused by the cap: py-launcher fixture above too). ───
 
 cost_dir_single() {
   local d="$ROOT_TMP/cost-hidden-$1"
@@ -1073,6 +1202,63 @@ assert_match "$CT_OUT" '"closed 1 row(s) belonging to terminal envelope(s)"'
 AFTER="$(cat "$d/TASKS.md")"
 assert_match "$AFTER" '\[x\] (P1) In-progress row taken this run'
 assert_match "$AFTER" '\[ \] (P1) Parked row the scope gate never started'
+
+CASE="close-tasks reconcile: a row's _plan: tag wins over a substring hit on an unrelated envelope's slug"
+d="$(ct_dir 10)"
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [~] (P2) Fix the enforce-model-cap.sh timeout \xe2\x80\x94 plans/brainstorm-hook-timeouts.md _plan: hook-timeouts_\n' >> "$d/TASKS.md"
+mkdir -p "$d/.claude/pipeline/model-cap"
+cat > "$d/.claude/pipeline/model-cap/run.json" <<'EOF'
+{"schema_version": 1, "feature_slug": "model-cap", "plan_file": "plans/model-cap.md", "status": "complete"}
+EOF
+run_ct "$d" reconcile --file TASKS.md
+assert_rc "$CT_RC" 0
+assert_match "$CT_OUT" '"drift_count": 0'
+assert_no_match "$CT_OUT" 'enforce-model-cap.sh timeout'
+run_ct "$d" reconcile --file TASKS.md --apply
+assert_rc "$CT_RC" 0
+assert_no_match "$CT_OUT" 'enforce-model-cap.sh timeout'
+AFTER="$(cat "$d/TASKS.md")"
+assert_match "$AFTER" '\[~\] (P2) Fix the enforce-model-cap.sh timeout'
+
+CASE="close-tasks reconcile: the SAME row's own _plan: tag still joins its real envelope"
+mkdir -p "$d/.claude/pipeline/hook-timeouts"
+cat > "$d/.claude/pipeline/hook-timeouts/run.json" <<'EOF'
+{"schema_version": 1, "feature_slug": "hook-timeouts", "plan_file": "plans/hook-timeouts.md", "status": "complete"}
+EOF
+run_ct "$d" reconcile --file TASKS.md
+assert_rc "$CT_RC" 0
+assert_match "$CT_OUT" '"drift_count": 1'
+assert_match "$CT_OUT" '"envelope": "hook-timeouts"'
+assert_no_match "$CT_OUT" '"envelope": "model-cap"'
+assert_match "$CT_OUT" 'enforce-model-cap.sh timeout'
+
+CASE="close-tasks board: a row's started_at is not taken from an unrelated envelope that merely contains its slug as a substring"
+d="$(ct_dir 11)"
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [~] (P2) Fix the enforce-model-cap.sh timeout \xe2\x80\x94 plans/brainstorm-hook-timeouts.md _plan: hook-timeouts_\n' >> "$d/TASKS.md"
+mkdir -p "$d/.claude/pipeline/model-cap"
+cat > "$d/.claude/pipeline/model-cap/run.json" <<'EOF'
+{"schema_version": 1, "feature_slug": "model-cap", "plan_file": "plans/model-cap.md", "status": "complete", "started_at": "2099-01-01T00:00:00Z"}
+EOF
+run_ct "$d" board --file TASKS.md
+assert_rc "$CT_RC" 0
+BOARD11="$d/board.json"
+printf '%s' "$CT_OUT" > "$BOARD11"
+set +e
+PY_OUT="$(bash "$PLUGIN_ROOT/scripts/py.sh" - "$BOARD11" <<'PYEOF'
+import json, sys
+d = json.load(open(sys.argv[1], encoding='utf-8'))
+row = d['tasks'][0]
+assert 'enforce-model-cap.sh' in row['title']
+assert row['started_at'] is None, f"started_at must not be borrowed from the unrelated model-cap envelope: {row['started_at']!r}"
+print("OK")
+PYEOF
+)"
+PY_RC=$?
+set -e
+[ "$PY_RC" -eq 0 ] || fail "board started_at assertions failed: $PY_OUT"
+ok
 
 echo
 echo "test-hooks.sh: all cases ok"

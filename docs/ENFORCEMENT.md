@@ -20,6 +20,21 @@ rewrite, opt-in via `pipeline.enforce_cap`, exempting `review:`-prefixed dispatc
 never governed by the cap). `scripts/ci/test-hooks.sh` exercises it end to end with sample stdin
 — Q3. 110 lines.
 
+### Its own interpreter probe needed the same determinism it provides
+
+The hook's interpreter probe originally tried only `python3`/`python`, so a machine whose sole
+working interpreter is the Windows `py` launcher had `pipeline.enforce_cap: true` enforce
+nothing, silently — no error, no systemMessage, just a cap that never clamped anything. It now
+resolves through `scripts/hooks/_pyresolve.sh`, the same three-tier order (`$BRAINSTORM_PYTHON`
+-> `.claude/project.json` `python` -> probe `python3`/`python`/`py`) every other hook under
+`scripts/hooks/` shares, and if no interpreter resolves at all while `enforce_cap` looks
+configured true, it emits a visible `systemMessage` instead of going quiet. `_pyresolve.sh` also
+validates a project.json-supplied `python` value (`hooks_is_plausible_python`) before ever running
+it as the interpreter — every always-on hook (`next-action.sh`, `reseed-context.sh`,
+`run-cost-report.sh`) reads that same key, and none of them previously checked the value was
+plausibly Python before executing it: a narrower instance of the same "config from a repo you
+merely opened" trust problem the `stop-gate.sh` case below is about.
+
 ## Test immutability — deterministic, but not a hook
 
 The designed version was a `PreToolUse` preventer blocking `Write`/`Edit` on an armed test file.
@@ -58,6 +73,32 @@ materially bigger, stateful check than the two shipped hooks, and nobody has bui
 Until someone does, this rule stays exactly where `docs/PROSE-FIDELITY.md`'s prescriptive-prose
 lever leaves it: the fix is tighter prose, not a hook, unless a future measurement shows the
 tighter prose still isn't followed.
+
+## `stop-gate.sh`'s `test.unit` — a hook that needed a trust check, not just a determinism check
+
+`stop-gate.sh` runs a repo-configured shell command (`test.unit`) from a Stop hook, which
+executes outside Claude Code's Bash permission system — no approval prompt, because the harness
+never routes hook commands through the tool-permission path. That is fine when the config is the
+person's own local file, which is the default: `setup.sh` gitignores `.claude/project.json`
+(`ensure_gitignored ".claude/project.json"`) for exactly this reason. It stops being fine the
+moment the file is tracked by git — a forced add, or a team that deliberately shares it — because
+then the command that runs on Stop is content that arrived WITH THE CLONE, and opening the repo is
+enough to run it, with no gate the model's own judgment could intervene on (there is no
+"model decides whether to trust this" step; the hook runs before any model turn).
+
+The fix is a deterministic, by-construction check rather than a prose warning: before ever
+executing `test.unit`, the hook runs `git ls-files --error-unmatch -- .claude/project.json` and
+stands down (systemMessage, never `decision:block`) if that file is tracked, unless the person
+sets `BRAINSTORM_TRUST_STOP_GATE=1` themselves (the escape hatch for a team that really does commit
+a shared config). This is a case the four questions answer cleanly: Q1 fires (the hole exists
+exactly when nobody is watching — the first Stop after a clone), Q2 is a single git plumbing call
+with a boolean answer, Q3 is three `scripts/ci/test-hooks.sh` cases (tracked stands down and never
+runs the command, the override re-enables it, untracked-inside-a-repo is unaffected), and Q4 is yes
+— `git ls-files` cannot be routed around by anything short of untracking the file, which is the
+intended escape. On top of the trust check, the first Stop of any run that does proceed also names
+the exact command in its systemMessage/reason once (a
+`.claude/pipeline/<slug>/.stop-gate-announced` marker makes it once-per-run, not once-per-Stop) —
+cheap transparency for the case the trust check correctly lets through.
 
 ## The sub-agent git-write guard — a CI pin instead of a hook
 

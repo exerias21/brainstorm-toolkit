@@ -76,7 +76,6 @@ def _load_token_audit():
 
 
 _ta = _load_token_audit()
-TIER_RANK: dict[str, int] = _ta.TIER_RANK
 tier_of = _ta.tier_of
 
 
@@ -193,7 +192,10 @@ def load_pinned_agents() -> dict[str, str]:
 
 def extract_agent_tool_uses(events: list[dict]) -> list[dict[str, Any]]:
     """Scan stream-json events for `tool_use` blocks named `Agent`. Returns
-    a list of {"subagent_type": ..., "model": ...} (either may be None)."""
+    a list of {"subagent_type": ..., "model": ..., "description": ...} (any
+    may be None). `description` is kept because the Axis 2 (reviewer)
+    exemption marker is a dispatch `description` starting `review:` --
+    see skills/sdlc/templates/models.md and scripts/hooks/enforce-model-cap.sh."""
     out: list[dict[str, Any]] = []
     for ev in events:
         msg = ev.get("message") or {}
@@ -210,6 +212,7 @@ def extract_agent_tool_uses(events: list[dict]) -> list[dict[str, Any]]:
                 {
                     "subagent_type": inp.get("subagent_type"),
                     "model": inp.get("model"),
+                    "description": inp.get("description"),
                 }
             )
     return out
@@ -588,14 +591,27 @@ def assert_count_occurrences(target: Path, params: dict, ctx: dict) -> Assertion
     return AssertionResult(True, f"{rel} contains {needle!r} exactly {expected} time(s)")
 
 
+# Axis 1 (fan-out) ladder only -- deliberately NOT `TIER_RANK` from
+# token-audit.py, which also maps "fable" to a rank. Fable is Axis 2
+# (reviewer) only (skills/sdlc/templates/models.md): it is never a valid
+# fan-out tier, so it must not get a rank here that a `.get(tier, 0)`
+# fallback could compare against the cap and silently clear.
+_FANOUT_TIER_RANK = {"haiku": 1, "sonnet": 2, "opus": 3}
+
+
 def assert_agent_models_within_cap(target: Path, params: dict, ctx: dict) -> AssertionResult:
     cap = params.get("cap", "sonnet")
-    cap_rank = TIER_RANK.get(cap, 0)
+    cap_rank = _FANOUT_TIER_RANK.get(cap, 0)
     pinned = ctx.get("pinned_agents") or {}
     agent_uses: list[dict] = ctx.get("agent_tool_uses") or []
     violations: list[str] = []
     for use in agent_uses:
         subtype = use.get("subagent_type")
+        description = (use.get("description") or "").strip().lower()
+        if description.startswith("review:"):
+            # Axis 2 (reviewer) dispatch -- not on the Axis 1 ladder and
+            # never bounded by models.cap (models.md).
+            continue
         model = use.get("model")
         if not model:
             if subtype in pinned:
@@ -608,7 +624,20 @@ def assert_agent_models_within_cap(target: Path, params: dict, ctx: dict) -> Ass
                 )
                 continue
         tier = tier_of(model)
-        if TIER_RANK.get(tier, 0) > cap_rank:
+        rank = _FANOUT_TIER_RANK.get(tier)
+        if rank is None:
+            # "fable" or "other" (tier_of's unresolved fallback) on a
+            # fan-out dispatch: never a valid Axis 1 tier, so this is a
+            # violation regardless of cap -- not a silent pass via a
+            # `.get(tier, 0)` default.
+            violations.append(
+                f"Agent dispatch (subagent_type={subtype!r}) ran {model} "
+                f"(tier {tier!r}), which is not on the haiku/sonnet/opus "
+                f"fan-out ladder -- fable is Axis 2 (reviewer)-only and an "
+                f"unrecognized model must not silently pass the cap"
+            )
+            continue
+        if rank > cap_rank:
             violations.append(
                 f"Agent dispatch (subagent_type={subtype!r}) ran {model} "
                 f"(tier {tier}), above cap {cap}"

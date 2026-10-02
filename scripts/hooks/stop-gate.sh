@@ -8,7 +8,10 @@
 # exits 0 -- see "Config-gate first" below for why that ordering matters.
 #
 # Contract when the gate IS live:
-#   - green test.unit  -> silent, exit 0, hop counter reset.
+#   - green test.unit  -> silent, exit 0, hop counter reset -- EXCEPT the very
+#     first Stop of a given run, which still emits a one-line systemMessage
+#     naming the command (see "Trust model" below); every later green Stop on
+#     the same run is silent again.
 #   - red test.unit    -> {"decision":"block","reason":"stop-gate: tests red — <tail>"}
 #     (last 15 lines, 1200 chars max; if the command produced no output, a
 #     "(command produced no output; exit code N)" fallback stands in for
@@ -19,6 +22,27 @@
 #   - hop counter >= pipeline.loop.max_hops (default 5) -> stands down with a
 #     systemMessage instead of running the suite again; this bounds the loop
 #     exactly like the L9 auto-continue hop budget in next-action.sh.
+#
+# Trust model (closes "a cloned repo runs arbitrary commands on Stop"): this
+# gate's config (`test.unit`, the `pipeline.stop_gate` opt-in itself) lives in
+# .claude/project.json, which runs OUTSIDE Claude Code's Bash permission
+# system -- a Stop hook executes it with no approval prompt. `setup.sh`
+# gitignores that file for exactly this reason (`ensure_gitignored
+# ".claude/project.json"`), so in the common case it is the person running
+# Claude Code's own local config, never committed. But .gitignore does not
+# stop a repo from committing the file anyway (a forced add, or a team that
+# deliberately shares it -- repo-onboarding's "tracked = shared with the
+# team" option). So: an UNTRACKED project.json is trusted; a file `git
+# ls-files` reports as TRACKED is repo-supplied content and this hook refuses
+# to run test.unit from it (stands down with a systemMessage instead),
+# unless the person sets `BRAINSTORM_TRUST_STOP_GATE=1` themselves. On top of
+# that, the FIRST Stop of any run that does proceed announces the exact
+# command in its systemMessage/reason (folded into whatever this invocation
+# already emits -- never a second output line) before ever executing it, so
+# the command run on your behalf is never silently inferred from config you
+# didn't read. A marker file next to the run envelope
+# (`.claude/pipeline/<slug>/.stop-gate-announced`) makes this once-per-run,
+# not once-per-Stop.
 #
 # Mandatory stand-downs (single-blocker contract): Stop hooks run in PARALLEL
 # and hooks.json array order does NOT establish precedence, so two hooks both
@@ -40,6 +64,8 @@
 #       sentinel peek alone cannot (two parallel processes racing the same
 #       sentinel file). (b) is kept as a secondary check for when
 #       auto_continue is off.
+#   (d) `.claude/project.json` is TRACKED by git (see "Trust model" above) ->
+#       exit 0 with a systemMessage, never runs test.unit.
 #
 # Config-gate first: the two stand-downs above only run AFTER this script has
 # confirmed the gate is configured, an in_progress envelope exists, and
@@ -161,6 +187,24 @@ if [ "$auto_continue" = "true" ]; then
   exit 0
 fi
 
+# (d) TRUST CHECK -- the actual fix for "a cloned repo runs arbitrary commands
+# on Stop with no Bash permission prompt". This gate's config (test.unit, the
+# opt-in itself) lives in .claude/project.json; setup.sh gitignores that file
+# for exactly this reason (`ensure_gitignored ".claude/project.json"`) so it is
+# normally the PERSON RUNNING Claude Code's own local, untracked config -- not
+# something that arrived with the clone. But .gitignore does not stop a repo
+# from committing the file anyway (a forced add, or a team that intentionally
+# shares it, per repo-onboarding's "tracked = shared with the team" option).
+# Trust model: an UNTRACKED project.json is yours; a TRACKED one is
+# repo-supplied content and is not trusted to auto-run a shell command on
+# Stop, unless explicitly overridden. See docs/ENFORCEMENT.md.
+if [ "${BRAINSTORM_TRUST_STOP_GATE:-}" != "1" ] \
+   && command -v git >/dev/null 2>&1 \
+   && git -C "$PROJ" ls-files --error-unmatch -- .claude/project.json >/dev/null 2>&1; then
+  emit_message "stop-gate: standing down — .claude/project.json is TRACKED by git in this repo, not your own local/gitignored config, so its pipeline.stop_gate opt-in is not trusted to run test.unit (\`$test_cmd\`) automatically on Stop. Untrack/gitignore the file, or set BRAINSTORM_TRUST_STOP_GATE=1 if your team deliberately commits a shared project.json. See docs/ENFORCEMENT.md."
+  exit 0
+fi
+
 HOPS_FILE="$PROJ/.claude/.stop-gate-hops"
 max_hops="$(jget "$PROJECT_JSON" '.pipeline.loop.max_hops' '5')"
 case "$max_hops" in ''|*[!0-9]*) max_hops=5;; esac
@@ -178,6 +222,19 @@ fi
 
 timeout_s="$(jget "$PROJECT_JSON" '.pipeline.stop_gate_timeout' '300')"
 case "$timeout_s" in ''|*[!0-9]*) timeout_s=300;; esac
+
+# First-time-per-run transparency: name the exact command before ever running
+# it, once per in_progress envelope (not every Stop -- the marker lives next
+# to the envelope, so it naturally resets when this run finishes and a later
+# run starts). Folded into whichever message this invocation already emits
+# rather than printed separately, since at most one JSON object may go out
+# per Stop event (the single-blocker contract above).
+ANNOUNCE_FILE="$(dirname "$envelope")/.stop-gate-announced"
+cmd_note=""
+if [ ! -f "$ANNOUNCE_FILE" ]; then
+  cmd_note="stop-gate: first Stop this run -- will execute test.unit (\`$test_cmd\`) from .claude/project.json on every Stop while in_progress (trust model: docs/ENFORCEMENT.md). "
+  : > "$ANNOUNCE_FILE" 2>/dev/null || true
+fi
 
 # Resolve a timeout runner BEFORE running anything, rather than hard-coding
 # `timeout` -- stock macOS has no `timeout(1)` (it ships neither GNU nor BSD
@@ -226,14 +283,16 @@ esac
 # itself is missing -- $RUNNER, when set, was already proven to resolve
 # above, so a 127 here can no longer be misattributed to the timeout wrapper.
 if [ "$rc" -eq 127 ]; then
-  emit_message "stop-gate: standing down — test.unit command not found ($test_cmd)."
+  emit_message "${cmd_note}stop-gate: standing down — test.unit command not found ($test_cmd)."
   exit 0
 fi
 
 if [ "$rc" -eq 0 ]; then
   rm -f "$HOPS_FILE" 2>/dev/null || true
   if [ -z "$RUNNER" ]; then
-    emit_message "stop-gate: tests green, but ran with NO time limit — no timeout, gtimeout, or perl found on PATH to bound test.unit."
+    emit_message "${cmd_note}stop-gate: tests green, but ran with NO time limit — no timeout, gtimeout, or perl found on PATH to bound test.unit."
+  elif [ -n "$cmd_note" ]; then
+    emit_message "${cmd_note}stop-gate: tests green."
   fi
   exit 0
 fi
@@ -245,9 +304,9 @@ tail_out="${tail_out:0:1200}"
 if [ -z "$tail_out" ]; then
   tail_out="(command produced no output; exit code ${rc})"
 fi
-reason="stop-gate: tests red — ${tail_out}"
+reason="${cmd_note}stop-gate: tests red — ${tail_out}"
 if [ -z "$RUNNER" ]; then
-  reason="stop-gate: tests red (ran with NO time limit — no timeout, gtimeout, or perl found on PATH) — ${tail_out}"
+  reason="${cmd_note}stop-gate: tests red (ran with NO time limit — no timeout, gtimeout, or perl found on PATH) — ${tail_out}"
 fi
 emit_block "$reason"
 exit 0

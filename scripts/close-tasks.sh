@@ -527,6 +527,79 @@ def envelope_candidates(name, run):
     return {c for c in candidates if c}
 
 
+# Chars that make up one hyphenated slug token -- used by `token_hit` below to
+# require a candidate occupy a COMPLETE such run, not merely appear inside a
+# longer one.
+_TOKEN_BOUNDARY_CHARS = 'A-Za-z0-9-'
+_TOKEN_BOUNDARY_NEG = '[^' + _TOKEN_BOUNDARY_CHARS + ']'
+
+
+def token_hit(candidate, line):
+    """Whole-token match: `candidate` must occupy a complete run of
+    `[A-Za-z0-9-]` in `line`, bounded on both sides by something outside
+    that class (or start/end of line) -- not merely appear as a bare
+    substring. A plain `candidate in line` test (or even a `\\b`-anchored
+    regex -- `\\b` sits at a hyphen boundary too, so it would not help)
+    still matches a short slug like `model-cap` INSIDE an unrelated longer
+    token like `enforce-model-cap.sh`, because `-` and `.` already read as
+    word boundaries to `\\b` even though the slug is embedded, not whole."""
+    pattern = (
+        r'(?:(?<=' + _TOKEN_BOUNDARY_NEG + r')|\A)'
+        + re.escape(candidate)
+        + r'(?:(?=' + _TOKEN_BOUNDARY_NEG + r')|\Z)'
+    )
+    return re.search(pattern, line) is not None
+
+
+def envelope_slug_candidates(candidates):
+    """The slug-shaped subset of `envelope_candidates()` -- no path
+    separator -- which is the identity space a row's own `_plan: KEY_` tag
+    is compared against. A raw path candidate (e.g. `plans/foo.md`) can
+    never equal a bare tag value, so it is excluded here; it still
+    participates in the legacy (no-tag) fallback in
+    `row_belongs_to_envelope` via a path substring check."""
+    return {c for c in candidates if c and '/' not in c and '\\' not in c}
+
+
+def row_belongs_to_envelope(line, name, run, candidates):
+    """Does this TASKS.md row belong to this envelope (`name`/`run`, with
+    its `candidates` from `envelope_candidates`)? Mirrors
+    `plan_row_key_match`'s tag-wins rule (~line 345), generalized to an
+    envelope's full candidate slug set instead of one caller-supplied key.
+
+    An explicit `_plan: KEY_` tag wins outright and NEVER falls through to
+    a substring guess: it matches only when KEY normalizes
+    (`normalize_plan_key`) to one of the envelope's own slug candidates.
+    This is what stops a row tagged for a DIFFERENT plan (`_plan:
+    hook-timeouts_`) from joining an unrelated envelope (`model-cap`)
+    merely because its row text happens to contain that envelope's name as
+    a bare substring (`enforce-model-cap.sh` contains `model-cap`) -- the
+    live over-closure bug this function replaces (`any(c in line for c in
+    candidates)`, with no `_plan:` awareness at all).
+
+    Only a row with NO `_plan:` tag at all (legacy) falls back to the plan
+    file's full path (long and close to unique -- a plain substring test is
+    fine) or a whole-token hit (`token_hit`) on one of the envelope's slug
+    candidates -- never a bare substring on those short, collision-prone
+    slugs.
+    """
+    tagm = PLAN_TAG_RE.search(line)
+    if tagm:
+        tag_key = normalize_plan_key(tagm.group(1))
+        slugs = {normalize_plan_key(c) for c in envelope_slug_candidates(candidates)}
+        return tag_key in slugs
+
+    for c in candidates:
+        if not c:
+            continue
+        if '/' in c or '\\' in c:
+            if c in line:
+                return True
+        elif token_hit(c, line):
+            return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # `board` subcommand -- read-only JSON export. Everything below this line and
 # above `do_board` is net-new; nothing here is called by close/reconcile.
@@ -662,6 +735,8 @@ def do_board(args):
             'plan_hash': run.get('plan_hash'),
             'stages_skipped': run.get('stages_skipped'),
             'terminal': terminal,
+            '_name': name,
+            '_run': run,
             '_candidates': envelope_candidates(name, run),
             '_started_at': run.get('started_at'),
             '_sort_dt': updated_dt or mtime_dt,
@@ -679,7 +754,7 @@ def do_board(args):
             continue
         started_at = None
         for r in runs:
-            if any(c in line for c in r['_candidates']):
+            if row_belongs_to_envelope(line, r['_name'], r['_run'], r['_candidates']):
                 started_at = r['_started_at']
                 break
         tasks.append({
@@ -816,7 +891,7 @@ def do_reconcile(args):
             sec = section_for(sections, i)
             if sec is None or sec.lower() == 'done':
                 continue
-            if any(c in line for c in candidates):
+            if row_belongs_to_envelope(line, name, run, candidates):
                 matching_rows.append((i, line, m.group(2)))
 
         if status in ('complete', 'completed') and matching_rows:

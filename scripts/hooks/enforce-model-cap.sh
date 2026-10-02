@@ -17,6 +17,16 @@
 # `models.cap`. Opt-in because the hook cannot see a per-run `--model opus`: with enforcement
 # on, the config cap is policy and a flag above it is clamped. Every rewrite is reported to the
 # human as `systemMessage` (costs no model tokens). Never blocks, never denies.
+#
+# Interpreter resolution is shared with every other hook under scripts/hooks/ via
+# _pyresolve.sh (same three-tier order as scripts/py.sh: $BRAINSTORM_PYTHON ->
+# .claude/project.json `python` -> probe python3/python/py). Before this fix the probe
+# here only tried python3/python -- never `py` -- so a Windows machine whose only
+# working interpreter is the `py` launcher had `pipeline.enforce_cap: true` silently
+# enforcing nothing, with zero warning. If NO interpreter resolves at all, this hook now
+# still emits a visible `systemMessage` when the config looks like it opted in (a plain
+# text match for `"enforce_cap": true`, since without an interpreter the file cannot be
+# parsed as JSON) so the gap is never silent.
 set -u
 input="$(cat 2>/dev/null || true)"
 [ -n "$input" ] || exit 0
@@ -25,11 +35,17 @@ PROJ="${CLAUDE_PROJECT_DIR:-}"
 if [ -z "$PROJ" ]; then
   if _gr="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -n "$_gr" ]; then PROJ="$_gr"; else PROJ="$PWD"; fi
 fi
-PY=""
-for c in python3 python; do
-  if command -v "$c" >/dev/null 2>&1 && "$c" -c 'pass' >/dev/null 2>&1; then PY="$c"; break; fi
-done
-[ -n "$PY" ] || exit 0
+# shellcheck source=./_pyresolve.sh
+. "$(dirname "${BASH_SOURCE[0]}")/_pyresolve.sh"
+PY="$(hooks_resolve_python "$PROJ")" || PY=""
+if [ -z "$PY" ]; then
+  if [ -f "$PROJ/.claude/project.json" ] \
+     && grep -Eq '"enforce_cap"[[:space:]]*:[[:space:]]*true' "$PROJ/.claude/project.json" 2>/dev/null; then
+    printf '%s' "$input" | grep -q '"tool_name"[[:space:]]*:[[:space:]]*"Agent"' 2>/dev/null && \
+    echo '{"systemMessage":"enforce-model-cap hook: pipeline.enforce_cap is true but no working Python interpreter was found ($BRAINSTORM_PYTHON, .claude/project.json python, python3/python/py were all tried) -- models.cap is NOT being enforced this dispatch."}'
+  fi
+  exit 0
+fi
 
 # The script arrives on stdin (heredoc), so the hook payload travels in an env var instead.
 HOOK_INPUT="$input" "$PY" - "$PROJ" "${CLAUDE_PLUGIN_ROOT:-}" <<'PY'

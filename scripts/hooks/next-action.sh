@@ -60,20 +60,16 @@ NEXT_ACTION_FILE="$PROJ/.claude/.next-action"
 # and then exits non-zero) -- this script calls python3 at three separate
 # sites below, so it needs the resolved value, not py.sh's one-shot `exec`
 # tail. Order: $BRAINSTORM_PYTHON -> .claude/project.json `python` -> probe
-# python3/python/py, each proven to RUN. One resolver's contract, matched
-# here rather than sourced, per scripts/py.sh's own header.
-PY="${BRAINSTORM_PYTHON:-}"
-if [ -n "$PY" ] && ! "$PY" -c 'pass' >/dev/null 2>&1; then PY=""; fi
-if [ -z "$PY" ] && [ -f "$PROJ/.claude/project.json" ]; then
-  PY="$(sed -n 's/.*"python"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
-        "$PROJ/.claude/project.json" 2>/dev/null | head -n 1)"
-  if [ -n "$PY" ] && ! "$PY" -c 'pass' >/dev/null 2>&1; then PY=""; fi
-fi
-if [ -z "$PY" ]; then
-  for c in python3 python py; do
-    if command -v "$c" >/dev/null 2>&1 && "$c" -c 'pass' >/dev/null 2>&1; then PY="$c"; break; fi
-  done
-fi
+# python3/python/py, each proven to RUN. Shared with every other hook under
+# scripts/hooks/ via _pyresolve.sh, which ALSO validates the project.json
+# value before ever running it (hooks_is_plausible_python) -- this hook is
+# always-on (wired to every Stop event with no opt-in), so an unvalidated
+# `python` key would let a repo you merely OPEN name an arbitrary binary that
+# then executes on the very first Stop. A rejected or non-running value is
+# reported on stderr and resolution falls through to the probe.
+# shellcheck source=./_pyresolve.sh
+. "$(dirname "${BASH_SOURCE[0]}")/_pyresolve.sh"
+PY="$(hooks_resolve_python "$PROJ")" || PY=""
 
 # Collect messages. Two kinds, by design:
 #   - TRANSIENT hint: the .next-action sentinel — fires once, then deleted.
@@ -270,8 +266,27 @@ if { [ -n "${CLAUDE_PROJECT_DIR:-}" ] || [ -n "${CODEX_HOME:-}" ]; } \
    && [ "${#sentinel_cmds[@]}" -eq 1 ] \
    && [ "${sentinel_confirm[0]:-1}" = "0" ] \
    && [ -n "$PY" ]; then
-  max_hops="$(grep -Eo '"max_hops"[[:space:]]*:[[:space:]]*[0-9]+' "$PROJECT_JSON" 2>/dev/null | grep -Eo '[0-9]+' | head -1)"
-  [ -n "$max_hops" ] || max_hops=5
+  # Read the PROPER JSON path (pipeline.loop.max_hops), not "the first
+  # `max_hops` anywhere in the file" -- a plain grep previously matched ANY
+  # key named max_hops regardless of where it was nested (e.g. a future
+  # unrelated feature that happens to reuse the name), the same class of bug
+  # the auto_continue resolution above was already fixed for. Mirrors
+  # stop-gate.sh's own `.pipeline.loop.max_hops` read (no legacy alias here --
+  # unlike auto_continue, max_hops was never shipped under a flat key).
+  max_hops="$("$PY" -c '
+import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        d = json.load(f)
+except Exception:
+    d = {}
+p = d.get("pipeline") if isinstance(d, dict) else None
+p = p if isinstance(p, dict) else {}
+loop = p.get("loop") if isinstance(p.get("loop"), dict) else {}
+v = loop.get("max_hops")
+print(v if isinstance(v, int) else 5)
+' "$PROJECT_JSON" 2>/dev/null)"
+  case "$max_hops" in ''|*[!0-9]*) max_hops=5;; esac
   if [ -s "$HOPS_FILE" ]; then remaining="$(cat "$HOPS_FILE" 2>/dev/null)"; else remaining="$max_hops"; fi
   case "$remaining" in ''|*[!0-9]*) remaining="$max_hops";; esac
   if [ "$remaining" -gt 0 ]; then

@@ -31,8 +31,11 @@ if [ -z "$PROJ" ]; then
   if _gr="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -n "$_gr" ]; then PROJ="$_gr"; else PROJ="$PWD"; fi
 fi
 
-# Three-tier resolution matching scripts/py.sh / next-action.sh's inline copy of it:
-# $BRAINSTORM_PYTHON > .claude/project.json's top-level `python` key > probe
+# Three-tier resolution matching scripts/py.sh / next-action.sh, shared via
+# _pyresolve.sh: $BRAINSTORM_PYTHON > .claude/project.json's top-level `python`
+# key (validated by hooks_is_plausible_python before ever being run -- this
+# hook is always-on with no opt-in, so an unvalidated value from a repo you
+# merely opened could otherwise execute on the next Stop) > probe
 # python3/python/py -- each candidate proven to RUN, not merely resolved on PATH
 # (a Windows Store python3 stub resolves and then exits non-zero). A prior version
 # of this probe only tried python3/python/py, so a machine with neither on PATH but
@@ -40,19 +43,9 @@ fi
 # nothing at all when jq was also absent.
 JQ=""; PY=""
 if command -v jq >/dev/null 2>&1 && echo '{}' | jq -e . >/dev/null 2>&1; then JQ="jq"; fi
-if [ -n "${BRAINSTORM_PYTHON:-}" ] && "${BRAINSTORM_PYTHON}" -c 'pass' >/dev/null 2>&1; then
-  PY="$BRAINSTORM_PYTHON"
-fi
-if [ -z "$PY" ] && [ -f "$PROJ/.claude/project.json" ]; then
-  PY="$(sed -n 's/.*"python"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
-        "$PROJ/.claude/project.json" 2>/dev/null | head -n 1)"
-  if [ -n "$PY" ] && ! "$PY" -c 'pass' >/dev/null 2>&1; then PY=""; fi
-fi
-if [ -z "$PY" ]; then
-  for c in python3 python py; do
-    if command -v "$c" >/dev/null 2>&1 && "$c" -c 'pass' >/dev/null 2>&1; then PY="$c"; break; fi
-  done
-fi
+# shellcheck source=./_pyresolve.sh
+. "$(dirname "${BASH_SOURCE[0]}")/_pyresolve.sh"
+PY="$(hooks_resolve_python "$PROJ")" || PY=""
 [ -n "$JQ" ] || [ -n "$PY" ] || exit 0
 
 jget() {
