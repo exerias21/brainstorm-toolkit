@@ -131,12 +131,19 @@ If you use the Claude Code plugin system, add this repo as a marketplace source 
 **This ships skills + agents + hooks, but not `scripts/`.** A plugin-only install has no
 repo-local `scripts/close-tasks.sh`, `protect-tests.sh`, or `record-decision.sh`, so Stage 6
 close-out reports `tasks: 0 closed` forever, the test-immutability detector never arms, and no
-decision gets recorded — silently, unless you know to look. To get `scripts/` on top of the
-plugin install, also run `setup.sh` once, skipping the hooks and skills it already gave you:
+decision gets recorded — silently, unless you know to look.
 
-```bash
-bash <plugin>/setup.sh --target . --tools claude --no-hooks
-```
+`setup.sh` has no flag to skip skills — `--no-hooks` only skips hook installation, not the
+skills/agents steps — so running it on top of a plugin install re-registers every skill a
+second time (once from the plugin, once as files under `.claude/skills/<name>/`). Pick one
+path for skills:
+
+- **Stay on the plugin** (this option) and accept the `scripts/` gap above, or copy just that
+  directory without going through `setup.sh`: `cp -r <plugin-checkout>/scripts ./scripts`
+  (skip `scripts/ci/` and `scripts/sync-global.sh` — those are plugin-repo-only tooling with no
+  use in a consumer).
+- **Skip the plugin** and use `setup.sh` (Option B below) for everything instead — skills,
+  agents, scripts, and hooks in one pass.
 
 ### Option B: `setup.sh` (Claude, Copilot, or both)
 
@@ -156,15 +163,18 @@ bash ~/brainstorm-toolkit/setup.sh --target . --tools both
 - Some Copilot-distributed skills are intentionally **manual-only** and set `disable-model-invocation: true`, which keeps them available as slash commands without making them auto-load on semantic matching.
 - Legacy `.github/prompts/*.prompt.md` files from older installs are removed during Copilot installs so the workspace stops advertising prompt-file shims.
 - `agents/*` → `<target>/.claude/agents/` (Claude-only helper agents; VS Code can also discover Claude-format agents from `.claude/agents/` when needed).
-- `scripts/*` → `<target>/scripts/`.
-- `.gitignore` gains the toolkit's **local working state**: `.claude/pipeline/`,
-  `.claude/.next-action`, `.claude/.auto-continue-hops`, `.claude/project.json`, `TASKS.md`,
-  and `plans/`. These churn every run and are personal to whoever is driving. Idempotent:
-  re-running never duplicates a line. `.claude/project.json.example` stays **tracked** as the
-  bootstrap template (the pattern matches the exact filename, not the `.example` sibling), as
-  do `.claude/settings.json`, `AGENTS.md` and `GOTCHAS.md`. Ignoring these does not break the
-  cross-tool contract: Copilot and Codex read them off disk, and `.gitignore` governs sharing,
-  not reading.
+- `scripts/*` → `<target>/scripts/`, except `scripts/ci/` and `scripts/sync-global.sh` (plugin-repo-only tooling with no use in a consumer — excluded from the copy itself, so a consumer's own pre-existing `scripts/ci/` is never touched).
+- `.gitignore` gains only the toolkit's pure **machine-state** paths, unconditionally:
+  `.claude/pipeline/`, `.claude/.next-action`, `.claude/.auto-continue-hops`, and
+  `.claude/.stop-gate-hops`. These are run-local scratch, never useful in history, regardless
+  of team choice. Idempotent: re-running never duplicates a line. `setup.sh` deliberately does
+  **not** decide whether `.claude/project.json`, `TASKS.md` or `plans/` are ignored — that is a
+  genuine team choice (shared contract vs. personal working file), and `/repo-onboarding`'s
+  Step 3 "What should git ignore?" question is where it gets made (default: all three ignored).
+  `.claude/project.json.example` stays **tracked** as the bootstrap template (the pattern
+  matches the exact filename, not the `.example` sibling), as do `.claude/settings.json`,
+  `AGENTS.md` and `GOTCHAS.md`. Ignoring these does not break the cross-tool contract: Copilot
+  and Codex read them off disk, and `.gitignore` governs sharing, not reading.
 - `templates/AGENTS.md.template` → `<target>/AGENTS.md` if missing. `CLAUDE.md` is written as a **copy** of `AGENTS.md` (setup.sh never symlinks; WSL/NTFS and Windows git handle symlinks poorly); keep the two in sync.
 - `templates/TASKS.md.template` → `<target>/TASKS.md` if missing.
 - `templates/CHEATSHEET.md.template` → `<target>/CHEATSHEET.md` if missing. This is the printable companion to `README.md`; once present, setup leaves user edits alone.
