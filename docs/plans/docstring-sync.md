@@ -341,22 +341,39 @@ judgment beyond the edit itself.
     the tier per the `models.md` pointer. Triage and rewrite stay separate passes with the human
     confirmation between them — a pass that accuses and fixes grades its own accusation
     (`skills/sdlc/templates/stage-5.9-cleanup.md:7-9`).
-13. **`scripts/validate_skills.py`:** add `docstring-sync` to `MODEL_CAP_FAN_OUT_SKILLS`. **Version
-    bump.**
+13. **`scripts/validate_skills.py`:** add `docstring-sync` to `MODEL_CAP_FAN_OUT_SKILLS`. Update the
+    `/docstring-sync` row in `docs/COST.md` — its "no fan-out" note goes stale once triage and
+    rewrite dispatch agents. **Version bump.**
 
 #### Phase 3 — Outcome eval on a legacy fixture (nightly tier)
 
 14. **`scripts/ci/skill-eval.py`:** optional `fixture` key per case, default `mini-fastapi`; every
-    existing case unchanged.
+    existing case unchanged. Also optional fixture history: the harness `git init`s every copy
+    and makes one commit, and a nested `.git` cannot be committed here. So a fixture may carry
+    `_history/NN/` overlay directories. The fixture root (minus `_history/`) is committed first,
+    each overlay is copied over it and committed in `NN` order, then `_history/` is removed, and
+    the last commit is the case's `initial_head`. A fixture without `_history/` behaves exactly as
+    today. Document both keys in `docs/EVALS.md`'s optional-keys list.
+    **Shipped side effect:** `docstring_check.py` discovery skips any path with a `fixtures`
+    directory segment unless that path is named explicitly as a positional argument. Fixtures are
+    deliberately shaped inputs, not documentation, and a repair pass over them destroys the test.
+    Self-test it; this rides the unreleased 0.15.0 bump.
 15. **`evals/skills/fixtures/legacy-docstrings/`** (new, tiny, runnable with pytest): the Phase 1
     self-test's positives and controls as real files, a gitignored `plans/` holding one plan whose
-    reason must be harvested, one body-newer drift planted across two fixture commits, and a test
+    reason must be harvested, one body-newer drift planted across two fixture commits (via
+    `_history/01/`, see the previous step), and a test
     suite that exercises the doctest and the FastAPI route.
 16. **`evals/skills/cases/docstring-sync-legacy.json`** (new): `file_not_matches` for plan-path
     pointers in source; `file_matches` for the harvested reason text; `file_matches` that each
     control docstring is byte-identical; `pytest_green`; `git_head_unchanged`;
-    `agent_models_within_cap`. Record its baseline in `evals/skills/baseline.json`; add a line to
-    `docs/EVALS.md`. (`scripts/ci/` is not shipped, so no version bump.)
+    `agent_models_within_cap`. **Owner decision (2026-09-24): headless runs stay report-only**
+    (Step 5's "no channel to ask" rule), so the shipped case asserts the report instead:
+    `tree_unchanged`, the finding kinds in the output, the triage fan-out within the cap, tests
+    green. The edit assertions above are parked in `evals/skills/cases/pending/` until pre-approval
+    is decided. Add a line to `docs/EVALS.md`. Recording its baseline in
+    `evals/skills/baseline.json` is a separate **manual** step for the owner: `skill-eval.py` only
+    accepts a baseline from a real, paid, all-green run, and a pipeline never spends that money
+    on its own. (`scripts/ci/` is not shipped, so no version bump.)
 
 #### Phase 4 — Legacy extras: style unification, fill-missing, existing linters
 

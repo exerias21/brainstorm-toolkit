@@ -9,8 +9,8 @@ emits **one JSON object** on stdout describing everything this repo knows about 
 **Read-only, always.** There is no flag that makes it write. It never touches `close` or
 `reconcile` behaviour, never edits `TASKS.md`, and never writes a pipeline envelope.
 
-Origin: `docs/plans/board-json-export.md`. Rationale for why this lives here and not a
-cross-machine dashboard: see that plan's "Why this belongs in the toolkit" section.
+Origin: the `board-json-export` plan, removed once delivered — its "Why this belongs in the
+toolkit" rationale (an export, not a dashboard) is in git history.
 
 **See also:** `close-tasks.sh rows --plan <slug>` — the sibling read-only subcommand `/sdlc`
 Stage 0 uses to look up one plan's rows. It shares this subcommand's row parser and returns

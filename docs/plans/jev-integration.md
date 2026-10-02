@@ -280,6 +280,21 @@ does not, and can ship now.
      evidence does not contain?" This is the over-reach class the wiki caught four times.
    - **Counts stay in code.** A claim like "74 findings" is checked by code parsing the evidence;
      Jev is asked only about the prose around it.
+6a. **Parked verb `classify-claim`.** Not built now — revisit once `scripts/judge.py` exists
+    (step 10), as a future `/repo-health` docs-currency check.
+    - **Origin:** the owner's `poc-contractor` repo has a doc-claims audit script that asks
+      exactly this question of each doc line, using the judge for the rhetorical judgement
+      only and never to verify facts — the model's published weakness at counting and dates
+      (see *Background: what Jev is*) rules that out.
+    - Input: `{"line", "context"}` — the doc line under review plus its surrounding paragraph.
+    - Choice `tense` over `asserts-present` / `records-past`: "Is `line` asserting something
+      true of the codebase right now, or recording what used to be true or how it changed?" A
+      `records-past` line inside a section that should describe current behavior is the
+      docs-currency signal; the same verdict inside a changelog or design-history doc is
+      expected and not a finding.
+    - **Never used for facts.** This verb never checks whether a claim is *true* — that is
+      `verify-claim`'s job. It only classifies which kind of sentence a line is, so code can
+      decide whether the sentence belongs where it sits.
 7. **Labelled sets, one per verb, built from transcripts already on disk (limpet's method).**
    - Label = **what the human did next.** A stop, verdict or report the human replied to with
      pushback or a correction is a positive; one they accepted and moved on from is a negative.

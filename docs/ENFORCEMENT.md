@@ -2,7 +2,7 @@
 
 > **✓ Live contract — current and maintained.**
 
-`CLAUDE.md`'s "When a rule earns a hook, not just prose" states the four questions and the
+`AGENTS.md`'s "When a rule earns a hook, not just prose" states the four questions and the
 tension (a hook is also a second expression, and this repo deleted a 1,398-line Workflow because
 a second expression drifted). This page is the worked-examples appendix that section points to —
 four real cases that came out differently. No cost table (that's `docs/SEAM.md`'s cross-tool Stop
@@ -69,7 +69,7 @@ The fix is a canonical guard sentence quoted verbatim into every prompt that dis
 file-editing sub-agent (`stage-2-implement.md`, `stage-2b-dispatch.md`, `fix-loop.md`,
 `stage-5.7-review-fix.md`, `stage-5.9-cleanup.md`, `agents/e2e-test-runner.md`). A deterministic `PreToolUse` hook
 blocking `git stash|commit|checkout|reset…` during an `in_progress` envelope was considered and
-deferred (`docs/plans/subagent-git-guard.md`): real protection, but a new hook for a failure seen
+deferred: real protection, but a new hook for a failure seen
 once. Instead, the guard sentence is pinned in `scripts/ci/forbidden-phrases.txt` (the row matching a
 unique fragment of the sentence) — deleting it from any of the six prompts drops that file's
 occurrence count below the pin, which `check_contracts.py` reports as a stale-pin finding.
