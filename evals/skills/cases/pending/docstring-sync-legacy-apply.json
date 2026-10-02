@@ -1,0 +1,87 @@
+{
+  "name": "docstring-sync-legacy",
+  "fixture": "legacy-docstrings",
+  "prompt": "/docstring-sync -- pre-approved: apply every certain finding without asking for confirmation.",
+  "max_budget_usd": 4.0,
+  "assertions": [
+    {
+      "type": "file_not_matches",
+      "glob": "*.py",
+      "pattern": "plans/legacy-retry\\.md",
+      "_why": "the plan-path pointer in legacy.py's call_payments_api is `certain` and pointer-only -- the rewrite must drop the pointer entirely, not merely reword around it."
+    },
+    {
+      "type": "file_matches",
+      "glob": "*.py",
+      "pattern": "thundering-herd",
+      "_why": "the pointer was pointer-only, so the rewrite must have HARVESTED the load-bearing reason from plans/legacy-retry.md on disk (gitignored, not git-tracked, exactly like a real consumer repo) and inlined it -- a bare 'pointer removed, reason lost' rewrite would pass the file_not_matches assertion above but fail this one."
+    },
+    {
+      "type": "file_matches",
+      "glob": "*.py",
+      "pattern": "\"\"\"Report legacy service status\\.\"\"\"",
+      "_why": "app.py's FastAPI route docstring is runtime_visible (published as OpenAPI text) -- the rewrite must skip it by default, so it stays byte-identical."
+    },
+    {
+      "type": "file_matches",
+      "glob": "*.py",
+      "pattern": "The sum of a and b\\.",
+      "_why": "add_numbers' docstring is accurate control content -- no drift means no edit, even though the run touches other docstrings in the same file."
+    },
+    {
+      "type": "file_matches",
+      "glob": "*.py",
+      "pattern": "The eventual result\\.",
+      "_why": "not_yet_implemented is a NotImplementedError stub with a Returns section -- 'no return yet' is the honest state, not staleness, so this control must stay untouched."
+    },
+    {
+      "type": "file_matches",
+      "glob": "*.py",
+      "pattern": ">>> double\\(3\\)",
+      "_why": "double's doctest is accurate and runtime_visible (it runs under doctest.testmod) -- it must survive the run exactly as written, and pytest_green below re-executes it."
+    },
+    {
+      "type": "file_matches",
+      "glob": "*.py",
+      "pattern": "see docs/adr/0001-example\\.md for the accepted rationale",
+      "_why": "a pointer to a TRACKED, durable doc (an ADR) is left alone by the pointer policy -- only plan-path and TASKS.md-row pointers rot and get cleaned up."
+    },
+    {
+      "type": "file_matches",
+      "glob": "*.py",
+      "pattern": "step 3 of the TLS handshake verifies the certificate chain",
+      "_why": "lowercase 'step 3' is legitimate protocol prose, not stale plan/phase numbering -- the POINTER check's case-sensitive Phase/Step regex must not fire on it, so nothing here should ever reach the rewrite queue."
+    },
+    {
+      "type": "file_not_matches",
+      "glob": "*.py",
+      "pattern": "plans/old-cache-rewrite\\.md",
+      "_why": "get_cached_value's plan-path pointer targets a plan file that is entirely ABSENT from disk (unlike call_payments_api's, which is gitignored but present) -- there is nothing to harvest, so the rewrite's only correct move is to drop the dead pointer, not reword around it."
+    },
+    {
+      "type": "file_matches",
+      "glob": "*.py",
+      "pattern": "do not reintroduce the module-level cache",
+      "_why": "the reason was already inlined alongside the dead pointer (not harvested from a plan on disk, since none exists), so the rewrite must keep this bare instruction verbatim even as it deletes the `plans/old-cache-rewrite.md:` prefix -- losing this text would mean the fix destroyed the only copy of the reason that will ever exist."
+    },
+    {
+      "type": "file_not_matches",
+      "glob": "*.py",
+      "pattern": ":param old_name:",
+      "_why": "apply_discount's Sphinx-style docstring documents `old_name`, a parameter that does not exist on the signature (`price, rate`) -- a THIN finding the Sphinx parser (`_parse_sphinx`) must catch same as Google/NumPy, and the rewrite must repoint the stale `:param old_name:` line at the real parameter rather than leave a docstring describing a name the function never had."
+    },
+    {
+      "type": "pytest_green",
+      "_why": "the docs-only AST guard is the primary safety net, but the fixture's own test suite (the doctest and the FastAPI route) must also still pass -- a regression here means behavior was edited, not documentation."
+    },
+    {
+      "type": "git_head_unchanged",
+      "_why": "this skill never commits, per its own contract and the GIT guard verbatim in every file-editing prompt it dispatches -- the run must leave the working tree's HEAD exactly where fixture setup left it (the last fixture-history commit)."
+    },
+    {
+      "type": "agent_models_within_cap",
+      "cap": "sonnet",
+      "_why": "the fixture's .claude/project.json sets models.cap: sonnet, and the triage/rewrite fan-out must resolve and honor it -- Sonnet-first by default, per skills/sdlc/templates/models.md's Axis 1 contract this skill also follows."
+    }
+  ]
+}

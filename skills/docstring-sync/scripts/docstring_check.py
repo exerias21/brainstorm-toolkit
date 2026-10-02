@@ -21,9 +21,15 @@ What it checks (each decided by the script, no model judgment):
                   plan is ephemeral and often not even version-controlled in
                   a consumer repo, so citing one is what rots, while an ADR
                   or another durable doc is meant to persist and is not the
-                  kind of rot this check targets.
-  PLACEHOLDER  -- an empty docstring, an autoDocstring stub (`_summary_`,
-                  `_description_`), a bare TODO, or a generated
+                  kind of rot this check targets. A docstring that cites a
+                  backticked identifier or Sphinx cross-reference role
+                  (:func:, :class:, :meth:, :attr:) resolving to no name
+                  written anywhere in the scanned code is a dangling
+                  reference, always `suspect` -- the name may simply have
+                  been renamed elsewhere, so this is a prompt to confirm,
+                  never an accusation.
+  PLACEHOLDER  -- an empty docstring, an autoDocstring stub ('_summary_',
+                  '_description_'), a bare TODO, or a generated
                   "Docstring for X" line.
   THIN         -- documented params disagree with the signature (Google,
                   NumPy or Sphinx sections only -- an unrecognized style is
@@ -33,6 +39,17 @@ What it checks (each decided by the script, no model judgment):
   MISSING      -- a public symbol with no docstring at all. Report-only: this
                   script never writes a docstring, so there is nothing here
                   for a human to approve or reject.
+  BODY_NEWER   -- a symbol's code changed, via git blame author-time, more
+                  recently than its own docstring. Always `suspect`: a body
+                  edit after its docstring is a prior worth a human or model
+                  looking closer, not proof the docstring is now wrong.
+  STALE        -- only present after a --verdicts-in pass: a specific
+                  docstring sentence a judgment step (a probability-scoring
+                  judge or an LLM triage agent) marked contradicted or
+                  overgeneralized against the symbol's own source. `certain`
+                  when the verdict carries a verified quote or a calibrated
+                  "act" band, `suspect` otherwise -- the script owns this
+                  mapping, never the judge.
 
 Every finding also carries `runtime_visible` (a route/CLI decorator,
 `description=__doc__`, or a `>>>` doctest block makes a docstring a public
@@ -41,35 +58,46 @@ default.
 
 Discovery respects `.gitignore` via `git ls-files` (read-only) when the
 target is a git repository, and falls back to a fixed exclude list
-otherwise. Any git call resolves the binary with `shutil.which("git")`,
-never a bare `git`, and uses only read-only subcommands (`ls-files`,
-`diff --name-only`, `check-ignore`); an absent git or a non-repo path is a
-silent, graceful fallback, never a crash.
+otherwise. Any git call resolves the binary via `shutil.which`, never a
+bare git executable name, and uses only read-only subcommands (`ls-files`,
+`diff --name-only`, `check-ignore`, `blame --line-porcelain`); an absent
+git or a non-repo path is a silent, graceful fallback, never a crash. Any
+path with a `fixtures` directory segment is excluded from discovery unless
+that path (or a path under it) is named explicitly as a positional
+argument -- a fixture is a deliberately shaped test input, not
+documentation, and a repair pass over one destroys the test it backs.
 
 Exit codes:
   0  no findings
   1  findings reported
-  2  a file could not be parsed, or nothing was discovered (loud, never a
-     silent "0 files, all clean")
+  2  a file could not be parsed, nothing was discovered, or a --verdicts-in
+     id did not resolve against the current scan (loud, never a silent
+     "0 files, all clean" or a silently dropped verdict)
 
 Usage:
     bash scripts/py.sh docstring_check.py [PATH ...] [--changed]
                         [--include-tests] [--pointers-only] [--json]
                         [--limit N] [--snapshot] [--verify-docs-only FILE]
+                        [--claims-out FILE] [--verdicts-in FILE] [--all]
                         [--self-test]
 
 Examples:
     bash scripts/py.sh docstring_check.py skills/
     bash scripts/py.sh docstring_check.py --changed --json
     bash scripts/py.sh docstring_check.py --pointers-only .
+    bash scripts/py.sh docstring_check.py skills/foo --claims-out claims.json
+    bash scripts/py.sh docstring_check.py skills/foo --verdicts-in verdicts.json
 """
 from __future__ import annotations
 
 import argparse
 import ast
+import builtins
+import contextlib
 import fnmatch
 import io
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -77,6 +105,7 @@ import sys
 import tempfile
 import tokenize
 from dataclasses import dataclass, field, asdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ── Reused from skills/code-tour/scripts/docstring_audit.py: copied, not
@@ -199,27 +228,113 @@ def _git_is_ignored(root: Path, rel_path: str) -> bool:
     return result.returncode == 0
 
 
+_BLAME_HEADER_RE = re.compile(r"^([0-9a-f]{40}) \d+ (\d+)(?: \d+)?$")
+
+
+def _parse_blame_porcelain(output: str) -> dict[int, tuple[str, int]]:
+    """Map each final line number to (sha, author-unix-time) from
+    `git blame --line-porcelain` output. `--line-porcelain` repeats full
+    metadata for every line (not just the first of a run), so each header
+    line is followed by its own `author-time` before the tab-prefixed
+    source line ends that block -- an uncommitted line carries the
+    all-zero SHA and the current time, which sorts as "newest" like any
+    other commit; nothing here special-cases it."""
+    lines = output.splitlines()
+    result: dict[int, tuple[str, int]] = {}
+    i = 0
+    while i < len(lines):
+        m = _BLAME_HEADER_RE.match(lines[i])
+        if not m:
+            i += 1
+            continue
+        sha, final_line = m.group(1), int(m.group(2))
+        i += 1
+        author_time: int | None = None
+        while i < len(lines) and not lines[i].startswith("\t"):
+            if lines[i].startswith("author-time "):
+                try:
+                    author_time = int(lines[i].split(" ", 1)[1])
+                except (IndexError, ValueError):
+                    author_time = None
+            i += 1
+        if i < len(lines):
+            i += 1  # skip the tab-prefixed source line itself
+        if author_time is not None:
+            result[final_line] = (sha, author_time)
+    return result
+
+
+def _blame_map(root: Path, rel_path: str) -> dict[int, tuple[str, int]] | None:
+    out = _run_git(["blame", "--line-porcelain", rel_path], root)
+    if out is None:
+        return None
+    return _parse_blame_porcelain(out)
+
+
+def _short_sha_date(sha: str, author_time: int) -> str:
+    short = sha[:7]
+    date = datetime.fromtimestamp(author_time, tz=timezone.utc).strftime("%Y-%m-%d")
+    return f"{short} ({date})"
+
+
 # ── Discovery ────────────────────────────────────────────────────────────────
+
+
+def _has_fixtures_segment(path_like: str) -> bool:
+    """True when `fixtures` is a whole directory SEGMENT of the (POSIX-form)
+    path, not merely a substring (`prefixtures/x` must not match). Fixture
+    trees (`evals/skills/fixtures/**`) are deliberately shaped test inputs
+    with planted drift, not real documentation -- a repair pass over them
+    would edit the very findings the eval fixture exists to plant, silently
+    breaking the test it backs."""
+    return "fixtures" in Path(path_like).as_posix().split("/")
+
+
+def _under_any(candidate: Path, roots: list[Path]) -> bool:
+    resolved = candidate.resolve()
+    for root_ in roots:
+        try:
+            resolved.relative_to(root_)
+            return True
+        except ValueError:
+            continue
+    return False
 
 
 def discover(paths: list[str] | None, root: Path, changed: bool) -> list[Path]:
     """Resolve the file set to scan.
 
     Positional paths win outright (a directory is walked; a file is used
-    as-is). Otherwise: `--changed` uses read-only git diff/ls-files;
+    as-is). Otherwise: --changed uses read-only git diff/ls-files;
     plain invocation uses `git ls-files` when the root is a repo, falling
     back to a filesystem walk with `_DEFAULT_EXCLUDES` otherwise.
+
+    In every path, a file under a `fixtures` directory segment is excluded
+    -- UNLESS that fixtures-bearing path (or an ancestor of it) was itself
+    one of the positional arguments. `docstring_check.py .` must never surface
+    a planted eval fixture as a "real" finding, but
+    `docstring_check.py evals/skills/fixtures/legacy-docstrings` -- naming the
+    fixture directly -- is a deliberate, explicit ask and is honored.
     """
     if paths:
+        explicit_fixture_roots = [
+            Path(p).resolve() for p in paths if _has_fixtures_segment(p)
+        ]
         files: list[Path] = []
         for p in paths:
             pp = Path(p)
             if pp.is_dir():
-                files.extend(sorted(pp.rglob("*.py")))
+                candidates = sorted(pp.rglob("*.py"))
                 for ext in _HEURISTIC_TEXT_EXTS:
-                    files.extend(sorted(pp.rglob(f"*{ext}")))
+                    candidates.extend(sorted(pp.rglob(f"*{ext}")))
             elif pp.is_file():
-                files.append(pp)
+                candidates = [pp]
+            else:
+                candidates = []
+            for f in candidates:
+                if _has_fixtures_segment(f.as_posix()) and not _under_any(f, explicit_fixture_roots):
+                    continue
+                files.append(f)
         return files
 
     if changed:
@@ -228,17 +343,30 @@ def discover(paths: list[str] | None, root: Path, changed: bool) -> list[Path]:
             print("docstring_check: --changed requires a git repository; "
                   "found none usable here", file=sys.stderr)
             return []
-        return sorted(root / r for r in rels if _scannable(r))
+        return sorted(
+            root / r for r in rels if _scannable(r) and not _has_fixtures_segment(r)
+        )
 
     tracked = _git_tracked_files(root)
     if tracked is not None:
-        return sorted(root / r for r in tracked if _scannable(r))
+        return sorted(
+            root / r for r in tracked if _scannable(r) and not _has_fixtures_segment(r)
+        )
 
     files = []
     for ext in (".py", *_HEURISTIC_TEXT_EXTS):
         for p in sorted(root.rglob(f"*{ext}")):
-            posix = p.as_posix()
-            if any(fnmatch.fnmatch(posix, pat) for pat in _DEFAULT_EXCLUDES):
+            # Root-relative, not `p.as_posix()` (absolute) -- an absolute path
+            # inherits every ANCESTOR of `root` too, so running this fallback
+            # from inside e.g. `.../evals/skills/fixtures/legacy-docstrings`
+            # or `.../venv/myproject` would match `_DEFAULT_EXCLUDES`/fixtures
+            # on `root`'s own ancestry and exclude every real file underneath
+            # it. A leading "/" keeps a root-level match ("node_modules/x.py")
+            # matching the same `*/dir/*`-shaped patterns a nested one would.
+            rel_posix = "/" + _relposix(root, p)
+            if any(fnmatch.fnmatch(rel_posix, pat) for pat in _DEFAULT_EXCLUDES):
+                continue
+            if _has_fixtures_segment(rel_posix):
                 continue
             files.append(p)
     return files
@@ -259,7 +387,7 @@ def _is_test_file(path: Path) -> bool:
 class Finding:
     path: str
     line: int
-    kind: str  # POINTER | PLACEHOLDER | THIN | MISSING
+    kind: str  # POINTER | PLACEHOLDER | THIN | MISSING | BODY_NEWER | STALE
     severity: str  # certain | suspect
     message: str
     symbol: str | None = None
@@ -864,11 +992,188 @@ def parse_doc_sections(doc: str) -> DocSections | None:
     return None
 
 
+# ── body-newer: git-blame prior comparing a symbol's body against its own
+# docstring -- always `suspect`, since a body edit after its docstring is a
+# reason to look closer, not proof the docstring is wrong ──────────────────
+
+
+def _docstring_line_span(node: ast.AST) -> tuple[int, int] | None:
+    body = getattr(node, "body", None)
+    if not body:
+        return None
+    first = body[0]
+    if isinstance(first, ast.Expr) and isinstance(
+        getattr(first, "value", None), ast.Constant
+    ) and isinstance(first.value.value, str):
+        return first.lineno, getattr(first, "end_lineno", first.lineno)
+    return None
+
+
+def check_body_newer(
+    node: ast.AST, qualified: str, rel_file: str,
+    blame_map: dict[int, tuple[str, int]],
+) -> Finding | None:
+    doc_span = _docstring_line_span(node)
+    if doc_span is None:
+        return None  # no docstring -- nothing to compare
+    end_lineno = getattr(node, "end_lineno", None)
+    if end_lineno is None:
+        return None
+    doc_lines = set(range(doc_span[0], doc_span[1] + 1))
+    body_lines = set(range(node.lineno, end_lineno + 1)) - doc_lines
+    if not body_lines:
+        return None  # e.g. a one-line stub that is only its own docstring
+
+    def _newest(lines: set[int]) -> tuple[str, int] | None:
+        candidates = [blame_map[ln] for ln in lines if ln in blame_map]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda pair: pair[1])
+
+    body_newest = _newest(body_lines)
+    doc_newest = _newest(doc_lines)
+    if body_newest is None or doc_newest is None:
+        return None
+    if body_newest[1] <= doc_newest[1]:
+        return None
+    return Finding(
+        path=rel_file, line=doc_span[0], kind="BODY_NEWER", severity="suspect",
+        symbol=qualified,
+        message=f"body last touched {_short_sha_date(*body_newest)}, docstring "
+                f"last touched {_short_sha_date(*doc_newest)} -- body changed "
+                "after its docstring",
+    )
+
+
+# ── dangling-ref: a docstring's backticked identifier or Sphinx xref role
+# that resolves to nothing anywhere in the scanned code -- a sibling of the
+# existing path-based POINTER check, for identifiers instead of paths.
+#
+# Two independent gates keep this from flagging ordinary prose: (1) a
+# CODE-SHAPE gate on backticks only (a Sphinx role is a deliberate citation
+# by construction, so it always counts) -- a plain lowercase word someone
+# merely emphasized with backticks ('checks', 'hooks', 'one') never even
+# reaches resolution; (2) once shape-gated, a RESOLUTION UNIVERSE wide
+# enough that a real name almost never misses: every identifier written
+# ANYWHERE in the scanned Python files (not just def/class names -- also
+# parameter names, attribute/method names, keyword-argument names, and
+# import aliases) plus every string constant (so a JSON/dict key cited as
+# a name resolves) plus stdlib module names. What survives both gates is
+# a name nobody in the scanned code ever wrote down at all. ───────────────
+
+# Anchored between the surrounding backticks (or Sphinx role backticks) with
+# nothing else allowed in the span -- a multi-word phrase, a path with a
+# slash, or a bare "..."/ellipsis never matches at all, regardless of the
+# code-shape gate below.
+_BACKTICK_IDENT_RE = re.compile(
+    r"`([A-Za-z_][\w]*(?:\.[A-Za-z_]\w*)*)(\(\))?`"
+)
+_SPHINX_XREF_RE = re.compile(
+    r":(?:func|class|meth|attr):`([A-Za-z_][\w]*(?:\.[A-Za-z_]\w*)*)(\(\))?`"
+)
+# A dotted name whose final segment is a recognized file extension reads as a
+# filename (`TASKS.md`, `project.json`) even though it is identifier-shaped --
+# the existing path-based POINTER check already owns that citation, so this
+# check leaves it alone rather than reporting the same name as dangling.
+_FILE_EXTENSION_TAILS = {"md", "py", "json", "yml", "yaml", "txt", "sh", "js", "ts", "cfg", "ini", "toml"}
+
+
+def _looks_like_filename(name: str) -> bool:
+    if "." not in name:
+        return False
+    return name.rsplit(".", 1)[-1].lower() in _FILE_EXTENSION_TAILS
+
+
+def _looks_like_code_shape(name: str, had_call_parens: bool) -> bool:
+    """A backticked token is worth checking only if it reads as code, not
+    prose: a call (trailing '()'), a dotted or underscored name, or a
+    CamelCase/UPPER_CASE identifier. A single plain lowercase word ('one',
+    'path', 'hooks') never passes this gate, so it is never even resolved
+    -- backticks used purely for emphasis are left alone by construction,
+    not by guessing whether the word happens to name something real."""
+    if had_call_parens:
+        return True
+    if "_" in name or "." in name:
+        return True
+    return any(c.isupper() for c in name)  # CamelCase or UPPER_CASE
+
+
+def _find_doc_references(doc: str) -> list[tuple[str, bool, bool, int, int]]:
+    """Return (name, had_call_parens, is_sphinx_role, start, end) for every
+    backticked identifier or Sphinx cross-reference role in a docstring. A
+    Sphinx role's own backticks would also match the generic backtick
+    pattern; its span is recorded once, from the role match, not twice."""
+    refs: list[tuple[str, bool, bool, int, int]] = []
+    consumed: list[tuple[int, int]] = []
+    for m in _SPHINX_XREF_RE.finditer(doc):
+        refs.append((m.group(1), bool(m.group(2)), True, m.start(), m.end()))
+        consumed.append(m.span())
+    for m in _BACKTICK_IDENT_RE.finditer(doc):
+        span = m.span()
+        if any(cs <= span[0] and span[1] <= ce for cs, ce in consumed):
+            continue
+        refs.append((m.group(1), bool(m.group(2)), False, span[0], span[1]))
+    return refs
+
+
+# A dunder of this shape (`__init__`, `__enter__`, `__repr__`, ...) is a
+# Python DATA-MODEL name -- part of the language itself, not something any
+# particular repo defines or imports, so citing one is never a reference to
+# repo code that can go stale. Resolved unconditionally, before checking
+# whether anyone in the scanned files happened to write it down.
+_DUNDER_DATA_MODEL_RE = re.compile(r"^__[a-z][a-z0-9_]*__$")
+
+
+def _resolve_reference(
+    name: str, own_params: set[str], identifiers: set[str],
+    string_constants: set[str], builtins_set: set[str], stdlib_modules: set[str],
+) -> bool:
+    """A dotted name resolves through its LAST component only -- the
+    universe below is names, not qualified paths, so a two-part dotted
+    citation ('SomeClass.some_method') is checked the same way a bare one
+    would be."""
+    tail = name.rsplit(".", 1)[-1]
+    for candidate in {name, tail}:
+        if _DUNDER_DATA_MODEL_RE.match(candidate):
+            return True
+        if candidate in own_params or candidate in identifiers \
+                or candidate in string_constants or candidate in builtins_set \
+                or candidate in stdlib_modules:
+            return True
+    return False
+
+
+def check_dangling_refs(
+    doc: str, base_line: int, symbol: str, rel_file: str, own_params: set[str],
+    identifiers: set[str], string_constants: set[str], builtins_set: set[str],
+    stdlib_modules: set[str],
+) -> list[Finding]:
+    findings: list[Finding] = []
+    for name, had_parens, is_role, start, _end in _find_doc_references(doc):
+        if _looks_like_filename(name):
+            continue
+        if not is_role and not _looks_like_code_shape(name, had_parens):
+            continue  # backticked prose emphasis, not a code citation
+        if _resolve_reference(name, own_params, identifiers, string_constants, builtins_set, stdlib_modules):
+            continue
+        line = base_line + doc.count("\n", 0, start)
+        findings.append(Finding(
+            path=rel_file, line=line, kind="POINTER", severity="suspect",
+            symbol=symbol,
+            message=f"cites `{name}`, which resolves to no name written "
+                    "anywhere in the scanned code -- a dangling reference; "
+                    "confirm before treating it as stale",
+        ))
+    return findings
+
+
 # ── Symbol-level checks (PLACEHOLDER, THIN, MISSING) ────────────────────────
 
 
 def check_symbol(
     node: ast.AST, qualified: str, rel_file: str, decorators: list[ast.expr],
+    identifiers: set[str], string_constants: set[str], builtins_set: set[str],
+    stdlib_modules: set[str], blame_map: dict[int, tuple[str, int]] | None,
 ) -> list[Finding]:
     findings: list[Finding] = []
     doc = ast.get_docstring(node, clean=False)
@@ -913,6 +1218,15 @@ def check_symbol(
                         message="documents a Returns section but the body never "
                                 "returns a value",
                     ))
+        own_params = {p.lstrip("*") for p in _params_of(node)}
+        findings.extend(check_dangling_refs(
+            doc, doc_line, qualified, rel_file, own_params,
+            identifiers, string_constants, builtins_set, stdlib_modules,
+        ))
+        if blame_map is not None:
+            bn = check_body_newer(node, qualified, rel_file, blame_map)
+            if bn is not None:
+                findings.append(bn)
     else:
         if not _is_private(getattr(node, "name", "")):
             findings.append(Finding(
@@ -928,7 +1242,14 @@ def check_symbol(
 
 def check_python_file(
     path: Path, root: Path, include_tests: bool, pointers_only: bool,
+    identifiers: set[str] | None = None, string_constants: set[str] | None = None,
+    builtins_set: set[str] | None = None, stdlib_modules: set[str] | None = None,
 ) -> tuple[list[Finding], str | None]:
+    identifiers = identifiers if identifiers is not None else set()
+    string_constants = string_constants if string_constants is not None else set()
+    builtins_set = builtins_set if builtins_set is not None else set(dir(builtins))
+    stdlib_modules = stdlib_modules if stdlib_modules is not None else _stdlib_module_names()
+
     try:
         source = path.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
@@ -962,6 +1283,10 @@ def check_python_file(
         findings.extend(
             scan_text_for_pointers(module_doc, root, rel, 1, heuristic=False)
         )
+        findings.extend(check_dangling_refs(
+            module_doc, 1, "<module>", rel, set(),
+            identifiers, string_constants, builtins_set, stdlib_modules,
+        ))
 
     if pointers_only:
         return findings, None
@@ -975,9 +1300,14 @@ def check_python_file(
         if placeholder:
             findings.append(placeholder)
 
+    blame_map = _blame_map(root, rel)
+
     for node, qualified in _walk_symbols(tree):
         decorators = list(getattr(node, "decorator_list", []))
-        findings.extend(check_symbol(node, qualified, rel, decorators))
+        findings.extend(check_symbol(
+            node, qualified, rel, decorators,
+            identifiers, string_constants, builtins_set, stdlib_modules, blame_map,
+        ))
 
     return findings, None
 
@@ -985,14 +1315,79 @@ def check_python_file(
 # ── Scan driver ──────────────────────────────────────────────────────────────
 
 
+def _stdlib_module_names() -> set[str]:
+    # 3.10+ ships this directly; an older interpreter degrades to an empty
+    # set (stdlib-module names simply stop resolving there) rather than a
+    # crash -- the same graceful-degradation posture as the git helpers.
+    return set(getattr(sys, "stdlib_module_names", ()))
+
+
+def _build_global_identifier_index(files: list[Path]) -> tuple[set[str], set[str]]:
+    """Returns (identifiers, string_constants): every identifier-shaped
+    name and every string constant appearing ANYWHERE in the scanned
+    Python files' ASTs -- the resolution universe for dangling-ref. This is
+    deliberately much wider than "is a def/class name": a parameter name,
+    an attribute/method name (`.rglob`), a keyword-argument name, an
+    import alias, or a JSON/dict key are all things a docstring can
+    legitimately cite, and each was written down somewhere in real code if
+    it is real. Best-effort: a file that fails to parse here simply
+    contributes nothing to the index; it still gets its own parse-error
+    finding from the main scan below."""
+    identifiers: set[str] = set()
+    strings: set[str] = set()
+    for path in files:
+        if path.suffix != ".py":
+            continue
+        try:
+            source = path.read_text(encoding="utf-8", errors="replace")
+            tree = ast.parse(source)
+        except (OSError, SyntaxError):
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name):
+                identifiers.add(node.id)
+            elif isinstance(node, ast.Attribute):
+                identifiers.add(node.attr)
+            elif isinstance(node, ast.arg):
+                identifiers.add(node.arg)
+            elif isinstance(node, ast.keyword) and node.arg:
+                identifiers.add(node.arg)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                identifiers.add(node.name)
+            elif isinstance(node, ast.alias):
+                identifiers.add(node.name)
+                identifiers.add(node.name.split(".")[0])
+                if node.asname:
+                    identifiers.add(node.asname)
+            elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+                strings.add(node.value)
+    return identifiers, strings
+
+
 def scan_paths(
     files: list[Path], root: Path, include_tests: bool, pointers_only: bool,
+    index_files: list[Path] | None = None,
 ) -> ScanResult:
+    # The dangling-ref resolution universe (`_build_global_identifier_index`)
+    # is built from `index_files` when the caller supplies a wider set than
+    # `files` -- otherwise a name defined only in a file that `--limit`,
+    # `--changed`, or an explicit positional path left OUT of this report
+    # would be flagged as dangling just because it wasn't in the scan, not
+    # because it doesn't exist. Defaults to `files` so an existing caller
+    # that passes one closed set keeps its old behavior unchanged.
+    identifiers, string_constants = _build_global_identifier_index(
+        index_files if index_files is not None else files
+    )
+    builtins_set = set(dir(builtins))
+    stdlib_modules = _stdlib_module_names()
     result = ScanResult()
     for path in files:
         result.files_scanned += 1
         if path.suffix == ".py":
-            findings, error = check_python_file(path, root, include_tests, pointers_only)
+            findings, error = check_python_file(
+                path, root, include_tests, pointers_only,
+                identifiers, string_constants, builtins_set, stdlib_modules,
+            )
         else:
             findings, error = scan_nonpython_file(path, root)
         if error:
@@ -1085,22 +1480,244 @@ def verify_docs_only(snapshot_path: Path, root: Path) -> list[str]:
     return violations
 
 
+# ── Claims / verdicts: carrying judgment (a probability-scoring judge or an
+# LLM triage agent) back into this script's Finding vocabulary. The script
+# owns the action table -- a judge picks a verdict, code decides what that
+# means ─────────────────────────────────────────────────────────────────
+
+# On `.` followed by whitespace or end-of-string, per the plain-heuristic
+# contract -- no NLP dependency, just enough to keep one sentence per claim.
+_SENTENCE_SPLIT_RE = re.compile(r"\.(?:\s+|\Z)")
+
+_CLAIM_SOURCE_LIMIT = 200
+
+
+def _split_sentences(text: str) -> list[str]:
+    text = text.strip()
+    if not text:
+        return []
+    return [s.strip() for s in _SENTENCE_SPLIT_RE.split(text) if s.strip()]
+
+
+def _strip_doc_section_noise(doc: str) -> str:
+    """Drop structural markup (a Google/NumPy section header, a NumPy
+    underline, a Sphinx `:param x:`/`:returns:` field marker) from a
+    docstring, keeping the prose -- including param/return descriptions --
+    for sentence splitting. Reuses the same header/underline regexes the
+    THIN check parses sections with, rather than re-deriving new ones."""
+    out: list[str] = []
+    for line in doc.splitlines():
+        stripped = line.strip()
+        if _GOOGLE_SECTION_RE.match(stripped):
+            continue
+        if stripped in _NUMPY_SECTION_NAMES:
+            continue
+        if _NUMPY_UNDERLINE_RE.match(stripped):
+            continue
+        sphinx_field = re.match(r"^\s*:(?:param|returns?|raises?|type)\s*(?:[\w.]+\s+)?[\w.]*\s*:\s*", line)
+        if sphinx_field:
+            out.append(line[sphinx_field.end():])
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def _extract_claim_sentences(doc: str) -> list[str]:
+    return _split_sentences(_strip_doc_section_noise(doc))
+
+
+def _iter_claim_symbols(
+    files: list[Path], root: Path,
+) -> list[tuple[str, str, ast.AST, list[ast.expr], str, list[str]]]:
+    """Yield (rel_path, qualified, node, decorators, doc, source_lines) for
+    every symbol with a non-empty docstring across every scanned Python
+    file. `source_lines` is the whole file's text split on newlines, so a
+    caller can slice out one symbol's own source (with its decorators)
+    without re-reading the file."""
+    out: list[tuple[str, str, ast.AST, list[ast.expr], str, list[str]]] = []
+    for path in files:
+        if path.suffix != ".py":
+            continue
+        try:
+            source = path.read_text(encoding="utf-8", errors="replace")
+            tree = ast.parse(source)
+        except (OSError, SyntaxError):
+            continue
+        rel = _relposix(root, path)
+        source_lines = source.splitlines()
+        for node, qualified in _walk_symbols(tree):
+            doc = ast.get_docstring(node, clean=False)
+            if doc is None or not doc.strip():
+                continue
+            decorators = list(getattr(node, "decorator_list", []))
+            out.append((rel, qualified, node, decorators, doc, source_lines))
+    return out
+
+
+def build_claim_records(
+    result: ScanResult, files: list[Path], root: Path, include_all: bool,
+) -> tuple[list[dict], list[dict], list[tuple[str, str]]]:
+    """Returns (records, oversized, dup_errors). Each record carries the
+    on-disk id/claim/evidence triple plus the path/line/symbol a matching
+    verdict later needs to build a Finding -- --claims-out writes only the
+    first three keys; --verdicts-in uses all of them.
+
+    A claim id is `<rel-path>::<qualified-symbol>::<sentence-index>` --
+    path-prefixed, since a bare qualified name (e.g. a top-level `main`) is
+    only unique within one file's own AST, not across every scanned file.
+    `dup_errors` is populated (never silently overwritten, never a
+    last-wins) if the same id is ever produced twice anyway -- normally
+    only reachable by scanning the same path more than once (overlapping
+    positional paths)."""
+    candidate_keys: set[tuple[str, str]] | None = None
+    if not include_all:
+        candidate_keys = {
+            (f.path, f.symbol) for f in result.findings
+            if f.kind != "MISSING" and f.symbol
+        }
+    records: list[dict] = []
+    oversized: list[dict] = []
+    dup_errors: list[tuple[str, str]] = []
+    seen_ids: set[str] = set()
+    for rel, qualified, node, decorators, doc, source_lines in _iter_claim_symbols(files, root):
+        if candidate_keys is not None and (rel, qualified) not in candidate_keys:
+            continue
+        start_line = decorators[0].lineno if decorators else node.lineno
+        end_line = getattr(node, "end_lineno", node.lineno)
+        segment_lines = source_lines[start_line - 1:end_line]
+        is_oversized = len(segment_lines) > _CLAIM_SOURCE_LIMIT
+        if is_oversized:
+            oversized.append({
+                "symbol": qualified, "path": rel, "line": node.lineno,
+                "body_lines": len(segment_lines),
+            })
+            # Still produce a claim record per sentence, under the same id
+            # scheme, WITHOUT inlining the oversized body as evidence -- an
+            # oversized symbol must still be triage-able and its id must
+            # still resolve in --verdicts-in (SKILL.md's Step 4 supplies the
+            # full source out of band, from the `oversized` list above).
+            # apply_verdicts has no evidence to check a quote against here,
+            # so an oversized STALE verdict is never `certain`, only
+            # `suspect` -- that's the correct, conservative outcome, not a
+            # bug: nothing here can verify the quote itself.
+            evidence: list[str] = []
+        else:
+            evidence = [ "\n".join(segment_lines) ]
+        for idx, sentence in enumerate(_extract_claim_sentences(doc)):
+            claim_id = f"{rel}::{qualified}::{idx}"
+            if claim_id in seen_ids:
+                dup_errors.append((
+                    claim_id,
+                    "duplicate claim id produced by --claims-out -- the same "
+                    "path was scanned more than once",
+                ))
+                continue
+            seen_ids.add(claim_id)
+            record = {
+                "id": claim_id,
+                "claim": f"`{qualified}`: {sentence}",
+                "evidence": evidence,
+                "path": rel,
+                "line": node.lineno,
+                "symbol": qualified,
+            }
+            if is_oversized:
+                record["oversized"] = True
+            records.append(record)
+    return records, oversized, dup_errors
+
+
+_PROB_KEYS = ("supported", "overgeneralized", "contradicted")
+
+
+def _resolve_verdict(entry: object, evidence: list[str]) -> tuple[str | None, str | None]:
+    """(verdict, internal_band) per the action table -- auto-detects which
+    of the two accepted verdicts-in shapes `entry` is."""
+    if not isinstance(entry, dict):
+        return None, None
+    if all(isinstance(entry.get(k), (int, float)) for k in _PROB_KEYS) \
+            and isinstance(entry.get("band"), str):
+        band = entry["band"]
+        if band == "corroborated":
+            return "supported", "act"
+        if band in ("contradicted", "overgeneralized"):
+            return band, "act"
+        if band == "uncertain":
+            return None, "uncertain"
+        return None, None  # "error", or an unrecognized band value
+    if "verdict" in entry:
+        verdict = entry.get("verdict")
+        if verdict == "not-addressed":
+            return None, None
+        if verdict == "supported":
+            return "supported", None
+        if verdict in ("contradicted", "overgeneralized"):
+            quote = entry.get("quote")
+            found = False
+            if isinstance(quote, str) and quote.strip():
+                norm_quote = re.sub(r"\s+", " ", quote).strip()
+                norm_evidence = re.sub(r"\s+", " ", " ".join(evidence)).strip()
+                found = norm_quote in norm_evidence
+            return verdict, ("act" if found else "uncertain")
+        return None, None
+    return None, None
+
+
+def apply_verdicts(
+    verdicts_path: Path, claim_records: dict[str, dict],
+) -> tuple[list[Finding], list[tuple[str, str]]]:
+    findings: list[Finding] = []
+    errors: list[tuple[str, str]] = []
+    try:
+        data = json.loads(verdicts_path.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, json.JSONDecodeError) as exc:
+        errors.append((str(verdicts_path), f"malformed verdicts file: {exc}"))
+        return findings, errors
+    if not isinstance(data, dict):
+        errors.append((str(verdicts_path), "verdicts file must be a JSON object keyed by claim id"))
+        return findings, errors
+    for claim_id, entry in data.items():
+        record = claim_records.get(claim_id)
+        if record is None:
+            errors.append((claim_id, "id does not resolve to a claim in the current scan"))
+            continue
+        verdict, internal_band = _resolve_verdict(entry, record["evidence"])
+        if verdict is None or verdict == "supported":
+            continue  # no signal, or nothing to act on -- never bloat findings
+        severity = "certain" if internal_band == "act" else "suspect"
+        message = f"{record['claim']} -- verdict={verdict}"
+        quote = entry.get("quote") if isinstance(entry, dict) else None
+        if quote:
+            message += f", quote: {quote!r}"
+        findings.append(Finding(
+            path=record["path"], line=record["line"], kind="STALE", severity=severity,
+            symbol=record["symbol"], message=message,
+        ))
+    return findings, errors
+
+
 # ── Reporting ────────────────────────────────────────────────────────────────
 
 
-def print_report(result: ScanResult, as_json: bool) -> int:
+def print_report(
+    result: ScanResult, as_json: bool, claims_out_path: str | None = None,
+    claims_written: int | None = None, oversized: list[dict] | None = None,
+) -> int:
     if as_json:
         payload = {
             "files_scanned": result.files_scanned,
             "findings": [asdict(f) for f in result.findings],
             "parse_errors": [{"path": p, "error": e} for p, e in result.parse_errors],
         }
+        if claims_written is not None:
+            payload["oversized"] = oversized or []
+            payload["claims_written"] = claims_written
         print(json.dumps(payload, indent=2))
     else:
         by_kind: dict[str, list[Finding]] = {}
         for f in result.findings:
             by_kind.setdefault(f.kind, []).append(f)
-        for kind in ("POINTER", "PLACEHOLDER", "THIN", "MISSING"):
+        for kind in ("POINTER", "PLACEHOLDER", "THIN", "MISSING", "BODY_NEWER", "STALE"):
             items = by_kind.get(kind, [])
             if not items:
                 continue
@@ -1122,6 +1739,13 @@ def print_report(result: ScanResult, as_json: bool) -> int:
                 print(f"  {p}: {e}")
         total = len(result.findings)
         print(f"\n{total} finding(s) across {result.files_scanned} file(s)")
+        if claims_written is not None:
+            oversized = oversized or []
+            names = ", ".join(o["symbol"] for o in oversized)
+            suffix = f": {names}" if names else ""
+            print(f"\n{claims_written} claim(s) written to {claims_out_path}; "
+                  f"{len(oversized)} symbol(s) skipped (oversized, >{_CLAIM_SOURCE_LIMIT} "
+                  f"lines){suffix}")
 
     if result.parse_errors or result.files_scanned == 0:
         return 2
@@ -1138,6 +1762,296 @@ def _write(base: Path, rel: str, content: str, newline: str = "\n") -> Path:
     # of platform line-ending translation.
     p.write_bytes(content.replace("\n", newline).encode("utf-8"))
     return p
+
+
+def _self_test_body_newer() -> bool:
+    """A real git repo (never this repo's own git state) with a positive --
+    docstring committed first, body edited in a later commit -- and a
+    negative control where both land in the same commit. Skips gracefully,
+    never failing the self-test, if git itself is unavailable."""
+    git = shutil.which("git")
+    if git is None:
+        print("docstring_check.py --self-test: git unavailable, skipping body-newer checks",
+              file=sys.stderr)
+        return True
+
+    tmp = Path(tempfile.mkdtemp(prefix="docstring_check_selftest_git_"))
+    ok = True
+    try:
+        def run(args: list[str]) -> None:
+            subprocess.run(
+                [git, *args], cwd=str(tmp), check=True, capture_output=True,
+                encoding="utf-8", errors="replace",
+            )
+
+        def commit(message: str, date: str) -> None:
+            # Two automated commits can otherwise land in the same wall-clock
+            # second, which collapses "newer" into a tie -- an explicit,
+            # distinct --date per commit (this is the AUTHOR date, the one
+            # `git blame`'s author-time reports) is what makes the
+            # comparison deterministic rather than a coin flip.
+            run(["-c", "user.name=Docstring Sync Self-Test", "-c",
+                 "user.email=selftest@example.invalid",
+                 "commit", "-q", "-m", message, "--date", date])
+
+        run(["init", "-q"])
+
+        _write(tmp, "body_newer_positive.py", '''\
+def widget():
+    """Compute the widget value."""
+    return 1
+''')
+        run(["add", "body_newer_positive.py"])
+        commit("add widget with its docstring", "2025-01-01T00:00:00")
+
+        _write(tmp, "body_newer_negative.py", '''\
+def gadget():
+    """Compute the gadget value."""
+    return 1
+''')
+        run(["add", "body_newer_negative.py"])
+        commit("add gadget (docstring and body in the same commit)", "2025-01-02T00:00:00")
+
+        # A second, later commit touches ONLY widget's body -- its docstring
+        # line is untouched since the first commit.
+        _write(tmp, "body_newer_positive.py", '''\
+def widget():
+    """Compute the widget value."""
+    return 2
+''')
+        run(["add", "body_newer_positive.py"])
+        commit("change widget's body only", "2025-06-01T00:00:00")
+
+        result = scan_paths(
+            [tmp / "body_newer_positive.py", tmp / "body_newer_negative.py"],
+            tmp, include_tests=True, pointers_only=False,
+        )
+        by_path_kind: dict[tuple[str, str], list[Finding]] = {}
+        for f in result.findings:
+            by_path_kind.setdefault((f.path, f.kind), []).append(f)
+
+        if not by_path_kind.get(("body_newer_positive.py", "BODY_NEWER")):
+            print("SELF-TEST FAIL: expected a BODY_NEWER finding for body_newer_positive.py, "
+                  f"got {result.findings}", file=sys.stderr)
+            ok = False
+        elif by_path_kind[("body_newer_positive.py", "BODY_NEWER")][0].severity != "suspect":
+            print("SELF-TEST FAIL: BODY_NEWER must always be severity=suspect", file=sys.stderr)
+            ok = False
+
+        if by_path_kind.get(("body_newer_negative.py", "BODY_NEWER")):
+            print("SELF-TEST FAIL: expected NO BODY_NEWER finding for body_newer_negative.py "
+                  f"(same-commit edit), got {by_path_kind[('body_newer_negative.py', 'BODY_NEWER')]}",
+                  file=sys.stderr)
+            ok = False
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return ok
+
+
+def _self_test_fixtures_discovery() -> bool:
+    """Both halves of the `fixtures`-segment discovery exclusion: (1) a
+    planted pointer under a `fixtures` directory segment must NOT surface
+    when discovery is given an ancestor path that does not itself name
+    `fixtures` (mirrors `docstring_check.py .` on this very repo); (2) the
+    same planted pointer MUST surface when the fixtures-bearing path (or a
+    path under it) is named explicitly as a positional argument. Exercised
+    against `discover()` directly, not `scan_paths()`, since the exclusion
+    lives in file selection, not in any check."""
+    ok = True
+    tmp = Path(tempfile.mkdtemp(prefix="docstring_check_selftest_fixtures_"))
+    try:
+        planted = _write(tmp, "evals/skills/fixtures/sample/pointer_in_fixture.py", '''\
+def f():
+    # plans/HIDDEN_PLAN.md -- do not reintroduce here either.
+    return 1
+''')
+        _write(tmp, "real_source.py", '''\
+def g():
+    return 1
+''')
+
+        # (1) An ancestor path that does NOT itself name `fixtures` (the repo
+        # root, "."-shaped) must exclude the planted file entirely.
+        found_via_root = discover([str(tmp)], tmp, changed=False)
+        if planted in found_via_root:
+            print("SELF-TEST FAIL: a path under a `fixtures` segment was discovered "
+                  "via an ancestor that did not name it explicitly", file=sys.stderr)
+            ok = False
+        if not any(f.name == "real_source.py" for f in found_via_root):
+            print("SELF-TEST FAIL: ordinary source outside `fixtures` went missing "
+                  "from discovery too", file=sys.stderr)
+            ok = False
+
+        # (1b) The same exclusion applies with no positional paths at all --
+        # discover() falls back to a filesystem walk in this non-git tmp tree.
+        found_via_walk = discover(None, tmp, changed=False)
+        if planted in found_via_walk:
+            print("SELF-TEST FAIL: the no-positional-args fallback walk did not "
+                  "exclude a `fixtures`-segment path", file=sys.stderr)
+            ok = False
+
+        # (2) Naming the fixtures directory itself explicitly is an honored ask.
+        found_via_dir = discover(
+            [str(tmp / "evals" / "skills" / "fixtures" / "sample")], tmp, changed=False
+        )
+        if planted not in found_via_dir:
+            print("SELF-TEST FAIL: explicitly naming a `fixtures` directory did not "
+                  "surface the file under it", file=sys.stderr)
+            ok = False
+
+        # (2b) Naming the planted FILE itself (not just its parent dir) too.
+        found_via_file = discover([str(planted)], tmp, changed=False)
+        if planted not in found_via_file:
+            print("SELF-TEST FAIL: explicitly naming a `fixtures`-segment FILE did not "
+                  "surface it", file=sys.stderr)
+            ok = False
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return ok
+
+
+def _self_test_nongit_fallback_root_ancestor() -> bool:
+    """The non-git fallback walk (no positional paths, no usable git) must
+    exclude on a path RELATIVE to `root`, not on `root`'s own absolute path
+    -- otherwise every real file is excluded the moment `root` itself sits
+    under a directory that happens to share a name with `_has_fixtures_segment`
+    or `_DEFAULT_EXCLUDES` (a scan run from inside a `fixtures/` tree, or a
+    repo checked out under a directory literally named `venv`), even though
+    none of that name appears in any path relative to `root`."""
+    ok = True
+    tmp = Path(tempfile.mkdtemp(prefix="docstring_check_selftest_rootancestor_"))
+    try:
+        # `root` itself is nested under a `fixtures` segment -- the file
+        # underneath it names no `fixtures` dir relative to `root`.
+        fixtures_root = tmp / "fixtures" / "legacy"
+        real_under_fixtures = _write(fixtures_root, "real_source.py", '''\
+def f():
+    """A plain docstring."""
+    return 1
+''')
+        found = discover(None, fixtures_root, changed=False)
+        if real_under_fixtures not in found:
+            print("SELF-TEST FAIL: the non-git fallback walk excluded a real file just "
+                  "because `root` itself sits under a `fixtures` ancestor", file=sys.stderr)
+            ok = False
+
+        # `root` itself is nested under a `_DEFAULT_EXCLUDES`-matching name
+        # (`venv`) -- same bug, sibling exclusion in the same loop.
+        venv_root = tmp / "venv" / "myproject"
+        real_under_venv = _write(venv_root, "main.py", '''\
+def g():
+    """A plain docstring."""
+    return 1
+''')
+        found_venv = discover(None, venv_root, changed=False)
+        if real_under_venv not in found_venv:
+            print("SELF-TEST FAIL: the non-git fallback walk excluded a real file just "
+                  "because `root` itself sits under a `venv` ancestor", file=sys.stderr)
+            ok = False
+
+        # Negative control: a file genuinely under a `node_modules` dir
+        # RELATIVE TO root must still be excluded -- the fix must not
+        # disable real exclusion, only the false one from root's ancestry.
+        real_root = tmp / "real_project"
+        excluded = _write(real_root, "node_modules/pkg/lib.py", '''\
+def h():
+    return 1
+''')
+        kept = _write(real_root, "app.py", '''\
+def i():
+    return 1
+''')
+        found_real = discover(None, real_root, changed=False)
+        if excluded in found_real:
+            print("SELF-TEST FAIL: a real `node_modules`-relative-to-root file was NOT "
+                  "excluded after the relative-path fix", file=sys.stderr)
+            ok = False
+        if kept not in found_real:
+            print("SELF-TEST FAIL: an ordinary file went missing from the fixed fallback "
+                  "walk", file=sys.stderr)
+            ok = False
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return ok
+
+
+def _self_test_dangling_ref_full_index() -> bool:
+    """The dangling-ref definition index must be built from the full
+    discoverable file set, independent of the (possibly narrower) set of
+    files being reported on -- otherwise `--limit`, `--changed`, or an
+    explicit single positional path makes a name defined only in an
+    unscanned file look dangling, when it is simply out of report scope."""
+    ok = True
+    tmp = Path(tempfile.mkdtemp(prefix="docstring_check_selftest_fullindex_"))
+    cwd_before = Path.cwd()
+    try:
+        _write(tmp, "definer.py", '''\
+def helper_defined_elsewhere():
+    return 1
+''')
+        _write(tmp, "citer.py", '''\
+def uses_it():
+    """Delegates to `helper_defined_elsewhere` for the real work."""
+    return 1
+''')
+        os.chdir(tmp)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            main(["citer.py", "--json"])
+        payload = json.loads(buf.getvalue())
+        dangling = [
+            f for f in payload["findings"]
+            if f["kind"] == "POINTER" and "helper_defined_elsewhere" in f["message"]
+        ]
+        if dangling:
+            print(f"SELF-TEST FAIL: a name defined only in an unscanned file (definer.py) "
+                  f"was flagged as dangling when scanning citer.py alone: {dangling}",
+                  file=sys.stderr)
+            ok = False
+    finally:
+        os.chdir(cwd_before)
+        shutil.rmtree(tmp, ignore_errors=True)
+    return ok
+
+
+def _self_test_all_flag_warning() -> bool:
+    """`--all` widens the candidate scope for BOTH `--claims-out` and
+    `--verdicts-in` (build_claim_records' `include_all`), so the CLI's own
+    "has no effect" warning must fire only when neither flag is present --
+    not on a `--verdicts-in`-only call, which is exactly SKILL.md's Step 4
+    shape (`--verdicts-in <file> --all`, no `--claims-out` on that call)."""
+    ok = True
+    tmp = Path(tempfile.mkdtemp(prefix="docstring_check_selftest_allflag_"))
+    cwd_before = Path.cwd()
+    try:
+        _write(tmp, "sample.py", '''\
+def f():
+    """A plain, accurate docstring."""
+    return 1
+''')
+        os.chdir(tmp)
+
+        buf_neither = io.StringIO()
+        with contextlib.redirect_stderr(buf_neither), contextlib.redirect_stdout(io.StringIO()):
+            main(["sample.py", "--all"])
+        if "has no effect" not in buf_neither.getvalue():
+            print("SELF-TEST FAIL: --all with neither --claims-out nor --verdicts-in should "
+                  "warn, got no warning", file=sys.stderr)
+            ok = False
+
+        verdicts_file = tmp / "verdicts.json"
+        verdicts_file.write_text("{}", encoding="utf-8")
+        buf_verdicts = io.StringIO()
+        with contextlib.redirect_stderr(buf_verdicts), contextlib.redirect_stdout(io.StringIO()):
+            main(["sample.py", "--all", "--verdicts-in", str(verdicts_file)])
+        if "has no effect" in buf_verdicts.getvalue():
+            print(f"SELF-TEST FAIL: --all with --verdicts-in (no --claims-out) must not "
+                  f"warn, got: {buf_verdicts.getvalue()!r}", file=sys.stderr)
+            ok = False
+    finally:
+        os.chdir(cwd_before)
+        shutil.rmtree(tmp, ignore_errors=True)
+    return ok
 
 
 def _run_self_test() -> bool:
@@ -1296,6 +2210,115 @@ def crlf_case():
     return 1
 ''', newline="\r\n")
 
+        # -- dangling-ref cases: one negative control per false-positive
+        # class the code-shape gate and the widened resolution universe
+        # exist to rule out, plus one true positive.
+        _write(tmp, "dangling_ref_cases.py", '''\
+import os
+
+
+def real_helper():
+    """A real helper that exists in this module."""
+    return 1
+
+
+def uses_real_symbol():
+    """See `real_helper` for details."""
+    return real_helper()
+
+
+def uses_builtin_call():
+    """Returns a `sorted()` list of results."""
+    return sorted([])
+
+
+def uses_import():
+    """Uses `os` under the hood."""
+    return os.getcwd()
+
+
+def uses_plain_word():
+    """This function just returns `one`."""
+    return 1
+
+
+def process(rel_path):
+    """Uses `rel_path` to locate the file."""
+    return rel_path
+
+
+def scan_tree(base):
+    """Uses `rglob()` under the hood to walk the tree recursively."""
+    return list(base.rglob("*.py"))
+
+
+def build_payload():
+    """Returns a dict with a `total_cost_usd` key."""
+    return {"total_cost_usd": 0.0}
+
+
+def uses_dunder():
+    """Relies on `__enter__` being defined by the language, not this repo."""
+    return 1
+
+
+def uses_dangling():
+    """See `load_confg_v2()` for details."""
+    return 1
+''')
+
+        # -- claims/verdicts round-trip fixture: a THIN finding makes this a
+        # default candidate; two sentences give distinct claim ids.
+        _write(tmp, "claims_candidate.py", '''\
+def stale_candidate(value):
+    """Summary sentence one. Second sentence describes more.
+
+    Args:
+        value: the input.
+        extra: not in the signature.
+    """
+    return value
+''')
+
+        # -- oversized-source fixture: a THIN finding makes it a candidate
+        # too, but its source exceeds the 200-line evidence cap.
+        _oversized_body = "\n".join(f"    x{i} = {i}" for i in range(210))
+        _write(tmp, "oversized_symbol.py", f'''\
+def huge():
+    """Do a huge amount of stuff.
+
+    Args:
+        missing_param: not in the signature.
+    """
+{_oversized_body}
+    return x0
+''')
+
+        # -- id-collision fixture: two different files each define a
+        # same-named top-level symbol (`main`) with its own drifted
+        # docstring -- the claim id must be path-prefixed so these don't
+        # collide, and a verdict against one must never touch the other.
+        _write(tmp, "dup_id_pkg_one/mod.py", '''\
+def main(value):
+    """Entry point one.
+
+    Args:
+        value: the input.
+        extra: not in the signature.
+    """
+    return value
+''')
+        _write(tmp, "dup_id_pkg_two/mod.py", '''\
+def main(value):
+    """Entry point two.
+
+    Args:
+        value: the input.
+        extra: not in the signature.
+    """
+    return value
+''')
+
         # Discover and scan everything under tmp directly (bypassing git
         # discovery entirely -- the self-test tree is not a git repo, which
         # also exercises the "git absent/not-a-repo" degrade-gracefully path).
@@ -1348,6 +2371,14 @@ def crlf_case():
         expect_none("pointer_lowercase_step.py", "POINTER")
         expect_none("accurate.py", "THIN")
         expect_none("stub_returns.py", "THIN")
+
+        # -- dangling-ref: exactly one POINTER finding in this file (the
+        # nonexistent `load_confg_v2()`) -- if any of the eight negative
+        # controls above (plain word, same-file symbol, a called builtin,
+        # an imported module, a function's own param, a stdlib-style
+        # method call, a dict/JSON string key, or a language-level dunder)
+        # also fired, the count would be higher than 1.
+        expect("dangling_ref_cases.py", "POINTER", 1, severity="suspect")
 
         # -- --snapshot / --verify-docs-only: a planted CODE edit must be
         # caught, and a docstring-only edit must pass.
@@ -1403,6 +2434,214 @@ def calc(x):
             print(f"SELF-TEST FAIL: undecodable file raised a parse error: {error}", file=sys.stderr)
             ok = False
 
+        # -- claims/verdicts round trip.
+        records_default, oversized_default, dup_errors_default = build_claim_records(
+            result, scan_files, tmp, include_all=False)
+        records_all, oversized_all, dup_errors_all = build_claim_records(
+            result, scan_files, tmp, include_all=True)
+        if dup_errors_default or dup_errors_all:
+            print(f"SELF-TEST FAIL: unexpected duplicate claim ids from a normal scan: "
+                  f"{dup_errors_default + dup_errors_all}", file=sys.stderr)
+            ok = False
+
+        bare = [{"id": r["id"], "claim": r["claim"], "evidence": r["evidence"]} for r in records_default]
+        if not isinstance(bare, list) or any(set(c.keys()) != {"id", "claim", "evidence"} for c in bare):
+            print("SELF-TEST FAIL: --claims-out shape is not a bare id/claim/evidence array",
+                  file=sys.stderr)
+            ok = False
+        claims_out_file = tmp / "claims.json"
+        claims_out_file.write_text(json.dumps(bare), encoding="utf-8")
+        reloaded = json.loads(claims_out_file.read_text(encoding="utf-8"))
+        if not isinstance(reloaded, list) or any(
+            set(c.keys()) != {"id", "claim", "evidence"} for c in reloaded
+        ):
+            print("SELF-TEST FAIL: claims file on disk is not a bare id/claim/evidence array",
+                  file=sys.stderr)
+            ok = False
+
+        if not len(records_all) > len(records_default):
+            print(f"SELF-TEST FAIL: --all ({len(records_all)}) did not produce a superset of "
+                  f"the default candidates ({len(records_default)})", file=sys.stderr)
+            ok = False
+
+        oversized_syms_default = {o["symbol"] for o in oversized_default}
+        if "huge" not in oversized_syms_default:
+            print(f"SELF-TEST FAIL: expected 'huge' in oversized, got {oversized_default}",
+                  file=sys.stderr)
+            ok = False
+        # An oversized symbol must still get claim records under the same id
+        # scheme (so a verdict against it can resolve), but with no inlined
+        # body -- it is listed in `oversized`, not silently dropped from
+        # `records` entirely.
+        huge_records = [r for r in records_default if r["symbol"] == "huge"]
+        if not huge_records:
+            print("SELF-TEST FAIL: an oversized symbol produced no claim records/ids at all -- "
+                  "a verdict targeting it would have nowhere to resolve", file=sys.stderr)
+            ok = False
+        else:
+            if not all(r.get("oversized") is True for r in huge_records):
+                print(f"SELF-TEST FAIL: an oversized symbol's claim records are missing the "
+                      f"oversized marker: {huge_records}", file=sys.stderr)
+                ok = False
+            if any(r["evidence"] for r in huge_records):
+                print(f"SELF-TEST FAIL: an oversized symbol's claim record inlined its body "
+                      f"into evidence: {huge_records}", file=sys.stderr)
+                ok = False
+            huge_id = huge_records[0]["id"]
+            by_id_huge = {r["id"]: r for r in records_default}
+            huge_verdict_file = tmp / "huge_verdict.json"
+            huge_verdict_file.write_text(
+                json.dumps({huge_id: {"verdict": "contradicted", "quote": "n/a"}}),
+                encoding="utf-8")
+            huge_findings, huge_errors = apply_verdicts(huge_verdict_file, by_id_huge)
+            if huge_errors:
+                print(f"SELF-TEST FAIL: a verdict against an oversized symbol's id did not "
+                      f"resolve: {huge_errors}", file=sys.stderr)
+                ok = False
+            if not huge_findings or huge_findings[0].symbol != "huge":
+                print(f"SELF-TEST FAIL: an accepted oversized-symbol verdict did not produce "
+                      f"a STALE finding: {huge_findings}", file=sys.stderr)
+                ok = False
+            elif huge_findings[0].severity != "suspect":
+                print("SELF-TEST FAIL: an oversized symbol has no evidence to verify a quote "
+                      f"against, so its STALE finding must be `suspect`, got "
+                      f"{huge_findings[0].severity}", file=sys.stderr)
+                ok = False
+
+        # -- id collision: two files each define `main` -- ids must be
+        # path-prefixed and distinct, and a verdict targeting only one
+        # file's id must not produce a finding for the other file's `main`.
+        main_one = [r for r in records_default if r["path"] == "dup_id_pkg_one/mod.py" and r["symbol"] == "main"]
+        main_two = [r for r in records_default if r["path"] == "dup_id_pkg_two/mod.py" and r["symbol"] == "main"]
+        if not main_one or not main_two:
+            print("SELF-TEST FAIL: expected both dup_id_pkg_one/two `main` symbols as candidates",
+                  file=sys.stderr)
+            ok = False
+        else:
+            ids_one = {r["id"] for r in main_one}
+            ids_two = {r["id"] for r in main_two}
+            if ids_one & ids_two:
+                print(f"SELF-TEST FAIL: claim ids collided across files: {ids_one & ids_two}",
+                      file=sys.stderr)
+                ok = False
+            expected_prefix_one = "dup_id_pkg_one/mod.py::main::"
+            expected_prefix_two = "dup_id_pkg_two/mod.py::main::"
+            if not all(i.startswith(expected_prefix_one) for i in ids_one) or \
+                    not all(i.startswith(expected_prefix_two) for i in ids_two):
+                print(f"SELF-TEST FAIL: claim ids are not path-prefixed as expected: "
+                      f"{ids_one}, {ids_two}", file=sys.stderr)
+                ok = False
+            else:
+                by_id_dup = {r["id"]: r for r in records_default}
+                one_id = sorted(ids_one)[0]
+                dup_verdicts = {one_id: {"verdict": "contradicted", "quote": "value"}}
+                dup_file = tmp / "dup_verdicts.json"
+                dup_file.write_text(json.dumps(dup_verdicts), encoding="utf-8")
+                dup_findings, dup_finding_errors = apply_verdicts(dup_file, by_id_dup)
+                if dup_finding_errors:
+                    print(f"SELF-TEST FAIL: unexpected verdict errors: {dup_finding_errors}",
+                          file=sys.stderr)
+                    ok = False
+                paths_touched = {f.path for f in dup_findings}
+                if paths_touched != {"dup_id_pkg_one/mod.py"}:
+                    print(f"SELF-TEST FAIL: a verdict against pkg_one's `main` id touched "
+                          f"unexpected file(s): {paths_touched}", file=sys.stderr)
+                    ok = False
+
+        # -- forced duplicate: scanning the same file twice must be caught
+        # as a loud error (parse_errors), never a silent last-wins overwrite.
+        forced_records, _forced_oversized, forced_dup_errors = build_claim_records(
+            result, [tmp / "dup_id_pkg_one/mod.py", tmp / "dup_id_pkg_one/mod.py"], tmp,
+            include_all=True,
+        )
+        if not forced_dup_errors:
+            print("SELF-TEST FAIL: scanning the same path twice did not produce a "
+                  "duplicate-id error", file=sys.stderr)
+            ok = False
+        forced_ids = [r["id"] for r in forced_records]
+        if len(forced_ids) != len(set(forced_ids)):
+            print(f"SELF-TEST FAIL: a duplicate id leaked into records despite dup_errors: "
+                  f"{forced_records}", file=sys.stderr)
+            ok = False
+
+        def _first_record(symbol: str) -> dict | None:
+            matches = sorted((r for r in records_all if r["symbol"] == symbol), key=lambda r: r["id"])
+            return matches[0] if matches else None
+
+        stale_records = sorted(
+            (r for r in records_all if r["symbol"] == "stale_candidate"), key=lambda r: r["id"]
+        )
+        dangling_record = _first_record("uses_dangling")
+        builtin_record = _first_record("uses_builtin_call")
+        import_record = _first_record("uses_import")
+
+        if len(stale_records) < 2 or dangling_record is None or builtin_record is None or import_record is None:
+            print("SELF-TEST FAIL: verdicts-in fixture symbols are missing from --all claims",
+                  file=sys.stderr)
+            ok = False
+        else:
+            quote_present = "return 1"  # a real substring of uses_dangling's own source
+            verdicts = {
+                stale_records[0]["id"]: {
+                    "supported": 0.9, "overgeneralized": 0.05, "contradicted": 0.05,
+                    "band": "corroborated",
+                },
+                stale_records[1]["id"]: {
+                    "supported": 0.05, "overgeneralized": 0.1, "contradicted": 0.85,
+                    "band": "contradicted",
+                },
+                dangling_record["id"]: {"verdict": "contradicted", "quote": quote_present},
+                builtin_record["id"]: {
+                    "verdict": "contradicted",
+                    "quote": "this exact phrase is definitely absent from the evidence",
+                },
+                import_record["id"]: {"verdict": "not-addressed"},
+                "nonexistent/path.py::no_such_symbol::0": {"verdict": "contradicted", "quote": "irrelevant"},
+            }
+            verdicts_file = tmp / "verdicts.json"
+            verdicts_file.write_text(json.dumps(verdicts), encoding="utf-8")
+            by_id_all = {r["id"]: r for r in records_all}
+            stale_findings, verdict_errors = apply_verdicts(verdicts_file, by_id_all)
+
+            stale_by_symbol: dict[str, list[Finding]] = {}
+            for f in stale_findings:
+                stale_by_symbol.setdefault(f.symbol, []).append(f)
+
+            candidate_findings = stale_by_symbol.get("stale_candidate", [])
+            if len(candidate_findings) != 1 or candidate_findings[0].severity != "certain":
+                print(f"SELF-TEST FAIL: expected exactly one certain STALE finding for "
+                      f"stale_candidate (judge-contradicted only), got {candidate_findings}",
+                      file=sys.stderr)
+                ok = False
+
+            dangling_findings = stale_by_symbol.get("uses_dangling", [])
+            if len(dangling_findings) != 1 or dangling_findings[0].severity != "certain":
+                print(f"SELF-TEST FAIL: expected a certain STALE finding for uses_dangling "
+                      f"(quote verified), got {dangling_findings}", file=sys.stderr)
+                ok = False
+
+            builtin_findings = stale_by_symbol.get("uses_builtin_call", [])
+            if len(builtin_findings) != 1 or builtin_findings[0].severity != "suspect":
+                print(f"SELF-TEST FAIL: expected a suspect STALE finding for uses_builtin_call "
+                      f"(quote not found), got {builtin_findings}", file=sys.stderr)
+                ok = False
+
+            if "uses_import" in stale_by_symbol:
+                print(f"SELF-TEST FAIL: not-addressed verdict must not produce a finding, "
+                      f"got {stale_by_symbol['uses_import']}", file=sys.stderr)
+                ok = False
+
+            if not any(e[0] == "nonexistent/path.py::no_such_symbol::0" for e in verdict_errors):
+                print("SELF-TEST FAIL: a bogus verdict id did not land in parse_errors",
+                      file=sys.stderr)
+                ok = False
+
+        ok = _self_test_body_newer() and ok
+        ok = _self_test_fixtures_discovery() and ok
+        ok = _self_test_nongit_fallback_root_ancestor() and ok
+        ok = _self_test_dangling_ref_full_index() and ok
+        ok = _self_test_all_flag_warning() and ok
+
         if ok:
             print("docstring_check.py --self-test: all assertions passed")
         return ok
@@ -1436,12 +2675,30 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--verify-docs-only", metavar="SNAPSHOT_FILE",
                          help="compare the current files against a --snapshot file; "
                               "exit 1 if anything but a docstring/comment changed")
+    parser.add_argument("--claims-out", metavar="FILE",
+                         help="write candidate docstring sentences (as {id, claim, evidence} "
+                              "entries) to FILE for judgment triage")
+    parser.add_argument("--verdicts-in", metavar="FILE",
+                         help="read judgment verdicts (probability-style or triage-style shape, "
+                              "auto-detected per entry) from FILE and fold them into STALE "
+                              "findings; must use the same paths/scope and --all as the "
+                              "--claims-out run it closes the loop on")
+    parser.add_argument("--all", action="store_true",
+                         help="with --claims-out, widen the claims scope to every symbol with "
+                              "a non-empty docstring, not just ones with an existing finding")
     parser.add_argument("--self-test", action="store_true",
                          help="run the built-in self-test against a synthetic tree and exit")
     args = parser.parse_args(argv)
 
     if args.self_test:
         return 0 if _run_self_test() else 1
+
+    # --all also governs a --verdicts-in-only call (it widens which symbols
+    # build_claim_records considers, which is what a verdict id has to
+    # resolve against) -- it is a no-op only when NEITHER flag is present.
+    if args.all and not args.claims_out and not args.verdicts_in:
+        print("docstring_check: --all has no effect without --claims-out or --verdicts-in",
+              file=sys.stderr)
 
     root = Path.cwd()
 
@@ -1475,8 +2732,48 @@ def main(argv: list[str] | None = None) -> int:
         print(path_str)
         return 0
 
-    result = scan_paths(files, root, args.include_tests, args.pointers_only)
-    return print_report(result, args.json)
+    # The dangling-ref name index must cover the full discoverable file set,
+    # never just the narrower one being reported on -- otherwise `--limit`,
+    # `--changed`, or a single positional path makes a real, defined-elsewhere
+    # name look dangling. Only worth recomputing when the report set is
+    # actually narrower than a full discovery; a plain full-repo run already
+    # scans everything discoverable, so `files` doubles as the index for free.
+    # This only builds the cheap identifier/string index (no comment scan, no
+    # blame, no per-symbol checks) over the extra files -- not a second full
+    # check pass.
+    index_files = files
+    if args.paths or args.changed or args.limit is not None:
+        index_files = discover(None, root, changed=False)
+
+    result = scan_paths(
+        files, root, args.include_tests, args.pointers_only, index_files=index_files,
+    )
+
+    claims_written = None
+    oversized_list = None
+    if args.claims_out or args.verdicts_in:
+        records, oversized_list, dup_errors = build_claim_records(result, files, root, include_all=args.all)
+        result.parse_errors.extend(dup_errors)
+
+        if args.claims_out:
+            bare = [{"id": r["id"], "claim": r["claim"], "evidence": r["evidence"]} for r in records]
+            Path(args.claims_out).write_text(json.dumps(bare, indent=2), encoding="utf-8")
+            claims_written = len(bare)
+
+        if args.verdicts_in:
+            verdicts_path = Path(args.verdicts_in)
+            if not verdicts_path.is_file():
+                print(f"error: verdicts file not found: {verdicts_path}", file=sys.stderr)
+                return 2
+            by_id = {r["id"]: r for r in records}
+            stale_findings, verdict_errors = apply_verdicts(verdicts_path, by_id)
+            result.findings.extend(stale_findings)
+            result.parse_errors.extend(verdict_errors)
+
+    return print_report(
+        result, args.json, claims_out_path=args.claims_out,
+        claims_written=claims_written, oversized=oversized_list,
+    )
 
 
 if __name__ == "__main__":

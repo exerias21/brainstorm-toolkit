@@ -47,12 +47,13 @@ import subprocess
 import sys
 import tempfile
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, NamedTuple
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-FIXTURE_DIR = REPO_ROOT / "evals" / "skills" / "fixtures" / "mini-fastapi"
+FIXTURES_ROOT = REPO_ROOT / "evals" / "skills" / "fixtures"
+DEFAULT_FIXTURE = "mini-fastapi"
 CASES_DIR = REPO_ROOT / "evals" / "skills" / "cases"
 RESULTS_DIR = REPO_ROOT / "evals" / "skills" / "results"
 BASELINE_FILE = REPO_ROOT / "evals" / "skills" / "baseline.json"
@@ -141,6 +142,26 @@ def load_case(name: str) -> dict[str, Any]:
 
 def discover_case_names() -> list[str]:
     return sorted(p.stem for p in CASES_DIR.glob("*.json"))
+
+
+def resolve_fixture_dir(case: dict) -> Path:
+    """A case's optional `fixture` key, resolved under `evals/skills/fixtures/`
+    (default `mini-fastapi`, unchanged behavior for every case that omits the
+    key). An unknown name is a loud, immediate SystemExit -- the same class
+    of hard stop `load_case` already gives an unknown `--case` name, never a
+    silent fall-through to the default fixture."""
+    name = case.get("fixture", DEFAULT_FIXTURE)
+    path = FIXTURES_ROOT / name
+    if not path.is_dir():
+        available = (
+            sorted(p.name for p in FIXTURES_ROOT.iterdir() if p.is_dir())
+            if FIXTURES_ROOT.is_dir() else []
+        )
+        raise SystemExit(
+            f"unknown fixture {name!r} (case `fixture` key): {path} does not "
+            f"exist. Available: {', '.join(available) or 'none'}"
+        )
+    return path
 
 
 # ── Agent pinning (for agent_models_within_cap) ─────────────────────────────
@@ -690,20 +711,77 @@ def resolve_claude() -> str:
     return found
 
 
-def git_init_and_commit(target: Path) -> str | None:
+def _history_overlay_dirs(fixture_dir: Path) -> list[Path]:
+    """`_history/NN/` overlay directories in a fixture, sorted in `NN` order.
+    Empty when the fixture carries no `_history/` at all -- the byte-for-byte
+    "behaves exactly as today" case."""
+    history_dir = fixture_dir / "_history"
+    if not history_dir.is_dir():
+        return []
+    return sorted((p for p in history_dir.iterdir() if p.is_dir()), key=lambda p: p.name)
+
+
+def git_init_and_commit(target: Path, fixture_dir: Path | None = None) -> str | None:
+    """`git init` a fresh commit history for the copied fixture at `target`.
+
+    Without `_history/`, this is exactly today's single "baseline fixture
+    commit" (`target` was already copied whole from its fixture, `_history`
+    included or not -- callers exclude it from that copy, so there is
+    nothing here to strip). With a `_history/NN/` overlay directory present
+    on the fixture, each overlay's files are copied from the FIXTURE's own
+    `_history/NN/` (not `target`, which never receives a `_history` copy at
+    all) over `target` and committed in `NN` order, on top of the one
+    baseline commit. The harness needs one real commit per fixture "state"
+    so `git blame` can tell a body edit from its docstring's own commit
+    (the `body-newer` signal) -- a nested `.git` can't be committed, so this
+    replays history as a sequence of ordinary commits instead. The LAST
+    commit -- baseline, or the final overlay -- is returned as the case's
+    `initial_head`.
+    """
     env = dict(os.environ)
     env.setdefault("GIT_AUTHOR_NAME", "skill-eval")
     env.setdefault("GIT_AUTHOR_EMAIL", "skill-eval@localhost")
     env.setdefault("GIT_COMMITTER_NAME", "skill-eval")
     env.setdefault("GIT_COMMITTER_EMAIL", "skill-eval@localhost")
-    for argv in (
-        ["git", "init", "-q"],
-        ["git", "add", "-A"],
-        ["git", "commit", "-q", "-m", "baseline fixture commit", "--no-verify"],
-    ):
-        r = run_cmd(argv, cwd=target, env=env, timeout=30)
-        if r.returncode != 0:
+
+    def commit(message: str, date: str | None = None) -> bool:
+        commit_argv = ["git", "commit", "-q", "-m", message, "--no-verify"]
+        if date is not None:
+            commit_argv += ["--date", date]
+        for argv in (["git", "add", "-A"], commit_argv):
+            r = run_cmd(argv, cwd=target, env=env, timeout=30)
+            if r.returncode != 0:
+                return False
+        return True
+
+    r = run_cmd(["git", "init", "-q"], cwd=target, env=env, timeout=30)
+    if r.returncode != 0:
+        return None
+
+    overlays = _history_overlay_dirs(fixture_dir) if fixture_dir is not None else []
+    if not overlays:
+        # No `_history/` -- byte-for-byte today's behavior: one commit at the
+        # real wall-clock time, no explicit --date.
+        if not commit("baseline fixture commit"):
             return None
+        return git_rev_parse_head(target)
+
+    # With overlays, every commit needs a STRICTLY INCREASING author-time for
+    # a git-blame-based signal (docstring_check.py's BODY_NEWER) to ever
+    # fire. Two automated commits made back-to-back can otherwise land in
+    # the same wall-clock second, which collapses "newer" into a tie --
+    # docstring_check.py's own self-test (`_self_test_body_newer`) guards
+    # against exactly this by setting explicit, distinct commit dates, so do
+    # the same here rather than trust real-clock spacing.
+    base_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    if not commit("baseline fixture commit", base_date.isoformat()):
+        return None
+    for i, overlay in enumerate(overlays, start=1):
+        shutil.copytree(overlay, target, dirs_exist_ok=True)
+        overlay_date = base_date + timedelta(days=30 * i)
+        if not commit(f"fixture history overlay {overlay.name}", overlay_date.isoformat()):
+            return None
+
     return git_rev_parse_head(target)
 
 
@@ -839,8 +917,11 @@ def run_case(name: str, args: argparse.Namespace, results_root: Path) -> dict:
     started_at = datetime.now(timezone.utc).isoformat()
     case_result_dir = results_root / name
 
+    # Resolved before the temp dir is created: an unknown `fixture` name is a
+    # loud, immediate stop, not a leaked empty temp directory.
+    fixture_dir = resolve_fixture_dir(case)
     tmp = Path(tempfile.mkdtemp(prefix=f"skill-eval-{name}-"))
-    print(f"[{name}] fixture copy: {tmp}")
+    print(f"[{name}] fixture: {fixture_dir.name}, copy: {tmp}")
 
     findings: list[str] = []
     assertion_results: list[dict] = []
@@ -856,7 +937,25 @@ def run_case(name: str, args: argparse.Namespace, results_root: Path) -> dict:
     duration_seen = False
 
     try:
-        shutil.copytree(FIXTURE_DIR, tmp, dirs_exist_ok=True)
+        # `_history/` is never copied into `tmp` at all -- overlay commits
+        # read their files straight from the FIXTURE's own `_history/NN/`
+        # (see git_init_and_commit), so there is nothing to strip out of
+        # `tmp` later. A fixture with no `_history/` is unaffected: the
+        # ignore pattern simply matches nothing, so this copytree is
+        # byte-for-byte the same call as before this feature existed.
+        shutil.copytree(
+            fixture_dir, tmp, dirs_exist_ok=True,
+            ignore=shutil.ignore_patterns("_history"),
+        )
+
+        # A fixture that needs its own ignore rules ships them as `_gitignore`:
+        # a real nested `.gitignore` would also apply inside THIS repo (a deeper
+        # .gitignore outranks the root's un-ignore), so the file it ignores
+        # could never be committed as fixture content. Restored here, before
+        # the baseline commit, so the copy behaves like a consumer repo.
+        fixture_ignore = tmp / "_gitignore"
+        if fixture_ignore.exists():
+            fixture_ignore.replace(tmp / ".gitignore")
 
         for rel in case.get("pre_setup_remove", []):
             p = tmp / rel
@@ -874,7 +973,7 @@ def run_case(name: str, args: argparse.Namespace, results_root: Path) -> dict:
         if not setup_ok:
             findings.append(f"setup.sh failed:\n{setup_log[-800:]}")
 
-        initial_head = git_init_and_commit(tmp)
+        initial_head = git_init_and_commit(tmp, fixture_dir=fixture_dir)
 
         initial_tasks_row_count = None
         tasks_file = tmp / case.get("assertions_context", {}).get("tasks_file", "TASKS.md")

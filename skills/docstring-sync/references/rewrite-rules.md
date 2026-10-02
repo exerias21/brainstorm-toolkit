@@ -1,6 +1,6 @@
 # Docstring Sync — rewrite rules
 
-Read at Step 6 of `SKILL.md`, before the first edit. Never read on a `--report` run — there is
+Read at Step 7 of `SKILL.md`, before the first edit. Never read on a `--report` run — there is
 no symbol queued to edit, so nothing here applies.
 
 ## Minimal edit, not a rewrite

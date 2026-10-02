@@ -6,7 +6,7 @@ description: >
   Deterministic checks run first; an LLM rewrites only the flagged ones, and you review the diff.
   Never commits. Use on /docstring-sync, "fix stale docstrings", "docstrings are out of date", or
   "clean up legacy comments".
-argument-hint: "[path...] [--changed] [--pointers-only] [--limit N] [--report] [--include-tests] [--include-runtime-docstrings]"
+argument-hint: "[path...] [--changed] [--pointers-only] [--all] [--limit N] [--report] [--include-tests] [--include-runtime-docstrings]"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
 ---
@@ -40,16 +40,17 @@ directives this skill itself interprets, marked below:
 | positional `path...` | limit discovery to these paths; default is the whole repo via `git ls-files -co --exclude-standard` |
 | `--changed` | scope to `git diff --name-only HEAD` plus untracked, non-ignored files (read-only) |
 | `--pointers-only` | the fast legacy-cleanup path: plan/ticket/TASKS.md pointer and placeholder findings only, no param/return or missing-docstring checks |
+| `--all` | widen triage from candidates (a docstring with an existing finding) to every docstring in scope — only meaningful together with the triage step below; costs roughly 3x the triage tokens |
 | `--limit N` | scan (and so edit) at most N discovered files this run, deterministic order, default 25 — the scan is the state, so re-running continues where the last run stopped |
 | `--include-tests` | include test files in the docstring checks (they are already scanned for pointers by default) |
-| `--report` *(skill directive, not a script flag)* | scan and print findings only; never edits, never loads the rewrite rules |
+| `--report` *(skill directive, not a script flag)* | scan and print findings only; never edits, never triages |
 | `--include-runtime-docstrings` *(skill directive, not a script flag)* | also rewrite docstrings the script marked `runtime_visible` (FastAPI/Flask route text, CLI `--help`, doctests) — off by default because these are behavior, not just documentation |
 
 **Flags the script itself accepts**, beyond the pass-through ones above
 (`bash scripts/py.sh skills/docstring-sync/scripts/docstring_check.py --help` is authoritative):
-`--json` (machine-readable output, used at Step 3), `--snapshot` (Step 5), `--verify-docs-only
-<file>` (Step 8), and `--self-test` (the script's own CI self-check — not part of this
-procedure).
+`--json` (machine-readable output, used at Step 3), `--claims-out <file>` and `--verdicts-in
+<file>` (the triage step below), `--snapshot` (Step 6), `--verify-docs-only <file>` (Step 8), and
+`--self-test` (the script's own CI self-check — not part of this procedure).
 
 ## Procedure
 
@@ -68,35 +69,63 @@ safety net regardless of whether tests exist.
 ### 3. Run the script — report counts per kind before touching anything
 
 Run `bash scripts/py.sh skills/docstring-sync/scripts/docstring_check.py <scope-flags> --json`.
-Report the findings grouped by kind (`POINTER`, `PLACEHOLDER`, `THIN`, `MISSING`) **before any
-file is touched** — a plan, not a surprise. `MISSING` is always report-only in this run; it
-never queues an edit. On `--report`, stop here: print the summary and end without loading the
-rewrite rules.
+Report the findings grouped by kind (`POINTER`, `PLACEHOLDER`, `THIN`, `MISSING`, `BODY_NEWER`)
+**before any file is touched** — a plan, not a surprise. `MISSING` is always report-only in this
+run; it never queues an edit. On `--report` or `--pointers-only`, stop here: print the summary
+and end without triaging or editing anything.
 
-### 4. One confirmation
+### 4. Triage — find only, one pass before any edit
 
-A single confirmation to proceed with edits — not a per-finding approve/edit/skip loop. On
-"no", or on a non-interactive run with no channel to ask, treat the run exactly like
-`--report`: print the summary and stop. An opinion nobody confirmed must not become an edit.
+Skipped entirely on `--report` or `--pointers-only` — there is nothing to judge on either of
+those runs.
 
-### 5. Snapshot before editing
+Run `bash scripts/py.sh skills/docstring-sync/scripts/docstring_check.py <scope-flags>
+--claims-out <scratch-file> --json` (a scratch path under the OS temp directory, same as Step 6's
+snapshot — nothing lands in the repo; pass `--all` through if the run was given it). Group the
+written claims by the leading path segment of each claim's id (`<path>::<symbol>::<sentence>`) so
+each group is exactly one file's claims, plus that file's full source for any symbol the run's
+`oversized` list names instead of a capped evidence string.
+
+Dispatch one triage sub-agent per file group, using
+`skills/docstring-sync/references/triage-prompt.md` as the role prompt verbatim — **parallel,
+single message, multiple tool calls on Claude**; on Copilot and Codex, run each group inline and
+sequentially in this session, per the standing runtime note in `skills/repo-health/SKILL.md`.
+Before each dispatch, resolve the tier per `skills/sdlc/templates/models.md` and print `model:
+<tier> (cap: <cap|none>)` — Sonnet by default, `--model opus` the opt-up.
+
+Merge every sub-agent's `{id: {verdict, quote?}}` object into one verdicts file, then run
+`bash scripts/py.sh skills/docstring-sync/scripts/docstring_check.py <scope-flags> --verdicts-in
+<merged-file> --json` (same scope flags, including `--all`, as the `--claims-out` call above) to
+fold the results into `STALE` findings.
+
+### 5. One confirmation
+
+A single confirmation to proceed with edits — not a per-finding approve/edit/skip loop. Show
+every `STALE` finding with its claim sentence and verifying quote side by side, not just a bare
+count, so what's about to be accused is visible before anything is touched. On "no", or on a
+non-interactive run with no channel to ask, treat the run exactly like `--report`: print the
+summary and stop. An opinion nobody confirmed must not become an edit.
+
+### 6. Snapshot before editing
 
 Run `bash scripts/py.sh skills/docstring-sync/scripts/docstring_check.py <scope-flags> --snapshot`.
 Prints a path under the OS temp directory — nothing lands in the repo, so no new gitignore
 entry. Keep this path; Step 8 verifies against it.
 
-### 6. Read the rewrite rules now
+### 7. Rewrite fan-out, at most `--limit` files
 
-**Read `skills/docstring-sync/references/rewrite-rules.md` now.** It carries the pointer
-policy, the minimal-edit rule, the runtime-visible exception, and the COMMENTS line this edit
-must honor. Never open it on a `--report` run — there is nothing queued to edit.
+The confirmed edit set is the Phase 1 `certain` `PLACEHOLDER`/`THIN`/`POINTER` findings plus this
+run's `STALE`/`certain` findings from Step 4 — never a `suspect` finding, and never `MISSING`.
+Batch that set by file, roughly 8 files per batch, capped overall at `--limit` files (default 25;
+a run that hits the cap says so and that a re-run continues from where this one stopped).
 
-### 7. Edit inline, at most `--limit` files
-
-Edit the flagged symbols and comment lines directly in this session — Phase 1 has no
-sub-agent fan-out, so there is no dispatch to print a model tier for. Cap the run at `--limit`
-files (default 25); a run that hits the cap says so and that a re-run will continue from where
-this one stopped.
+Dispatch one rewrite sub-agent per batch, using
+`skills/docstring-sync/references/rewrite-prompt.md` as the role prompt verbatim — same
+parallel-Claude / inline-sequential-Copilot-Codex shape and the same `model: <tier> (cap:
+<cap|none>)` print, per batch, before each dispatch. **Triage and rewrite are separate passes with
+the human confirmation between them: neither may both accuse and fix** — a pass that does both
+grades its own accusation (`skills/sdlc/templates/stage-5.9-cleanup.md`'s framing for the same
+split). Roll up each sub-agent's `{symbol, action, unresolved}` list into the run's report.
 
 ### 8. Verify
 
@@ -112,9 +141,9 @@ Step 2 established. A regression here means you edited behavior, not documentati
 
 - Findings per kind, before and after.
 - Files touched, and how many were left for a future run because of `--limit`.
-- The unresolved list — pointers whose reason could not be recovered from an on-disk plan; the
-  bare instruction was kept, the pointer was dropped, and each one is listed here for a human to
-  fill in, never guessed at.
+- Rewrite outcomes grouped by `unresolved.reason` (`runtime_visible`, `no-recoverable-plan`,
+  `ambiguous-cannot-verify`) — a pointer whose reason could not be recovered keeps its bare
+  instruction with the pointer dropped, listed here for a human to fill in, never guessed at.
 - `git diff --stat`.
 - A suggested commit message. **This skill never commits** — the diff is yours to review and
   commit.

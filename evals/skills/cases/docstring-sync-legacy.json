@@ -1,0 +1,35 @@
+{
+  "name": "docstring-sync-legacy",
+  "fixture": "legacy-docstrings",
+  "prompt": "/docstring-sync",
+  "max_budget_usd": 3.0,
+  "assertions": [
+    {
+      "type": "tree_unchanged",
+      "_why": "a headless run has no channel to confirm, so Step 5 must degrade to report-only: every planted finding is reported and nothing is edited. Scratch claims/snapshot files go to the OS temp dir, so even a stray write into the fixture fails here. The edit-applying variant is parked in cases/pending/ until headless pre-approval is decided."
+    },
+    {
+      "type": "git_head_unchanged",
+      "_why": "this skill never commits -- HEAD must stay on the last fixture-history commit."
+    },
+    {
+      "type": "output_contains",
+      "text": "POINTER",
+      "_why": "the report must name the finding kinds; the fixture plants certain POINTER findings (a present-but-gitignored plan, an absent plan, a TASKS.md row), so a run that stopped before the scan would not print it."
+    },
+    {
+      "type": "output_contains",
+      "text": "THIN",
+      "_why": "Google, NumPy and Sphinx param drift are planted; THIN in the report proves the docstring checks ran, not just the pointer scan."
+    },
+    {
+      "type": "agent_models_within_cap",
+      "cap": "sonnet",
+      "_why": "triage runs BEFORE the confirmation, so a report-only run still dispatches the triage fan-out; the fixture's models.cap is sonnet and every dispatch must honor it."
+    },
+    {
+      "type": "pytest_green",
+      "_why": "nothing was edited, so the fixture's doctest and FastAPI route tests must still pass -- a failure here means the run touched behavior."
+    }
+  ]
+}
