@@ -32,6 +32,7 @@ PROTECT_TESTS="$PLUGIN_ROOT/scripts/protect-tests.sh"
 NEXT_ACTION_HOOK="$PLUGIN_ROOT/scripts/hooks/next-action.sh"
 COST_HOOK="$PLUGIN_ROOT/scripts/hooks/run-cost-report.sh"
 RESEED_HOOK="$PLUGIN_ROOT/scripts/hooks/reseed-context.sh"
+PYRESOLVE_HOOK="$PLUGIN_ROOT/scripts/hooks/_pyresolve.sh"
 CLOSE_TASKS="$PLUGIN_ROOT/scripts/close-tasks.sh"
 ROOT_TMP="/tmp/test-hooks-$$"
 
@@ -521,6 +522,35 @@ out="$(run_gate "$d" '{}')"
 assert_match "$out" '"decision": "block"'
 assert_match "$out" 'tests red'
 
+# stop-gate.sh used to resolve Python with its OWN private
+# `for c in python3 python py; do command -v "$c" ...` probe, run
+# UNCONDITIONALLY before the config gate even checks whether
+# .claude/project.json exists -- so a repo-local `python3` reachable via a
+# "."/relative PATH entry executed on every Stop event, opt-in or not. It now
+# sources _pyresolve.sh and calls hooks_resolve_python like next-action.sh
+# does. These two cases plant that marker and confirm it's never run, with no
+# project.json present at all (silent exit 0, per "off by default" above) --
+# confirmed by hand against the pre-fix stop-gate.sh, which executed both.
+
+CASE="gate: a '.' PATH entry never lets a repo-local python3 marker run, even with the gate off (no project.json)"
+d="$(gate_dir 18)"
+printf '#!/bin/sh\ntouch "%s/evil-ran.marker"\n' "$d" > "$d/python3"
+chmod +x "$d/python3"
+out="$(cd "$d" && env -u BRAINSTORM_PYTHON CLAUDE_PROJECT_DIR="$d" PATH=".:$PATH" bash "$GATE_HOOK" <<<'{}')"
+assert_empty "$out"
+[ -f "$d/evil-ran.marker" ] && fail "stop-gate.sh must never execute a repo-local python3 via a '.' PATH entry"
+ok
+
+CASE="gate: a relative 'bin' PATH entry never lets a repo-local bin/python3 marker run"
+d="$(gate_dir 19)"
+mkdir -p "$d/bin"
+printf '#!/bin/sh\ntouch "%s/evil-ran.marker"\n' "$d/bin" > "$d/bin/python3"
+chmod +x "$d/bin/python3"
+out="$(cd "$d" && env -u BRAINSTORM_PYTHON CLAUDE_PROJECT_DIR="$d" PATH="bin:$PATH" bash "$GATE_HOOK" <<<'{}')"
+assert_empty "$out"
+[ -f "$d/bin/evil-ran.marker" ] && fail "stop-gate.sh must never execute a repo-local python3 via a relative 'bin' PATH entry"
+ok
+
 # ── scripts/protect-tests.sh: arm / verify / disarm -- a CLI, not a wired
 #    hook (see its own header), included here per the widened scope above ──
 
@@ -810,6 +840,260 @@ EOF
   assert_match "$out" 'Next: /gotcha plausibility test'
 fi
 
+# ── _pyresolve.sh: never execute an unvalidated .claude/project.json `python`
+#    value -- relative paths, paths under the project root, and nested keys
+#    must all be rejected WITHOUT ever shelling out to the candidate, and a
+#    broken BRAINSTORM_PYTHON must note itself on stderr and still fall
+#    through to the probe. Sources the helper directly (hooks_resolve_python
+#    is the one function every hook under scripts/hooks/ calls) rather than
+#    going through a specific hook, so these cases pin the helper's own
+#    contract independent of any one caller's plumbing. ─────────────────────
+
+pyr_dir() {
+  local d="$ROOT_TMP/pyr-$1"
+  mkdir -p "$d/.claude"
+  printf '%s' "$d"
+}
+
+# Writes an executable script at $1 that touches a marker file (same
+# directory, "evil-ran.marker") if it is ever run -- proof of execution, not
+# merely of resolution.
+write_marker_script() {
+  local path="$1" dir
+  dir="$(dirname "$path")"
+  mkdir -p "$dir"
+  printf '#!/bin/sh\ntouch "%s/evil-ran.marker"\n' "$dir" > "$path"
+  chmod +x "$path"
+}
+
+# Sources _pyresolve.sh and calls hooks_resolve_python "$proj" in a subshell
+# (command substitution already forks one, so the sourced functions never
+# leak into this script). $BRAINSTORM_PYTHON is cleared unless the caller
+# passed its own env assignments after $proj. Sets PYR_OUT/PYR_ERR/PYR_RC.
+run_pyresolve() {
+  local proj="$1"; shift
+  local errfile="$ROOT_TMP/pyr-stderr.$$"
+  set +e
+  PYR_OUT="$(env -u BRAINSTORM_PYTHON "$@" bash -c '. "$1"; hooks_resolve_python "$2"' _ "$PYRESOLVE_HOOK" "$proj" 2>"$errfile")"
+  PYR_RC=$?
+  set -e
+  PYR_ERR="$(cat "$errfile" 2>/dev/null)"
+  rm -f "$errfile"
+}
+
+# Like run_pyresolve, but ALSO sets cwd to $proj before calling
+# hooks_resolve_python, and takes the exact PATH value to run under as $2 --
+# needed for cases where PATH carries a "."/relative/empty entry, since what
+# such an entry resolves to depends on cwd at lookup time, not just on PATH's
+# text. Sets PYR_OUT/PYR_ERR/PYR_RC.
+run_pyresolve_in() {
+  local proj="$1" newpath="$2"
+  local errfile="$ROOT_TMP/pyr-stderr.$$"
+  set +e
+  PYR_OUT="$(cd "$proj" && env -u BRAINSTORM_PYTHON PATH="$newpath" bash -c '. "$1"; hooks_resolve_python "$2"' _ "$PYRESOLVE_HOOK" "$proj" 2>"$errfile")"
+  PYR_RC=$?
+  set -e
+  PYR_ERR="$(cat "$errfile" 2>/dev/null)"
+  rm -f "$errfile"
+}
+
+CASE="pyresolve: a relative python value (./evil.sh) is never executed, resolution falls back to the probe"
+d="$(pyr_dir 01)"
+write_marker_script "$d/evil.sh"
+cat > "$d/.claude/project.json" <<'EOF'
+{"python": "./evil.sh"}
+EOF
+run_pyresolve "$d"
+assert_rc "$PYR_RC" 0
+[ -f "$d/evil-ran.marker" ] && fail "a relative 'python' value must never be executed"
+[ -n "$PYR_OUT" ] || fail "expected the probe fallback to still resolve a working interpreter"
+ok
+
+CASE="pyresolve: an absolute path under the project root (bin/python3) is rejected despite a plausible basename"
+d="$(pyr_dir 02)"
+write_marker_script "$d/bin/python3"
+cat > "$d/.claude/project.json" <<EOF
+{"python": "$d/bin/python3"}
+EOF
+run_pyresolve "$d"
+assert_rc "$PYR_RC" 0
+[ -f "$d/bin/evil-ran.marker" ] && fail "a project-rooted absolute path must never be executed, even with a plausible basename"
+[ -n "$PYR_OUT" ] || fail "expected the probe fallback to still resolve a working interpreter"
+ok
+
+CASE="pyresolve: a nested python key (tools.python) is never read as the top-level key, resolution falls back to the probe"
+d="$(pyr_dir 03)"
+write_marker_script "$d/evil.sh"
+cat > "$d/.claude/project.json" <<'EOF'
+{"tools": {"python": "./evil.sh"}}
+EOF
+run_pyresolve "$d"
+assert_rc "$PYR_RC" 0
+[ -f "$d/evil-ran.marker" ] && fail "a nested tools.python key must never be read as the root-level python key"
+[ -n "$PYR_OUT" ] || fail "expected the probe fallback to still resolve a working interpreter"
+ok
+
+CASE="pyresolve: a plausible bare python name from project.json is accepted normally"
+d="$(pyr_dir 04)"
+cat > "$d/.claude/project.json" <<EOF
+{"python": "$REAL_PY_NAME"}
+EOF
+run_pyresolve "$d"
+assert_rc "$PYR_RC" 0
+assert_match "$PYR_OUT" "$REAL_PY_NAME"
+assert_no_match "$PYR_ERR" 'ignoring'
+
+CASE="pyresolve: a broken BRAINSTORM_PYTHON prints a one-line stderr note and resolution still succeeds via the probe"
+d="$(pyr_dir 05)"
+run_pyresolve "$d" BRAINSTORM_PYTHON=/nonexistent/python3
+assert_rc "$PYR_RC" 0
+assert_match "$PYR_ERR" "ignoring BRAINSTORM_PYTHON value '/nonexistent/python3'"
+[ -n "$PYR_OUT" ] || fail "expected the probe fallback to still resolve a working interpreter"
+ok
+
+# The three cases below pin the bare-name-only rule that replaced path
+# comparison: hooks_is_plausible_python never treats a `python` value as a
+# filesystem path at all (any separator or drive prefix is an outright
+# reject), so there is no case-sensitivity or mount-alias comparison left to
+# get wrong. Confirmed by hand against the pre-fix helper before this rule
+# landed: a case-varied absolute path and a bare name colliding with a cwd
+# file both executed the repo-local marker script under the old
+# path-comparison logic; neither does under this one.
+
+CASE="pyresolve: a case-varied absolute path to an in-repo python3 marker is rejected outright, not by a (case-sensitive) root comparison (f)"
+d="$(pyr_dir 06)"
+write_marker_script "$d/bin/python3"
+UPPER_BIN="$(printf '%s' "$d/bin" | tr 'a-z' 'A-Z')"
+cat > "$d/.claude/project.json" <<EOF
+{"python": "$UPPER_BIN/python3"}
+EOF
+run_pyresolve "$d"
+assert_rc "$PYR_RC" 0
+[ -f "$d/bin/evil-ran.marker" ] && fail "a case-varied path to an in-repo file must never be executed"
+[ -n "$PYR_OUT" ] || fail "expected the probe fallback to still resolve a working interpreter"
+ok
+
+CASE="pyresolve: a Windows drive-letter form path to an in-repo python3 marker is rejected outright (g)"
+d="$(pyr_dir 07)"
+write_marker_script "$d/bin/python3"
+DRIVE_FORM="$(cygpath -w "$d/bin/python3" 2>/dev/null | sed 's#\\#/#g')"
+if [ -z "$DRIVE_FORM" ]; then
+  echo "[skip] pyresolve drive-letter case: cygpath not available on this host"
+else
+  cat > "$d/.claude/project.json" <<EOF
+{"python": "$DRIVE_FORM"}
+EOF
+  run_pyresolve "$d"
+  assert_rc "$PYR_RC" 0
+  [ -f "$d/bin/evil-ran.marker" ] && fail "a drive-letter form path must never be executed"
+  [ -n "$PYR_OUT" ] || fail "expected the probe fallback to still resolve a working interpreter"
+  ok
+fi
+
+# The eight cases below (h, A1-A4, B1-B2) all pin the SAME follow-up finding:
+# stripping just "."/empty PATH entries at the lookup is not enough on its
+# own. (A) a RELATIVE PATH entry (`bin`, `./bin`) still lets a repo-shipped
+# file win without ever being "." itself; and (B) resolving safely once and
+# then handing a caller the BARE name back throws the safety away, since
+# hooks_read_top_level_python's own JSON-parsing interpreter call, and every
+# hook's later `"$PY" ...`, would re-resolve that bare name under whatever
+# PATH is active AT THAT LATER POINT. hooks_resolve_python now always prints
+# a resolved ABSOLUTE path for the project.json and probe tiers (never the
+# bare name), and hooks_path_sans_cwd keeps PATH entries that are absolute
+# only -- dropping "." and empty too, same as a relative entry. Confirmed by
+# hand against the pre-fix helper before this landed: every one of these
+# combinations executed the repo-local marker.
+
+CASE="pyresolve: a bare name resolves to an absolute PATH entry, never a same-named file in the project root, with PATH leading '.' and project.json naming it explicitly (h / A1)"
+d="$(pyr_dir 08)"
+write_marker_script "$d/$REAL_PY_NAME"
+cat > "$d/.claude/project.json" <<EOF
+{"python": "$REAL_PY_NAME"}
+EOF
+run_pyresolve_in "$d" ".:$PATH"
+assert_rc "$PYR_RC" 0
+[ -f "$d/evil-ran.marker" ] && fail "a bare name must never resolve to a same-named file in the current working directory"
+case "$PYR_OUT" in
+  "$d/$REAL_PY_NAME") fail "resolved to the repo-local file instead of a real PATH entry: $PYR_OUT" ;;
+esac
+[ -n "$PYR_OUT" ] || fail "expected resolution to still succeed via a real PATH entry"
+ok
+
+CASE="pyresolve: same as above but PATH carries an EMPTY entry instead of '.' (A2)"
+d="$(pyr_dir 09)"
+write_marker_script "$d/$REAL_PY_NAME"
+cat > "$d/.claude/project.json" <<EOF
+{"python": "$REAL_PY_NAME"}
+EOF
+run_pyresolve_in "$d" ":$PATH"
+assert_rc "$PYR_RC" 0
+[ -f "$d/evil-ran.marker" ] && fail "a bare name must never resolve to a same-named file in the current working directory via an empty PATH entry"
+case "$PYR_OUT" in
+  "$d/$REAL_PY_NAME") fail "resolved to the repo-local file instead of a real PATH entry: $PYR_OUT" ;;
+esac
+[ -n "$PYR_OUT" ] || fail "expected resolution to still succeed via a real PATH entry"
+ok
+
+CASE="pyresolve: with NO project.json python key, the default probe (python3/python/py) still never picks up a same-named cwd file, PATH leading '.' (A3)"
+d="$(pyr_dir 10)"
+write_marker_script "$d/$REAL_PY_NAME"
+cat > "$d/.claude/project.json" <<'EOF'
+{}
+EOF
+run_pyresolve_in "$d" ".:$PATH"
+assert_rc "$PYR_RC" 0
+[ -f "$d/evil-ran.marker" ] && fail "the probe tier must never pick up a same-named file in the current working directory"
+case "$PYR_OUT" in
+  "$d/$REAL_PY_NAME") fail "resolved to the repo-local file instead of a real PATH entry: $PYR_OUT" ;;
+esac
+[ -n "$PYR_OUT" ] || fail "expected the probe to still resolve a real interpreter"
+ok
+
+CASE="pyresolve: same as above but PATH carries an EMPTY entry instead of '.' (A4)"
+d="$(pyr_dir 11)"
+write_marker_script "$d/$REAL_PY_NAME"
+cat > "$d/.claude/project.json" <<'EOF'
+{}
+EOF
+run_pyresolve_in "$d" ":$PATH"
+assert_rc "$PYR_RC" 0
+[ -f "$d/evil-ran.marker" ] && fail "the probe tier must never pick up a same-named file in the current working directory via an empty PATH entry"
+case "$PYR_OUT" in
+  "$d/$REAL_PY_NAME") fail "resolved to the repo-local file instead of a real PATH entry: $PYR_OUT" ;;
+esac
+[ -n "$PYR_OUT" ] || fail "expected the probe to still resolve a real interpreter"
+ok
+
+CASE="pyresolve: a RELATIVE PATH entry ('bin') must never let a repo-shipped bin/python3 win a bare-name lookup (B1)"
+d="$(pyr_dir 12)"
+write_marker_script "$d/bin/python3"
+cat > "$d/.claude/project.json" <<'EOF'
+{"python": "python3"}
+EOF
+run_pyresolve_in "$d" "bin:$PATH"
+assert_rc "$PYR_RC" 0
+[ -f "$d/bin/evil-ran.marker" ] && fail "a relative PATH entry must never let a repo-shipped file win the lookup"
+case "$PYR_OUT" in
+  "$d/bin/python3") fail "resolved to the repo-local file instead of a real PATH entry: $PYR_OUT" ;;
+esac
+[ -n "$PYR_OUT" ] || fail "expected resolution to still succeed via a real PATH entry"
+ok
+
+CASE="pyresolve: same as above but the relative PATH entry is spelled './bin' (B2)"
+d="$(pyr_dir 13)"
+write_marker_script "$d/bin/python3"
+cat > "$d/.claude/project.json" <<'EOF'
+{"python": "python3"}
+EOF
+run_pyresolve_in "$d" "./bin:$PATH"
+assert_rc "$PYR_RC" 0
+[ -f "$d/bin/evil-ran.marker" ] && fail "a './bin' PATH entry must never let a repo-shipped file win the lookup"
+case "$PYR_OUT" in
+  "$d/bin/python3") fail "resolved to the repo-local file instead of a real PATH entry: $PYR_OUT" ;;
+esac
+[ -n "$PYR_OUT" ] || fail "expected resolution to still succeed via a real PATH entry"
+ok
+
 # ── run-cost-report.sh: newest-terminal-envelope selection ─────────────────
 
 cost_dir() {
@@ -967,12 +1251,20 @@ else
   assert_match "$out" '"systemMessage"'
   grep -q '"cost"' "$d/.claude/pipeline/run-only/run.json" || fail "expected data.cost written via the BRAINSTORM_PYTHON fallback"
 
-  CASE="cost-report: .claude/project.json's python key resolves the interpreter when jq/python3/python/py all fail to resolve"
+  # project.json's `python` key can no longer carry a path (see _pyresolve.sh's
+  # bare-name-only rule) -- its remaining value is naming a DIFFERENT bare
+  # interpreter name than the default probe set (python3/python/py), resolved
+  # through PATH like any other bare name.
+  CASE="cost-report: .claude/project.json's bare python key names an interpreter outside the default probe set, resolved via PATH"
   d="$(cost_dir_single 02)"
-  cat > "$d/.claude/project.json" <<EOF
-{"python": "$REAL_PY_ABS"}
+  ALT_BIN="$ROOT_TMP/altbin-cost-02"
+  mkdir -p "$ALT_BIN"
+  printf '#!/bin/sh\nexec "%s" "$@"\n' "$REAL_PY_ABS" > "$ALT_BIN/python3.11"
+  chmod +x "$ALT_BIN/python3.11"
+  cat > "$d/.claude/project.json" <<'EOF'
+{"python": "python3.11"}
 EOF
-  out="$(hide_from_command_v "jq python3 python py" env -u BRAINSTORM_PYTHON CLAUDE_PROJECT_DIR="$d" bash "$COST_HOOK" <<<"{\"transcript_path\": \"$d/transcript.jsonl\"}")"
+  out="$(hide_from_command_v "jq python3 python py" env -u BRAINSTORM_PYTHON PATH="$ALT_BIN:$PATH" CLAUDE_PROJECT_DIR="$d" bash "$COST_HOOK" <<<"{\"transcript_path\": \"$d/transcript.jsonl\"}")"
   assert_match "$out" '"systemMessage"'
   grep -q '"cost"' "$d/.claude/pipeline/run-only/run.json" || fail "expected data.cost written via the project.json python-key fallback"
 fi
@@ -1000,12 +1292,18 @@ else
   assert_match "$out" '"additionalContext"'
   assert_match "$out" 'demo-slug'
 
-  CASE="reseed-context: .claude/project.json's python key resolves the interpreter when jq/python3/python/py all fail to resolve"
+  # Same rule as the cost-report case above: project.json's `python` key
+  # names a bare interpreter outside the default probe set, never a path.
+  CASE="reseed-context: .claude/project.json's bare python key names an interpreter outside the default probe set, resolved via PATH"
   d="$(reseed_dir 02)"
-  cat > "$d/.claude/project.json" <<EOF
-{"python": "$REAL_PY_ABS"}
+  ALT_BIN="$ROOT_TMP/altbin-reseed-02"
+  mkdir -p "$ALT_BIN"
+  printf '#!/bin/sh\nexec "%s" "$@"\n' "$REAL_PY_ABS" > "$ALT_BIN/python3.11"
+  chmod +x "$ALT_BIN/python3.11"
+  cat > "$d/.claude/project.json" <<'EOF'
+{"python": "python3.11"}
 EOF
-  out="$(hide_from_command_v "jq python3 python py" env -u BRAINSTORM_PYTHON CLAUDE_PROJECT_DIR="$d" bash "$RESEED_HOOK" <<<'{"source":"compact","hook_event_name":"SessionStart"}')"
+  out="$(hide_from_command_v "jq python3 python py" env -u BRAINSTORM_PYTHON PATH="$ALT_BIN:$PATH" CLAUDE_PROJECT_DIR="$d" bash "$RESEED_HOOK" <<<'{"source":"compact","hook_event_name":"SessionStart"}')"
   assert_match "$out" '"additionalContext"'
   assert_match "$out" 'demo-slug'
 fi
@@ -1259,6 +1557,44 @@ PY_RC=$?
 set -e
 [ "$PY_RC" -eq 0 ] || fail "board started_at assertions failed: $PY_OUT"
 ok
+
+# ── close-tasks.sh: the legacy (untagged-row) fallback must require a
+#    "specific" slug -- a single-word envelope slug (`cleanup`, `fix`, `task`)
+#    is ordinary English and must never match an untagged row by prose alone;
+#    only a path match or a hyphen-compound slug counts (tag matches, when a
+#    row DOES carry a `_plan:` tag, are unaffected either way) ────────────────
+
+CASE="close-tasks reconcile --apply: single-word envelope slug 'cleanup' must NOT match an untagged row that merely mentions the word"
+d="$(ct_dir 12)"
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [~] (P1) Run the cleanup script \xe2\x80\x94 plans/other-feature.md\n' >> "$d/TASKS.md"
+mkdir -p "$d/.claude/pipeline/cleanup"
+cat > "$d/.claude/pipeline/cleanup/run.json" <<'EOF'
+{"schema_version": 1, "feature_slug": "cleanup", "plan_file": "plans/x.md", "status": "complete"}
+EOF
+run_ct "$d" reconcile --file TASKS.md
+assert_rc "$CT_RC" 0
+assert_match "$CT_OUT" '"drift_count": 0'
+assert_no_match "$CT_OUT" 'terminal_envelope_open_rows'
+run_ct "$d" reconcile --file TASKS.md --apply
+assert_rc "$CT_RC" 0
+AFTER="$(cat "$d/TASKS.md")"
+assert_match "$AFTER" '\[~\] (P1) Run the cleanup script'
+assert_no_match "$AFTER" '## Done'
+
+CASE="close-tasks reconcile: hyphen-compound envelope slug 'hook-timeouts' still matches an untagged row mentioning it (unaffected by the specificity gate)"
+d="$(ct_dir 13)"
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [~] (P1) Fix hook-timeouts in enforce-model-cap \xe2\x80\x94 plans/other.md\n' >> "$d/TASKS.md"
+mkdir -p "$d/.claude/pipeline/hook-timeouts"
+cat > "$d/.claude/pipeline/hook-timeouts/run.json" <<'EOF'
+{"schema_version": 1, "feature_slug": "hook-timeouts", "plan_file": "plans/hook-timeouts.md", "status": "complete"}
+EOF
+run_ct "$d" reconcile --file TASKS.md
+assert_rc "$CT_RC" 0
+assert_match "$CT_OUT" '"drift_count": 1'
+assert_match "$CT_OUT" '"envelope": "hook-timeouts"'
+assert_match "$CT_OUT" 'Fix hook-timeouts in enforce-model-cap'
 
 echo
 echo "test-hooks.sh: all cases ok"

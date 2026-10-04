@@ -33,7 +33,16 @@ validates a project.json-supplied `python` value (`hooks_is_plausible_python`) b
 it as the interpreter — every always-on hook (`next-action.sh`, `reseed-context.sh`,
 `run-cost-report.sh`) reads that same key, and none of them previously checked the value was
 plausibly Python before executing it: a narrower instance of the same "config from a repo you
-merely opened" trust problem the `stop-gate.sh` case below is about.
+merely opened" trust problem the `stop-gate.sh` case below is about. The rule is bare-name-only: a
+project.json-supplied `python` value is accepted only as a command name with no path separator and
+no drive prefix, resolved through PATH — never treated as a filesystem path at all, so there is no
+path-vs-project-root comparison left to bypass (an earlier path-comparison version was itself
+case-sensitive, so it missed a differently-cased spelling of the same file on a case-insensitive
+filesystem). The lookup PATH itself keeps only absolute entries (a relative or empty entry is
+dropped, not just `.`), and every resolver returns the resolved absolute path rather than the bare
+name — a safely-resolved bare name handed back to a later unsanitised PATH lookup reopens the exact
+same gap it closed. A specific interpreter path still works, just not from a repo-controlled file —
+`$BRAINSTORM_PYTHON` is the user's own environment and may still name one.
 
 ## Test immutability — deterministic, but not a hook
 
@@ -79,11 +88,18 @@ tighter prose still isn't followed.
 `stop-gate.sh` runs a repo-configured shell command (`test.unit`) from a Stop hook, which
 executes outside Claude Code's Bash permission system — no approval prompt, because the harness
 never routes hook commands through the tool-permission path. That is fine when the config is the
-person's own local file, which is the default: `setup.sh` gitignores `.claude/project.json`
-(`ensure_gitignored ".claude/project.json"`) for exactly this reason. It stops being fine the
-moment the file is tracked by git — a forced add, or a team that deliberately shares it — because
-then the command that runs on Stop is content that arrived WITH THE CLONE, and opening the repo is
-enough to run it, with no gate the model's own judgment could intervene on (there is no
+person's own file, which git does not report as tracked. `setup.sh` does **not** gitignore
+`.claude/project.json` unconditionally — it only always-ignores pure machine-state paths
+(`.claude/pipeline/`, `.claude/.next-action`, `.claude/.auto-continue-hops`,
+`.claude/.stop-gate-hops`); whether `.claude/project.json` itself is gitignored is a genuine team
+decision `/repo-onboarding`'s Step 3 ("What should git ignore?") asks about, not something
+setup.sh decides either way. So the trust check below does not read `.gitignore` at all — an
+UNTRACKED `project.json` is trusted by design regardless of whether it also happens to be
+gitignored, because untracked means it is the person's own config, not content that arrived with
+the clone; that is intentional, not an oversight the check merely happens to cover. It stops being
+fine the moment the file is tracked by git — a forced add, or a team that deliberately shares it —
+because then the command that runs on Stop is content that arrived WITH THE CLONE, and opening the
+repo is enough to run it, with no gate the model's own judgment could intervene on (there is no
 "model decides whether to trust this" step; the hook runs before any model turn).
 
 The fix is a deterministic, by-construction check rather than a prose warning: before ever

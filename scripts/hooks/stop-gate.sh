@@ -26,21 +26,24 @@
 # Trust model (closes "a cloned repo runs arbitrary commands on Stop"): this
 # gate's config (`test.unit`, the `pipeline.stop_gate` opt-in itself) lives in
 # .claude/project.json, which runs OUTSIDE Claude Code's Bash permission
-# system -- a Stop hook executes it with no approval prompt. `setup.sh`
-# gitignores that file for exactly this reason (`ensure_gitignored
-# ".claude/project.json"`), so in the common case it is the person running
-# Claude Code's own local config, never committed. But .gitignore does not
-# stop a repo from committing the file anyway (a forced add, or a team that
-# deliberately shares it -- repo-onboarding's "tracked = shared with the
-# team" option). So: an UNTRACKED project.json is trusted; a file `git
-# ls-files` reports as TRACKED is repo-supplied content and this hook refuses
-# to run test.unit from it (stands down with a systemMessage instead),
-# unless the person sets `BRAINSTORM_TRUST_STOP_GATE=1` themselves. On top of
-# that, the FIRST Stop of any run that does proceed announces the exact
-# command in its systemMessage/reason (folded into whatever this invocation
-# already emits -- never a second output line) before ever executing it, so
-# the command run on your behalf is never silently inferred from config you
-# didn't read. A marker file next to the run envelope
+# system -- a Stop hook executes it with no approval prompt. `setup.sh` does
+# NOT gitignore that file -- it only always-ignores pure machine-state paths
+# (`.claude/pipeline/`, `.claude/.next-action`, `.claude/.auto-continue-hops`,
+# `.claude/.stop-gate-hops`); whether `.claude/project.json` itself is
+# gitignored is a genuine team decision `/repo-onboarding`'s Step 3 asks
+# about, not something setup.sh decides unconditionally. So this hook does
+# NOT infer trust from .gitignore at all -- it asks git directly: an
+# UNTRACKED project.json is trusted BY DESIGN (whether or not it happens to
+# be gitignored, it is not content that arrived with the clone -- it's the
+# person's own config, so this is not an oversight); a file `git ls-files`
+# reports as TRACKED is repo-supplied content and this hook refuses to run
+# test.unit from it (stands down with a systemMessage instead), unless the
+# person sets `BRAINSTORM_TRUST_STOP_GATE=1` themselves. On top of that, the
+# FIRST Stop of any run that does proceed announces the exact command in its
+# systemMessage/reason (folded into whatever this invocation already emits --
+# never a second output line) before ever executing it, so the command run
+# on your behalf is never silently inferred from config you didn't read. A
+# marker file next to the run envelope
 # (`.claude/pipeline/<slug>/.stop-gate-announced`) makes this once-per-run,
 # not once-per-Stop.
 #
@@ -92,14 +95,20 @@ if [ -z "$PROJ" ]; then
   if _gr="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -n "$_gr" ]; then PROJ="$_gr"; else PROJ="$PWD"; fi
 fi
 
-# jq-or-python fallback, same probe style as run-cost-report.sh: prove the
-# interpreter RUNS, not merely that it resolves on PATH (a Windows Store
-# python3 stub resolves and then exits non-zero).
+# jq-or-python fallback. jq is a fixed, non-repo-controlled name so a plain
+# `command -v` probe is fine for it. Python is resolved through
+# _pyresolve.sh's hooks_resolve_python -- same three-tier order and the same
+# never-the-bare-name-on-an-unsanitised-PATH contract every other hook under
+# scripts/hooks/ shares (this hook is always-on, wired to every Stop event
+# with no opt-in, so it needs the same guarantee next-action.sh does: a
+# private `for c in python3 python py; do command -v "$c" ...` probe here
+# resolved and ran whatever `python3` etc. a `.`/relative PATH entry pointed
+# at, repo-shipped file included).
 JQ=""; PY=""
 if command -v jq >/dev/null 2>&1 && echo '{}' | jq -e . >/dev/null 2>&1; then JQ="jq"; fi
-for c in python3 python py; do
-  if command -v "$c" >/dev/null 2>&1 && "$c" -c 'pass' >/dev/null 2>&1; then PY="$c"; break; fi
-done
+# shellcheck source=./_pyresolve.sh
+. "$(dirname "${BASH_SOURCE[0]}")/_pyresolve.sh"
+PY="$(hooks_resolve_python "$PROJ")" || PY=""
 
 jget() {
   _f="$1"; _p="$2"; _d="${3:-}"
@@ -189,15 +198,16 @@ fi
 
 # (d) TRUST CHECK -- the actual fix for "a cloned repo runs arbitrary commands
 # on Stop with no Bash permission prompt". This gate's config (test.unit, the
-# opt-in itself) lives in .claude/project.json; setup.sh gitignores that file
-# for exactly this reason (`ensure_gitignored ".claude/project.json"`) so it is
-# normally the PERSON RUNNING Claude Code's own local, untracked config -- not
-# something that arrived with the clone. But .gitignore does not stop a repo
-# from committing the file anyway (a forced add, or a team that intentionally
-# shares it, per repo-onboarding's "tracked = shared with the team" option).
-# Trust model: an UNTRACKED project.json is yours; a TRACKED one is
-# repo-supplied content and is not trusted to auto-run a shell command on
-# Stop, unless explicitly overridden. See docs/ENFORCEMENT.md.
+# opt-in itself) lives in .claude/project.json. setup.sh does NOT gitignore
+# that file on its own -- whether to gitignore it is a team decision
+# `/repo-onboarding` asks about (Step 3), not something this hook can assume
+# either way. So the check below asks git directly, not .gitignore: an
+# UNTRACKED project.json is trusted BY DESIGN -- untracked means it is the
+# person's own config, not content that arrived with the clone, regardless of
+# whether it also happens to be gitignored; that is not an oversight, it's the
+# model. A file `git ls-files` reports as TRACKED is repo-supplied content and
+# is not trusted to auto-run a shell command on Stop, unless explicitly
+# overridden with BRAINSTORM_TRUST_STOP_GATE=1. See docs/ENFORCEMENT.md.
 if [ "${BRAINSTORM_TRUST_STOP_GATE:-}" != "1" ] \
    && command -v git >/dev/null 2>&1 \
    && git -C "$PROJ" ls-files --error-unmatch -- .claude/project.json >/dev/null 2>&1; then

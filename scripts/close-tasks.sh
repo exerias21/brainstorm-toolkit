@@ -561,6 +561,22 @@ def envelope_slug_candidates(candidates):
     return {c for c in candidates if c and '/' not in c and '\\' not in c}
 
 
+def _specific_slug(c):
+    """True if slug candidate `c` is specific enough to match an UNTAGGED
+    row by whole-token substring at all. A single-word slug (`cleanup`,
+    `fix`, `task`) is indistinguishable from ordinary English prose in a
+    row's free-text title -- `token_hit('cleanup', ...)` matches "Run the
+    cleanup script" just as readily as a row that actually belongs to a
+    `cleanup` envelope, so `reconcile --apply` could close an unrelated row.
+    A slug earns a legacy-fallback match only by being a path (checked
+    separately by the caller) or by being hyphen-compound (>=2 segments,
+    e.g. `hook-timeouts`) -- compound slugs are this repo's actual naming
+    convention (`feature_slug` from Stage 0) and specific enough that a
+    coincidental prose match is implausible. Tagged rows are unaffected:
+    the `_plan:` tag match above never calls this."""
+    return '-' in c
+
+
 def row_belongs_to_envelope(line, name, run, candidates):
     """Does this TASKS.md row belong to this envelope (`name`/`run`, with
     its `candidates` from `envelope_candidates`)? Mirrors
@@ -581,7 +597,10 @@ def row_belongs_to_envelope(line, name, run, candidates):
     file's full path (long and close to unique -- a plain substring test is
     fine) or a whole-token hit (`token_hit`) on one of the envelope's slug
     candidates -- never a bare substring on those short, collision-prone
-    slugs.
+    slugs. Even then, a slug candidate only counts if `_specific_slug` calls
+    it specific enough: a single-word slug (`cleanup`, `fix`, `task`) never
+    matches an untagged row by itself, however it appears in the text --
+    only a path or a hyphen-compound slug can.
     """
     tagm = PLAN_TAG_RE.search(line)
     if tagm:
@@ -595,7 +614,10 @@ def row_belongs_to_envelope(line, name, run, candidates):
         if '/' in c or '\\' in c:
             if c in line:
                 return True
-        elif token_hit(c, line):
+        # Known trade-off: a single-word envelope slug with no plan_file never
+        # matches an untagged row here (envelopes written by /sdlc always
+        # carry plan_file; tag rows with `_plan:` otherwise).
+        elif _specific_slug(c) and token_hit(c, line):
             return True
     return False
 

@@ -136,7 +136,19 @@ def main() -> int:
         base = target / root / "skills"
         if not base.is_dir():
             continue
-        for pattern in ("SKILL.md", "templates/*.md", "references/*.md"):
+        # templates/**/* (not just the top-level templates/*.md) so a *.template
+        # file, or a template nested one directory deeper, isn't skipped; same
+        # for references/**/*.md. Each pattern is restricted to a text
+        # extension this repo actually ships under these dirs (.md, .template)
+        # rather than a bare "*" -- a bundled binary/asset under templates/ or
+        # references/ (none exist today, but nothing stops one) must never be
+        # opened as if it were prose to regex over.
+        for pattern in (
+            "SKILL.md",
+            "templates/**/*.md",
+            "templates/**/*.template",
+            "references/**/*.md",
+        ):
             skill_files.extend((root, f) for f in sorted(base.rglob(pattern)))
     if not skill_files:
         print(f"no installed SKILL.md under {target} — did setup.sh run?", file=sys.stderr)
