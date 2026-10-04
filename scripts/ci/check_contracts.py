@@ -987,6 +987,31 @@ def check_hooks_json_interpreter(root: Path) -> list[Finding]:
                 "portable-invocation",
             )
         )
+    # Any `args` key -- even an empty list -- switches a command hook to exec
+    # form: Claude Code then spawns `command` as one executable name with no
+    # shell, so `bash "<script>"` fails with ENOENT on every platform. Exec form
+    # with `"command": "bash"` is no fix either: on Windows it resolves `bash`
+    # on PATH, which is the WSL launcher. These hooks must stay shell form.
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return findings
+    for event, groups in (data.get("hooks") or {}).items():
+        for group in groups or []:
+            for hook in (group or {}).get("hooks") or []:
+                if isinstance(hook, dict) and "args" in hook:
+                    needle = f'"command": {json.dumps(hook.get("command", ""))}'
+                    pos = text.find(needle)
+                    line = text.count("\n", 0, pos) + 1 if pos >= 0 else 1
+                    findings.append(
+                        Finding(
+                            rel, line,
+                            f"hooks.json {event} hook sets `args` -- that runs it in "
+                            "exec form (no shell), so its command fails to spawn; "
+                            "remove `args` to keep shell form",
+                            "portable-invocation",
+                        )
+                    )
     return findings
 
 
@@ -1667,10 +1692,17 @@ def self_test_portable_invocation() -> bool:
                 "hooks": {
                     "Stop": [{
                         "matcher": "*",
-                        "hooks": [{
-                            "type": "command",
-                            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/next-action.sh\"",
-                        }],
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/next-action.sh\"",
+                            },
+                            {
+                                "type": "command",
+                                "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/stop-gate.sh\"",
+                                "args": [],
+                            },
+                        ],
                     }],
                 },
             }, indent=2),
@@ -1683,11 +1715,13 @@ def self_test_portable_invocation() -> bool:
 
     python3_hits = [f for f in findings if "bare `python3 `" in f.message]
     hooks_hits = [f for f in findings if "hooks.json command" in f.message]
-    ok = len(findings) == 2 and len(python3_hits) == 1 and len(hooks_hits) == 1
+    args_hits = [f for f in findings if "sets `args`" in f.message]
+    ok = (len(findings) == 3 and len(python3_hits) == 1 and len(hooks_hits) == 1
+          and len(args_hits) == 1)
     status = "OK" if ok else "FAIL"
     print(
-        f"[{status}] portable-invocation: expected 2 violation(s) (one bare "
-        f"python3, one bare hooks.json path), caught {len(findings)}"
+        f"[{status}] portable-invocation: expected 3 violation(s) (one bare "
+        f"python3, one bare hooks.json path, one exec-form `args`), caught {len(findings)}"
     )
     for f in findings:
         print(f"    {f.path}:{f.line}: {f.message}")
