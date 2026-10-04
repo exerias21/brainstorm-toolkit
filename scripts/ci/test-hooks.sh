@@ -305,7 +305,27 @@ gate_dir() {
   # untracked-inside-a-repo/trusted bucket these cases intend to exercise.
   # The explicit fail-closed cases ("not a git repo" / "git hidden from
   # PATH") build their own dirs instead of calling gate_dir, on purpose.
-  (cd "$d" && git init -q) 2>/dev/null || true
+  #
+  # The `|| true` on `git init` itself only defers the failure past this
+  # line -- it is NOT the guard. If `git init` fails (e.g. a CI runner's
+  # safe.directory/ownership restriction), `$d` is NOT a work tree and the
+  # fail-closed stop-gate stands down on it for the SAME reason the explicit
+  # "not a git repo" case exercises on purpose -- every case below that
+  # asserts only the ABSENCE of a block would then pass for the wrong
+  # reason (git distrust, not the behavior under test). The real guard is
+  # the explicit check right after: assert the work tree actually exists
+  # and fail the whole suite loudly, with a clear message, if it doesn't --
+  # letting `git init`'s own failure hit `set -e` directly here would abort
+  # the same way but silently, with no explanation.
+  (cd "$d" && git init -q) >/dev/null 2>&1 || true
+  if ! git -C "$d" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "[FAIL] gate_dir $1: 'git init' at $d did not produce a usable git" \
+         "work tree (safe.directory/ownership restriction on this host?)." \
+         "Every gate_dir case assumes a real, trusted work tree -- without" \
+         "one, the fail-closed stop-gate stands down for the wrong reason" \
+         "and absence-of-block assertions would pass vacuously." >&2
+    exit 1
+  fi
   printf '%s' "$d"
 }
 

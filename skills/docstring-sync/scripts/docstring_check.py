@@ -1557,16 +1557,117 @@ _BLOCK_COMMENT_EXTS = {
 # `//`- or `#`-prefixed line as DATA, not a comment.
 _BACKTICK_STRING_EXTS = {".js", ".ts", ".jsx", ".tsx", ".go"}
 
+# Extensions whose `<<`-style heredoc can itself span multiple lines and
+# legitimately contain a `//`/`#`-prefixed line as DATA. Only the two
+# heuristic exts that actually have heredoc syntax -- `.pl`/`.php` would
+# join this set too if they were ever added to `_HEURISTIC_TEXT_EXTS`.
+_HEREDOC_EXTS = {".sh", ".rb"}
+
+# Rust's raw-string literal (`r"..."`, `r#"..."#`, `r##"..."##`, ...) can
+# span multiple lines and is not caught by the backtick/heredoc checks
+# above or, in the `r#"`/`r##"` form, reliably by the generic quote-parity
+# check below (the leading `#`s are not quote characters). Detected by a
+# plain substring match rather than parity -- simpler and still fail-safe,
+# since a false positive here only costs an extra verbatim comparison.
+_RUST_RAW_STRING_EXTS = {".rs"}
+
+# Languages, among `_HEURISTIC_TEXT_EXTS`, whose single-quoted string
+# literal can ITSELF span multiple lines (so an odd single-quote count on
+# a line is a real signal there, same as the double-quote check below).
+# Deliberately excludes C/C++/Java/Go/Rust, where `'` opens a character
+# literal -- never multi-line -- so counting its parity there would just
+# be noise (an apostrophe in a `//` comment, already handled by the
+# comment-stripping in `_odd_unescaped_quote_count`'s caller, is the only
+# other way a lone `'` shows up in those languages).
+_SINGLE_QUOTE_MULTILINE_EXTS = {".js", ".ts", ".jsx", ".tsx", ".sh", ".rb"}
+
 _YAML_BLOCK_SCALAR_RE = re.compile(r":\s*[|>][+-]?\s*(#.*)?$")
 _SHELL_HEREDOC_RE = re.compile(r"<<-?~?\s*['\"]?[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _strip_line_comment(line: str, ext: str) -> str:
+    """Cut `line` at its language's line-comment marker (if it has one and
+    the line has one OUTSIDE a quoted string) before a quote-parity check
+    runs on the remainder. An apostrophe inside an ordinary `// don't` /
+    `# don't`-style comment is extremely common and is NOT itself a
+    multi-line construct; counting quotes past the marker would flag
+    nearly every commented file as verbatim, which is a real regression --
+    the fail-safe direction this guard cares about is a missed construct
+    in actual code, not a comment aside.
+
+    The cut MUST be quote-aware, not a blind substring search: a marker
+    that is itself inside a string literal earlier on the same line (a
+    `"http://..."` URL, a `# b` inside Ruby `"a # b"`, a `// b` inside C
+    `"a // b"`) is DATA, not a comment start. Cutting there anyway was a
+    real bug -- it threw away the string's closing quote along with the
+    (fake) comment, leaving an odd quote count on an otherwise ordinary,
+    balanced, single-line string and forcing the whole file to verbatim
+    comparison, which then flagged a genuinely docs-only edit elsewhere in
+    the file as a violation. So this scans left to right, tracking
+    whether it is currently inside a `"..."` or `'...'` literal (with
+    backslash-escape handling), and only treats the marker as a comment
+    start when seen OUTSIDE one. A string left open at end-of-line (the
+    real multi-line case) is simply never exited, so no marker inside it
+    can ever be mistaken for a comment on this line either -- consistent
+    with `_odd_unescaped_quote_count` reading an odd count off the
+    unmodified line in that case."""
+    marker = _LINE_COMMENT_BY_EXT.get(ext)
+    if not marker:
+        return line
+    in_str: str | None = None
+    i = 0
+    n = len(line)
+    mlen = len(marker)
+    while i < n:
+        ch = line[i]
+        if in_str:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == in_str:
+                in_str = None
+            i += 1
+            continue
+        if ch in ('"', "'"):
+            in_str = ch
+            i += 1
+            continue
+        if line[i:i + mlen] == marker:
+            return line[:i]
+        i += 1
+    return line
+
+
+def _odd_unescaped_quote_count(line: str, quote: str) -> bool:
+    """True when `line` contains an odd number of un-escaped `quote`
+    characters -- the signature of a string literal that opens on this
+    line and does not close on it, so its content (comment-shaped or not)
+    carries onto the next line(s) as DATA. A backslash escapes the
+    character right after it, so backslashes are consumed in pairs:
+    `\\\\` is one literal backslash and does not escape what follows it,
+    while an odd run ending right before `quote` does escape it."""
+    count = 0
+    i = 0
+    n = len(line)
+    while i < n:
+        ch = line[i]
+        if ch == "\\":
+            i += 2
+            continue
+        if ch == quote:
+            count += 1
+        i += 1
+    return count % 2 == 1
 
 
 def _has_multiline_construct(text: str, ext: str) -> bool:
     """True when `text` contains a language construct for `ext` that can
     span multiple lines and carry a line that merely LOOKS like a comment
-    (a `//`/`#`-prefixed line inside a JS/TS/Go backtick template literal
-    or Go raw string, a Python-style triple-quoted block even in a
-    non-Python file, a YAML `|`/`>` block scalar, or a shell `<<` heredoc).
+    (a `//`/`#`-prefixed line inside a JS/TS/Go backtick template literal,
+    a Go raw string, a Rust raw string, an ordinary multi-line single- or
+    double-quoted string literal, a Python-style triple-quoted block even
+    in a non-Python file, a YAML `|`/`>` block scalar, or a `.sh`/`.rb`
+    `<<` heredoc).
 
     `_code_line_signature`'s per-line comment stripping has no notion of
     "currently inside one of these" -- unlike its `/* */` block-comment
@@ -1574,18 +1675,36 @@ def _has_multiline_construct(text: str, ext: str) -> bool:
     of these constructs from a real comment. `--verify-docs-only`'s
     contract is fail-safe (never call real code a comment), so detecting
     one of these here means the caller falls back to comparing the whole
-    file verbatim instead of trusting the per-line strip."""
+    file verbatim instead of trusting the per-line strip.
+
+    The quote-parity check below is deliberately generic -- it runs for
+    EVERY extension in `_HEURISTIC_TEXT_EXTS`, not a per-incident list,
+    because any language whose string literals can span multiple lines
+    (C/C++ backslash-continued strings, Java/Kotlin text blocks via
+    ordinary unterminated `"`, etc.) needs the same signal: an unclosed
+    quote on one line means the next line is string DATA, not code or a
+    comment, and `_code_line_signature` cannot track that state."""
     if ext in _BACKTICK_STRING_EXTS and "`" in text:
         return True
     if "'''" in text or '"""' in text:
+        return True
+    if ext in _RUST_RAW_STRING_EXTS and ('r"' in text or 'r#"' in text):
         return True
     if ext in (".yml", ".yaml"):
         for line in text.splitlines():
             if _YAML_BLOCK_SCALAR_RE.search(line):
                 return True
-    if ext == ".sh":
+    if ext in _HEREDOC_EXTS:
         for line in text.splitlines():
             if _SHELL_HEREDOC_RE.search(line):
+                return True
+    if ext in _HEURISTIC_TEXT_EXTS:
+        check_single = ext in _SINGLE_QUOTE_MULTILINE_EXTS
+        for line in text.splitlines():
+            stripped = _strip_line_comment(line, ext)
+            if _odd_unescaped_quote_count(stripped, '"'):
+                return True
+            if check_single and _odd_unescaped_quote_count(stripped, "'"):
                 return True
     return False
 
@@ -2748,6 +2867,126 @@ function f() { return 1; }
     return ok
 
 
+def _self_test_multiline_construct_language_coverage() -> bool:
+    """`_has_multiline_construct` must also catch a Ruby `<<~` heredoc, a
+    Rust `r#"..."#` raw string, and an ordinary multi-line Rust `"..."`
+    literal -- a DATA-line edit inside any of these must be a violation,
+    never waved through as docs-only. And the generic quote-parity rule
+    that makes this possible must NOT regress ordinary single-line code:
+    a C file with balanced strings and a `//`-comment-only edit, and a JS
+    file with an apostrophe inside a `// don't`-style comment, must both
+    stay clean."""
+    ok = True
+    tmp = Path(tempfile.mkdtemp(prefix="docstring_check_selftest_multiline_lang_"))
+    try:
+        def assert_caught(rel: str, before: str, after: str, label: str) -> None:
+            nonlocal ok
+            target = _write(tmp, rel, before)
+            snapshot = build_snapshot([target], tmp)
+            snap_file = tmp / f"{rel.replace('/', '_')}.caught.snapshot.json"
+            snap_file.write_text(json.dumps(snapshot), encoding="utf-8")
+            _write(tmp, rel, after)
+            violations, _notes = verify_docs_only(snap_file, tmp)
+            if not violations:
+                print(f"SELF-TEST FAIL: {label} -- a real data edit in {rel} "
+                      "inside a multi-line construct was waved through as "
+                      "docs-only", file=sys.stderr)
+                ok = False
+
+        def assert_clean(rel: str, before: str, after: str, label: str) -> None:
+            nonlocal ok
+            target = _write(tmp, rel, before)
+            snapshot = build_snapshot([target], tmp)
+            snap_file = tmp / f"{rel.replace('/', '_')}.clean.snapshot.json"
+            snap_file.write_text(json.dumps(snapshot), encoding="utf-8")
+            _write(tmp, rel, after)
+            violations, _notes = verify_docs_only(snap_file, tmp)
+            if violations:
+                print(f"SELF-TEST FAIL: {label} -- a comment-only edit in "
+                      f"{rel} was flagged as code: {violations}", file=sys.stderr)
+                ok = False
+
+        # Ruby: a `<<~SQL` squiggly heredoc's body is DATA -- a
+        # `#`-prefixed line inside it is not a comment.
+        assert_caught(
+            "lang/ruby_heredoc.rb",
+            "sql = <<~SQL\n  # NOTE: old reason\n  SELECT 1\nSQL\ndef f\n  1\nend\n",
+            "sql = <<~SQL\n  # NOTE: new reason\n  SELECT 1\nSQL\ndef f\n  1\nend\n",
+            "Ruby `<<~SQL` heredoc",
+        )
+
+        # Rust: a `r#"..."#` raw string's body is DATA -- a `//`-prefixed
+        # line inside it is not a comment.
+        assert_caught(
+            "lang/rust_raw_string.rs",
+            'const S: &str = r#"\n// old note\nbody\n"#;\nfn f() -> i32 { 1 }\n',
+            'const S: &str = r#"\n// new note\nbody\n"#;\nfn f() -> i32 { 1 }\n',
+            'Rust `r#"..."#` raw string',
+        )
+
+        # Rust: an ordinary multi-line `"..."` literal (no `r` prefix) is
+        # just as much DATA as the raw-string form above -- including a
+        # `//`-prefixed continuation line, which the blind per-line
+        # comment stripping would otherwise discard as a real comment.
+        assert_caught(
+            "lang/rust_multiline_string.rs",
+            'const S: &str = "line one\n// line two";\nfn f() -> i32 { 1 }\n',
+            'const S: &str = "line one\n// line TWO";\nfn f() -> i32 { 1 }\n',
+            'Rust ordinary multi-line "..." literal',
+        )
+
+        # Negative control: a C file with only a `//` comment edited, and
+        # otherwise balanced single-line strings, must stay clean -- the
+        # generic quote-parity check must not regress this.
+        assert_clean(
+            "lang/c_balanced_strings.c",
+            'const char *s = "hello";\n// old note\nint f(void) { return 1; }\n',
+            'const char *s = "hello";\n// new note\nint f(void) { return 1; }\n',
+            "C comment-only edit with balanced strings",
+        )
+
+        # Negative control: an apostrophe inside a `//` comment (`don't`)
+        # must not, on its own, force the whole file to verbatim
+        # comparison -- that would make routine commented JS always look
+        # "changed" even on a real docs-only edit.
+        assert_clean(
+            "lang/js_apostrophe_comment.js",
+            "function f() {\n    // don't forget this\n    return 1;\n}\n",
+            "function f() {\n    // don't forget this either\n    return 1;\n}\n",
+            "JS apostrophe-in-comment (`// don't`)",
+        )
+
+        # Negative control: a `//` marker that is itself INSIDE a balanced
+        # single-line string (not a real comment) must not be mistaken for
+        # one by a blind substring cut -- editing only a REAL comment on
+        # an earlier line of the same file must still read as clean.
+        assert_clean(
+            "lang/d.c",
+            '// header comment\nint x = 1;\nchar *s = "a // b";\n',
+            '// header comment reworded\nint x = 1;\nchar *s = "a // b";\n',
+            'C `"a // b"` string containing a fake `//` marker',
+        )
+
+        # Same failure mode, JS, with a realistic `http://` URL string.
+        assert_clean(
+            "lang/js_url_string.js",
+            '// header comment\nconst u = "http://x.y/z";\nfunction f() { return 1; }\n',
+            '// header comment reworded\nconst u = "http://x.y/z";\nfunction f() { return 1; }\n',
+            'JS `"http://..."` URL string containing a fake `//` marker',
+        )
+
+        # Same failure mode, Ruby, with a `#` marker inside a string.
+        assert_clean(
+            "lang/rb_hash_string.rb",
+            "# header comment\ns = \"a # b\"\ndef f\n  1\nend\n",
+            "# header comment reworded\ns = \"a # b\"\ndef f\n  1\nend\n",
+            'Ruby `"a # b"` string containing a fake `#` marker',
+        )
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return ok
+
+
 def _self_test_paths_and_changed_intersection() -> bool:
     """Positional paths and `--changed` combine as an INTERSECTION --
     `src --changed` must scan only the changed files under `src`, not
@@ -3387,6 +3626,7 @@ def calc(x):
         ok = _self_test_deleted_files_excluded() and ok
         ok = _self_test_nonascii_filenames_unquoted() and ok
         ok = _self_test_multiline_construct_verbatim_fallback() and ok
+        ok = _self_test_multiline_construct_language_coverage() and ok
         ok = _self_test_paths_and_changed_intersection() and ok
 
         if ok:
