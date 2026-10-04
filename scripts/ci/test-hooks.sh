@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # test-hooks.sh — regression harness for the deterministic controls that make
 # policy DETERMINISTIC instead of prose-enforced: scripts/hooks/enforce-model-cap.sh,
-# scripts/hooks/stop-gate.sh (envelope/test states plus its timeout-runner
-# resolution -- timeout/gtimeout/perl fallback), scripts/protect-tests.sh (a CLI,
+# scripts/hooks/stop-gate.sh (envelope/test states, its timeout-runner
+# resolution -- timeout/gtimeout/perl fallback -- and its fail-closed git
+# trust check: tracked, no-git-on-PATH, and not-a-git-repo all stand down),
+# scripts/protect-tests.sh (a CLI,
 # not a wired hook -- it earns a place here on scope alone; see its own header
 # for why it is not under scripts/hooks/), scripts/hooks/next-action.sh
 # (interpreter probe + the .next-action seam's dedup/staleness/depth-warning
@@ -115,7 +117,7 @@ hide_from_command_v() {
 build_restricted_path() {
   local exclude="$1" bindir="$2"
   rm -rf "$bindir"; mkdir -p "$bindir"
-  local essential="bash sh perl jq python3 python py cat grep sed tail wc rm mkdir mv cp chmod dirname basename tr head ls"
+  local essential="bash sh perl jq python3 python py git cat grep sed tail wc rm mkdir mv cp chmod dirname basename tr head ls"
   local name resolved skip ex
   for name in $essential; do
     resolved="$(command -v "$name" 2>/dev/null || true)"
@@ -296,6 +298,14 @@ assert_match "$out" 'enforce_cap is true but no working Python'
 gate_dir() {
   local d="$ROOT_TMP/gate-$1"
   mkdir -p "$d/.claude/pipeline/demo"
+  # Every other gate_dir-based case below assumes the OLD "no git repo at
+  # all" behavior falls through to trusted/runs -- that was the fail-open
+  # bug. Post-fix, a non-repo dir stands down instead, so these scratch dirs
+  # need to actually BE a (git-init'd, nothing committed) repo to land in the
+  # untracked-inside-a-repo/trusted bucket these cases intend to exercise.
+  # The explicit fail-closed cases ("not a git repo" / "git hidden from
+  # PATH") build their own dirs instead of calling gate_dir, on purpose.
+  (cd "$d" && git init -q) 2>/dev/null || true
   printf '%s' "$d"
 }
 
@@ -521,6 +531,53 @@ EOF
 out="$(run_gate "$d" '{}')"
 assert_match "$out" '"decision": "block"'
 assert_match "$out" 'tests red'
+
+# ── gate: trust model fail-closed -- the trust check used to gate the git
+#    call on a bare `command -v git` and fall through to TRUSTED when that
+#    failed, unlike every other branch of this model (fail-open). These
+#    build their own dirs instead of gate_dir, which now git-inits on
+#    purpose, so they stay genuinely git-less / non-repo. ───────────────────
+
+CASE="gate: project dir is not a git repo at all -- fails closed, names the override, never runs test.unit"
+d="$ROOT_TMP/gate-22"
+mkdir -p "$d/.claude/pipeline/demo"
+gate_envelope_in_progress "$d"
+cat > "$d/.claude/project.json" <<'EOF'
+{"pipeline": {"stop_gate": "tests"}, "test": {"unit": "echo ran > marker.txt; exit 1"}}
+EOF
+out="$(run_gate "$d" '{}')"
+assert_no_match "$out" '"decision"'
+assert_match "$out" '"systemMessage"'
+assert_match "$out" 'BRAINSTORM_TRUST_STOP_GATE=1'
+[ -f "$d/marker.txt" ] && fail "test.unit must never execute when the project dir is not a git repo (fail closed)"
+ok
+
+CASE="gate: git hidden from PATH -- fails closed, names the override, never runs test.unit"
+d="$ROOT_TMP/gate-23"
+mkdir -p "$d/.claude/pipeline/demo"
+gate_envelope_in_progress "$d"
+cat > "$d/.claude/project.json" <<'EOF'
+{"pipeline": {"stop_gate": "tests"}, "test": {"unit": "echo ran > marker.txt; exit 1"}}
+EOF
+build_restricted_path "git" "$ROOT_TMP/rp-23"
+out="$(PATH="$ROOT_TMP/rp-23" CLAUDE_PROJECT_DIR="$d" "$BASH_ABS" "$GATE_HOOK" <<<'{}')"
+assert_no_match "$out" '"decision"'
+assert_match "$out" '"systemMessage"'
+assert_match "$out" 'BRAINSTORM_TRUST_STOP_GATE=1'
+[ -f "$d/marker.txt" ] && fail "test.unit must never execute when git is unavailable on PATH (fail closed)"
+ok
+
+CASE="gate: BRAINSTORM_TRUST_STOP_GATE=1 overrides the not-a-git-repo stand-down"
+d="$ROOT_TMP/gate-24"
+mkdir -p "$d/.claude/pipeline/demo"
+gate_envelope_in_progress "$d"
+cat > "$d/.claude/project.json" <<'EOF'
+{"pipeline": {"stop_gate": "tests"}, "test": {"unit": "echo ran > marker.txt; exit 1"}}
+EOF
+out="$(CLAUDE_PROJECT_DIR="$d" BRAINSTORM_TRUST_STOP_GATE=1 bash "$GATE_HOOK" <<<'{}')"
+assert_match "$out" '"decision": "block"'
+[ -f "$d/marker.txt" ] || fail "test.unit must run when BRAINSTORM_TRUST_STOP_GATE=1 overrides the fail-closed stand-down"
+ok
 
 # stop-gate.sh used to resolve Python with its OWN private
 # `for c in python3 python py; do command -v "$c" ...` probe, run

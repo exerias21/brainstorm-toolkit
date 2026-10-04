@@ -186,11 +186,23 @@ def _run_git(args: list[str], cwd: Path) -> str | None:
     return result.stdout
 
 
+def _split_git_z(out: str) -> set[str]:
+    """Split `-z` (NUL-separated, unquoted) git listing output. `-z` is
+    used on every git listing call here instead of the default newline
+    format specifically to avoid `core.quotepath` (on by default): a
+    non-ASCII filename like `café.py` otherwise arrives octal-quoted
+    (`"caf\\303\\251.py"`, literal surrounding quotes and backslash
+    escapes), which does not end in a real extension and is silently
+    dropped by `_scannable` -- `-z` disables that quoting entirely, so
+    this just NUL-splits and drops the trailing empty field."""
+    return {p for p in out.split("\0") if p}
+
+
 def _git_tracked_files(root: Path) -> set[str] | None:
-    out = _run_git(["ls-files", "-co", "--exclude-standard"], root)
+    out = _run_git(["ls-files", "-co", "--exclude-standard", "-z"], root)
     if out is None:
         return None
-    return {line.strip() for line in out.splitlines() if line.strip()}
+    return _split_git_z(out)
 
 
 def _git_changed_files(root: Path) -> set[str] | None:
@@ -205,15 +217,22 @@ def _git_changed_files(root: Path) -> set[str] | None:
     (`pkg/pkg/a.py` resolved against a root already inside `pkg/` becomes
     the nonexistent `pkg/pkg/pkg/a.py`), which is exactly the "unreadable"
     failure `--changed` must not produce just because it was invoked from
-    somewhere other than the repo root."""
-    diffed = _run_git(["diff", "--relative", "--name-only", "HEAD"], root)
-    others = _run_git(["ls-files", "--others", "--exclude-standard"], root)
+    somewhere other than the repo root.
+
+    `--diff-filter=d` excludes deletions from the diff side: a path git
+    still reports as "changed" because it was deleted from the working
+    tree is nothing to scan, and left in would otherwise surface as an
+    "unreadable" parse error and consume `--limit` for free."""
+    diffed = _run_git(
+        ["diff", "--relative", "--diff-filter=d", "--name-only", "-z", "HEAD"], root
+    )
+    others = _run_git(["ls-files", "--others", "--exclude-standard", "-z"], root)
     if diffed is None and others is None:
         return None
     changed: set[str] = set()
     for out in (diffed, others):
         if out:
-            changed.update(line.strip() for line in out.splitlines() if line.strip())
+            changed.update(_split_git_z(out))
     return changed
 
 
@@ -311,13 +330,52 @@ def _under_any(candidate: Path, roots: list[Path]) -> bool:
     return False
 
 
+def _dir_walk_excluded(root: Path, pp: Path, f: Path, tracked: set[str] | None) -> bool:
+    """Should a file discovered by walking an explicitly-named DIRECTORY
+    `pp` be dropped?
+
+    Applies the same base rule the no-argument discovery applies (`tracked`
+    is `_git_tracked_files(root)` when `root` is a repo, so membership in it
+    mirrors `git ls-files -co --exclude-standard`; otherwise `_DEFAULT_EXCLUDES`
+    matched root-relative, the same fallback the non-git walk already uses).
+
+    But naming a directory is explicit intent to look inside it, even one
+    that itself sits in an excluded area (`docstring_check.py node_modules/foo`)
+    -- so a file is excluded by the base rule ONLY if that exclusion also
+    holds relative to `pp` itself (i.e. there is a further excluded directory
+    NESTED below the explicitly-named one, not just somewhere in `pp`'s own
+    ancestry)."""
+    if tracked is not None:
+        base_excluded = _relposix(root, f) not in tracked
+    else:
+        rel_posix = "/" + _relposix(root, f)
+        base_excluded = any(fnmatch.fnmatch(rel_posix, pat) for pat in _DEFAULT_EXCLUDES)
+    if not base_excluded:
+        return False
+    nested_rel = "/" + _relposix(pp, f)
+    return any(fnmatch.fnmatch(nested_rel, pat) for pat in _DEFAULT_EXCLUDES)
+
+
 def discover(paths: list[str] | None, root: Path, changed: bool) -> list[Path]:
     """Resolve the file set to scan.
 
-    Positional paths win outright (a directory is walked; a file is used
-    as-is). Otherwise: --changed uses read-only git diff/ls-files;
-    plain invocation uses `git ls-files` when the root is a repo, falling
-    back to a filesystem walk with `_DEFAULT_EXCLUDES` otherwise.
+    Positional paths win the WALK (a directory is walked; a file is used
+    as-is), but a directory's contents are still filtered through the same
+    exclusion rule the no-argument discovery applies (`_dir_walk_excluded`)
+    -- `docstring_check.py .` must not surface `node_modules/`, `.venv/`, or
+    whatever `git` itself ignores just because a directory walk bypasses
+    `_DEFAULT_EXCLUDES`/`.gitignore` by construction. An explicitly named
+    FILE is always scanned regardless (explicit intent, one level stronger
+    than a directory). When `--changed` is ALSO given alongside positional
+    paths, the result is intersected with the changed-file set (scan the
+    changed files under those paths, not everything under them).
+
+    Otherwise: --changed uses read-only git diff/ls-files; plain invocation
+    uses `git ls-files` when the root is a repo, falling back to a
+    filesystem walk with `_DEFAULT_EXCLUDES` otherwise. Either way, a
+    discovered path that does not actually exist as a file anymore (a
+    deleted-but-still-indexed or deleted-but-still-diffed git entry) is
+    dropped -- it is not a finding, it is nothing to scan.
 
     In every path, a file under a `fixtures` directory segment is excluded
     -- UNLESS that fixtures-bearing path (or an ancestor of it) was itself
@@ -330,6 +388,7 @@ def discover(paths: list[str] | None, root: Path, changed: bool) -> list[Path]:
         explicit_fixture_roots = [
             Path(p).resolve() for p in paths if _has_fixtures_segment(p)
         ]
+        tracked = _git_tracked_files(root)
         files: list[Path] = []
         for p in paths:
             pp = Path(p)
@@ -337,6 +396,9 @@ def discover(paths: list[str] | None, root: Path, changed: bool) -> list[Path]:
                 candidates = sorted(pp.rglob("*.py"))
                 for ext in _HEURISTIC_TEXT_EXTS:
                     candidates.extend(sorted(pp.rglob(f"*{ext}")))
+                candidates = [
+                    f for f in candidates if not _dir_walk_excluded(root, pp, f, tracked)
+                ]
             elif pp.is_file():
                 candidates = [pp]
             else:
@@ -345,6 +407,13 @@ def discover(paths: list[str] | None, root: Path, changed: bool) -> list[Path]:
                 if _has_fixtures_segment(f.as_posix()) and not _under_any(f, explicit_fixture_roots):
                     continue
                 files.append(f)
+        if changed:
+            changed_rels = _git_changed_files(root)
+            if changed_rels is None:
+                print("docstring_check: --changed requires a git repository; "
+                      "found none usable here", file=sys.stderr)
+                return []
+            files = [f for f in files if _relposix(root, f) in changed_rels]
         return files
 
     if changed:
@@ -354,13 +423,15 @@ def discover(paths: list[str] | None, root: Path, changed: bool) -> list[Path]:
                   "found none usable here", file=sys.stderr)
             return []
         return sorted(
-            root / r for r in rels if _scannable(r) and not _has_fixtures_segment(r)
+            p for p in (root / r for r in rels if _scannable(r) and not _has_fixtures_segment(r))
+            if p.is_file()
         )
 
     tracked = _git_tracked_files(root)
     if tracked is not None:
         return sorted(
-            root / r for r in tracked if _scannable(r) and not _has_fixtures_segment(r)
+            p for p in (root / r for r in tracked if _scannable(r) and not _has_fixtures_segment(r))
+            if p.is_file()
         )
 
     files = []
@@ -1481,6 +1552,43 @@ _BLOCK_COMMENT_EXTS = {
     ".c", ".cc", ".cpp", ".h", ".hpp",
 }
 
+# Extensions whose language has a backtick template-literal / raw-string
+# form that can itself span multiple lines and legitimately contain a
+# `//`- or `#`-prefixed line as DATA, not a comment.
+_BACKTICK_STRING_EXTS = {".js", ".ts", ".jsx", ".tsx", ".go"}
+
+_YAML_BLOCK_SCALAR_RE = re.compile(r":\s*[|>][+-]?\s*(#.*)?$")
+_SHELL_HEREDOC_RE = re.compile(r"<<-?~?\s*['\"]?[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _has_multiline_construct(text: str, ext: str) -> bool:
+    """True when `text` contains a language construct for `ext` that can
+    span multiple lines and carry a line that merely LOOKS like a comment
+    (a `//`/`#`-prefixed line inside a JS/TS/Go backtick template literal
+    or Go raw string, a Python-style triple-quoted block even in a
+    non-Python file, a YAML `|`/`>` block scalar, or a shell `<<` heredoc).
+
+    `_code_line_signature`'s per-line comment stripping has no notion of
+    "currently inside one of these" -- unlike its `/* */` block-comment
+    tracking, which IS stateful -- so it cannot tell a data line inside one
+    of these constructs from a real comment. `--verify-docs-only`'s
+    contract is fail-safe (never call real code a comment), so detecting
+    one of these here means the caller falls back to comparing the whole
+    file verbatim instead of trusting the per-line strip."""
+    if ext in _BACKTICK_STRING_EXTS and "`" in text:
+        return True
+    if "'''" in text or '"""' in text:
+        return True
+    if ext in (".yml", ".yaml"):
+        for line in text.splitlines():
+            if _YAML_BLOCK_SCALAR_RE.search(line):
+                return True
+    if ext == ".sh":
+        for line in text.splitlines():
+            if _SHELL_HEREDOC_RE.search(line):
+                return True
+    return False
+
 
 def _code_line_signature(text: str, ext: str = "") -> str:
     """Non-Python fallback for the docs-only guard: every line that is not
@@ -1496,7 +1604,14 @@ def _code_line_signature(text: str, ext: str = "") -> str:
     is actually in progress -- never on its own, which is what let a bare
     `*p = 0;` pointer-deref line get swallowed under the old blind-prefix
     heuristic.
+
+    When `_has_multiline_construct` finds a multi-line string/heredoc/block
+    construct this function cannot track the state of, comment stripping is
+    skipped entirely and the full text comes back verbatim -- every line
+    counts as code, which is the fail-safe direction to be wrong in.
     """
+    if _has_multiline_construct(text, ext):
+        return text
     line_comment = _LINE_COMMENT_BY_EXT.get(ext)
     has_block = ext in _BLOCK_COMMENT_EXTS
     lines: list[str] = []
@@ -1543,19 +1658,27 @@ def build_snapshot(files: list[Path], root: Path) -> dict[str, dict]:
                 continue
             snapshot[rel] = {"kind": "python", "dump": _ast_dump_without_docstrings(tree)}
         else:
+            ext = path.suffix.lower()
             snapshot[rel] = {
                 "kind": "text",
-                "code_lines": _code_line_signature(text, path.suffix.lower()),
+                "code_lines": _code_line_signature(text, ext),
+                "verbatim": _has_multiline_construct(text, ext),
             }
     return snapshot
 
 
-def verify_docs_only(snapshot_path: Path, root: Path) -> list[str]:
-    """Returns a list of violation messages (empty == clean). A file
+def verify_docs_only(snapshot_path: Path, root: Path) -> tuple[list[str], list[str]]:
+    """Returns (violations, notes) -- violations empty == clean. A file
     present in the snapshot but now missing, or whose non-docstring content
-    changed, is a violation."""
+    changed, is a violation. `notes` carries one informational line per
+    non-Python file that was (or still is) compared verbatim because of a
+    multi-line string/heredoc construct `_code_line_signature` cannot track
+    -- surfaced regardless of whether that file is also a violation, since
+    "this file got the weaker, whole-file comparison" is worth knowing on a
+    clean run too."""
     data = json.loads(snapshot_path.read_text(encoding="utf-8", errors="replace"))
     violations: list[str] = []
+    notes: list[str] = []
     for rel, before in data.items():
         path = root / rel
         if not path.is_file():
@@ -1576,10 +1699,15 @@ def verify_docs_only(snapshot_path: Path, root: Path) -> list[str]:
             if after_dump != before["dump"]:
                 violations.append(f"{rel}: non-docstring code changed (AST mismatch)")
         else:
-            after_lines = _code_line_signature(text, Path(rel).suffix.lower())
+            ext = Path(rel).suffix.lower()
+            if before.get("verbatim") or _has_multiline_construct(text, ext):
+                notes.append(
+                    f"{rel}: compared verbatim (multi-line string/heredoc construct detected)"
+                )
+            after_lines = _code_line_signature(text, ext)
             if after_lines != before["code_lines"]:
                 violations.append(f"{rel}: a non-comment line changed (heuristic)")
-    return violations
+    return violations, notes
 
 
 # ── Claims / verdicts: carrying judgment (a probability-scoring judge or an
@@ -2176,7 +2304,7 @@ def _self_test_language_aware_code_signature() -> bool:
             snap_file = tmp / f"{rel.replace('/', '_')}.snapshot.json"
             snap_file.write_text(json.dumps(snapshot), encoding="utf-8")
             _write(tmp, rel, after)
-            violations = verify_docs_only(snap_file, tmp)
+            violations, _notes = verify_docs_only(snap_file, tmp)
             if not violations:
                 print(f"SELF-TEST FAIL: {label} -- a real code edit in {rel} was "
                       "waved through as docs-only", file=sys.stderr)
@@ -2189,7 +2317,7 @@ def _self_test_language_aware_code_signature() -> bool:
             snap_file = tmp / f"{rel.replace('/', '_')}.clean.snapshot.json"
             snap_file.write_text(json.dumps(snapshot), encoding="utf-8")
             _write(tmp, rel, after)
-            violations = verify_docs_only(snap_file, tmp)
+            violations, _notes = verify_docs_only(snap_file, tmp)
             if violations:
                 print(f"SELF-TEST FAIL: {label} -- a comment/docstring-only edit in "
                       f"{rel} was flagged as code: {violations}", file=sys.stderr)
@@ -2414,6 +2542,253 @@ def _self_test_changed_from_subdir() -> bool:
             ok = False
     finally:
         os.chdir(cwd_before)
+        shutil.rmtree(tmp, ignore_errors=True)
+    return ok
+
+
+def _self_test_dir_walk_excludes_default_patterns() -> bool:
+    """A directory passed as a positional PATH is walked with `rglob`,
+    which bypasses `_DEFAULT_EXCLUDES`/git on its own -- `discover(["src"],
+    ...)` must still drop a nested `node_modules/` the same way
+    no-argument discovery would. But naming an excluded directory itself is
+    explicit intent: `discover(["node_modules/foo"], ...)` must scan it,
+    while a FURTHER excluded directory nested below it is still dropped."""
+    ok = True
+    tmp = Path(tempfile.mkdtemp(prefix="docstring_check_selftest_dirwalk_"))
+    try:
+        kept = _write(tmp, "src/app.py", "def f():\n    return 1\n")
+        nested_in_named_dir = _write(
+            tmp, "src/node_modules/pkg/lib.py", "def g():\n    return 1\n"
+        )
+        found = discover([str(tmp / "src")], tmp, changed=False)
+        if nested_in_named_dir in found:
+            print("SELF-TEST FAIL: a directory walk surfaced a nested node_modules/ "
+                  "file", file=sys.stderr)
+            ok = False
+        if kept not in found:
+            print("SELF-TEST FAIL: a directory walk dropped an ordinary file "
+                  "alongside a nested excluded one", file=sys.stderr)
+            ok = False
+
+        explicit_file = _write(tmp, "node_modules/foo/vendor.py", "def h():\n    return 1\n")
+        deeper_excluded = _write(
+            tmp, "node_modules/foo/node_modules/sub/x.py", "def i():\n    return 1\n"
+        )
+        found_explicit = discover([str(tmp / "node_modules" / "foo")], tmp, changed=False)
+        if explicit_file not in found_explicit:
+            print("SELF-TEST FAIL: explicitly naming an excluded directory did not "
+                  "scan its own contents", file=sys.stderr)
+            ok = False
+        if deeper_excluded in found_explicit:
+            print("SELF-TEST FAIL: a further excluded directory NESTED below an "
+                  "explicitly-named excluded directory was not dropped", file=sys.stderr)
+            ok = False
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return ok
+
+
+def _self_test_deleted_files_excluded() -> bool:
+    """A file git still reports -- `ls-files -c` for an uncommitted
+    deletion, `git diff --name-only HEAD` for the same -- must never reach
+    the scanned file set: it is not a finding, it is nothing to read.
+    `--diff-filter=d` keeps a deletion out of the diff listing in the first
+    place; the `.is_file()` filter on every discovered path is the second,
+    independent backstop (it is what covers `ls-files -c`, which has no
+    such filter flag). Skips gracefully if git is unavailable."""
+    git = shutil.which("git")
+    if git is None:
+        print("docstring_check.py --self-test: git unavailable, skipping "
+              "deleted-files checks", file=sys.stderr)
+        return True
+
+    ok = True
+    tmp = Path(tempfile.mkdtemp(prefix="docstring_check_selftest_deleted_"))
+    try:
+        def run(args: list[str]) -> None:
+            subprocess.run(
+                [git, *args], cwd=str(tmp), check=True, capture_output=True,
+                encoding="utf-8", errors="replace",
+            )
+
+        run(["init", "-q"])
+        _write(tmp, "present.py", "def f():\n    return 1\n")
+        _write(tmp, "gone.py", "def g():\n    return 1\n")
+        run(["add", "present.py", "gone.py"])
+        run(["-c", "user.name=Docstring Sync Self-Test", "-c",
+             "user.email=selftest@example.invalid",
+             "commit", "-q", "-m", "init"])
+
+        (tmp / "gone.py").unlink()
+
+        found = discover(None, tmp, changed=False)
+        if any(f.name == "gone.py" for f in found):
+            print("SELF-TEST FAIL: a deleted-but-still-indexed file was discovered "
+                  "via plain `git ls-files`", file=sys.stderr)
+            ok = False
+        if not any(f.name == "present.py" for f in found):
+            print("SELF-TEST FAIL: an ordinary tracked file went missing from "
+                  "discovery alongside the deleted one", file=sys.stderr)
+            ok = False
+
+        _write(tmp, "new_untracked.py", "def h():\n    return 1\n")
+        found_changed = discover(None, tmp, changed=True)
+        if any(f.name == "gone.py" for f in found_changed):
+            print("SELF-TEST FAIL: a deleted tracked file was discovered via "
+                  "`--changed` despite `--diff-filter=d`", file=sys.stderr)
+            ok = False
+        if not any(f.name == "new_untracked.py" for f in found_changed):
+            print("SELF-TEST FAIL: a genuinely new untracked file went missing "
+                  "from `--changed` discovery", file=sys.stderr)
+            ok = False
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return ok
+
+
+def _self_test_nonascii_filenames_unquoted() -> bool:
+    """A non-ASCII filename (`café.py`) must survive git-backed discovery
+    even under the DEFAULT `core.quotepath=true`: without `-z` on every git
+    listing call, git quotes it as a literal octal-escaped string
+    (`"caf\\303\\251.py"`), which does not end in a real extension and is
+    silently dropped by `_scannable`. `-z` disables that quoting outright,
+    for both the tracked (`ls-files -co`) and `--changed` (`ls-files
+    --others`) paths. Skips gracefully if git is unavailable."""
+    git = shutil.which("git")
+    if git is None:
+        print("docstring_check.py --self-test: git unavailable, skipping "
+              "non-ASCII filename checks", file=sys.stderr)
+        return True
+
+    ok = True
+    tmp = Path(tempfile.mkdtemp(prefix="docstring_check_selftest_nonascii_"))
+    try:
+        def run(args: list[str]) -> None:
+            subprocess.run(
+                [git, *args], cwd=str(tmp), check=True, capture_output=True,
+                encoding="utf-8", errors="replace",
+            )
+
+        run(["init", "-q"])
+        run(["config", "core.quotepath", "true"])
+        tracked_name = "café.py"
+        _write(tmp, tracked_name, "def f():\n    return 1\n")
+        run(["add", tracked_name])
+        run(["-c", "user.name=Docstring Sync Self-Test", "-c",
+             "user.email=selftest@example.invalid",
+             "commit", "-q", "-m", "add non-ascii file"])
+
+        untracked_name = "naïve.py"
+        _write(tmp, untracked_name, "def g():\n    return 1\n")
+
+        found = discover(None, tmp, changed=False)
+        if not any(f.name == tracked_name for f in found):
+            print("SELF-TEST FAIL: a committed non-ASCII filename was not "
+                  "discovered (quotepath likely swallowed it)", file=sys.stderr)
+            ok = False
+
+        found_changed = discover(None, tmp, changed=True)
+        if not any(f.name == untracked_name for f in found_changed):
+            print("SELF-TEST FAIL: an untracked non-ASCII filename was not "
+                  "discovered via --changed (quotepath likely swallowed it)",
+                  file=sys.stderr)
+            ok = False
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return ok
+
+
+def _self_test_multiline_construct_verbatim_fallback() -> bool:
+    """A `//`-prefixed line that is actually DATA inside a JS/TS/Go backtick
+    template literal must not be silently stripped as a comment -- the
+    per-line heuristic has no notion of "currently inside a backtick
+    string" (unlike its stateful `/* */` tracking), so
+    `_has_multiline_construct` detects the backtick and
+    `_code_line_signature` falls back to comparing the whole file verbatim
+    instead. `verify_docs_only` must also report this in its `notes`."""
+    ok = True
+    tmp = Path(tempfile.mkdtemp(prefix="docstring_check_selftest_multiline_"))
+    try:
+        rel = "lang/template_literal.js"
+        target = _write(tmp, rel, '''\
+const sql = `
+// NOTE: old reason
+SELECT 1
+`;
+function f() { return 1; }
+''')
+        snapshot = build_snapshot([target], tmp)
+        snap_file = tmp / "snapshot.json"
+        snap_file.write_text(json.dumps(snapshot), encoding="utf-8")
+
+        if not snapshot[rel].get("verbatim"):
+            print("SELF-TEST FAIL: a backtick-template-literal file was not "
+                  "flagged for verbatim comparison in the snapshot", file=sys.stderr)
+            ok = False
+
+        _write(tmp, rel, '''\
+const sql = `
+// NOTE: new reason -- the query body itself is unchanged
+SELECT 1
+`;
+function f() { return 1; }
+''')
+        violations, notes = verify_docs_only(snap_file, tmp)
+        if not violations:
+            print("SELF-TEST FAIL: a real content change inside a backtick "
+                  "template literal, on a `//`-prefixed line, was waved through "
+                  "as docs-only", file=sys.stderr)
+            ok = False
+        if not any(rel in n for n in notes):
+            print("SELF-TEST FAIL: verify_docs_only did not report the verbatim "
+                  "fallback in its notes", file=sys.stderr)
+            ok = False
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return ok
+
+
+def _self_test_paths_and_changed_intersection() -> bool:
+    """Positional paths and `--changed` combine as an INTERSECTION --
+    `src --changed` must scan only the changed files under `src`, not
+    every file under it (which would silently drop the whole point of
+    passing `--changed`) and not a changed file OUTSIDE `src` either.
+    Skips gracefully if git is unavailable."""
+    git = shutil.which("git")
+    if git is None:
+        print("docstring_check.py --self-test: git unavailable, skipping "
+              "paths-and-changed-intersection checks", file=sys.stderr)
+        return True
+
+    ok = True
+    tmp = Path(tempfile.mkdtemp(prefix="docstring_check_selftest_pathschanged_"))
+    try:
+        def run(args: list[str]) -> None:
+            subprocess.run(
+                [git, *args], cwd=str(tmp), check=True, capture_output=True,
+                encoding="utf-8", errors="replace",
+            )
+
+        run(["init", "-q"])
+        _write(tmp, "src/a.py", "def f():\n    return 1\n")
+        _write(tmp, "src/b.py", "def g():\n    return 1\n")
+        _write(tmp, "other/c.py", "def h():\n    return 1\n")
+        run(["add", "src/a.py", "src/b.py", "other/c.py"])
+        run(["-c", "user.name=Docstring Sync Self-Test", "-c",
+             "user.email=selftest@example.invalid",
+             "commit", "-q", "-m", "init"])
+
+        # Only b.py (under src) and c.py (outside src) actually change.
+        _write(tmp, "src/b.py", "def g():\n    return 2\n")
+        _write(tmp, "other/c.py", "def h():\n    return 2\n")
+
+        found = discover([str(tmp / "src")], tmp, changed=True)
+        names = {f.name for f in found}
+        if names != {"b.py"}:
+            print(f"SELF-TEST FAIL: `src --changed` should scan exactly the "
+                  f"changed files under src ({{'b.py'}}), got {names}", file=sys.stderr)
+            ok = False
+    finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return ok
 
@@ -2769,7 +3144,7 @@ def calc(x):
     """
     return x + 1
 ''')
-        violations = verify_docs_only(snap_file, tmp)
+        violations, _notes = verify_docs_only(snap_file, tmp)
         if violations:
             print(f"SELF-TEST FAIL: docstring-only edit was flagged: {violations}", file=sys.stderr)
             ok = False
@@ -2784,7 +3159,7 @@ def calc(x):
     """
     return x + 2
 ''')
-        violations = verify_docs_only(snap_file, tmp)
+        violations, _notes = verify_docs_only(snap_file, tmp)
         if not violations:
             print("SELF-TEST FAIL: a planted code edit was NOT caught by --verify-docs-only",
                   file=sys.stderr)
@@ -3008,6 +3383,11 @@ def calc(x):
         ok = _self_test_language_aware_code_signature() and ok
         ok = _self_test_docstring_pointer_scan() and ok
         ok = _self_test_changed_from_subdir() and ok
+        ok = _self_test_dir_walk_excludes_default_patterns() and ok
+        ok = _self_test_deleted_files_excluded() and ok
+        ok = _self_test_nonascii_filenames_unquoted() and ok
+        ok = _self_test_multiline_construct_verbatim_fallback() and ok
+        ok = _self_test_paths_and_changed_intersection() and ok
 
         if ok:
             print("docstring_check.py --self-test: all assertions passed")
@@ -3074,7 +3454,9 @@ def main(argv: list[str] | None = None) -> int:
         if not snap_path.is_file():
             print(f"error: snapshot file not found: {snap_path}", file=sys.stderr)
             return 2
-        violations = verify_docs_only(snap_path, root)
+        violations, notes = verify_docs_only(snap_path, root)
+        for n in notes:
+            print(f"verify-docs-only: note: {n}")
         if violations:
             print("verify-docs-only: VIOLATIONS found (non-docstring content changed):")
             for v in violations:

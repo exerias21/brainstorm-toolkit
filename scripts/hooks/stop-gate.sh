@@ -37,8 +37,12 @@
 # be gitignored, it is not content that arrived with the clone -- it's the
 # person's own config, so this is not an oversight); a file `git ls-files`
 # reports as TRACKED is repo-supplied content and this hook refuses to run
-# test.unit from it (stands down with a systemMessage instead), unless the
-# person sets `BRAINSTORM_TRUST_STOP_GATE=1` themselves. On top of that, the
+# test.unit from it (stands down with a systemMessage instead). FAIL CLOSED,
+# not fail open: that untracked-is-trusted inference requires an actual git
+# answer, so no `git` on PATH or `$PROJ` not inside a work tree (no `.git` at
+# all -- e.g. a zip download) also stands down, naming why, instead of
+# defaulting to trusted. Every stand-down is lifted the same way, by the
+# person setting `BRAINSTORM_TRUST_STOP_GATE=1` themselves. On top of that, the
 # FIRST Stop of any run that does proceed announces the exact command in its
 # systemMessage/reason (folded into whatever this invocation already emits --
 # never a second output line) before ever executing it, so the command run
@@ -67,8 +71,9 @@
 #       sentinel peek alone cannot (two parallel processes racing the same
 #       sentinel file). (b) is kept as a secondary check for when
 #       auto_continue is off.
-#   (d) `.claude/project.json` is TRACKED by git (see "Trust model" above) ->
-#       exit 0 with a systemMessage, never runs test.unit.
+#   (d) `.claude/project.json` is TRACKED by git, OR git/the work tree can't
+#       be confirmed at all (see "Trust model" above) -> exit 0 with a
+#       systemMessage, never runs test.unit.
 #
 # Config-gate first: the two stand-downs above only run AFTER this script has
 # confirmed the gate is configured, an in_progress envelope exists, and
@@ -206,13 +211,24 @@ fi
 # person's own config, not content that arrived with the clone, regardless of
 # whether it also happens to be gitignored; that is not an oversight, it's the
 # model. A file `git ls-files` reports as TRACKED is repo-supplied content and
-# is not trusted to auto-run a shell command on Stop, unless explicitly
-# overridden with BRAINSTORM_TRUST_STOP_GATE=1. See docs/ENFORCEMENT.md.
-if [ "${BRAINSTORM_TRUST_STOP_GATE:-}" != "1" ] \
-   && command -v git >/dev/null 2>&1 \
-   && git -C "$PROJ" ls-files --error-unmatch -- .claude/project.json >/dev/null 2>&1; then
-  emit_message "stop-gate: standing down — .claude/project.json is TRACKED by git in this repo, not your own local/gitignored config, so its pipeline.stop_gate opt-in is not trusted to run test.unit (\`$test_cmd\`) automatically on Stop. Untrack/gitignore the file, or set BRAINSTORM_TRUST_STOP_GATE=1 if your team deliberately commits a shared project.json. See docs/ENFORCEMENT.md."
-  exit 0
+# is not trusted to auto-run a shell command on Stop. FAIL CLOSED: the
+# untracked-is-trusted inference only holds once git has actually answered --
+# no `git` on PATH, or $PROJ not inside a work tree (no .git at all, e.g. a
+# zip download), means this hook cannot tell whether project.json arrived
+# with the clone or is the person's own config, so it stands down rather than
+# defaulting to trusted. Every one of these three outcomes (tracked, can't-
+# tell, and the "runs" case) is overridable the same way: explicit
+# BRAINSTORM_TRUST_STOP_GATE=1. See docs/ENFORCEMENT.md.
+if [ "${BRAINSTORM_TRUST_STOP_GATE:-}" != "1" ]; then
+  if ! command -v git >/dev/null 2>&1 \
+     || ! git -C "$PROJ" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    emit_message "stop-gate: standing down — git is unavailable, or $PROJ is not a git repo, so this hook can't tell whether .claude/project.json came from the repo or is your own config; failing closed rather than running test.unit (\`$test_cmd\`) automatically on Stop. Set BRAINSTORM_TRUST_STOP_GATE=1 to override. See docs/ENFORCEMENT.md."
+    exit 0
+  fi
+  if git -C "$PROJ" ls-files --error-unmatch -- .claude/project.json >/dev/null 2>&1; then
+    emit_message "stop-gate: standing down — .claude/project.json is TRACKED by git in this repo, not your own local/gitignored config, so its pipeline.stop_gate opt-in is not trusted to run test.unit (\`$test_cmd\`) automatically on Stop. Untrack/gitignore the file, or set BRAINSTORM_TRUST_STOP_GATE=1 if your team deliberately commits a shared project.json. See docs/ENFORCEMENT.md."
+    exit 0
+  fi
 fi
 
 HOPS_FILE="$PROJ/.claude/.stop-gate-hops"

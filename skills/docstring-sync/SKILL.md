@@ -38,7 +38,7 @@ directives this skill itself interprets, marked below:
 | Flag | Meaning |
 |---|---|
 | positional `path...` | limit discovery to these paths; default is the whole repo via `git ls-files -co --exclude-standard` |
-| `--changed` | scope to `git diff --name-only HEAD` plus untracked, non-ignored files (read-only) |
+| `--changed` | scope to `git diff --name-only HEAD` plus untracked, non-ignored files (read-only); combined with a positional `path...`, scans the intersection — changed files under those paths, not every file under them |
 | `--pointers-only` | the fast legacy-cleanup path: plan/ticket/TASKS.md pointer and placeholder findings only, no param/return or missing-docstring checks |
 | `--all` | widen triage from candidates (a docstring with an existing finding) to every docstring in scope — only meaningful together with the triage step below; costs roughly 3x the triage tokens |
 | `--limit N` | scan (and so edit) at most N discovered files this run, deterministic order, default 25 — the scan is the state, so re-running continues where the last run stopped |
@@ -157,8 +157,11 @@ split). Roll up each sub-agent's `{symbol, action, unresolved}` list into the ru
 Run `bash scripts/py.sh <skill-dir>/scripts/docstring_check.py <scope-flags> --verify-docs-only <snapshot-path>`,
 then `bash scripts/py.sh <skill-dir>/scripts/docstring_check.py <touched-files> --json`.
 The first call proves the edit is docs-only: a Python file's AST with docstrings stripped must
-be unchanged, and every changed line in a non-Python file must be a comment or blank line. The
-second re-scans exactly the files you touched — **zero remaining `certain`-severity `POINTER`
+be unchanged, and every changed line in a non-Python file must be a comment or blank line. A
+non-Python file containing a multi-line string construct (a backtick template literal, a
+`'''`/`"""` block, a YAML `|`/`>` block scalar, a shell heredoc) is compared verbatim instead —
+the output says so under `note:` — since per-line comment stripping cannot tell a data line
+inside one of those from a real comment. The second re-scans exactly the files you touched — **zero remaining `certain`-severity `POINTER`
 findings are allowed**; if one remains, the run is not done. Then re-run whatever test baseline
 Step 2 established. A regression here means you edited behavior, not documentation.
 

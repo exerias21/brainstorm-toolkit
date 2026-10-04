@@ -106,12 +106,18 @@ The fix is a deterministic, by-construction check rather than a prose warning: b
 executing `test.unit`, the hook runs `git ls-files --error-unmatch -- .claude/project.json` and
 stands down (systemMessage, never `decision:block`) if that file is tracked, unless the person
 sets `BRAINSTORM_TRUST_STOP_GATE=1` themselves (the escape hatch for a team that really does commit
-a shared config). This is a case the four questions answer cleanly: Q1 fires (the hole exists
-exactly when nobody is watching — the first Stop after a clone), Q2 is a single git plumbing call
-with a boolean answer, Q3 is three `scripts/ci/test-hooks.sh` cases (tracked stands down and never
-runs the command, the override re-enables it, untracked-inside-a-repo is unaffected), and Q4 is yes
-— `git ls-files` cannot be routed around by anything short of untracking the file, which is the
-intended escape. On top of the trust check, the first Stop of any run that does proceed also names
+a shared config). The untracked-is-trusted inference only holds once git has actually answered,
+so the check fails CLOSED, not open, when it can't ask: no `git` on PATH, or `$PROJ` not inside a
+work tree at all (no `.git` — e.g. a zip download), also stands down rather than defaulting to
+trusted, naming both the reason and the same override. (An earlier version of this check gated the
+git call on a bare `command -v git` and fell through to "trusted" when that failed — fail-open,
+unlike every other branch of this model — fixed to fail closed instead.) This is a case the four
+questions answer cleanly: Q1 fires (the hole exists exactly when nobody is watching — the first
+Stop after a clone, or any clone with no git on PATH), Q2 is a pair of git plumbing calls with a
+boolean answer, Q3 is `scripts/ci/test-hooks.sh` cases covering tracked, no-git, not-a-repo, the
+override, and untracked-inside-a-repo, and Q4 is yes — neither `git ls-files` nor the work-tree
+check can be routed around short of the intended escapes (untracking the file, or the override).
+On top of the trust check, the first Stop of any run that does proceed also names
 the exact command in its systemMessage/reason once (a
 `.claude/pipeline/<slug>/.stop-gate-announced` marker makes it once-per-run, not once-per-Stop) —
 cheap transparency for the case the trust check correctly lets through.
