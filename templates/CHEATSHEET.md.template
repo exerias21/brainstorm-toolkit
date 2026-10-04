@@ -60,9 +60,11 @@ Execution tiers — how much process the ask deserves:
                             | --queue [N] (attended backlog loop)
 
   Stage 2 (implement) auto-decomposes a large multi-surface plan (>=2
-  disjoint surfaces, >=6 steps) into focused per-lane subagents + a
-  converge step; small / single-surface plans run one agent. No flag —
-  the gate is automatic. Threshold: agents.decompose_min_tasks (default 6).
+  disjoint surfaces, AND >=6 steps OR >=12 files touched) into focused
+  per-lane subagents + a converge step; small / single-surface plans run
+  one agent. No flag — the gate is automatic. Thresholds:
+  agents.decompose_min_tasks (default 6) OR agents.decompose_min_files
+  (default 12).
 ```
 
 Cost control — two INDEPENDENT model axes. Keep them straight:
@@ -75,8 +77,9 @@ Cost control — two INDEPENDENT model axes. Keep them straight:
 
     The cap only ever LOWERS: Opus dispatches drop to it; Haiku is NOT
     upgraded. The per-stage key models.sanity is the ONLY way to RAISE
-    a Haiku stage. Governs sub-agents only — for full savings also set
-    your session model.
+    a per-focus default above its built-in tier (paths: haiku;
+    completeness/gotchas: sonnet). Governs sub-agents only — for full
+    savings also set your session model.
 
     DEFAULT is Sonnet-first: /sdlc, /brainstorm --vet and every other
     fan-out dispatch run on Sonnet out of the box; --model opus is the
@@ -120,11 +123,6 @@ Ideation family — pick by ambiguity, not by topic:
   /brainstorm-team [topic] → multi-agent product/competitive research team
 ```
 
-Convention skills — load a house pattern before writing code:
-
-```
-```
-
 ---
 
 ## Most-used commands
@@ -142,6 +140,9 @@ Convention skills — load a house pattern before writing code:
 | `/gotcha "..."` | Append a pitfall (auto-drafted at loop-exit on real traps) | after a bug bites |
 | `/repo-onboarding` | Regenerate AGENTS.md / project.json | new repo intake |
 | `/dead-code-review` | Multi-agent unused-code scan | pre-cleanup, monthly |
+| `/code-tour` | Why-focused docstrings + a guided reading path (`TOUR.md`) | onboarding someone new to the repo |
+| `/brainstorm-team [topic]` | Multi-agent product/competitive research team | heavy autonomous product research |
+| `/plan-html {plan}` | Render a markdown plan as a shareable single-file HTML page | handing a plan to a stakeholder |
 
 ---
 
@@ -224,8 +225,9 @@ where the skill ran. There's no cross-tool dispatch.
   into the top-level `models` and `agents` blocks; old `pipeline.*.model`
   keys are no longer read and fall back to the built-in default.
 - **`--model opus` didn't speed up / strengthen a stage** → the cap is a
-  ceiling and can only lower. A stage whose built-in tier is Haiku is raised
-  only by its per-stage key (`models.sanity`).
+  ceiling and can only lower. Stage 1.5's `paths` focus defaults to Haiku
+  (the other two focuses default to Sonnet); it is raised only by its
+  per-stage key (`models.sanity`).
 - **A new skill isn't in this map** → it landed after this template was
   generated. `README.md` will show it; edit this file to keep the map
   current.

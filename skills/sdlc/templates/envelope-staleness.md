@@ -3,10 +3,6 @@
 Canonical procedure for "find non-terminal pipeline envelopes and decide which are stale."
 Loaded by `/sdlc-status`, `/repo-health` (Check 7), `/sdlc`.
 
-It lives in one file because it was written out five times and **had already drifted**:
-`/sdlc`'s main-branch false-positive fix never reached `/sdlc-status`. Five copies of a rule with
-one copy fixed is worse than no rule.
-
 ## The scan
 
 Glob `.claude/pipeline/*/run.json`.
@@ -27,14 +23,13 @@ Append: *"looks committed outside the pipeline — reconcile."*
 **Read-only.** Every caller surfaces this; none rewrites the envelope. `/sdlc-status --prune-stale`
 is the one confirm-gated exception, and it deletes envelopes rather than editing them.
 
-## False-positive guards — the part that drifted
+## False-positive guards
 
 These are not optional polish; without them the scan cries wolf on every healthy repo.
 
 1. **Skip entirely on the `main_branch`** (`.claude/project.json::main_branch`, default `main`).
    Main accumulates merges, so *every* merged run's `base_commit` is an ancestor of HEAD and
-   every run looks reconcilable. Continuation is a feature-branch concern. This is the fix that
-   existed in `/sdlc` and nowhere else.
+   every run looks reconcilable. Continuation is a feature-branch concern.
 
 2. **At most one report per scan.** Take the **single most-recently-updated** qualifying run,
    never one line per historical envelope.

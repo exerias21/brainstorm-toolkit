@@ -27,13 +27,16 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-# Rough per-Mtok USD: (input, cache_write, cache_read, output). Used only as a
-# relative "where did it go" signal, never as a billing figure.
+# Rough per-Mtok USD: (input, cache_write, cache_read, output), 2026-06 list pricing for the
+# current generation (Opus 5, Sonnet 5, Haiku 4.5, Fable 5.x). Cache write = 1.25x input,
+# cache read = 0.1x input. Used only as a relative "where did it go" signal, never as a
+# billing figure -- an older copy of this table (Opus 15/75, Sonnet 3/15) overstated Opus
+# rows by 3x and Sonnet rows by 1.5x; re-check against list pricing before quoting.
 PRICE = {
-    "opus": (15.00, 18.75, 1.50, 75.00),
-    "sonnet": (3.00, 3.75, 0.30, 15.00),
+    "opus": (5.00, 6.25, 0.50, 25.00),
+    "sonnet": (2.00, 2.50, 0.20, 10.00),
     "haiku": (1.00, 1.25, 0.10, 5.00),
-    "fable": (3.00, 3.75, 0.30, 15.00),
+    "fable": (10.00, 12.50, 1.00, 50.00),
 }
 TIER_RANK = {"haiku": 1, "sonnet": 2, "opus": 3}
 USAGE_KEYS = ("inp", "out", "cr", "cw", "n")

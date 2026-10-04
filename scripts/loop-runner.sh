@@ -89,8 +89,8 @@ run_batch() {
   # shellcheck disable=SC2206
   [ -n "${LOOP_RUNNER_EXTRA:-}" ] && cmd+=(${LOOP_RUNNER_EXTRA})
   cmd+=("$prompt")
-  if [ "$DRY_RUN" = "1" ]; then printf '[dry-run] '; printf '%q ' "${cmd[@]}"; printf '\n'; return 0; fi
-  "${cmd[@]}"
+  if [ "$DRY_RUN" = "1" ]; then printf '[dry-run] '; printf '%q ' "${cmd[@]+"${cmd[@]}"}"; printf '\n'; return 0; fi
+  "${cmd[@]+"${cmd[@]}"}"
 }
 
 # --fresh no: whole queue in one process, no context reset.

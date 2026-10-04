@@ -1,0 +1,35 @@
+{
+  "name": "sdlc-two-step",
+  "prompt": "/sdlc plans/two-step.md",
+  "max_budget_usd": 2.5,
+  "assertions": [
+    {
+      "type": "json_path",
+      "file": ".claude/pipeline/two-step/run.json",
+      "path": "status",
+      "equals": "complete"
+    },
+    {
+      "type": "json_path",
+      "file": ".claude/pipeline/two-step/stage-outputs/parse.json",
+      "path": "data.implementation_step_count",
+      "equals": 2
+    },
+    {
+      "type": "json_path",
+      "file": ".claude/pipeline/two-step/stage-outputs/handoff.json",
+      "path": "data.committed",
+      "equals": false
+    },
+    {
+      "type": "git_head_unchanged"
+    },
+    {
+      "type": "pytest_green"
+    },
+    {
+      "type": "agent_models_within_cap",
+      "cap": "sonnet"
+    }
+  ]
+}

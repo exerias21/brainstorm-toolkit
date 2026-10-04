@@ -6,9 +6,9 @@ description: >
   pipeline runs (so a stalled /sdlc run can't hide). Reads
   TASKS.md and .claude/pipeline/ directly — no subagents, no dashboards.
   Invoke via /sdlc-status or when the user asks "what's left?", "current task?",
-  "status". Read-only by default; `--prune-stale` is an opt-in, confirm-gated
+  "status". Read-only by default; `--prune-stale` and `--reconcile` are opt-in, confirm-gated
   cleanup of stale/orphaned pipeline envelopes.
-argument-hint: "[--prune-stale]"
+argument-hint: "[--prune-stale] [--reconcile]"
 metadata:
    brainstorm-toolkit-applies-to: claude copilot codex
 ---
@@ -40,7 +40,21 @@ metadata:
    `skills/sdlc/templates/envelope-staleness.md` — the shared scan, including its
    false-positive guards (skip on `main_branch`, at most one report, silence when
    nothing changed). Read-only here: surface non-terminal and stale runs, don't
-   rewrite them. `--prune-stale` below is the only mutating path.
+   rewrite them. `--prune-stale` and `--reconcile` below are the only mutating paths.
+
+**`--reconcile` — backlog drift.** `TASKS.md` and the run envelopes can disagree, and
+nothing surfaced it before. Run `bash scripts/close-tasks.sh reconcile --file TASKS.md`
+(add `--apply` only after a single confirmation; without it the command writes nothing).
+It reports drift in **both** directions — a `complete`/`completed` envelope whose matched rows
+are still open (`terminal_envelope_open_rows`), an `in_progress` envelope with no TASKS.md row
+referencing it at all (`inprogress_envelope_no_row`), a `[x]` row filed outside `## Done`
+(`active_section_closed_row`), and a `[ ]`/`[~]` row filed under `## Done`
+(`done_section_open_row`). A `_followup_` or `_manual_` row is exempt from the
+terminal-envelope open-row finding — it was left open on purpose, not forgotten. A row whose
+`_phase: N_` tag names a phase its own plan file has no `#### Phase N` heading for is
+reported too. Print `drift_count` and one line per finding; say
+`backlog: no drift` when clean. Skip silently when `scripts/close-tasks.sh` is absent
+(`--no-copy-scripts` installs).
 8. **Print a 3–7 line summary**:
 
    ```
@@ -56,7 +70,7 @@ metadata:
    A non-terminal pipeline run is the one thing worth making loud — it's how a
    skipped/abandoned pipeline becomes visible instead of lingering in JSON.
 
-## Next step (absorbed from the former `/next`)
+## Next step (absorbed from the former `/next` and `/triage`)
 
 After the summary, print **one** recommended next command with a one-line reason. Highest
 match wins; stop at the first hit:
@@ -72,12 +86,14 @@ match wins; stop at the first hit:
    verbatim. Never consume the sentinel here; this skill is read-only.
 4. **A plan file with no pipeline run** → `/sdlc <plan>`.
 5. **`[~]` in-progress TASKS.md row** → `/sdlc task-<N>`.
-6. **`[ ]` pending rows** → the top one: `/task` if small and bounded, `/sdlc` if it
-   needs the full pipeline.
+6. **`[ ]` pending rows** → the top one that is not tagged `_manual_` in its trailer (the
+   text after the last ` — `; human-only work every dispatch path refuses — see
+   `templates/TASKS.md.template`), falling through to the next pending row when it is:
+   `/task` if small and bounded, `/sdlc` if it needs the full pipeline. If every remaining
+   pending row is `_manual_`, say so instead of recommending a command.
 7. **Nothing queued** → `/brainstorm` for ideation, or `/repo-health` for a hygiene sweep.
 
-Print it as `Next: <command>  — <reason>`. **Recommend only; never execute.** The classes in
-rung 1 are what the former `/triage` did — the diagnosis is a paragraph, not a skill.
+Print it as `Next: <command>  — <reason>`. **Recommend only; never execute.**
 
 ## `--prune-stale` (opt-in cleanup — the one write exception)
 
@@ -95,14 +111,7 @@ lets you actually clear them — confirm-gated, never automatic:
    it's a synthetic/garbage envelope, remove the `.claude/pipeline/<slug>/`
    directory. Report what was pruned.
 
-Without `--prune-stale`, `/sdlc-status` is **pure read** (default). The flag is the
-documented, confirm-gated exception — it's the only path that writes.
-
 ## Rules
-
-- **`/sdlc-status` is both the readout and the recommendation.** It absorbed the former
-  `/next` ladder and `/triage` classes, so there is one command for "where am I" and
-  "what next". It never executes — it recommends.
 
 - Pure read by default, no file writes. The sole exception is `--prune-stale`
   above, which is explicit and confirm-gated.

@@ -1,5 +1,7 @@
 # Model axes — design record
 
+> **✓ Live contract — current and maintained.**
+
 Maintainer reference. **Not shipped by `setup.sh`**, so it costs consumers nothing. The runtime
 contract lives in `skills/sdlc/templates/models.md`, which every fan-out skill loads on every
 run; anything here is background that a running agent does not need.
@@ -26,21 +28,75 @@ gains the parameter.
 
 ---
 
+## Why Stage 1.5's `completeness` and `gotchas` focuses default to Sonnet (2026-09-25)
+
+All three Stage 1.5 focuses defaulted to Haiku until this date. On this repo's own dogfooding,
+the Haiku `completeness` check repeatedly reported planned-but-unbuilt work as a missing plan
+step — the check couldn't tell "the plan omitted this" from "the plan describes work that
+doesn't exist in the codebase yet." `paths` stayed Haiku (it's a mechanical existence check);
+`completeness` and `gotchas` moved to Sonnet, and the prompt itself was tightened at the same
+time to name the failure mode directly.
+
+---
+
 ## Runtime regimes
 
   `agent()` that omits `model` inherits the session tier and **bypasses the cap**, so every
   dispatch must be wrapped.
 - **Copilot** → stages run inline in the session model; the cap is **advisory** (no
   sub-agent tier to lower). The `agents.*` counts still apply.
-- **Codex** → advisory too, but for a different reason worth keeping straight. Codex *does*
-  have native subagents (`.codex/agents/*.toml`, parallel, `max_threads`) — it is not
-  structurally inline-only like Copilot. What blocks tiering is that **per-subagent model
-  override is reported regressed upstream** (subagents inherit the parent model), so the
-  fan-out runs single-model.
+- **Codex** → advisory, but for a different reason than Copilot's. The *product* is not
+  structurally inline-only: Codex has native subagents (`.codex/agents/*.toml`, parallel,
+  `max_threads`), and per-subagent model override **works today** — per OpenAI's docs, a
+  custom agent file's `model` (and `model_reasoning_effort`) takes precedence, resolving
+  explicit spawn value > `[agents]` default > parent's value. The remaining open bug is
+  narrower — `model_provider` overrides specifically are ignored (openai/codex#40858,
+  reproduced on CLI v0.149.1) — which does not affect the single-provider case this toolkit
+  uses. So the product-level blocker is gone. What is *not* gone is that **this toolkit's
+  Codex overlay dispatches no sub-agents at all** — every stage runs inline in the session
+  model — so there is no fan-out for a per-subagent override to apply to, and the cap stays
+  advisory here for that reason, not a product limitation. Codex executors (dispatching a GPT
+  model via `.codex/agents/*.toml` from this toolkit's stages) were considered and are **not
+  planned** — no current need, and it would require a real Codex install to verify.
 
-  > **Reported, not verified here** — from web research on 2026-07-13, not a hands-on Codex
-  > install, and an upstream bug that may already be fixed. Re-check before relying on the
-  > limitation *or* its absence. Describes Codex only; changes nothing about tier defaults
+  > Re-checked 2026-09-13 against https://learn.chatgpt.com/docs/agent-configuration/subagents,
+  > superseding the 2026-07-13 "reported regressed" note this replaces.
+
+<!-- assert-manual: recheck-by 2027-03-15 "Codex per-subagent model override works today (openai/codex#40858 is narrowed to model_provider only)" -->
+
+---
+
+## Independence: why the reviewer is never re-tiered (2026-09-04)
+
+Stage 5.7 compares the reviewer's resolved value to the implementer's effective tier. The
+original rule *corrected* a collision by bumping the reviewer one tier up, or marked the run
+`degraded` when already at the ceiling. Two facts made the bump a defect rather than a
+safeguard:
+
+1. The reviewer's default is `opus`, the ceiling. A bump can only fire when the reviewer is
+   *below* the ceiling — i.e. only when the user set `models.code_review` / `--review-model`
+   explicitly. The bump therefore never protected a default; it only overrode explicit config.
+2. Under the standing `cap: sonnet`, the implementer is `sonnet`, so `code_review: "sonnet"` —
+   the exact edit the stage's own cap-warning recommends — always collided and always ran
+   Opus. The log line advised a knob the rule then undid.
+
+The fix keeps the *observation* (a same-tier reviewer is weaker, so the run is `degraded` and
+nothing auto-fixes) and drops the *correction*. Consequence to keep in mind when editing either
+axis: an explicit Axis 2 value is always the dispatched value. If a repo wants a stronger
+reviewer, it says so; the toolkit never spends Opus on the user's behalf.
+
+**Deterministic enforcement (2026-09-04).** `scripts/hooks/enforce-model-cap.sh` is a
+PreToolUse(Agent) hook, opt-in via `pipeline.enforce_cap`. It is verification-shaped, like the
+poka-yoke secret hook: it does not decide the tier, it clamps a `model` that exceeds the cap and
+fills one that is missing. It distinguishes Axis 2 by the `review:` description prefix that
+stage-5.7 requires on every reviewer dispatch. It cannot see `--model`, which is why it is
+opt-in rather than default.
+
+Related harness knob, for the record: Claude Code's `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`
+(v2.1.257+) overrides every sub-agent dispatch, per-invocation `model` included. On a repo with
+the review stage enabled it collapses Axis 2 onto whatever it forces and defeats independence
+silently; `CLAUDE_CODE_SUBAGENT_MODEL` without `_FORCE` is only a default for dispatches that
+omit `model`, which this contract never does, so it is harmless here.
 
 ---
 

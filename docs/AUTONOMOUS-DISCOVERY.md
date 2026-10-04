@@ -1,5 +1,7 @@
 # Autonomous discovery — Claude as a scheduled worker
 
+> **✓ Live contract — current and maintained.**
+
 Reference pattern. **Not shipped by `setup.sh`** — this is infrastructure you
 opt into deliberately, not a skill that drops into a repo. It describes how to
 run `/data-source-pattern`-style discovery skills unattended on a schedule by

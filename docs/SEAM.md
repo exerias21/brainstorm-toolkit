@@ -1,5 +1,7 @@
 # The `.next-action` seam — contract
 
+> **✓ Live contract — current and maintained.**
+
 The `.claude/.next-action` sentinel is the cross-skill handoff channel: a skill that
 finishes writes what should happen next, and the Stop hook
 (`scripts/hooks/next-action.sh`) surfaces it once. This page is the canonical contract now
@@ -32,10 +34,17 @@ command string.
 - **Append, never overwrite** (`>>`, not `>`) — so independent sources coexist instead of
   racing for one slot (the old "only if absent — outermost run wins" rule is gone; the gotcha
   seam and a pipeline handoff now both land).
-- **Dedup by `cmd`** — append only if that exact line isn't already present:
+- **Dedup by `cmd`** — the command is the action; `source` is provenance, not identity. Append
+  only if no existing line's `cmd` field already matches — matching on the exact line (including
+  `source`) is the bug this replaced: two writers proposing the same command with different
+  `source` values both appended, since the lines differed by `source` alone.
   ```sh
-  line='{"cmd":"/sdlc plans/foo.md","source":"brainstorm","confirm":false}'
-  grep -qF "$line" .claude/.next-action 2>/dev/null || echo "$line" >> .claude/.next-action
+  cmd='/sdlc plans/foo.md'
+  # -F (fixed string) so a cmd containing regex metacharacters (a plan path's
+  # `.md`, say) can never be misread as a pattern; -e twice covers both
+  # `"cmd":"x"` and `"cmd": "x"` spacings without needing to escape anything.
+  grep -qF -e "\"cmd\":\"$cmd\"" -e "\"cmd\": \"$cmd\"" .claude/.next-action 2>/dev/null \
+    || echo "{\"cmd\":\"$cmd\",\"source\":\"brainstorm\",\"confirm\":false}" >> .claude/.next-action
   ```
 - **Set `confirm:true`** for any command that writes git history or is otherwise hard to
   reverse. Default `false`. No toolkit skill writes git history unprompted — `/sdlc` stops at
@@ -66,6 +75,39 @@ grep -rlqs 'next-action' .claude/settings.json ~/.claude/settings.json .github/h
 - **Every other reader must PEEK** — read without deleting. `/sdlc-status` inspects the
   pending action to fold it into its output; if it consumed the line, the hook would have
   nothing to surface at the next Stop. A second consumer eats the hint before the user sees it.
+- **The reader also dedups by `cmd`**, on top of the writer-side check above — a defense against
+  a duplicate that slipped past a writer that skipped (or mis-implemented) its own dedup. It also
+  drops any entry whose plan/target file no longer exists (a stale pointer left over from a run
+  that already finished or was abandoned some other way), before printing or counting anything.
+- **A parked seam announces itself.** If, after dedup and staleness-dropping, more than one
+  distinct action is still pending, the hook prints `⚠ N actions pending — seam parked` alongside
+  the individual `Next: <cmd>` lines. Before this, duplicates could accumulate silently (the file
+  reached 5 pending lines in one observed run) and the loop-closing mechanism went dead with
+  nothing to show for it — a parked hook looked identical to a hook with nothing to say. The
+  warning is what makes that state visible instead of silent.
+
+## Single-blocker contract
+
+Stop hooks run in **parallel** — `hooks.json` array order is documentation, not precedence —
+so at most one hook should return `decision: block` per Stop event. `next-action.sh` is the only
+hook that can ever emit `decision: block`, and only from inside its own opt-in auto-continue path
+(guarded on `pipeline.loop.auto_continue: true`, see below) — with that knob unset, `next-action.sh`
+never blocks, full stop.
+
+Mutual exclusivity is therefore enforced **at the config level**: the opt-in
+`scripts/hooks/stop-gate.sh` (a red `test.unit` during an in-progress `/sdlc` run) stands down — a
+`systemMessage`, never `decision: block` — whenever `pipeline.loop.auto_continue` is `true`. That
+makes the one condition under which `next-action.sh` might block exactly the condition under which
+`stop-gate.sh` cannot, deterministically, with no dependency on which of two parallel hook
+processes reads or deletes a sentinel file first. `stop-gate.sh` also still PEEKs the
+`.next-action` file and stands down when a sentinel is pending; that peek is a secondary courtesy
+for when `auto_continue` is off (it avoids a redundant test run right before a hint is about to
+fire) and is not what the mutual-exclusion guarantee rests on.
+
+Two things this contract does **not** claim: `next-action.sh` tracks its own separate
+`.claude/.auto-continue-hops` budget (distinct from `stop-gate.sh`'s `.claude/.stop-gate-hops`),
+and `next-action.sh` does not read `stop_hook_active` at all — that escape hatch is
+`stop-gate.sh`'s own, unrelated to the single-blocker contract above.
 
 ## Cross-tool
 
@@ -73,7 +115,15 @@ grep -rlqs 'next-action' .claude/settings.json ~/.claude/settings.json .github/h
   `.claude/settings.json`, `.github/hooks/next-action.json`, and **`.codex/hooks.json`**
   respectively. Codex's Stop hook uses the same `systemMessage` / `decision:block` contract
   (learn.chatgpt.com/docs/hooks). The plugin ships it (SEAM1); `setup.sh` wires it for
-  copy-installs. Two Codex caveats: project-local `.codex/` hooks fire only once the user
+  copy-installs.
+  **`decision`/`reason` vs `continue`/`stopReason` — do not swap these.** Codex `Stop` accepts
+  both pairs and they do OPPOSITE things: `continue:false` + `stopReason` *halts* the turn,
+  while `decision:"block"` + `reason` is the one that *continues* it ("it tells Codex to
+  continue and automatically creates a new continuation prompt that acts as a new user prompt,
+  using your `reason` as that prompt text"). Auto-continue therefore wants `decision`/`reason`,
+  which is what `next-action.sh` emits. Recorded because the opposite reading was filed as a
+  latent bug and would have "fixed" the working field into the halting one (verified against the
+  docs 2026-09-12). Two Codex caveats: project-local `.codex/` hooks fire only once the user
   **trusts** the directory (`/hooks`), and Codex may run the hook from a subdirectory, so the
   script path resolves via the git top-level.
 - **Inline fallback** — writers still ALSO print `Next: <cmd>` inline (useful on Codex before
@@ -82,7 +132,7 @@ grep -rlqs 'next-action' .claude/settings.json ~/.claude/settings.json .github/h
 
 ## Auto-continue (Lever C / L9) — OPT-IN, default off
 
-With `pipeline.auto_continue: true` in `.claude/project.json`, on **Claude Code or Codex**
+With `pipeline.loop.auto_continue: true` in `.claude/project.json`, on **Claude Code or Codex**
 (both honor the Stop-hook `decision:block` contract), the Stop hook stops *printing* the next
 action and starts *executing* it: it returns
 `{"decision":"block","reason":"Continue with: <cmd>"}`, which feeds `<cmd>` back to the model
@@ -92,8 +142,9 @@ Guardrails (all enforced in `next-action.sh`, all non-negotiable):
 1. **Opt-in** — unset knob ⇒ unchanged print behavior. Nothing auto-runs by default.
 2. **Never a `confirm:true` action** — anything hard to reverse (a git write, a deploy) always
    parks to a printed hint. This is why every writer must set `confirm` honestly.
-3. **Single action only** — if more than one line is pending, the hook parks (prints). It
-   never guesses which of several to execute.
+3. **Single action only** — if more than one *distinct* action (post-dedup) is pending, the hook
+   parks (prints, with the `⚠ N actions pending — seam parked` depth warning above). It never
+   guesses which of several to execute.
 4. **Hop budget** — `pipeline.loop.max_hops` (default 5), tracked in
    `.claude/.auto-continue-hops`, decremented per hop; at 0 the loop parks. Bounds a runaway
    `brainstorm → pipeline → gotcha → …` chain exactly like the 3-iteration fix budget bounds a

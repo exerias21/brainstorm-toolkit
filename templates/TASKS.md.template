@@ -13,6 +13,19 @@ Current work items for AI agents (Claude Code, GitHub Copilot, etc.) and humans 
 - After the task line, append italicised key/value markers `_started_at: YYYY-MM-DD_`,
   `_completed_at: YYYY-MM-DD_`, `_blocked_reason: <short reason>_`.
 - Multiple markers may chain on the same line, separated by `·` (middle dot).
+- `_plan: <slug>_` — set by `/brainstorm` on every row it appends, using the slug
+  `/sdlc` Stage 0 derives (the plan filename with any `brainstorm-` / `team-brainstorm-` /
+  `pbi-NNN-` / `task-NNN-` prefix stripped). This is the exact key Stage 6's close-out
+  matches on; rows without it fall back to a `— plans/<slug>.md` path match.
+- `_phase: <N>_` — optional, groups a plan's rows so one phase can close as a unit.
+- `_followup_` (or `_followup: <why>_`) — a row **deliberately** left open after its
+  plan completed; a follow-up the run surfaced and chose not to do, not a forgotten
+  close-out. `reconcile` and the scope gate skip it.
+- `_manual_` — a row only a human can do. The scope gate never takes it and never
+  marks it `[~]`; the queue and task-range paths skip it too.
+- **Tags live in the trailer**, after the last ` — ` on the line. A title that merely
+  *mentions* `_manual_` or `_followup_` in its prose is not tagged — only a marker in
+  the trailer counts.
 - `/sdlc-status` reads these to surface cycle time (completed_at − started_at) and
   blocked-reason summaries. Missing fields are reported as "unknown", never as
   errors.

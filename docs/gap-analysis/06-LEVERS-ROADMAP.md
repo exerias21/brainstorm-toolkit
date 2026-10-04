@@ -53,7 +53,7 @@ end.
 **Wave 4 — downstream and unattended ceilings (L11, L12, L13).** Only after Waves 1–3 have
 real usage; each is independently justifiable and none blocks the others.
 
-## Implementation pre-flight (applies to every wave — from `CLAUDE.md`)
+## Implementation pre-flight (applies to every wave — from `AGENTS.md`)
 
 - **New skills** (`/next`, `/triage`, `/pr-followup`): copy an existing skill's shape; register
   in `.claude-plugin/marketplace.json`; README table row; honest

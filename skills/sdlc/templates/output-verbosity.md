@@ -20,8 +20,7 @@ restate file contents, echo sub-agent output, or recap what a stage is about to 
 **Always printed, even under `quiet`** — these are the run's contract, not narration:
 
 - the per-dispatch `model: <tier> (cap: <cap|none>)` line (the cap is only as real as this
-  line — `validate_skills.py` soft-warns that a fan-out skill *references* `model-cap.md`, it does
-  NOT check that the line is printed, so nothing but this instruction enforces it),
+  line — nothing automated checks it is printed; this instruction is the whole enforcement),
 - every gate verdict and any PAUSE/soft-stop block,
 - the `Next:` seam line,
 - warnings: the Stage 0 config-presence check, the reviewer-axis cost note, the session-model nudge.

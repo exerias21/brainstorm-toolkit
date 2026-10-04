@@ -1,0 +1,20 @@
+{
+  "name": "sdlc-status-readout",
+  "prompt": "/sdlc-status",
+  "max_budget_usd": 0.6,
+  "assertions": [
+    {
+      "type": "output_max_lines",
+      "n": 8,
+      "scope": "fenced",
+      "_why": "measure the skill's fenced readout, not the whole message: the child inherits the operator's output style, which can append commentary"
+    },
+    {
+      "type": "output_contains",
+      "text": "Next:"
+    },
+    {
+      "type": "tree_unchanged"
+    }
+  ]
+}

@@ -58,7 +58,7 @@ You do NOT embed repo-specific patterns in your own behavior — you read them f
 Same as `/test-check` Step 1. Reuse `scripts/check_docker_logs.py`:
 
 ```bash
-python3 scripts/check_docker_logs.py --output json \
+bash scripts/py.sh scripts/check_docker_logs.py --output json \
   --log-command "<logs.command>" --services <logs.services>
 ```
 
@@ -146,6 +146,10 @@ Agent(
     Fix ONLY the specific issues identified. Do not refactor surrounding code.
     Do not modify the test itself unless the error clearly indicates a test bug
     (stale selector, wrong assertion) rather than a product bug.
+
+    GIT: never run a git command that writes — no stash, commit, checkout, switch, reset, restore, rebase, merge, clean, or branch creation. The working tree holds the user's uncommitted work; git that only reads (status, diff, log, show) is fine. If you need a clean baseline, report it as a blocker instead.
+
+    COMMENTS: never reference the plan in code — no plan file paths, plan/phase/step numbers, or TASKS.md rows in comments or docstrings. Write the reason itself; the plan does not ship with the code and its numbering means nothing once it is gone.
 
     If the test file references auth setup or navigation patterns, check
     {test.e2e_patterns_file} for repo-specific conventions before editing.
@@ -236,6 +240,6 @@ Your report is consumed by `/sdlc` Stage 5 (and by humans directly). Keep the st
 - **Read the patterns file before editing tests** — if `test.e2e_patterns_file` exists, repo-specific auth/nav conventions live there. Ignoring it causes "fixes" that contradict the repo's established flow.
 - **Don't modify application code in a way the fix agent can't justify from the failure data** — if the failure is opaque, stop and report rather than speculate.
 - **Preserve flaky-test signal** — flakes are data about the test suite's health, not noise to suppress. Always report them in the ⚠️ section, even when the overall run passes.
-- **Never commit, push, or create a PR** — that's `/sdlc`'s job. You run, fix, report.
+- **Never commit, push, or create a PR** — no stage of this toolkit does git writes. You run, fix, report.
 - **Never skip failing tests to make the run green** — if a test is genuinely broken and you can't fix it in `max_fix_loops`, mark `failed_after_max_iterations` and let the human decide.
 - **Graceful skip on missing config** — `test.e2e` missing means exit cleanly with a note, not error.

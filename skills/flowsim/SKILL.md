@@ -17,7 +17,7 @@ metadata:
 
 ## Framing
 
-This is NOT a program simulator. It's a **structured code review** formatted as a narrative trace: "the plan claims X → grep/read the code → report what actually happens". LLMs are reliable at static analysis ("does this call exist", "what does this function return") when scoped to 2–3 hops. Flowsim keeps the scope tight on purpose.
+This is NOT a program simulator. It's a **structured code review** formatted as a narrative trace: "the plan claims X → grep/read the code → report what actually happens". Flowsim keeps the scope tight on purpose.
 
 ## Inputs
 
@@ -25,6 +25,10 @@ Also called inline by `/sdlc` Stage 5 (as its flow axis) whenever a parent plan
 is available.
 
 - **Plan source**: a `plans/brainstorm-<slug>.md` file, a `plans/tasks/task-N-<slug>.md` file, or a TASKS.md row. The plan must describe at least one flow: entry point → steps → outcome.
+  **Skill-repo detection** (same idiom `/sdlc` uses): if `.claude-plugin/marketplace.json` exists
+  at repo root, the plan lives at `docs/plans/<slug>.md` instead — resolve the plan there, and
+  resolve the cache (step 0 and step 4 below) beside it in `docs/plans/` too, so both steps agree
+  on one location.
 - **Optional**: `--max-hops N` (default 3) — how many function/module jumps to follow per flow.
 - **Optional**: `--focus <module>` — restrict tracing to one module (useful for large features).
 - **Optional**: `--force` — ignore the prior-run cache (see Flow step 0) and re-trace every flow.
@@ -37,8 +41,9 @@ is available.
 
 ### 0. Check the prior-run cache
 
-Before tracing, look for `plans/flowsim-<feature-slug>.json` from a previous run.
-If it exists and `--force` was NOT passed:
+Before tracing, look for `plans/flowsim-<feature-slug>.json` from a previous run (or
+`docs/plans/flowsim-<feature-slug>.json` in a skill repo — see the skill-repo detection note
+above). If it exists and `--force` was NOT passed:
 
 1. Load the prior flows array.
 2. For each prior flow with `status: "MATCH"` and every step anchored to a real
@@ -50,19 +55,14 @@ If it exists and `--force` was NOT passed:
    re-trace from scratch in step 2.
 
 This trims re-runs after a fix loop — flows whose code paths were not touched
-by the fix do not need to be re-walked. Typical savings: 40–60% of trace work
-on subsequent runs of `/sdlc` Stage 5 against the same feature.
+by the fix do not need to be re-walked.
 
 If `plans/flowsim-<feature-slug>.json` does not exist, proceed normally — no
 cache, every flow is traced fresh.
 
 ### 1. Extract claimed flows
 
-From the plan, identify each distinct **flow** — a user/system action and its claimed path. Examples:
-- "User submits order form → POST /api/orders → OrderService.create → Stripe.charge → db.orders.insert"
-- "Cron runs → worker/discovery.py → fetch(source_url) → parse → upsert into `deals` table"
-- "User clicks 'Export' → GET /api/reports/export.csv → stream assembled from db"
-
+From the plan, identify each distinct **flow** — a user/system action and its claimed path.
 List each flow as a numbered item. Stop here and ask the user to confirm if the plan is vague enough that you'd be guessing at the flows — do not invent flows that the plan didn't claim.
 
 ### 2. Trace each flow through the code
@@ -75,7 +75,7 @@ For every other flow, walk through up to `--max-hops` steps. At each hop, record
 - **Status**: `MATCH` / `MISMATCH` / `UNCLEAR` / `MISSING`.
 
 Rules:
-- **Every anchor must be a real `file:line` reference.** If you can't find one, mark `MISSING` — do not hallucinate.
+- **Every anchor must be a real `file:line` reference.** If you can't find one, mark `MISSING`.
 - **Follow the actual call chain**, not what the plan hopes for. If the plan says A→B→C but the code does A→D→C, report A→D→C and flag `MISMATCH` at step 2.
 - **Stop at `--max-hops`** even if the chain continues. Note this as "truncated at hop N — continue manually if needed".
 
@@ -99,22 +99,31 @@ Produce a markdown block:
 
 | # | Claimed | Anchor | Actual | Status |
 |---|---------|--------|--------|--------|
-| 1 | User POSTs /api/orders | `api/routes/orders.py:42` `create_order()` | Matches | MATCH |
 | 2 | Validates payload via OrderSchema | `api/schemas/order.py:10` `OrderSchema` | Schema exists but missing `payment_method` field | **MISMATCH** |
-| 3 | OrderService.create | (MISSING) | No `OrderService` class found; inline logic in route handler | **MISMATCH** |
 
-**Eval coverage**: `evals/orders/` has 3 fixtures, 2 pass, 1 fail (`missing-payment-method.json`).
-**Test coverage**: `tests/test_orders.py` exists with 4 cases; none exercise Flow 1 end-to-end.
-
-**Summary**: Flow 1 deviates from the plan at steps 2 and 3. Step 2 mismatch is corroborated by a failing eval. Step 3 suggests the plan's service-layer separation was not implemented.
+**Summary**: Flow 1 deviates from the plan at step 2, corroborated by a failing eval.
 
 ### Flow 2: ...
 ```
 
-## Rules
+**Write the cache.** After producing the report, write the flows array plus a `written_at`
+timestamp to `plans/flowsim-<feature-slug>.json` (or `docs/plans/flowsim-<feature-slug>.json`
+in a skill repo — the same location step 0 read from), creating that directory first if it
+doesn't exist. This is the cache step 0 of the *next* run reads, so a fresh run always leaves
+one behind — including a `cached-MATCH` run, so the `written_at` mtime advances and a later
+run's staleness check has a current baseline to compare against.
 
-- **Three hops max by default.** Deeper chains get unreliable; if the plan implies a 5-hop flow, split it into two flows of 3 hops each.
-- **Every claim needs a `file:line` anchor** or an explicit `MISSING` marker. No "I think this is in the code somewhere".
-- **Don't invent flows the plan didn't claim.** If the plan is vague, say so and ask the user to clarify before tracing.
-- **Don't fix anything.** Flowsim is read-only. Hand findings to the user (or, when running inside the pipeline, to Stage 5's fix loop).
+```json
+{
+  "flows": [ /* the per-flow status/steps this run produced, including any carried-through cached-MATCH entries */ ],
+  "written_at": "2026-09-20T00:00:00Z"
+}
+```
+
+## Output limits
+
+- **Three hops max by default.** If the plan implies a 5-hop flow, split it into two flows of 3 hops each.
+- **Never edits source.** Flowsim writes its own cache file (above) and nothing else — it never
+  touches the code it's tracing. Hand findings to the user (or, when running inside the pipeline,
+  to Stage 5's fix loop).
 - **Cap output at ~60 lines of markdown** unless there are many flows. A 200-line flowsim report is a sign the plan is too ambitious for one feature.

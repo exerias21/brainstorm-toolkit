@@ -51,4 +51,6 @@ OUTPUT a JSON object EXACTLY in this shape (this becomes converge.json data):
 Set import_check.status to "fail" with the offending entries in `unresolved`
 if anything does not resolve and you could not fix it here — that feeds the
 Stage 5's shared fix loop. Do NOT expand scope beyond reconciling the lanes' edits.
+
+COMMENTS: never reference the plan in code — no plan file paths, plan/phase/step numbers, or TASKS.md rows in comments or docstrings. Write the reason itself; the plan does not ship with the code and its numbering means nothing once it is gone.
 ```
