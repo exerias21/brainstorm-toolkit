@@ -323,7 +323,9 @@ def _under_any(candidate: Path, roots: list[Path]) -> bool:
     resolved = candidate.resolve()
     for root_ in roots:
         try:
-            resolved.relative_to(root_)
+            # Resolve the root too, or a symlinked root (macOS /tmp ->
+            # /private/tmp) never contains its own resolved children.
+            resolved.relative_to(root_.resolve())
             return True
         except ValueError:
             continue

@@ -191,7 +191,10 @@ def sha256_of(path):
 def repo_relative(proj, path):
     ap = path if os.path.isabs(path) else os.path.join(os.getcwd(), path)
     try:
-        rel = os.path.relpath(ap, proj)
+        # Resolve both sides: getcwd() is already symlink-resolved but proj may
+        # not be (macOS /tmp -> /private/tmp, a repo reached through a symlink),
+        # which would yield a "../../private/..." key instead of tests/x.py.
+        rel = os.path.relpath(os.path.realpath(ap), os.path.realpath(proj))
     except ValueError:
         rel = path
     return rel.replace(os.sep, '/')
