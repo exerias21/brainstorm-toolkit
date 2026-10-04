@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)"
 ROOT_TMP="/tmp/sdlc-roundtrip-$$"
 
 cleanup() {

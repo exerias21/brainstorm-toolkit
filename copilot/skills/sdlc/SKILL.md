@@ -115,7 +115,7 @@ outside `[a-z0-9-]` replaced with `-`, runs collapsed, ends trimmed; it must mat
 initialize `.claude/pipeline/<slug>/` with the canonical `run.json` (schema:
 `skills/sdlc/templates/state-schema.md`) — `pipeline: "sdlc"`,
 `base_commit`, `status: "in_progress"`, **and the computed required fields that get dropped
-otherwise (DQ6):** `plan_hash: "sha256:$(sha256sum <plan> | cut -d' ' -f1)"`, `started_at` =
+otherwise (DQ6):** `plan_hash: "sha256:$( (sha256sum <plan> 2>/dev/null || shasum -a 256 <plan>) | cut -d' ' -f1)"`, `started_at` =
 `updated_at` = `"$(date -u +%Y-%m-%dT%H:%M:%SZ)"`. Omitting them breaks `--resume` and
 `/sdlc-status`/`/repo-health` staleness detection.
 

@@ -7,7 +7,13 @@ on:
 
 jobs:
   setup-roundtrip:
-    runs-on: ubuntu-latest
+    # macOS ships bash 3.2 and BSD sed/grep/date/stat, and lacks `timeout`; every
+    # shipped script and hook must work there too, so the same steps run on both.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,6 +23,19 @@ jobs:
           # that moved without a version bump. A depth-1 (shallow) clone hides
           # that history: fetch-depth 0 gets the full history this check needs.
           fetch-depth: 0
+
+      - name: Use stock /bin/bash (3.2) on macOS
+        if: runner.os == 'macOS'
+        # Runner images put Homebrew bash 5 first on PATH; a stock Mac runs hooks
+        # under /bin/bash 3.2. Shadow `bash` so every `bash ...` in these steps and
+        # inside the hook harness runs the version users actually have.
+        run: |
+          mkdir -p "$RUNNER_TEMP/stockbash"
+          ln -sf /bin/bash "$RUNNER_TEMP/stockbash/bash"
+          echo "$RUNNER_TEMP/stockbash" >> "$GITHUB_PATH"
+
+      - name: Show bash version
+        run: bash --version | head -1
 
       - name: Set up Python
         uses: actions/setup-python@v5

@@ -1132,5 +1132,5 @@ case "$SUBCMD" in
     ;;
 esac
 
-"$PY" "$PYCORE" "${ARGS[@]}"
+"$PY" "$PYCORE" "${ARGS[@]+"${ARGS[@]}"}"
 exit $?

@@ -29,7 +29,7 @@ Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
    slug instead. The envelope is canonical per `skills/sdlc/templates/state-schema.md` —
    **all** required keys, including the three that keep getting dropped because they need
    *computing* (write them, don't skip):
-   `plan_hash: "sha256:$(sha256sum <plan-file> | cut -d' ' -f1)"`,
+   `plan_hash: "sha256:$( (sha256sum <plan-file> 2>/dev/null || shasum -a 256 <plan-file>) | cut -d' ' -f1)"`,
    `started_at` / `updated_at: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"` (refresh `updated_at` on
    every stage transition). **Omitting `plan_hash` / `started_at` / `updated_at` silently
    breaks `--resume`'s plan-edit guard and `/sdlc-status` + `/repo-health` staleness detection.**

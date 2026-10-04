@@ -27,7 +27,7 @@
 
 set -euo pipefail
 
-PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)"
 CAP_HOOK="$PLUGIN_ROOT/scripts/hooks/enforce-model-cap.sh"
 GATE_HOOK="$PLUGIN_ROOT/scripts/hooks/stop-gate.sh"
 PROTECT_TESTS="$PLUGIN_ROOT/scripts/protect-tests.sh"

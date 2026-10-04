@@ -68,7 +68,7 @@ NEXT_ACTION_FILE="$PROJ/.claude/.next-action"
 # then executes on the very first Stop. A rejected or non-running value is
 # reported on stderr and resolution falls through to the probe.
 # shellcheck source=./_pyresolve.sh
-. "$(dirname "${BASH_SOURCE[0]}")/_pyresolve.sh"
+. "$(dirname "${BASH_SOURCE[0]:-$0}")/_pyresolve.sh"
 PY="$(hooks_resolve_python "$PROJ")" || PY=""
 
 # Collect messages. Two kinds, by design:
@@ -172,7 +172,7 @@ if [ -d "$PIPE_DIR" ]; then
   stale=0
   for rj in "$PIPE_DIR"/*/run.json; do
     [ -e "$rj" ] || continue
-    grep -q '"status"[[:space:]]*:[[:space:]]*"\(in_progress\|paused\)"' "$rj" 2>/dev/null || continue
+    grep -Eq '"status"[[:space:]]*:[[:space:]]*"(in_progress|paused)"' "$rj" 2>/dev/null || continue
     [ -n "$(find "$rj" -mtime +1 2>/dev/null)" ] && stale=$((stale+1))
   done
   if [ "$stale" -gt 0 ]; then

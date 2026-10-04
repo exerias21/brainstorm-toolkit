@@ -52,7 +52,7 @@ trigger=""; event=""
 JQ=""; PY=""
 if command -v jq >/dev/null 2>&1 && echo '{}' | jq -e . >/dev/null 2>&1; then JQ="jq"; fi
 # shellcheck source=./_pyresolve.sh
-. "$(dirname "${BASH_SOURCE[0]}")/_pyresolve.sh"
+. "$(dirname "${BASH_SOURCE[0]:-$0}")/_pyresolve.sh"
 PY="$(hooks_resolve_python "$PROJ")" || PY=""
 [ -n "$JQ" ] || [ -n "$PY" ] || exit 0
 

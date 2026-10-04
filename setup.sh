@@ -57,7 +57,7 @@ case "$TOOLS" in
   *) echo "--tools must be claude, copilot, codex, both, or all" >&2; exit 2 ;;
 esac
 
-PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # A missing target used to fail here with a bare `cd: No such file or directory`, which is how
 # CI's install-refs step (and the documented `--target /tmp/test-repo` smoke install) broke on a
 # fresh runner. Create it, and say so, so a typo'd path is visible rather than silent.
@@ -110,8 +110,7 @@ copy_tree_if_new() {
   (cd "$src" && find . -type f \
       ! -path '*/__pycache__/*' \
       ! -name '*.pyc' \
-      ! -name '*.pyo' \
-      -printf '%P\n') | while read -r rel; do
+      ! -name '*.pyo') | sed 's|^\./||' | while read -r rel; do
     local skip=0 ex
     if [[ -n "$exclude" ]]; then
       for ex in $exclude; do
@@ -425,7 +424,7 @@ ensure_gitignored() {
     check_broader=1
   fi
   if awk -v r="^${entry_re}[/]?$" -v b="$check_broader" \
-       '{sub(/\r$/,"")} $0 ~ r || (b == "1" && $0 ~ /^[.]claude[/]?$/) {found=1} END {exit !found}' "$gi"; then
+       '{sub(/\r$/,"")} $0 ~ r || (b == "1" && $0 ~ /^[.]claude\/?$/) {found=1} END {exit !found}' "$gi"; then
     echo "  skip: .gitignore already covers $entry"
   else
     if [[ -n "$(tail -c1 "$gi" 2>/dev/null)" ]]; then

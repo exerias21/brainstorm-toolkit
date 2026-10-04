@@ -36,7 +36,7 @@ if [ -z "$PROJ" ]; then
   if _gr="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -n "$_gr" ]; then PROJ="$_gr"; else PROJ="$PWD"; fi
 fi
 # shellcheck source=./_pyresolve.sh
-. "$(dirname "${BASH_SOURCE[0]}")/_pyresolve.sh"
+. "$(dirname "${BASH_SOURCE[0]:-$0}")/_pyresolve.sh"
 PY="$(hooks_resolve_python "$PROJ")" || PY=""
 if [ -z "$PY" ]; then
   if [ -f "$PROJ/.claude/project.json" ] \

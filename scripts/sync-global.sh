@@ -47,7 +47,7 @@ WANT_HOOKS=1
 PRUNE_RELATIVE=0
 UNINSTALL=0
 SKILL_FILTER=""
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -136,7 +136,7 @@ fi
 declare -a SKILLS=()
 if [[ -n "$SKILL_FILTER" ]]; then
   IFS=',' read -ra SKILLS <<< "$SKILL_FILTER"
-  for s in "${SKILLS[@]}"; do
+  for s in "${SKILLS[@]+"${SKILLS[@]}"}"; do
     [[ -d "$REPO/skills/$s" ]] || { echo "error: no such skill: $s" >&2; exit 1; }
   done
 else
@@ -145,7 +145,7 @@ fi
 
 say "syncing ${#SKILLS[@]} skill(s):"
 run "mkdir -p '$SKILLS_DST'"
-for s in "${SKILLS[@]}"; do
+for s in "${SKILLS[@]+"${SKILLS[@]}"}"; do
   # --delete is scoped INSIDE this one skill dir: it prunes files removed from the
   # repo's copy of THIS skill, and can never reach a sibling skill it doesn't own.
   if [[ "$COPY_TOOL" == "rsync" ]]; then
@@ -264,7 +264,7 @@ if [[ "$DRY_RUN" -eq 0 ]] && command -v jq >/dev/null; then
   # --uninstall reads this file to know what it owns.
   PRIOR="$(cat "$MANIFEST" 2>/dev/null || echo '{}')"
   printf '%s' "$PRIOR" | jq --arg repo "$REPO" \
-        --argjson skills "$(printf '%s\n' "${SKILLS[@]}" | jq -R . | jq -s .)" \
+        --argjson skills "$(printf '%s\n' "${SKILLS[@]+"${SKILLS[@]}"}" | jq -R . | jq -s .)" \
         --argjson agents "$(for f in "$REPO"/agents/*.md; do basename "$f" .md; done \
                             | jq -R . | jq -s .)" \
         '{repo: $repo,
