@@ -976,10 +976,16 @@ ok
 CASE="pyresolve: a Windows drive-letter form path to an in-repo python3 marker is rejected outright (g)"
 d="$(pyr_dir 07)"
 write_marker_script "$d/bin/python3"
-DRIVE_FORM="$(cygpath -w "$d/bin/python3" 2>/dev/null | sed 's#\\#/#g')"
-if [ -z "$DRIVE_FORM" ]; then
-  echo "[skip] pyresolve drive-letter case: cygpath not available on this host"
-else
+# cygpath exists only on Windows (Git Bash/MSYS). Guarded with `command -v`, not a
+# pipeline: under `set -euo pipefail` a missing cygpath exits 127 and kills the run.
+# Elsewhere a synthetic drive-letter path still exercises the rule, which rejects
+# the value lexically, before anything could run.
+DRIVE_FORM=""
+if command -v cygpath >/dev/null 2>&1; then
+  DRIVE_FORM="$(cygpath -w "$d/bin/python3" | sed 's#\\#/#g')"
+fi
+[ -n "$DRIVE_FORM" ] || DRIVE_FORM="C:${d}/bin/python3"
+{
   cat > "$d/.claude/project.json" <<EOF
 {"python": "$DRIVE_FORM"}
 EOF
@@ -988,7 +994,7 @@ EOF
   [ -f "$d/bin/evil-ran.marker" ] && fail "a drive-letter form path must never be executed"
   [ -n "$PYR_OUT" ] || fail "expected the probe fallback to still resolve a working interpreter"
   ok
-fi
+}
 
 # The eight cases below (h, A1-A4, B1-B2) all pin the SAME follow-up finding:
 # stripping just "."/empty PATH entries at the lookup is not enough on its
