@@ -8,19 +8,16 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/next-action.sh\"",
-            "args": [],
             "timeout": 10
           },
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/run-cost-report.sh\"",
-            "args": [],
             "timeout": 10
           },
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/stop-gate.sh\"",
-            "args": [],
             "timeout": 310
           }
         ]
@@ -33,7 +30,6 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/reseed-context.sh\"",
-            "args": [],
             "timeout": 10
           }
         ]
@@ -46,7 +42,6 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/enforce-model-cap.sh\"",
-            "args": [],
             "timeout": 10
           }
         ]
