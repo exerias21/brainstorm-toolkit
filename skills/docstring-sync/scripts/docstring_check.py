@@ -1566,23 +1566,73 @@ _HEREDOC_EXTS = {".sh", ".rb"}
 # Rust's raw-string literal (`r"..."`, `r#"..."#`, `r##"..."##`, ...) can
 # span multiple lines and is not caught by the backtick/heredoc checks
 # above or, in the `r#"`/`r##"` form, reliably by the generic quote-parity
-# check below (the leading `#`s are not quote characters). Detected by a
-# plain substring match rather than parity -- simpler and still fail-safe,
-# since a false positive here only costs an extra verbatim comparison.
+# check below (the leading `#`s are not quote characters). Anchored at a
+# token boundary -- NOT a bare substring match -- so `"for"`, `"colour"`,
+# or any other identifier/word ending in a bare `r` right before a `"`
+# does not false-positive into "this file has a Rust raw string" (a
+# negative lookbehind for an identifier character, since `r"`/`r#"` is
+# only ever a raw-string prefix when it starts a fresh token).
 _RUST_RAW_STRING_EXTS = {".rs"}
-
-# Languages, among `_HEURISTIC_TEXT_EXTS`, whose single-quoted string
-# literal can ITSELF span multiple lines (so an odd single-quote count on
-# a line is a real signal there, same as the double-quote check below).
-# Deliberately excludes C/C++/Java/Go/Rust, where `'` opens a character
-# literal -- never multi-line -- so counting its parity there would just
-# be noise (an apostrophe in a `//` comment, already handled by the
-# comment-stripping in `_odd_unescaped_quote_count`'s caller, is the only
-# other way a lone `'` shows up in those languages).
-_SINGLE_QUOTE_MULTILINE_EXTS = {".js", ".ts", ".jsx", ".tsx", ".sh", ".rb"}
+_RUST_RAW_STRING_RE = re.compile(r'(?<![A-Za-z0-9_])r#*"')
 
 _YAML_BLOCK_SCALAR_RE = re.compile(r":\s*[|>][+-]?\s*(#.*)?$")
 _SHELL_HEREDOC_RE = re.compile(r"<<-?~?\s*['\"]?[A-Za-z_][A-Za-z0-9_]*")
+
+# ── Directive comments: NEVER stripped, even though they look like plain
+# comments -- a rewrite that edits one is a real behavior change, not a
+# docs-only one. One pattern list per language family, so adding a new
+# directive is a one-line addition here rather than a new special case at
+# a call site. Each regex matches against the WHOLE `.strip()`-ed line;
+# `_is_directive_line` below is what `_code_line_signature` consults
+# before it strips anything, in both its line- and block-comment paths.
+_TS_JS_DIRECTIVE_PATTERNS: tuple[re.Pattern, ...] = (
+    re.compile(r"^//\s*@ts-(expect-error|ignore|nocheck)\b"),
+    re.compile(r"^//\s*eslint-(disable|enable)\b"),
+    re.compile(r"^/\*\s*eslint\b"),
+    re.compile(r"^//\s*prettier-ignore\b"),
+)
+_DIRECTIVE_PATTERNS_BY_EXT: dict[str, tuple[re.Pattern, ...]] = {
+    ".js": _TS_JS_DIRECTIVE_PATTERNS,
+    ".jsx": _TS_JS_DIRECTIVE_PATTERNS,
+    ".ts": _TS_JS_DIRECTIVE_PATTERNS,
+    ".tsx": _TS_JS_DIRECTIVE_PATTERNS,
+    ".go": (
+        re.compile(r"^//go:\w+"),       # //go:build, //go:embed, //go:generate
+        re.compile(r"^//\s*\+build\b"),  # legacy // +build constraint
+    ),
+    ".sh": (
+        re.compile(r"^#\s*shellcheck\b"),
+    ),
+    ".rb": (
+        re.compile(r"^#\s*frozen_string_literal:"),
+        re.compile(r"^#\s*-\*-.*-\*-\s*$"),  # # -*- coding: ... -*-
+        re.compile(r"^#\s*vim:"),
+    ),
+    ".yml": (re.compile(r"^#\s*yaml-language-server:"),),
+    ".yaml": (re.compile(r"^#\s*yaml-language-server:"),),
+}
+
+
+def _is_directive_line(stripped: str, ext: str) -> bool:
+    """True when `stripped` (a full `.strip()`-ed line) is a directive
+    comment for `ext`: a shebang, a Go build tag, a `@ts-expect-error`
+    suppression, an eslint/prettier toggle, a shellcheck pragma, a
+    yaml-language-server pragma, or a Ruby magic comment. These are
+    comment-shaped but change tool/interpreter behavior, so
+    `--verify-docs-only` must never let an edit to one pass as
+    docs-only -- `_code_line_signature` keeps a directive line in the
+    signature verbatim instead of discarding it as a plain comment.
+
+    The shebang check is generic rather than per-language: ANY extension
+    whose line-comment marker is `#` can carry one (`.sh`, `.rb`, ...),
+    so it is keyed off `_LINE_COMMENT_BY_EXT` instead of its own entry in
+    the per-ext table below."""
+    if stripped.startswith("#!") and _LINE_COMMENT_BY_EXT.get(ext) == "#":
+        return True
+    for pattern in _DIRECTIVE_PATTERNS_BY_EXT.get(ext, ()):
+        if pattern.match(stripped):
+            return True
+    return False
 
 
 def _strip_line_comment(line: str, ext: str) -> str:
@@ -1609,8 +1659,8 @@ def _strip_line_comment(line: str, ext: str) -> str:
     start when seen OUTSIDE one. A string left open at end-of-line (the
     real multi-line case) is simply never exited, so no marker inside it
     can ever be mistaken for a comment on this line either -- consistent
-    with `_odd_unescaped_quote_count` reading an odd count off the
-    unmodified line in that case."""
+    with `_line_ends_in_open_string` reporting the line as still open in
+    that case."""
     marker = _LINE_COMMENT_BY_EXT.get(ext)
     if not marker:
         return line
@@ -1638,26 +1688,77 @@ def _strip_line_comment(line: str, ext: str) -> str:
     return line
 
 
-def _odd_unescaped_quote_count(line: str, quote: str) -> bool:
-    """True when `line` contains an odd number of un-escaped `quote`
-    characters -- the signature of a string literal that opens on this
-    line and does not close on it, so its content (comment-shaped or not)
-    carries onto the next line(s) as DATA. A backslash escapes the
-    character right after it, so backslashes are consumed in pairs:
-    `\\\\` is one literal backslash and does not escape what follows it,
-    while an odd run ending right before `quote` does escape it."""
-    count = 0
+def _line_ends_in_open_string(line: str) -> bool:
+    """True when `line`, scanned left to right, is still INSIDE a `"..."`
+    or `'...'` string literal at end-of-line -- the signature of a string
+    that opens on this line and does not close on it, so its content
+    (comment-shaped or not) carries onto the next line(s) as DATA.
+
+    This is the same quote-aware engine `_strip_line_comment` uses
+    (`in_str` tracks at most one open quote type at a time, with
+    backslash-escape handling), reused here instead of a raw per-quote-
+    character count -- which is the fix: counting raw `"` / `'`
+    characters treats an apostrophe inside a `"..."` string (`"don't"`)
+    or a `"` inside a `'...'` string (`'"'`) as a quote in its own right,
+    forcing a false "unterminated string" on an ordinary, already-
+    balanced line. Scanning instead means a quote of the OTHER type,
+    seen while already inside a string, is just data and never toggles
+    anything -- only a matching close quote exits `in_str`."""
+    in_str: str | None = None
     i = 0
     n = len(line)
     while i < n:
         ch = line[i]
-        if ch == "\\":
-            i += 2
+        if in_str:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == in_str:
+                in_str = None
+            i += 1
             continue
-        if ch == quote:
-            count += 1
+        if ch in ('"', "'"):
+            in_str = ch
         i += 1
-    return count % 2 == 1
+    return in_str is not None
+
+
+def _block_comment_remainder(
+    stripped: str, in_block: bool, ext: str
+) -> tuple[str | None, bool]:
+    """One line's `/* ... */` state transition, factored out of
+    `_code_line_signature` so the quote-parity scan in
+    `_has_multiline_construct` can share the exact same block-comment
+    tracking instead of re-deriving it -- the second half of the noisy-
+    direction fix: a block comment's own body (including a `*`-
+    continuation line, e.g. a JSDoc ` * it's complicated`) must
+    contribute NOTHING to the quote count, the same way it already
+    contributes nothing to the code signature.
+
+    Takes the CURRENT `in_block` state and a `.strip()`-ed line; returns
+    `(remainder, new_in_block)`. `remainder` is None when the whole line
+    is block-comment body -- callers must treat None as "skip this
+    line entirely", not as empty code. Exts with no `/* */` form at all
+    (per `_BLOCK_COMMENT_EXTS`) just echo the line back with `in_block`
+    always False."""
+    if ext not in _BLOCK_COMMENT_EXTS:
+        return stripped, False
+    if in_block:
+        end = stripped.find("*/")
+        if end == -1:
+            return None, True
+        in_block = False
+        stripped = stripped[end + 2:].strip()
+        if not stripped:
+            return None, False
+    if stripped.startswith("/*"):
+        close = stripped.find("*/", 2)
+        if close == -1:
+            return None, True
+        stripped = stripped[close + 2:].strip()
+        if not stripped:
+            return None, False
+    return stripped, in_block
 
 
 def _has_multiline_construct(text: str, ext: str) -> bool:
@@ -1683,12 +1784,18 @@ def _has_multiline_construct(text: str, ext: str) -> bool:
     (C/C++ backslash-continued strings, Java/Kotlin text blocks via
     ordinary unterminated `"`, etc.) needs the same signal: an unclosed
     quote on one line means the next line is string DATA, not code or a
-    comment, and `_code_line_signature` cannot track that state."""
+    comment, and `_code_line_signature` cannot track that state. It
+    shares `_block_comment_remainder` with `_code_line_signature` so a
+    line that is entirely inside a `/* */` block comment -- including an
+    apostrophe on a `*`-continuation line -- contributes no quotes
+    either; without that, a routine JSDoc ("it's") would force the whole
+    file to the verbatim fallback this function exists to trigger only
+    for a REAL multi-line construct."""
     if ext in _BACKTICK_STRING_EXTS and "`" in text:
         return True
     if "'''" in text or '"""' in text:
         return True
-    if ext in _RUST_RAW_STRING_EXTS and ('r"' in text or 'r#"' in text):
+    if ext in _RUST_RAW_STRING_EXTS and _RUST_RAW_STRING_RE.search(text):
         return True
     if ext in (".yml", ".yaml"):
         for line in text.splitlines():
@@ -1699,12 +1806,13 @@ def _has_multiline_construct(text: str, ext: str) -> bool:
             if _SHELL_HEREDOC_RE.search(line):
                 return True
     if ext in _HEURISTIC_TEXT_EXTS:
-        check_single = ext in _SINGLE_QUOTE_MULTILINE_EXTS
+        in_block = False
         for line in text.splitlines():
-            stripped = _strip_line_comment(line, ext)
-            if _odd_unescaped_quote_count(stripped, '"'):
-                return True
-            if check_single and _odd_unescaped_quote_count(stripped, "'"):
+            remainder, in_block = _block_comment_remainder(line.strip(), in_block, ext)
+            if remainder is None:
+                continue
+            code_part = _strip_line_comment(remainder, ext)
+            if _line_ends_in_open_string(code_part):
                 return True
     return False
 
@@ -1718,11 +1826,19 @@ def _code_line_signature(text: str, ext: str = "") -> str:
     `ext` picks the comment syntax from `_LINE_COMMENT_BY_EXT` /
     `_BLOCK_COMMENT_EXTS`; an unrecognized (or empty) `ext` strips nothing,
     per the fail-safe default documented on those tables. A `/* */` block
-    comment's own state is tracked ACROSS lines, so a ` * `-prefixed
-    continuation line is only ever treated as a comment while an open block
-    is actually in progress -- never on its own, which is what let a bare
-    `*p = 0;` pointer-deref line get swallowed under the old blind-prefix
-    heuristic.
+    comment's own state is tracked ACROSS lines (via `_block_comment_remainder`,
+    shared with the quote-parity scan in `_has_multiline_construct`), so a
+    ` * `-prefixed continuation line is only ever treated as a comment while
+    an open block is actually in progress -- never on its own, which is what
+    let a bare `*p = 0;` pointer-deref line get swallowed under the old
+    blind-prefix heuristic.
+
+    A DIRECTIVE line (`_is_directive_line` -- a shebang, a Go build tag, a
+    `@ts-expect-error` suppression, an eslint/prettier toggle, a shellcheck
+    or yaml-language-server pragma, a Ruby magic comment) is checked FIRST,
+    before either comment path, and is always kept in the signature: it
+    looks like a comment but changes behavior, so it must never be
+    discarded the way an ordinary comment is.
 
     When `_has_multiline_construct` finds a multi-line string/heredoc/block
     construct this function cannot track the state of, comment stripping is
@@ -1739,23 +1855,13 @@ def _code_line_signature(text: str, ext: str = "") -> str:
         stripped = line.strip()
         if not stripped:
             continue
+        if _is_directive_line(stripped, ext):
+            lines.append(stripped)
+            continue
         if has_block:
-            if in_block:
-                end = stripped.find("*/")
-                if end == -1:
-                    continue  # still inside the open block comment
-                in_block = False
-                stripped = stripped[end + 2:].strip()
-                if not stripped:
-                    continue
-            if stripped.startswith("/*"):
-                close = stripped.find("*/", 2)
-                if close == -1:
-                    in_block = True
-                    continue
-                stripped = stripped[close + 2:].strip()
-                if not stripped:
-                    continue
+            stripped, in_block = _block_comment_remainder(stripped, in_block, ext)
+            if stripped is None:
+                continue
         if line_comment and stripped.startswith(line_comment):
             continue
         lines.append(stripped)
@@ -2875,7 +2981,16 @@ def _self_test_multiline_construct_language_coverage() -> bool:
     that makes this possible must NOT regress ordinary single-line code:
     a C file with balanced strings and a `//`-comment-only edit, and a JS
     file with an apostrophe inside a `// don't`-style comment, must both
-    stay clean."""
+    stay clean.
+
+    Also covers the quote-aware-scanner fix: an apostrophe INSIDE a
+    `"..."` string (JS `"don't"`) or a `"` INSIDE a `'...'` string (Ruby
+    `'"'`) must not count as an opening quote of its own, and a JSDoc
+    block's apostrophe (`it's`) must contribute no quotes at all -- none
+    of these may force a comment-only edit elsewhere in the same file to
+    verbatim comparison. And the Rust raw-string anchor fix: `"for"`
+    (which contains the bare substring `r"` the old check matched on)
+    must not be mistaken for a raw string either."""
     ok = True
     tmp = Path(tempfile.mkdtemp(prefix="docstring_check_selftest_multiline_lang_"))
     try:
@@ -2981,6 +3096,191 @@ def _self_test_multiline_construct_language_coverage() -> bool:
             "# header comment\ns = \"a # b\"\ndef f\n  1\nend\n",
             "# header comment reworded\ns = \"a # b\"\ndef f\n  1\nend\n",
             'Ruby `"a # b"` string containing a fake `#` marker',
+        )
+
+        # Negative control (noisy-direction fix): an apostrophe INSIDE a
+        # `"..."` string is a quote of the OTHER type while already
+        # inside a string -- it must not itself register as an opening
+        # quote. A comment-only edit elsewhere in the file must stay clean.
+        assert_clean(
+            "lang/js_apostrophe_in_string.js",
+            "const s = \"don't\";\n// old note\nfunction f() { return 1; }\n",
+            "const s = \"don't\";\n// new note\nfunction f() { return 1; }\n",
+            "JS apostrophe INSIDE a double-quoted string (`\"don't\"`)",
+        )
+
+        # Negative control, Ruby: a `\"` inside a `'...'` string is the
+        # same "other quote type while inside a string" case, `#`-comment
+        # flavored.
+        assert_clean(
+            "lang/rb_quote_in_string.rb",
+            "x = '\"'\n# old note\ndef f\n  1\nend\n",
+            "x = '\"'\n# new note\ndef f\n  1\nend\n",
+            "Ruby double-quote INSIDE a single-quoted string (`'\"'`)",
+        )
+
+        # Negative control (noisy-direction fix): an apostrophe inside a
+        # `/** ... */` JSDoc block -- including a ` * `-continuation line
+        # -- must contribute no quotes at all; a comment-only edit
+        # elsewhere in the file must stay clean.
+        assert_clean(
+            "lang/ts_jsdoc_apostrophe.ts",
+            "/**\n * it's complicated, see below\n */\nfunction f(): number {\n"
+            "    // old note\n    return 1;\n}\n",
+            "/**\n * it's complicated, see below\n */\nfunction f(): number {\n"
+            "    // new note\n    return 1;\n}\n",
+            "TS JSDoc block containing an apostrophe (`it's`)",
+        )
+
+        # Negative control (imprecise-anchor fix): Rust's raw-string check
+        # used to be a bare `'r"' in text` substring match, which matches
+        # the tail of an ordinary word like `"for"` (`...r"` at its end)
+        # even though no raw string is present. A comment-only edit
+        # elsewhere must stay clean, not fall back to verbatim.
+        assert_clean(
+            "lang/rust_for_string.rs",
+            'let w = "for";\n// old note\nfn f() -> i32 { 1 }\n',
+            'let w = "for";\n// new note\nfn f() -> i32 { 1 }\n',
+            'Rust `"for"` (bare substring match on the old raw-string check)',
+        )
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return ok
+
+
+def _self_test_directive_comments_never_stripped() -> bool:
+    """A directive comment -- a shebang, a Go build tag, a
+    `@ts-expect-error` suppression, an eslint toggle (line and block
+    form), a shellcheck pragma, or a Ruby magic comment -- LOOKS like a
+    plain comment but changes behavior, so `_code_line_signature` must
+    keep it in the signature verbatim. Each positive case below edits
+    ONLY the directive and must be caught as a real change; each negative
+    control edits only an ORDINARY comment in the same language and must
+    stay clean, proving the directive table does not regress plain
+    comment handling for that language.
+
+    (Rust's `#![...]`/`#[...]` attributes are already covered by
+    `_self_test_language_aware_code_signature`'s `#[attr]` case -- `.rs`
+    uses `//` as its line-comment marker, so a `#`-prefixed line was
+    never a candidate for stripping in the first place.)"""
+    ok = True
+    tmp = Path(tempfile.mkdtemp(prefix="docstring_check_selftest_directive_"))
+    try:
+        def assert_caught(rel: str, before: str, after: str, label: str) -> None:
+            nonlocal ok
+            target = _write(tmp, rel, before)
+            snapshot = build_snapshot([target], tmp)
+            snap_file = tmp / f"{rel.replace('/', '_')}.caught.snapshot.json"
+            snap_file.write_text(json.dumps(snapshot), encoding="utf-8")
+            _write(tmp, rel, after)
+            violations, _notes = verify_docs_only(snap_file, tmp)
+            if not violations:
+                print(f"SELF-TEST FAIL: {label} -- a directive-comment edit in "
+                      f"{rel} was waved through as docs-only", file=sys.stderr)
+                ok = False
+
+        def assert_clean(rel: str, before: str, after: str, label: str) -> None:
+            nonlocal ok
+            target = _write(tmp, rel, before)
+            snapshot = build_snapshot([target], tmp)
+            snap_file = tmp / f"{rel.replace('/', '_')}.clean.snapshot.json"
+            snap_file.write_text(json.dumps(snapshot), encoding="utf-8")
+            _write(tmp, rel, after)
+            violations, _notes = verify_docs_only(snap_file, tmp)
+            if violations:
+                print(f"SELF-TEST FAIL: {label} -- a plain comment-only edit in "
+                      f"{rel} was flagged as code: {violations}", file=sys.stderr)
+                ok = False
+
+        # Shell: a shebang interpreter swap is a real behavior change.
+        assert_caught(
+            "lang/sh_shebang.sh",
+            "#!/bin/bash\necho hi\n",
+            "#!/bin/sh\necho hi\n",
+            "shell shebang swap",
+        )
+        assert_clean(
+            "lang/sh_shebang.sh",
+            "#!/bin/bash\n# old comment\necho hi\n",
+            "#!/bin/bash\n# new comment\necho hi\n",
+            "shell plain-comment-only edit",
+        )
+
+        # Shell: a shellcheck pragma changes which warnings are suppressed.
+        assert_caught(
+            "lang/sh_shellcheck.sh",
+            "#!/bin/sh\n# shellcheck disable=SC2034\nfoo=1\n",
+            "#!/bin/sh\n# shellcheck disable=SC2154\nfoo=1\n",
+            "shellcheck disable= pragma change",
+        )
+
+        # Go: a build tag changes which platform the file compiles for.
+        assert_caught(
+            "lang/go_build_tag.go",
+            "//go:build linux\n\npackage p\n\nfunc F() int { return 1 }\n",
+            "//go:build darwin\n\npackage p\n\nfunc F() int { return 1 }\n",
+            "Go `//go:build` tag change",
+        )
+        assert_clean(
+            "lang/go_build_tag.go",
+            "// old explanation\npackage p\n\nfunc F() int { return 1 }\n",
+            "// new explanation\npackage p\n\nfunc F() int { return 1 }\n",
+            "Go plain-comment-only edit",
+        )
+
+        # TypeScript: removing a `@ts-expect-error` suppression re-enables
+        # type checking on the next line -- a real behavior change.
+        assert_caught(
+            "lang/ts_expect_error.ts",
+            '// @ts-expect-error\nconst x: number = "s";\n',
+            'const x: number = "s";\n',
+            "TS `@ts-expect-error` removed",
+        )
+        assert_clean(
+            "lang/ts_expect_error.ts",
+            "// old note\nconst x = 1;\n",
+            "// new note\nconst x = 1;\n",
+            "TS plain-comment-only edit",
+        )
+
+        # JS: an eslint-disable-next-line's rule list changes which lint
+        # rule is actually suppressed on the following line.
+        assert_caught(
+            "lang/js_eslint.js",
+            "// eslint-disable-next-line no-unused-vars\nconst x = 1;\n",
+            "// eslint-disable-next-line no-console\nconst x = 1;\n",
+            "JS `// eslint-disable-next-line` rule change",
+        )
+        assert_clean(
+            "lang/js_eslint.js",
+            "// old note\nconst x = 1;\n",
+            "// new note\nconst x = 1;\n",
+            "JS plain-comment-only edit",
+        )
+
+        # JS: the block-comment form of an eslint directive must be kept
+        # too, not just the `//` line form -- it is still a directive, not
+        # an ordinary `/* */` comment to discard.
+        assert_caught(
+            "lang/js_eslint_block.js",
+            "/* eslint-disable no-console */\nconst x = 1;\n",
+            "/* eslint-disable no-alert */\nconst x = 1;\n",
+            "JS `/* eslint ... */` block-directive change",
+        )
+
+        # Ruby: `# frozen_string_literal` controls whether string literals
+        # in the file are frozen -- flipping it is a real behavior change.
+        assert_caught(
+            "lang/rb_frozen.rb",
+            "# frozen_string_literal: true\ndef f\n  1\nend\n",
+            "# frozen_string_literal: false\ndef f\n  1\nend\n",
+            "Ruby `# frozen_string_literal` flip",
+        )
+        assert_clean(
+            "lang/rb_frozen.rb",
+            "# old note\ndef f\n  1\nend\n",
+            "# new note\ndef f\n  1\nend\n",
+            "Ruby plain-comment-only edit",
         )
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -3627,6 +3927,7 @@ def calc(x):
         ok = _self_test_nonascii_filenames_unquoted() and ok
         ok = _self_test_multiline_construct_verbatim_fallback() and ok
         ok = _self_test_multiline_construct_language_coverage() and ok
+        ok = _self_test_directive_comments_never_stripped() and ok
         ok = _self_test_paths_and_changed_intersection() and ok
 
         if ok:
