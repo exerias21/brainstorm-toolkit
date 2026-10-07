@@ -65,15 +65,28 @@ every piece hangs off code `/sdlc` already runs.
    per-step `Files:` line convention to `skills/brainstorm/templates/plan.md.template` (it is
    what step 2 parses; existing plans use it only sometimes).
    Files: `scripts/close-tasks.sh`, `templates/TASKS.md.template`, `docs/BOARD-JSON.md`, `skills/brainstorm/templates/plan.md.template`.
-2. **`close-tasks.sh waves`** (read-only by default). Inputs: `TASKS.md`, each open row's
-   plan file (the `#### Phase N` section's file paths), `.claude/pipeline/*/run.json`.
+   Tags are read from `trailer(line)` only (never the whole line — prose that mentions a tag
+   must not parse as one), values are `[a-z0-9:/.-]` (no `_`, which ends a tag), and the
+   existing `TAG_STRIP_RE` already strips them from `title`.
+2. **`close-tasks.sh waves`** (read-only by default). Inputs: `TASKS.md` and each open row's
+   plan file (the `#### Phase N` section's file paths). The row's plan file comes from
+   `parse_row()['plan']`, falling back to the `_plan:` slug under `plans/` then `docs/plans/`;
+   every path resolves against the `TASKS.md` directory, never the cwd. (Pipeline envelopes are
+   not an input: a `[~]` row already says it is in flight.)
+   - Wiring — all five sites in `scripts/close-tasks.sh`: `usage()`, the bash flag loop (add
+     `--write`), a `waves)` arm in the bash `case "$SUBCMD"`, the Python `Args` defaults + flag
+     parser in `main()`, and an `elif sub == 'waves'`. Document the JSON shape and `--write`
+     contract (with a `schema` field, additive-fields rule as `board`) in `docs/BOARD-JSON.md`,
+     and add `waves` to README's `close-tasks.sh` subcommand prose.
+   - Lane globs: Python's `fnmatch` has no `**` or `{a,b}`, so add a small glob→regex helper.
+     A file matching several surfaces takes the first in the gate table's order.
    - File extraction for a row's plan phase: every step-level `Files:` line in that
      `#### Phase N` section, plus backticked repo paths in the section that exist on disk;
      a phase with neither yields no files (→ `unknown_files[]`).
    - Candidates: open `Active / Pending` rows. `_manual_` rows go to a `needs_you[]` list;
      `Blocked` rows are excluded.
-   - Order edges: within one `_plan:`, a row waits while a lower `_phase:` of that plan has an
-     open row; an explicit `_after:` adds an edge (and overrides inference).
+   - Order edges: within one `_plan:`, a row waits while a lower `_phase:` of that plan has a
+     not-done row (Active / Pending **or** Blocked — a blocked dependency is still undone); an explicit `_after:` adds an edge (and overrides inference).
    - Conflict edges: explicit `_conflicts:`, plus inferred — two rows whose plan-phase file
      lists intersect. A row with no resolvable files has no inferred conflicts (parallel by
      default) and is reported under `unknown_files[]` so the gap is visible.
@@ -85,50 +98,79 @@ every piece hangs off code `/sdlc` already runs.
    - Output: JSON on stdout (`{now: {<lane>: row}, next: {<lane>: [rows]}, needs_you,
      unknown_files, overlaps}`); `--write <path>` also renders `ACTION_ITEMS.md` laid out by
      lane, with a "generated — edit TASKS.md, not this file" banner and the generating command.
-   Files: `scripts/close-tasks.sh`.
+   Files: `scripts/close-tasks.sh`, `docs/BOARD-JSON.md`, `README.md`.
 3. **Worktree overlap warning.** In `waves`, read `git worktree list --porcelain`, then each
-   worktree's `git diff --name-only HEAD` plus untracked files (read-only git only, with the
-   Windows subprocess rule above). A now row
+   **other** worktree's `git diff --name-only HEAD` plus untracked files (read-only git only, with the
+   Windows subprocess rule above; `cwd=` per worktree; skip the current worktree and any
+   prunable/missing path; compare worktree paths after `realpath` normalization). A now row
    whose files intersect another worktree's dirty set gets `overlaps: [{worktree, branch,
    files}]` and a ⚠ line in the rendered file. Skip silently outside git.
 4. **Tests.** Extend `close-tasks.sh`'s existing CI harness with scratch `TASKS.md` + plan
    fixtures: within-plan phase order, `_after:` override, inferred file conflict, one-per-lane,
    `_manual_` → `needs_you`, no-files → parallel + `unknown_files`, a worktree overlap, and an
-   empty now-wave.
-   Files: `scripts/ci/test-hooks.sh`.
+   empty now-wave. Follow the existing close-tasks cases' shape (`ct_dir` / `run_ct`, inline
+   Python assertions, em-dash bytes via `printf`); the overlap case needs a scratch
+   `git init` + commit + `git worktree add`. Also run `waves` once against this repo's real
+   `TASKS.md` and report the `unknown_files[]` / inferred-conflict counts (noise budget).
+   Bump `.claude-plugin/plugin.json` + `marketplace.json` version here too: `check_contracts.py`
+   `version-freshness` fails any PR whose shipped files (`scripts/`, `templates/`, `skills/`)
+   changed without a bump, so each phase ships its own (step 14 is Phase 3's).
+   Files: `scripts/ci/test-hooks.sh`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`.
 
 #### Phase 2 — Wire it into the pipeline
 
 5. **Config.** `pipeline.action_items.enabled` (default `false` — but also ON whenever
    `ACTION_ITEMS.md` already exists, so creating the file once opts a repo in),
    `pipeline.action_items.file` (default `ACTION_ITEMS.md`), `pipeline.action_items.reassess`
-   (default `false`). Both `templates/project.json.example` and `docs/CONFIG.md`.
+   (default `false`). Both `templates/project.json.example` (with `_comment`s — write these before any
+   prose cites the keys, or `check_contracts.py` `config-keys` fails) and `docs/CONFIG.md`. The
+   `file` path and the presence check (`test -f`) resolve against the `TASKS.md` directory, never the cwd.
 6. **Stage 6 regenerate.** In `skills/sdlc/templates/stage-6-handoff.md`, right after the
-   close-out script: when enabled, run `close-tasks.sh waves --write <file>` and copy its
-   JSON summary into `handoff.json` `data.waves`, and patch `skills/sdlc/templates/state-schema.md`'s
+   close-out script (inside step 3, after the Auditability paragraph, before the State write;
+   don't renumber): when enabled, run `close-tasks.sh waves --write <file>` and copy only its
+   new additive `summary` object (`{now, lanes, next, needs_you, unknown_files, conflicts}`
+   counts — add it to `do_waves`) plus `overlaps[]` into `handoff.json` `data.waves`, never the
+   full JSON; add `waves` to the State write block's hardcoded `data` literal, and patch `skills/sdlc/templates/state-schema.md`'s
    `handoff` shape to document `data` (today's `data.tasks` is undocumented too) and `data.waves`. Gate sentence in `skills/sdlc/SKILL.md`
    Stage 6 is unnecessary (it's a step of an always-loaded template); one line in Stage 7's
-   report: `waves: now N across L lane(s), next M` plus any overlap warning.
+   report: `waves: now N across L lane(s), next M` plus any overlap warning (omitted when the step
+   skipped). Capture the `waves` JSON via a pipe or a repo-relative path, never Git Bash `/tmp`.
+   When `scripts/close-tasks.sh` is missing (the plugin-only install gap close-out already
+   reports), skip regenerate silently and leave `data.waves` absent — the same skip applies to
+   steps 7, 8 and 12.
 7. **Queue selection.** In `skills/sdlc/templates/queue-mode.md` step 1: when enabled, select
    from `waves` now (priority within it) instead of plain priority, and call
    `close-tasks.sh waves --write` explicitly between items — the existing re-scan only
    re-reads `TASKS.md`, it does not regenerate the waves. An empty now-wave **parks** via the Park protocol with
-   the reason (`needs_you` rows, blocked rows, or nothing open).
+   the reason (`needs_you` rows, blocked rows, or nothing open) and `<resume-cmd>` = `/sdlc-status`;
+   `needs_you` rows alone also park.
 8. **`/sdlc-status`.** One line from `close-tasks.sh waves` (read-only, no `--write`) plus
-   overlap warnings, in `skills/sdlc-status/SKILL.md`.
+   overlap warnings, in `skills/sdlc-status/SKILL.md` (it has no Copilot/Codex overlay; the
+   canonical file ships everywhere).
 9. **Overlays.** `copilot/skills/sdlc/SKILL.md` and `codex/skills/sdlc/SKILL.md` — they
    already point at the shared templates; add only what differs (nothing, if they load
-   `stage-6-handoff.md` and `queue-mode.md` unchanged — confirm).
+   `stage-6-handoff.md` and `queue-mode.md` unchanged — confirmed: both cite them). **But** the
+   Stage 7 `waves:` line lives in `skills/sdlc/SKILL.md`, which overlays replace — mirror that
+   one line into both overlays' Stage 7. A no-sub-agent fallback for the reassess agent (run
+   it inline) also belongs in the overlays, never in the shared template.
 10. **Ignore rule.** `ACTION_ITEMS.md` is regenerable state: add it to `setup.sh`'s
     always-ignored machine-state entries and to `/repo-onboarding`'s Step 5 machine-state list.
     Deliberately unlike `TASKS.md` / `project.json` (which onboarding asks about): it is derived,
-    so there is nothing to share that `TASKS.md` doesn't already carry.
+    so there is nothing to share that `TASKS.md` doesn't already carry. Use `ensure_gitignored`;
+    also add `ACTION_ITEMS.md` to this repo's own `.gitignore`.
+    Files: `setup.sh`, `skills/repo-onboarding/SKILL.md`, `.gitignore`.
 
 #### Phase 3 — Reassess (opt-in) and the Jev seam
 
 11. **`close-tasks.sh tag`.** `tag --row <unique needle> --add|--remove '<tag>'`: validates
     tag grammar, that a referenced plan (and phase) exists, and that the needle matches exactly
-    one open row; edits only the trailer, never checkbox state; idempotent.
+    one open row (whole-token match, never a bare substring); edits only the trailer, never
+    checkbox state; idempotent; writes via a same-directory temp file + `os.replace`, preserving
+    line endings and em-dash bytes. Wire all five dispatch sites (as `waves`), document the JSON
+    result in `docs/BOARD-JSON.md` + README, and add tests to `scripts/ci/test-hooks.sh`: add,
+    remove, idempotent re-add, checkbox untouched, bad grammar, unknown plan/phase, zero-match
+    needle, multi-match needle, remove of an absent tag, CRLF `TASKS.md`.
+    Files: `scripts/close-tasks.sh`, `scripts/ci/test-hooks.sh`, `docs/BOARD-JSON.md`, `README.md`.
 12. **Reassess step.** New template `skills/sdlc/templates/action-items-reassess.md`, opened
     from Stage 6 only when `pipeline.action_items.reassess` is true **and** the open-row set
     changed since the last `waves` run (hash in the bare file `.claude/pipeline/.action-items-hash`
@@ -136,14 +178,23 @@ every piece hangs off code `/sdlc` already runs.
     agent (print the model line) gets the `waves` JSON plus the plan-phase excerpts for now and
     next rows, and returns proposed tags, each with a quoted line of evidence. The
     orchestrator applies each through `close-tasks.sh tag`, then regenerates. Never more than
-    one agent per run.
+    one agent per run. The gate (reassess on **and** hash changed) sits in `stage-6-handoff.md`
+    with the `**Read … now**` pointer, so a default run never opens the template. Dispatch with
+    an explicit `model:` and `subagent_type: general-purpose` (no new `agents/` file); the prompt
+    carries the no-git-writes sentence, returns JSON only, never edits `TASKS.md`. Before
+    applying, code checks each evidence quote appears verbatim in the plan text — an unverified
+    or rejected proposal is logged under `data.waves.rejected`, never applied, and never fails
+    Stage 6 (one bad `_after:` would park the queue). Compute the hash in Python over the
+    sorted open-row set (no `sha256sum` — macOS).
 13. **Jev seam (docs only).** In `docs/plans/jev-integration.md`, park three judge verbs —
     `depends-on` (Noul), `classify-lane` (Choice), `conflicts` (Noul) — as the reassess
     step's future backend: shadow first (record what it would tag beside the agent's
     proposals), a verdict cache keyed by the hash of both rows, and the plan's existing bands
     (< 0.30 no / 0.30–0.70 uncertain → listed in `ACTION_ITEMS.md` as "possible", never
     tagged / > 0.70 tag).
-14. **Version bump.** `.claude-plugin/plugin.json` and `marketplace.json`.
+14. **Version bump.** `.claude-plugin/plugin.json` and `marketplace.json`. When Phases 1-3 ship
+    in one commit, Phase 1's bump already covers this (no-op); a Phase 2/3 commit landing after
+    a committed Phase 1 bump needs its own (`version-freshness`).
 
 ### Cross-Module Touchpoints
 

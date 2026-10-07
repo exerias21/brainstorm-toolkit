@@ -55,6 +55,12 @@ terminal-envelope open-row finding — it was left open on purpose, not forgotte
 reported too. Print `drift_count` and one line per finding; say
 `backlog: no drift` when clean. Skip silently when `scripts/close-tasks.sh` is absent
 (`--no-copy-scripts` installs).
+
+**Waves line.** When `.claude/project.json` `pipeline.action_items.enabled` is `true` or the
+`pipeline.action_items.file` (default `ACTION_ITEMS.md`) exists beside `TASKS.md`, run
+`bash scripts/close-tasks.sh waves --file TASKS.md` — read-only, no `--write`: this skill never
+regenerates the file — and take `summary` and `overlaps[]` from its JSON. Skip silently when the
+feature is off or `scripts/close-tasks.sh` is absent (`--no-copy-scripts` installs).
 8. **Print a 3–7 line summary**:
 
    ```
@@ -64,6 +70,7 @@ reported too. Print `drift_count` and one line per finding; say
    Median cycle (last 10): <D> days  (omit if all unknown)
    Blocked reasons: <reason1> ×N · <reason2> ×M  (omit if no blocked rows)
    Pipeline: <slug> @ <stage> (<pipeline>, in_progress 3d — reconcile)  (omit if none non-terminal)
+   Waves: now N across L lane(s), next M  (omit if skipped; one ⚠ line per overlap)
    ```
 
    If there's no active task, say "no active task — next up: <first pending>".

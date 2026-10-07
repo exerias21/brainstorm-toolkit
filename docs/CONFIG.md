@@ -108,6 +108,11 @@ This page mirrors `templates/project.json.example`; that file is the registry
       "batch_size": 5,
       "max_hops": 5,
       "auto_continue": false
+    },
+    "action_items": {
+      "enabled": false,
+      "file": "ACTION_ITEMS.md",
+      "reassess": false
     }
   }
 }
@@ -192,6 +197,19 @@ hook executes a single non-`confirm` `.next-action` entry instead of just
 printing it, so the loop self-advances. It never chains a `confirm: true` action
 (i.e. never a commit or any other git write). See `docs/LOOP-HYGIENE.md`.
 
+`pipeline.action_items` (`enabled`, `file`, `reassess`) controls the generated `ACTION_ITEMS.md` — which open `TASKS.md` rows
+can run now, which become ready next, grouped by lane (`bash scripts/close-tasks.sh waves`; JSON
+shape in `docs/BOARD-JSON.md`). It is **off by default but also on whenever the file named by
+`file` (default `ACTION_ITEMS.md`) already exists**, so creating the file once opts a repo in; both
+the path and that existence check resolve against the `TASKS.md` directory, not the cwd. When
+on, `/sdlc` Stage 6 regenerates the file right after it closes its rows, `/sdlc --queue` selects
+from the now wave (an empty now wave parks), and `/sdlc-status` prints one line from it. The file
+is derived, so `setup.sh` always gitignores it. `reassess` (default `false`) adds an opt-in step
+to Stage 6: when the open-row set changed since the last run, one Sonnet agent proposes
+`_after:` / `_lane:` / `_conflicts:` tags, and code applies only those whose evidence quote is
+found verbatim in the plan, through `close-tasks.sh tag`. Model tier follows
+`skills/sdlc/templates/models.md` (Axis 1, Sonnet by default).
+
 ### Which skill reads which key
 
 | Skill | Reads |
@@ -204,6 +222,7 @@ printing it, so the loop self-advances. It never chains a `confirm: true` action
 | `/sdlc`, `/brainstorm-team`, `/dead-code-review` | `models.cap` (sub-agent tier ceiling) |
 | `/sdlc` | `models.sanity` + `agents.sanity_focuses` (Stage 1.5 pre-flight, per focus; never gated, so it runs every time) |
 | `/sdlc` Stage 5 fix loop | `pipeline.fix_loop.escalate_last` (final-iteration escalation; excluded from Stage 5.7/5.8) |
+| `/sdlc` Stage 6, `--queue` | `pipeline.action_items.enabled`, `.file`, `.reassess` (regenerate `ACTION_ITEMS.md`; queue selects from the now wave; `reassess` opt-in) |
 | `/sdlc` | `models.code_review`, `models.code_review_second_pass`, `agents.code_review_*` (axis 2; never capped) |
 | `/sdlc` | `pipeline.review_fix.*`: stage *behavior* only (`enabled`, `mode`). Opt-in, permanently off by default. (`blocking` was removed 2026-09: `/sdlc` does no git writes, so a HIGH finding is reported first in Stage 7, never gated) |
 | `/sdlc` | `agents.decompose_min_tasks` / `agents.decompose_min_files` (Stage 2 decompose gate) |
@@ -212,7 +231,7 @@ printing it, so the loop self-advances. It never chains a `confirm: true` action
 | `/sdlc` Stage 6 | `stack.up` / `stack.rebuild` / `stack.url`: printed as the manual-verification line at hand-off, never auto-run |
 | `/sdlc` Stage 6 | `coauthor_trailer`: whether the *suggested* commit message carries the trailer (`/sdlc` prints it; it never commits) |
 | `/task` | `coauthor_trailer` (only when you ask it to commit); otherwise reads TASKS.md directly |
-| `/sdlc-status` | (none; reads TASKS.md and `.claude/pipeline/` directly) |
+| `/sdlc-status` | `pipeline.action_items.enabled`, `.file` (the waves line); otherwise reads TASKS.md and `.claude/pipeline/` directly |
 | `scripts/py.sh` (every shipped Python invocation) | `python` |
 | `scripts/hooks/enforce-model-cap.sh` (Claude `PreToolUse(Agent)`) | `pipeline.enforce_cap`, `models.cap` |
 | `scripts/hooks/stop-gate.sh` (Claude/Codex `Stop`) | `pipeline.stop_gate`, `pipeline.stop_gate_timeout`, `test.unit`, `pipeline.loop.max_hops` |

@@ -253,6 +253,7 @@ as the pipeline produced it. You review and commit.
 on this runtime — the secret scan and the gotcha capture protocol both run in-session). It
 carries the diff report and suggested commit message, the `TASKS.md` close-out and re-entry
 rows, and the terminal state write.
+The action-items reassess step, when it fires, also runs inline — no sub-agent.
 
 ## Stage 7 — Report
 
@@ -265,7 +266,9 @@ including `tasks: 0 closed (0 matched)` when nothing matched — that line is wh
 silent close-out miss into a visible one; when `unmatched` is non-empty add
 `(U unmatched — see /sdlc-status --reconcile)`. When `review.json.data.independence ==
 "degraded"`, add the line `independence: degraded — findings surfaced only, never auto-fixed`
-(wording: `skills/sdlc/templates/stage-5.7-review-fix.md` "Independence enforcement"). If the
+(wording: `skills/sdlc/templates/stage-5.7-review-fix.md` "Independence enforcement"). When Stage 6
+wrote `data.waves`, add `waves: now N across L lane(s), next M` from its `summary` (`now`, `lanes`,
+`next`) and one warning line per `overlaps[]` entry; omit both when it did not. If the
 delivered diff departs from the plan (a step skipped, reordered, or solved differently), say where and why in
 one line each — the `plan-conformance-validator`'s partial/missing rows are the source. Make clear **nothing
 was committed** — the next move is yours.

@@ -162,6 +162,15 @@
       "_max_hops_comment": "Auto-continue (L9) hop budget: max self-continue chain length before the Stop hook parks. Default 5.",
       "auto_continue": false,
       "_auto_continue_comment": "Claude/Codex only, OFF by default. When true, the Stop hook EXECUTES a single non-confirm .next-action sentinel (decision:block) instead of only printing it, so the loop self-advances. Never chains a confirm:true action; bounded by max_hops."
+    },
+
+    "action_items": {
+      "_comment": "Optional. A generated 'what runs when' file (ACTION_ITEMS.md) built from TASKS.md by scripts/close-tasks.sh waves: a now wave and a next wave, grouped by lane. /sdlc Stage 6 regenerates it after closing rows, /sdlc --queue selects from the now wave, and /sdlc-status prints one line from it. Derived and gitignored; edit TASKS.md, never the file.",
+      "enabled": false,
+      "_enabled_comment": "Default false -- but the feature is also ON whenever the file below already exists, so creating an empty ACTION_ITEMS.md once opts a repo in. Both the file path and the existence check resolve against the TASKS.md directory, not the cwd.",
+      "file": "ACTION_ITEMS.md",
+      "reassess": false,
+      "_reassess_comment": "Default false. When true AND the open-row set changed since the last run, Stage 6 dispatches ONE Sonnet agent that proposes _after: / _lane: / _conflicts: row tags the file-and-phase rules cannot see. Every proposal needs a verbatim evidence quote from the plan; scripts/close-tasks.sh tag is the only writer, and a proposal whose quote is not found is dropped, never applied. Only has effect when action items are enabled."
     }
   }
 }

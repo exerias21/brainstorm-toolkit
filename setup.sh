@@ -813,6 +813,7 @@ ensure_gitignored ".claude/pipeline/"
 ensure_gitignored ".claude/.next-action"
 ensure_gitignored ".claude/.auto-continue-hops"
 ensure_gitignored ".claude/.stop-gate-hops"
+ensure_gitignored "ACTION_ITEMS.md"
 
 if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
   if [[ "$want_claude" -eq 1 ]]; then

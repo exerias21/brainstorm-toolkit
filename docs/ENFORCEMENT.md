@@ -91,7 +91,7 @@ never routes hook commands through the tool-permission path. That is fine when t
 person's own file, which git does not report as tracked. `setup.sh` does **not** gitignore
 `.claude/project.json` unconditionally — it only always-ignores pure machine-state paths
 (`.claude/pipeline/`, `.claude/.next-action`, `.claude/.auto-continue-hops`,
-`.claude/.stop-gate-hops`); whether `.claude/project.json` itself is gitignored is a genuine team
+`.claude/.stop-gate-hops`, `ACTION_ITEMS.md`); whether `.claude/project.json` itself is gitignored is a genuine team
 decision `/repo-onboarding`'s Step 3 ("What should git ignore?") asks about, not something
 setup.sh decides either way. So the trust check below does not read `.gitignore` at all — an
 UNTRACKED `project.json` is trusted by design regardless of whether it also happens to be

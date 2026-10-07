@@ -23,8 +23,16 @@ Current work items for AI agents (Claude Code, GitHub Copilot, etc.) and humans 
   close-out. `reconcile` and the scope gate skip it.
 - `_manual_` — a row only a human can do. The scope gate never takes it and never
   marks it `[~]`; the queue and task-range paths skip it too.
+- `_after: <plan>[:<phase>]_` — optional; this row waits until every open row of that plan
+  (or plan phase) is done. A row's own linked task file (`plans/tasks/task-N-<slug>.md`) is
+  also accepted. It replaces the default "phase N waits on phase N-1" order for this row.
+- `_conflicts: <plan>[:<phase>]_` — optional; never schedule this row in the same wave as
+  that plan (phase), even when their files look disjoint.
+- `_lane: <name>_` — optional; the lane `close-tasks.sh waves` files this row under, instead
+  of the surface its plan-phase files imply. One active row per lane at a time.
+  Values for all three are `[a-z0-9:/.-]` (no `_`, which ends a tag).
 - **Tags live in the trailer**, after the last ` — ` on the line. A title that merely
-  *mentions* `_manual_` or `_followup_` in its prose is not tagged — only a marker in
+  *mentions* `_manual_`, `_followup_` or `_after:` in its prose is not tagged — only a marker in
   the trailer counts.
 - `/sdlc-status` reads these to surface cycle time (completed_at − started_at) and
   blocked-reason summaries. Missing fields are reported as "unknown", never as

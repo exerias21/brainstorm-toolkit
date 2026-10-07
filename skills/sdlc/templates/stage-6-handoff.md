@@ -70,6 +70,22 @@ order is the difference between "usually closes" and "closes."
    genuinely matched zero rows, that's an empty `matched`/`closed`/`unmatched` — expected, not
    a miss; say so in the report rather than treating it as an error.
 
+   **Regenerate the action items — right after close-out, before step 4.** Enabled when
+   `pipeline.action_items.enabled` is `true` **or** the file named by `pipeline.action_items.file`
+   (default `ACTION_ITEMS.md`) exists — both resolved against the `TASKS.md` directory, not the
+   cwd. Not enabled, or `scripts/close-tasks.sh` missing (the install gap reported above): skip
+   silently and leave `data.waves` absent. Otherwise run
+   `bash scripts/close-tasks.sh waves --file TASKS.md --write <file>` and read the JSON from the
+   pipe or a repo-relative path — never Git Bash `/tmp`, which the Python body cannot see on
+   Windows. Keep only its `summary` object and `overlaps[]` for `handoff.json` `data.waves` (plus
+   `rejected[]` below) — never the full JSON. A non-zero exit skips the step; it never fails
+   Stage 6.
+
+   **Reassess gate.** When `pipeline.action_items.reassess` is `true` **and** the JSON's
+   `open_hash` differs from the contents of the bare file `.claude/pipeline/.action-items-hash`
+   (absent counts as differs): **read `skills/sdlc/templates/action-items-reassess.md` now** and
+   run it. Otherwise do not open it.
+
    **Seam on unmatched.** A non-empty `unmatched[]` means at least one row looked like it
    belonged to this run but didn't get closed (a key mismatch, an ambiguous match, or a
    resolved id that no longer exists on disk) — drop the reconciliation seam so it doesn't
@@ -100,7 +116,8 @@ order is the difference between "usually closes" and "closes."
 
    **State write — right here, before step 4.** `stage-outputs/handoff.json` =
    `{branch, files_changed[], committed: false, suggested_commit_msg, data: {tasks: {match_key,
-   matched[], closed[], moved[], unmatched[]}}}`. **Always set `run.json.status` to a settled
+   matched[], closed[], moved[], unmatched[]}, waves: {summary, overlaps[], rejected[]}}}`
+   (`waves` omitted when the regenerate step skipped). **Always set `run.json.status` to a settled
    value** (`complete` when finished, or `paused` — a resumable state that `--resume` picks
    up, not a terminal one; see `skills/sdlc/templates/state-schema.md` — if you stopped
    mid-pipeline) **now** — never leave it

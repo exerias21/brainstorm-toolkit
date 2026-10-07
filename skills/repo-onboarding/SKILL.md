@@ -208,6 +208,7 @@ writing nothing is a failed onboarding, not a cautious one:
    .claude/.next-action
    .claude/.auto-continue-hops
    .claude/.stop-gate-hops
+   ACTION_ITEMS.md
    .claude/project.json   # if selected
    TASKS.md               # if selected
    plans/                 # if selected

@@ -286,11 +286,25 @@ still gates. Both arrays are absent, same as standard mode, when there was no pl
   "branch": "feature-branch",
   "files_changed": ["api/routes/orders.py"],
   "committed": false,
-  "suggested_commit_msg": "feat: add orders endpoint"
+  "suggested_commit_msg": "feat: add orders endpoint",
+  "data": {
+    "tasks": {},
+    "waves": {
+      "summary": {"now": 1, "lanes": 2, "next": 3, "needs_you": 0, "unknown_files": 1, "conflicts": 0},
+      "overlaps": [],
+      "rejected": []
+    }
+  }
 }
 ```
 `/sdlc` does no git writes; it records what it would commit and leaves
 the tree for the user. `committed` is always `false`.
+
+`data.tasks` is the close script's output object — shape in the `data.tasks.resolved` row above.
+`data.waves` is optional and absent when action items are off or `scripts/close-tasks.sh` is
+missing: `summary` and `overlaps[]` are copied from `close-tasks.sh waves` (never its full JSON —
+`docs/BOARD-JSON.md`), and `rejected[]` holds reassess proposals that failed verification as
+`{row, tag, reason}`.
 
 ---
 
