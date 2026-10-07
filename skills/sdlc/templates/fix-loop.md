@@ -5,8 +5,8 @@ Stage 5, and Stage 5.7/5.8.
 
 Stage 5 and Stage 5.7/5.8 fix the same way, so the loop and its pause are specified once, here.
 **The loop.** On a gate failure: parse the structured results; for each failure extract test
-name, expected-vs-actual, file path, function; dispatch **one fix agent** — **Sonnet by default**
-(Opus only on `--model opus`), per `skills/sdlc/templates/models.md` — told to fix *only* those failures
+name, expected-vs-actual, file path, function; dispatch **one fix agent** — tier `models.fix`
+(Sonnet default, capped), per `skills/sdlc/templates/models.md` — told to fix *only* those failures
 with no refactor, and given these two lines verbatim in its prompt:
 
 > GIT: never run a git command that writes — no stash, commit, checkout, switch, reset, restore, rebase, merge, clean, or branch creation. The working tree holds the user's uncommitted work; git that only reads (status, diff, log, show) is fine. If you need a clean baseline, report it as a blocker instead.
@@ -19,15 +19,10 @@ Then re-run the gate. Repeat to a maximum of **3 iterations, shared across Stage
 **Opt-in last-try escalation (`pipeline.fix_loop.escalate_last`, default `false`).** When true,
 only the **final** iteration of this budget dispatches its fix agent at
 `min(stage_tier + 1, effective_cap)` on the `haiku < sonnet < opus` ladder, and prints
-`model: <tier> (cap: <cap>, escalated)` in place of the ordinary dispatch line. Under the
-default `cap: sonnet`, `min(sonnet + 1, sonnet)` is a no-op — nothing changes. The case where it
-actually acts is `models.cap: "opus"` set in config — **not** `--model opus`: that flag raises
-the dispatch itself (per `models.md`'s Resolution table, `--model <tier>` wins over the
-built-in stage default directly, every iteration), so under `--model opus` every iteration
-already runs at Opus and this key has nothing left to escalate. Under `models.cap: "opus"`
-alone, iterations 1–2 dispatch at Sonnet (the fix agent's built-in tier — a cap only ever
-lowers a dispatch, never raises one, so the raised ceiling alone doesn't move them), and the
-last iteration dispatches at Opus. Without this key, every retry stays on the same tier by
+`model: <tier> (cap: <cap>, escalated)` in place of the ordinary dispatch line. Under
+`models.cap: "sonnet"`, `min(sonnet + 1, sonnet)` is a no-op — nothing changes. With no cap
+(the default) or `models.cap: "opus"`, iterations 1–2 dispatch at `models.fix` (Sonnet default —
+a cap only ever lowers a dispatch) and the last iteration dispatches at Opus. Without this key, every retry stays on the same tier by
 design — a fix loop is not a place to guess your way up the ladder silently. Excluded entirely
 from Stage 5.7/5.8: that stage has its own separate budget and Axis 2 (`models.code_review`) is
 not on this ladder, so there is nothing to escalate. `scripts/hooks/enforce-model-cap.sh` needs

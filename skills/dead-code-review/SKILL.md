@@ -15,7 +15,7 @@ metadata:
 # Dead Code Review
 
 Systematically find and remove dead code, stale documentation, unused database objects, and orphaned
-files across the entire codebase. Uses parallel agents tiered by reasoning load (Haiku / Sonnet / Opus)
+files across the entire codebase. Uses parallel agents tiered by reasoning load (Haiku / Sonnet)
 for exhaustive analysis, then applies fixes with test verification.
 
 ## Process
@@ -31,11 +31,12 @@ restrict the run to report-only, because "zero regressions" is unverifiable with
 
 Launch up to 6 agents in parallel. Each agent does **research only** — no edits — and reports back
 findings with confidence levels. Models are tiered by reasoning load: Haiku for grep-heavy hygiene
-work, Sonnet for code-pattern reasoning across one language, and an Opus tier for cross-module
-dependency reasoning where wrong calls have high blast radius. **Model cap:** these are *defaults* —
-resolve each per `skills/sdlc/templates/models.md` (`--model <tier>` > `project.json` `models.cap` >
-the tier here). The fan-out is **Sonnet-first**, so the Opus tier runs Sonnet unless you opt up with
-`--model opus`; print `model: <tier> (cap: <cap|none>)` before each dispatch. NO subagents.
+work and Sonnet for code-pattern reasoning — including the data lens, whose cross-module
+dependency calls have the highest blast radius (raise it with `models.dead_code_review: {data: opus}`). **Models:** the tiers below are
+the defaults of `models.dead_code_review` in `project.json` (a string for all lenses, or a map keyed
+`server`, `client`, `data`, `docs`, `scripts`); resolve per `skills/sdlc/templates/models.md`, print
+`model: dead_code_review <lens>=<tier>, … (cap: <cap|none>)` and pass `model` explicitly on every
+dispatch. NO subagents.
 
 **Read `references/lenses.md` (next to this SKILL.md) now** — it carries the five lenses and
 their per-surface checklists, plus the shared reporting contract.
@@ -49,7 +50,7 @@ lenses you dropped and why — a silent skip reads as "clean".
 |---|---|---|
 | 1 — Server / backend code | Sonnet | there is a service or library layer |
 | 2 — Client / frontend code | Sonnet | there is a UI surface |
-| 3 — Data layer and migrations | Opus tier | there is a schema or migration directory |
+| 3 — Data layer and migrations | Sonnet | there is a schema or migration directory |
 | 4 — Documentation and plans | Haiku | always |
 | 5 — Scripts, config, test infra | Haiku | always |
 

@@ -37,9 +37,14 @@ tool output into your context. Every 'dispatch a ... agent' below means that inl
 those runtimes. Each check returns a
 small structured result that the rollup composes.
 
-### Check 1 — Dead code (Haiku agent)
+**Agent tiers:** `models.repo_health` in `project.json` — a string for every agent check, or a map
+keyed `dead_code`, `gotchas`, `memory`, `rules_drift` (defaults: haiku, haiku, haiku, sonnet).
+Resolve per `skills/sdlc/templates/models.md`, print `model: repo_health <check>=<tier>, …
+(cap: <cap|none>)`, and pass `model` explicitly on each dispatch.
 
-Dispatch one Haiku agent with this prompt:
+### Check 1 — Dead code (agent, `dead_code`)
+
+Dispatch one agent with this prompt:
 
 ```
 Scan the repo for unused exports, files with zero callers, and skipped
@@ -99,12 +104,12 @@ node_modules / .venv / build output.
 
 Report HIGH-severity finding count and the tool used.
 
-### Check 5 — Gotchas currency (Haiku agent)
+### Check 5 — Gotchas currency (agent, `gotchas`)
 
 If `GOTCHAS.md` (or the path in `.claude/project.json::gotchas_file`) does
 not exist, mark `skip` with reason `no GOTCHAS.md`.
 
-Otherwise dispatch one Haiku agent:
+Otherwise dispatch one agent:
 
 ```
 Read GOTCHAS.md. For each gotcha, identify the concrete file paths,
@@ -148,7 +153,7 @@ declares one (`.claude/project.json::discipline.memory_index`, e.g. a committed
 is personal, out of repo scope, and not this skill's business. If no repo-local
 memory index is configured → `skip` with reason `no repo-local memory index`.
 
-When one exists, dispatch a Haiku agent: count entries, flag pairs of entries
+When one exists, dispatch an agent (`memory`): count entries, flag pairs of entries
 whose `name:` slugs are near-duplicates (Levenshtein < 5), and flag any entry
 whose `description:` references a file path that no longer exists. Report
 `{count, near_duplicates: [[a,b]], dangling: [{name, missing_path}]}`. Cap at 10.
@@ -185,14 +190,13 @@ python scripts/token-audit.py --session <uuid> --check-cap <tier>
 
 Name it; don't run it as part of the sweep.
 
-### Check 10 — Rules drift (Sonnet agent)
+### Check 10 — Rules drift (agent, `rules_drift`)
 
 Skip with reason `no AGENTS.md/CLAUDE.md` when neither exists at repo root. Otherwise diff the
 rules file's claims against `git diff --name-only <main_branch>...HEAD` (empty → fall back to
 the last 20 commits on `main_branch` itself); empty either way → skip with reason `no diff`.
 
-Dispatch one agent, Sonnet by default per `skills/sdlc/templates/models.md` (print the `model:`
-line):
+Dispatch one agent at the `rules_drift` tier (see Agent tiers above):
 
 ```
 Read AGENTS.md/CLAUDE.md and the changed-file list. For every rule or "where things live"

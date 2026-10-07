@@ -10,8 +10,8 @@ hook section) and no new-hook checklist (the shipped hooks below are the checkli
 
 ## `models.cap` — prose that earned a hook
 
-Axis 1 (fan-out tier) was prose-only first: every dispatch site resolves `--model` >
-`project.json` `models.cap` > default and prints `model: <tier> (cap: <cap|none>)` before
+Axis 1 (fan-out tier) was prose-only first: every dispatch site resolves `project.json` `models.<role>` >
+default, then `models.cap` and prints `model: <tier> (cap: <cap|none>)` before
 dispatching. The miss is named in `scripts/hooks/enforce-model-cap.sh`'s own header: "a dispatch
 with no `model` inherits the session model with zero error and zero log line." That's Q1 (holds
 even when the model forgets) and Q2 (the check is a stdin-JSON read, a `project.json` lookup, and

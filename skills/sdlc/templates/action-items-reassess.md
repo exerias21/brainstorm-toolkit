@@ -11,11 +11,11 @@ code decides what is applied. **At most one agent per run** — never one per ro
 
 ## Dispatch
 
-Resolve the tier per `skills/sdlc/templates/models.md` (Axis 1, **Sonnet by default** — `--model`
-> `models.cap` > default, never above the cap), then print the line before dispatching:
+Resolve the tier per `skills/sdlc/templates/models.md` (Axis 1, key `models.reassess`, Sonnet default,
+never above the cap), then print the line before dispatching:
 
 ```
-model: <resolved-tier> (cap: <cap|none>)
+model: reassess=<resolved-tier> (cap: <cap|none>)
 ```
 
 One `general-purpose` agent, explicit `model:` — a dispatch with no `model` bypasses the cap with

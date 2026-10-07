@@ -1,7 +1,7 @@
 # Stage 2 — Implementation agent prompt
 
-One implement agent — **Sonnet by default** (Opus only on `--model opus`
-opt-up), per the model cap (`skills/sdlc/templates/models.md`). Substitute
+One implement agent — tier is `models.implement` (Sonnet default), per
+`skills/sdlc/templates/models.md`; print `model: implement=<tier> (cap: <cap|none>)` first. Substitute
 `{feature_name}` and `{plan_content}` before dispatch.
 
 ---

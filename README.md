@@ -276,7 +276,7 @@ rather than guessing, so a repo with no `project.json` still works.
 
 ## Cost
 
-The fan-out is Sonnet-first by default, and `models.cap` is a ceiling you can lower. A typical
+The fan-out is Sonnet-first by default, every tier is a `models.*` key in `.claude/project.json` (no flag), and `models.cap` is an optional ceiling you can lower. Recommended pairing: Sonnet implements, Opus reviews. A typical
 `/sdlc` run costs a couple of dollars; the read-only skills cost fractions of a cent.
 
 **[docs/COST.md](docs/COST.md)** has the per-skill table: what each one dispatches, tokens per

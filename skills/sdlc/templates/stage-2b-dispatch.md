@@ -6,11 +6,9 @@ parallel: sequential dispatch means no two subagents write concurrently, so
 there are no worktrees and no merge conflicts. Re-instantiate this prompt once
 per lane.
 
-Model per lane comes from `decompose.json` (`sonnet` default; `opus` for a lane
-flagged high-complexity in 2a). **Apply the model cap to the lane's model before
-dispatch** — and since the fan-out is **Sonnet-first by default**, an
-`opus`-flagged lane dispatches Sonnet unless the run opts up with `--model opus`.
-See `skills/sdlc/templates/models.md`.
+Every lane dispatches at `models.implement` (Sonnet default, capped) — ignore any per-lane
+`model` field in `decompose.json`. Print `model: implement=<tier> (cap: <cap|none>)` and pass
+`model` explicitly. See `skills/sdlc/templates/models.md`.
 
 Substitute `{feature_name}`, `{lane}`, `{lane_files}` (the lane's `files[]`),
 `{lane_steps}` (the lane's `steps[]`), and `{contract}` (the lane's interface

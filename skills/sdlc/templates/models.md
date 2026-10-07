@@ -25,8 +25,20 @@ ceilings).
 
 ```json
 "models": {
-  "cap": "sonnet",
+  "cap": null,
   "sanity": null,
+  "implement": "sonnet",
+  "fix": "sonnet",
+  "validate": "sonnet",
+  "test_runner": "haiku",
+  "e2e": "sonnet",
+  "cleanup": "sonnet",
+  "reassess": "sonnet",
+  "brainstorm": "sonnet",
+  "brainstorm_team": "sonnet",
+  "dead_code_review": null,
+  "repo_health": null,
+  "docstring_sync": "sonnet",
   "planner": "opus",
   "code_review": "opus",
   "code_review_second_pass": "sonnet"
@@ -42,8 +54,10 @@ ceilings).
 }
 ```
 
-Every key is optional; a missing key means the built-in default. `models.sanity` accepts a
-string or a per-focus map (*Per-stage tiers* below); `models.planner` is a session-model
+Every key is optional; a missing key means the built-in default. **No CLI flag selects a model
+— `project.json` is the only lever.** `models.sanity`, `models.dead_code_review` and
+`models.repo_health` accept a string or a per-focus/lens/check map (*Per-role tiers* below);
+`models.planner` is a session-model
 recommendation, not a dispatch tier (*A third kind* below). The old `pipeline.*.model`
 keys are no longer read (see *Migration* at the end).
 
@@ -53,7 +67,7 @@ This is the one rule a future edit must not break.
 
 | | **Axis 1 — the fan-out ladder** | **Axis 2 — the adversarial reviewer** |
 |---|---|---|
-| Keys | `models.cap`, `models.sanity` | `models.code_review`, `models.code_review_second_pass` |
+| Keys | `models.cap` plus every per-role key (`sanity`, `implement`, `fix`, ...) | `models.code_review`, `models.code_review_second_pass` |
 | Values | `haiku` \| `sonnet` \| `opus` | `haiku` \| `sonnet` \| `opus` \| `fable` |
 | Stages | 1.5, 2, and every other fan-out | 5.7 / 5.8 only |
 
@@ -71,58 +85,68 @@ effective_tier = min(stage_tier, cap)      # the cap only ever LOWERS
 `cap = sonnet` turns every Opus dispatch into Sonnet while **Haiku stays Haiku**. You save
 on the expensive calls without upgrading the cheap ones.
 
-**The consequence that surprises everyone:** a stage whose built-in tier is `haiku` cannot
-be raised by the cap. `models.cap: "opus"` does not raise it; `--model opus` does not raise
-it — both only lower. **The per-stage key is the only lever.** That is precisely why
-`models.sanity` exists: Stage 1.5's `paths` focus defaults to Haiku and is never gated, so
-before this key existed the whole stage ran at Haiku on every run with no escape hatch.
+**The consequence that surprises everyone:** a role whose built-in tier is `haiku` cannot
+be raised by the cap — `models.cap: "opus"` only ever lowers. **The per-role key is the only
+lever.** That is why `models.sanity` exists: Stage 1.5's `paths` focus defaults to Haiku and is
+never gated, so the whole stage ran at Haiku with no escape hatch.
 
-**Sonnet-first default:** the effective cap defaults to `sonnet`;
-`--model opus` (cap = opus = no ceiling) is the deliberate opt-up.
+**Sonnet-first default:** every built-in role default is Sonnet (Haiku for mechanical roles).
+`models.cap` is **absent by default — no ceiling**; set it only to lower, and set a role key
+to `opus` to opt a role up.
+
+**Recommended pairing — Sonnet does, Opus reviews.** The implementer spends most of the tokens,
+so keep `models.implement` on `sonnet`; a different, stronger reviewer (`models.code_review:
+"opus"`, Axis 2) catches what it missed and keeps review independent.
 
 The cap governs **sub-agent dispatch only** — never the session orchestrator running the
 skill. See *Session nudge*.
 
-### Per-stage tiers (Axis 1)
+### Per-role tiers (Axis 1)
 
-**Wired today: `models.sanity` only** — Stage 1.5 plan pre-flight. Built-in **per-focus**
-defaults: `paths: haiku` (mechanical — does the file/symbol exist?), `completeness: sonnet` and
-`gotchas: sonnet` (both judgment calls — on this repo, Haiku `completeness` checks repeatedly
-misread "not yet implemented" as a plan gap). `models.sanity` accepts either a **string**
-(`haiku|sonnet|opus`, applies to every focus — the original shape, unchanged) or a **map**
-(e.g. `{"completeness": "opus"}`), where a focus missing from the map keeps its built-in
-default. Either shape's resolved values **then still pass through the cap**:
-`models.sanity: "opus"` under `cap: "sonnet"` dispatches Sonnet unless you also pass `--model
-opus`. An invalid value (unknown tier, or a map entry that isn't one) falls through to that
-focus's own built-in default — never a guess (*Invalid input* below). A key that parses but
-gates nothing is the failure this contract exists to prevent, so per-stage keys are added when a
-dispatch site reads them, not in advance.
+| Key | Dispatches | Built-in default |
+|---|---|---|
+| `models.sanity` | `/sdlc` Stage 1.5 focuses; `/brainstorm` vet-light focuses | `{paths: haiku, completeness: sonnet, gotchas: sonnet}` |
+| `models.implement` | Stage 2 implementer, 2a decomposer, 2b lanes (one tier for every lane), 5.9 cleanup-apply | `sonnet` |
+| `models.fix` | Stage 5 fix-loop agent | `sonnet` |
+| `models.validate` | Stage 5 plan-conformance-validator | `sonnet` |
+| `models.test_runner` | `test-runner` dispatches (outranks the agent's frontmatter pin) | `haiku` |
+| `models.e2e` | `e2e-test-runner` dispatches | `sonnet` |
+| `models.cleanup` | Stage 5.9 cleanup lenses | `sonnet` |
+| `models.reassess` | Stage 6 action-items reassess agent | `sonnet` |
+| `models.brainstorm`, `models.brainstorm_team` | `/brainstorm` explorers and vet agents; `/brainstorm-team` teammates | `sonnet` |
+| `models.dead_code_review` | `/dead-code-review` lenses — string or map (`server`, `client`, `data`, `docs`, `scripts`) | `{server: sonnet, client: sonnet, data: sonnet, docs: haiku, scripts: haiku}` |
+| `models.repo_health` | `/repo-health` checks — string or per-check map | each check's own tier |
+| `models.docstring_sync` | `/docstring-sync` triage + rewrite agents | `sonnet` |
+
+A string value applies to every sub-agent of the role; a map overrides per focus/lens/check and
+a name missing from the map keeps its built-in default. Every resolved value **then still passes
+through the cap** (`models.sanity: "opus"` under `cap: "sonnet"` dispatches Sonnet). An invalid
+value falls through to that role's own built-in default (*Invalid input* below). A key that
+parses but gates nothing is the failure this contract exists to prevent, so a key is added only
+when a dispatch site reads it.
 
 ### Resolution (Axis 1)
 
 ```
---model <tier>  >  models.<stage>  >  built-in stage default        (then capped)
---model <tier>  >  models.cap      >  no cap                        (the ceiling itself)
+models.<role>  >  built-in role default        (then capped)
+models.cap     >  no cap                        (the ceiling itself)
 ```
 
-`models.sanity` follows the same ladder above, but resolved **per focus**: that focus's map
-entry, else the string value (if `models.sanity` is a string), else that focus's own built-in
-default (`paths: haiku`, `completeness: sonnet`, `gotchas: sonnet`) — then capped as usual.
-
-`--model <tier>` is a per-run escape hatch that wins **both directions** — it may raise a
-standing `sonnet` config for one run, because you asked explicitly.
+`effective = min(models.<role> ?? default, models.cap ?? no ceiling)`. Roles with a map resolve
+**per focus/lens/check**: that entry, else the string value, else that entry's own built-in
+default — then capped as usual.
 
 **Enforcement (Claude, opt-in).** Prose is the default enforcement surface. With
 `pipeline.enforce_cap: true`, a PreToolUse hook on the Agent tool rewrites any dispatch `model`
 above the cap down to it and fills in a missing `model` (a pinned agent definition keeps its
 pin). Axis 2 is exempt by a marker: every reviewer dispatch's `description` starts `review:`.
-The hook cannot see `--model`, so under enforcement the config cap is policy — raise it in
-`project.json` for a run that needs Opus. Each rewrite is reported as a `systemMessage`.
+Under enforcement the config cap is policy — raise or drop it in `project.json` for a run
+that needs Opus. Each rewrite is reported as a `systemMessage`.
 
 ## Axis 2 — the reviewer
 
 ```
---review-model <value>  >  models.code_review  >  default "opus"
+models.code_review  >  default "opus"
 ```
 
 Valid: `fable`, `opus`, `sonnet`, `haiku`. `opus` is the default. `fable` opts into a model
@@ -161,8 +185,8 @@ review: reviewer (<model>) and implementer (<tier>) resolve to the same tier —
         different tier (or fable) to restore it.
 ```
 
-Stage 0 computes this from this section alone — the resolved `models.code_review` /
-`--review-model` against the implementer's effective tier (its stage default, capped) — and
+Stage 0 computes this from this section alone — the resolved `models.code_review`
+against the implementer's effective tier (`models.implement`, capped) — and
 **must never open `stage-5.7-review-fix.md`** to do so: that template is opt-in and permanently
 OFF by default, and a default run must never load it just to run this check.
 
@@ -222,8 +246,10 @@ real as this rule. **Before every fan-out dispatch**, print the resolved tier on
 line, then dispatch at it:
 
 ```
-model: <resolved-tier> (cap: <cap|none>)
+model: <role>=<resolved-tier> (cap: <cap|none>)
 ```
+
+The role name in the line tells a reader which `models.*` key to change.
 
 Where a stage also has a count knob, print the resolved list too — e.g.
 `sanity focuses: paths, completeness (2 of 3 defaults)`. A reduced fan-out must never be
@@ -252,8 +278,7 @@ point at this file.
 
 ## Invalid input — fall through, never guess
 
-- Unknown `--model` / `--review-model` value, or none → ignore the flag, warn once, fall
-  through to config, then default.
+- Unknown tier in a `models.<role>` value → that role's built-in default, warn once.
 - Malformed `models` block (a string, `cap: true`, a non-tier value) → treat as absent.
 - `cap == default_tier` → no-op.
 

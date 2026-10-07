@@ -8,7 +8,9 @@ One stage, one gate, one sidecar. It answers the two questions that matter after
 ### 1. Run the suite — in a sub-agent, never inline
 
 **Dispatch the `test-runner` agent** (by type: `brainstorm-toolkit:test-runner`, or bare
-`test-runner` when vendored). It is pinned to **Haiku** and returns a structured pass/fail
+`test-runner` when vendored). It is pinned to **Haiku** in its frontmatter; pass `model` explicitly from `models.test_runner`
+(Haiku default, capped) — the dispatch-site value outranks the pin, and print
+`model: test_runner=<tier> (cap: <cap|none>)`. It returns a structured pass/fail
 summary — never raw output. Pass it the surfaces the diff touched (see
 `templates/changed-files-gate.md`) so it skips suites for untouched surfaces.
 
@@ -26,8 +28,9 @@ as failures; `preexisting[]` is noted separately and does not gate.
 - Backend unit tests (if `test.unit` configured **and** the backend surface was touched)
 - **E2E / visual check** — dispatch the `e2e-test-runner` agent (by type:
   `brainstorm-toolkit:e2e-test-runner`, or bare `e2e-test-runner` when vendored) if `test.e2e`
-  is configured **and** the frontend surface was touched — **Sonnet by default** (Opus only on
-  `--model opus`), per `skills/sdlc/templates/models.md`, and pass `model` explicitly: the agent
+  is configured **and** the frontend surface was touched — tier `models.e2e` (Sonnet
+  default), per `skills/sdlc/templates/models.md`, print `model: e2e=<tier> (cap: <cap|none>)`, and
+  pass `model` explicitly: the agent
   definition pins no tier, so an omitted `model` inherits the session model and bypasses the
   cap. It runs its own bounded fix loop with a flaky-test guard; its iterations count toward
   the shared budget. If the frontend surface was
@@ -44,8 +47,8 @@ to check against, and say so rather than passing silently.
 
 Dispatch **one agent** — the `plan-conformance-validator` (by type:
 `brainstorm-toolkit:plan-conformance-validator`, or bare `plan-conformance-validator` when
-vendored), Sonnet by default per
-`skills/sdlc/templates/models.md` — with the plan and the diff, and this brief:
+vendored), tier `models.validate` (Sonnet
+default) per `skills/sdlc/templates/models.md`, printing `model: validate=<tier> (cap: <cap|none>)` — with the plan and the diff, and this brief:
 
 > Verify the delivered change against the plan on two axes, and report them separately.
 > **(a) Requirements:** walk every acceptance criterion and implementation step in the plan and

@@ -111,8 +111,9 @@ Dispatch one triage sub-agent per file group, using
 `<skill-dir>/references/triage-prompt.md` as the role prompt verbatim — **parallel,
 single message, multiple tool calls on Claude**; on Copilot and Codex, run each group inline and
 sequentially in this session, per the standing runtime note in `skills/repo-health/SKILL.md`.
-Before each dispatch, resolve the tier per `skills/sdlc/templates/models.md` and print `model:
-<tier> (cap: <cap|none>)` — Sonnet by default, `--model opus` the opt-up.
+Before each dispatch, resolve the tier (`models.docstring_sync`, Sonnet by default) per
+`skills/sdlc/templates/models.md`, print `model: docstring_sync=<tier> (cap: <cap|none>)` and pass
+`model` explicitly.
 
 Merge every sub-agent's `{id: {verdict, quote?}}` object into one verdicts file, then run
 `bash scripts/py.sh <skill-dir>/scripts/docstring_check.py <scope-flags> --verdicts-in
@@ -146,8 +147,8 @@ role prompt verbatim, **prefaced with the two absolute paths it asks the sub-age
 `references/standards.md` (same parent directory as `<skill-dir>`, i.e.
 `<skill-dir>/../code-tour/references/standards.md`) — resolve both yourself and hand over the
 literal paths; the sub-agent has no base directory of its own to resolve a bare citation against.
-Same parallel-Claude / inline-sequential-Copilot-Codex shape and the same `model: <tier> (cap:
-<cap|none>)` print, per batch, before each dispatch. **Triage and rewrite are separate passes with
+Same parallel-Claude / inline-sequential-Copilot-Codex shape and the same `model: docstring_sync=<tier>
+(cap: <cap|none>)` print, per batch, before each dispatch. **Triage and rewrite are separate passes with
 the human confirmation between them: neither may both accuse and fix** — a pass that does both
 grades its own accusation (`skills/sdlc/templates/stage-5.9-cleanup.md`'s framing for the same
 split). Roll up each sub-agent's `{symbol, action, unresolved}` list into the run's report.

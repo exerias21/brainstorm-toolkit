@@ -149,7 +149,11 @@ Read-only unless `--write` is passed; it never edits `TASKS.md`. Exit codes matc
   over every OTHER worktree; it is `[]` outside git, without git, or on any git failure.
 - **`--write PATH`** also renders the lane-grouped markdown (with a "generated — edit
   TASKS.md, not this file" banner and the generating command) and adds `"written": PATH` to
-  the JSON. The file carries no timestamp, so identical input yields identical bytes.
+  the JSON. The file carries no timestamp, so identical input yields identical bytes. An existing
+  file whose line 1 is not that banner (BOM/CRLF tolerated) is a hand-written file and is never
+  overwritten: the JSON gets `"written": null` and `"write_skipped": "<path> exists and is not
+  generated (no banner on line 1) — left untouched"`, stderr gets one warning, and the exit is
+  still 0. A missing file is created; a bannered one is regenerated.
 - **`summary`** is counts only: `now` rows, `lanes` (distinct lanes across now and next),
   `next` rows, `needs_you`, `unknown_files`, `conflicts`. **`open_hash`** fingerprints the
   sorted not-done rows (Active / Pending and Blocked), so a caller can tell whether the backlog

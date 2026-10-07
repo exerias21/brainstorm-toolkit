@@ -18,7 +18,9 @@ metadata:
 
 **Dispatch the `test-runner` agent** — by type `brainstorm-toolkit:test-runner`, or bare
 `test-runner` when vendored — rather than running the commands in your own context. It is
-pinned to **Haiku** (running a command and classifying its exit status is mechanical) and
+defaults to **Haiku** (running a command and classifying its exit status is mechanical) via
+`models.test_runner` in `project.json`; print `model: test_runner=<tier> (cap: <cap|none>)` and pass
+`model` explicitly (it outranks the agent's frontmatter pin; see `skills/sdlc/templates/models.md`). It
 returns `{layers, failures[], preexisting[], green, totals}` and nothing else.
 
 **Why this is the default, not an option.** Test output is the largest single source of shell
@@ -108,7 +110,8 @@ Skip if the key is missing.
 seam (Copilot / Codex) **you are the loop**: run, triage flaky vs real, fix, re-run, bounded by
 the same budget, reporting only the structured summary. Dispatch the `e2e-test-runner` agent (by type:
 `brainstorm-toolkit:e2e-test-runner`, or bare `e2e-test-runner` when vendored) rather than
-running the command inline — Sonnet by default, per `skills/sdlc/templates/models.md`; pass
+running the command inline — tier `models.e2e` (Sonnet by default), per
+`skills/sdlc/templates/models.md`; print `model: e2e=<tier> (cap: <cap|none>)` and pass
 `model` explicitly, since the agent pins no tier and an omitted `model` inherits the session
 model. It separates flaky failures from real ones, re-runs each failure
 once before believing it, dispatches fixes, and re-runs until green or `test.e2e_max_fix_loops`

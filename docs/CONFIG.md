@@ -47,7 +47,7 @@ This page mirrors `templates/project.json.example`; that file is the registry
   "coauthor_trailer": false,
   "modules": ["api", "web", "worker"],
   "models": {
-    "cap": "sonnet",
+    "implement": "sonnet",
     "sanity": null,
     "planner": "opus",
     "code_review": "opus",
@@ -133,21 +133,42 @@ There are **two independent axes**, and conflating them is the classic mistake:
 
 | | Axis 1: the fan-out ladder | Axis 2: the adversarial reviewer |
 |---|---|---|
-| Keys | `models.cap`, `models.sanity` | `models.code_review`, `.code_review_second_pass` |
+| Keys | `models.<role>` (`sanity`, `implement`, `fix`, `validate`, `test_runner`, `e2e`, `cleanup`, `reassess`, `brainstorm`, `brainstorm_team`, `dead_code_review`, `repo_health`, `docstring_sync`), bounded by `models.cap` | `models.code_review`, `.code_review_second_pass` |
 | Values | `haiku` \| `sonnet` \| `opus` | `haiku` \| `sonnet` \| `opus` \| `fable` |
 | Capped? | yes, everything passes through the cap | **never** |
 
-`models.cap` is a **ceiling**, not a setting: `effective = min(stage_tier, cap)`. So
-`sonnet` lowers every Opus dispatch while leaving Haiku agents alone: you cut Opus spend
-without upgrading the cheap ones. Per-run override `--model <tier>` (precedence: flag >
-`models.cap` > default) wins both directions. **The fan-out is Sonnet-first by default:**
-out of the box `/sdlc` and `/brainstorm --vet ultra` run their fan-outs on Sonnet; `--model opus` is the deliberate opt-up.
+**No CLI flag selects a model.** Every tier is a `project.json` key. Each dispatch role has its
+own key (`models.implement`, `models.fix`, `models.validate`, ... — table below); a repo that
+sets none runs every role at its built-in default, which is Sonnet-first (Haiku for the
+mechanical checks). The only way to raise a role is its own key.
 
-**The consequence worth knowing:** because the cap only *lowers*, a per-stage default cannot
-be raised by `models.cap` or `--model` at all. The per-stage key is the only lever, which is
-why `models.sanity` exists. It governs the **sanity check, which is Stage 1.5** (Stage 1 is
-plan parsing, which dispatches nothing; that is why the shorthand above starts at "sanity").
-Stage 1.5 is never gated, so it runs on every single run.
+`models.cap` is a **ceiling**, not a setting: `effective = min(models.<role> ?? default,
+models.cap ?? no ceiling)`. **Absent means no ceiling.** `"sonnet"` lowers every Opus
+dispatch while leaving Haiku agents alone: you cut Opus spend without upgrading the cheap
+ones. Because the cap only *lowers*, it can never raise a role; set that role's key instead.
+
+**Recommended pairing: Sonnet implements, Opus reviews.** Set `models.implement: "sonnet"`
+(the default) and turn the review stage on with `pipeline.review_fix.enabled: true` plus
+`models.code_review: "opus"`. The implementer spends most of the tokens; a stronger,
+different reviewer catches what it missed and keeps the review independent.
+
+| Key | Controls | Default |
+|---|---|---|
+| `sanity` | `/sdlc` Stage 1.5 and `/brainstorm` vet-light focuses (string or map) | `paths` haiku, `completeness` / `gotchas` sonnet |
+| `implement` | `/sdlc` implementer, decomposer, every 2b lane, Stage 5.9 cleanup-apply | `sonnet` |
+| `fix` | `/sdlc` Stage 5 fix-loop agent | `sonnet` |
+| `validate` | `/sdlc` Stage 5 plan-conformance-validator | `sonnet` |
+| `test_runner` | `test-runner` dispatches (`/sdlc`, `/test-check`) | `haiku` |
+| `e2e` | `e2e-test-runner` dispatches (`/sdlc`, `/test-check --loop`) | `sonnet` |
+| `cleanup` | `/sdlc` Stage 5.9 cleanup lenses | `sonnet` |
+| `reassess` | `/sdlc` Stage 6 reassess agent | `sonnet` |
+| `brainstorm` | `/brainstorm` explorers, vet-deep, vet-ultra | `sonnet` |
+| `brainstorm_team` | `/brainstorm-team` teammates | `sonnet` |
+| `dead_code_review` | `/dead-code-review` lenses (string or map `server`/`client`/`data`/`docs`/`scripts`) | `server`/`client`/`data` sonnet, `docs`/`scripts` haiku |
+| `repo_health` | `/repo-health` checks (string or per-check map) | each check's built-in tier |
+| `docstring_sync` | `/docstring-sync` triage + rewrite | `sonnet` |
+| `code_review`, `code_review_second_pass` | Axis 2: Stage 5.7 reviewers (never capped) | `opus`, `sonnet` |
+| `planner` | advisory session-model nudge | `opus` |
 
 `models.sanity` resolves **per focus**, not as one tier for the whole stage. Built-in
 defaults: `paths: haiku` (mechanical — does the file/symbol exist?), `completeness: sonnet`
@@ -158,7 +179,7 @@ replaces every focus — the original shape, unchanged) or a **map** (`{"complet
 "opus"}`), where a focus missing from the map keeps its own built-in default. Either shape's
 resolved value then still passes through `models.cap` as usual. An invalid value (unknown
 tier, or a map entry that isn't one) falls through to that focus's own built-in default.
-Full contract: `skills/sdlc/templates/models.md` "Per-stage tiers (Axis 1)".
+Every map-or-string key follows the same rule. Full contract: `skills/sdlc/templates/models.md`.
 
 **A third kind, `models.planner` — advisory, on neither axis.** Default `"opus"`
 (`haiku|sonnet|opus|fable`). It is not a dispatch tier: it never governs a sub-agent, and
@@ -180,9 +201,9 @@ gate; `--no-scope-gate` forces whole-plan execution for a single run without tou
 
 `pipeline.fix_loop.escalate_last` (default `false`) opts the **final** iteration of Stage 5's
 shared 3-iteration fix budget into `min(stage_tier + 1, effective_cap)` on the
-`haiku < sonnet < opus` ladder, printing `model: <tier> (cap: <cap>, escalated)`. Under the
-default `cap: sonnet` this is a no-op; the case where it acts is `models.cap: "opus"` (or
-`--model opus`), where iterations 1–2 run Sonnet and the last runs Opus. Excluded entirely
+`haiku < sonnet < opus` ladder, printing `model: <tier> (cap: <cap>, escalated)`. Under
+`models.cap: "sonnet"` this is a no-op; with no cap (or `"opus"`) iterations 1–2 run
+`models.fix` (default Sonnet) and the last runs Opus. Excluded entirely
 from Stage 5.7/5.8, which has its own separate budget and whose reviewer axis
 (`models.code_review`) is not on this ladder. Without the key, every retry stays on the same
 tier by design.
@@ -200,8 +221,10 @@ printing it, so the loop self-advances. It never chains a `confirm: true` action
 `pipeline.action_items` (`enabled`, `file`, `reassess`) controls the generated `ACTION_ITEMS.md` — which open `TASKS.md` rows
 can run now, which become ready next, grouped by lane (`bash scripts/close-tasks.sh waves`; JSON
 shape in `docs/BOARD-JSON.md`). It is **off by default but also on whenever the file named by
-`file` (default `ACTION_ITEMS.md`) already exists**, so creating the file once opts a repo in; both
-the path and that existence check resolve against the `TASKS.md` directory, not the cwd. When
+`file` (default `ACTION_ITEMS.md`) already exists and its first line is the generated banner
+(`<!-- generated — edit TASKS.md`)**; a hand-written file of that name never opts a repo in, and
+even with `enabled: true` it is never overwritten (`waves --write` reports `write_skipped`). Both
+the path and that check resolve against the `TASKS.md` directory, not the cwd. When
 on, `/sdlc` Stage 6 regenerates the file right after it closes its rows, `/sdlc --queue` selects
 from the now wave (an empty now wave parks), and `/sdlc-status` prints one line from it. The file
 is derived, so `setup.sh` always gitignores it. `reassess` (default `false`) adds an opt-in step
@@ -217,9 +240,14 @@ found verbatim in the plan, through `close-tasks.sh tag`. Model tier follows
 | `/test-check` | `test.*`, `logs.*` |
 | `/sdlc` | `gotchas_file`, `eval.*`, `main_branch`, delegates to `/test-check` |
 | `/gotcha` | `gotchas_file` |
-| `/brainstorm` | `modules`, `models.cap`, `models.planner` (session-model nudge) |
-| `/brainstorm-team` | `models.planner` (session-model nudge) |
-| `/sdlc`, `/brainstorm-team`, `/dead-code-review` | `models.cap` (sub-agent tier ceiling) |
+| `/brainstorm` | `modules`, `models.brainstorm`, `models.sanity` (vet-light), `models.cap`, `models.planner` (session-model nudge) |
+| `/brainstorm-team` | `models.brainstorm_team`, `models.planner` (session-model nudge) |
+| `/sdlc` | `models.implement`, `.fix`, `.validate`, `.test_runner`, `.e2e`, `.cleanup`, `.reassess` (one key per dispatch role) |
+| `/dead-code-review` | `models.dead_code_review` |
+| `/repo-health` | `models.repo_health` |
+| `/docstring-sync` | `models.docstring_sync` |
+| `/test-check` | `models.test_runner`, `models.e2e` (`--loop`) |
+| `/sdlc`, `/brainstorm`, `/brainstorm-team`, `/dead-code-review`, `/repo-health`, `/docstring-sync` | `models.cap` (sub-agent tier ceiling; absent = none) |
 | `/sdlc` | `models.sanity` + `agents.sanity_focuses` (Stage 1.5 pre-flight, per focus; never gated, so it runs every time) |
 | `/sdlc` Stage 5 fix loop | `pipeline.fix_loop.escalate_last` (final-iteration escalation; excluded from Stage 5.7/5.8) |
 | `/sdlc` Stage 6, `--queue` | `pipeline.action_items.enabled`, `.file`, `.reassess` (regenerate `ACTION_ITEMS.md`; queue selects from the now wave; `reassess` opt-in) |

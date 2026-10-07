@@ -72,7 +72,9 @@ order is the difference between "usually closes" and "closes."
 
    **Regenerate the action items — right after close-out, before step 4.** Enabled when
    `pipeline.action_items.enabled` is `true` **or** the file named by `pipeline.action_items.file`
-   (default `ACTION_ITEMS.md`) exists — both resolved against the `TASKS.md` directory, not the
+   (default `ACTION_ITEMS.md`) exists **and** its first line is the generated banner
+   (`<!-- generated — edit TASKS.md`; a hand-written file of that name never opts a repo in and is
+   never overwritten — the script reports `write_skipped`) — both resolved against the `TASKS.md` directory, not the
    cwd. Not enabled, or `scripts/close-tasks.sh` missing (the install gap reported above): skip
    silently and leave `data.waves` absent. Otherwise run
    `bash scripts/close-tasks.sh waves --file TASKS.md --write <file>` and read the JSON from the

@@ -132,11 +132,11 @@ fall back to text-only behavior when it isn't. Make the dependency soft.
 
 ### Step 5 — Dispatch fix agent (if real failures remain)
 
-Spawn a fix agent with structured failure data. Use Sonnet for targeted fixes; escalate to Opus only if failures span many files or suggest structural issues — and only when not capped (honors `project.json` `models.cap` / `--model`; Sonnet-first by default).
+Spawn a fix agent with structured failure data. Dispatch at the same tier this agent was dispatched at (`models.e2e`, Sonnet default, capped by `models.cap`) — never escalate on your own.
 
 ```
 Agent(
-  model="sonnet",
+  model="<tier this agent was dispatched at: models.e2e>",
   description="Fix e2e failures for {feature_slug}",
   prompt="""
     Fix the following e2e test failures. Each failure includes the test name,

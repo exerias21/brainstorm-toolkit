@@ -165,7 +165,8 @@ Usage:
     plan phase names no files land in `unknown_files`. A now row whose files are
     dirty in ANOTHER git worktree gets `overlaps` (silently skipped outside git).
     Prints one JSON object (incl. a counts `summary`); --write also renders the
-    lane-grouped file. Exit 0 whenever --file parses.
+    lane-grouped file, but never over an existing file whose line 1 is not the
+    generated banner (JSON gets `write_skipped`). Exit 0 whenever --file parses.
   close-tasks.sh tag --file TASKS.md --row NEEDLE (--add|--remove) TAG
     The only writer of `_after:` / `_conflicts:` / `_lane:`. TAG is
     `after:<plan>[:<phase>]`, `conflicts:<plan>[:<phase>]` or `lane:<name>`
@@ -1306,9 +1307,26 @@ def do_waves(args):
     }
     if args.write:
         command = f'bash scripts/close-tasks.sh waves --file {args.file} --write {args.write}'
-        with open(args.write, 'w', encoding='utf-8', newline='\n') as f:
-            f.write(render_waves(result, command))
-        result['written'] = args.write
+        # Only a file this command generated (banner on line 1, BOM/CRLF
+        # tolerated) or a missing one is written; a hand-written file of the
+        # same name is never overwritten.
+        hand_written = False
+        if os.path.exists(args.write):
+            try:
+                with open(args.write, 'r', encoding='utf-8-sig', newline='') as f:
+                    first = f.readline()
+            except (OSError, UnicodeDecodeError):
+                first = ''
+            hand_written = not first.startswith('<!-- generated — edit TASKS.md')
+        if hand_written:
+            result['written'] = None
+            result['write_skipped'] = (f'{args.write} exists and is not generated '
+                                       '(no banner on line 1) — left untouched')
+            print(f"close-tasks: {result['write_skipped']}", file=sys.stderr)
+        else:
+            with open(args.write, 'w', encoding='utf-8', newline='\n') as f:
+                f.write(render_waves(result, command))
+            result['written'] = args.write
     print(json.dumps(result, indent=2))
     return 0
 

@@ -19,7 +19,9 @@ Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
 1. **Select** the next item — highest-priority `Active / Pending` row (`[~]` first),
    **excluding `_manual_` rows** (a human-only row is never selected into the loop).
    Mark it `[~]`. **When action items are enabled** (`pipeline.action_items.enabled`, or the
-   `pipeline.action_items.file` — default `ACTION_ITEMS.md` — exists beside `TASKS.md`; skipped
+   `pipeline.action_items.file` — default `ACTION_ITEMS.md` — exists beside `TASKS.md` **and** its
+   first line is the generated banner `<!-- generated — edit TASKS.md`, so a hand-written file of
+   that name never opts in; skipped
    when `scripts/close-tasks.sh` is missing) select from the `now` wave of
    `bash scripts/close-tasks.sh waves --file TASKS.md` instead, priority within it — picking by
    plain priority would start a row whose dependency is not done. An **empty `now` wave, or one

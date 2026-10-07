@@ -162,12 +162,14 @@ repetition itself is required, not redundant.
 - **Model tiers — two independent axes, canonical contract in
   `skills/sdlc/templates/models.md`.** Read it before touching any dispatch
   site; do not restate it here.
-  - **Axis 1 (fan-out tier):** `--model <tier>` > `.claude/project.json`
-    `models.cap` > default. `models.cap` is a **ceiling, never a target**. The
-    fan-out is **Sonnet-first by default** everywhere — Opus is an explicit
-    opt-up. Keep it that way when adding a dispatch.
-  - **Axis 2 (reviewer model, `/sdlc` only):** `models.code_review` /
-    `--review-model`, default `opus`, stage permanently opt-in. **Not on the
+  - **Axis 1 (fan-out tier):** `.claude/project.json` `models.<role>` >
+    built-in default, then `models.cap` as a ceiling. There is no CLI flag;
+    every dispatch role has its own key. `models.cap` is a **ceiling, never a
+    target**, and absent = no ceiling. The fan-out is **Sonnet-first by
+    default** everywhere — Opus is an explicit opt-up. Keep it that way when
+    adding a dispatch (and give it a `models.<role>` key).
+  - **Axis 2 (reviewer model, `/sdlc` only):** `models.code_review`,
+    default `opus`, stage permanently opt-in (`pipeline.review_fix.enabled`). **Not on the
     haiku<sonnet<opus ladder; `models.cap` never lowers it.** Its cost is
     bounded by fan-out width (`agents.code_review_lenses`,
     `agents.code_review_max_lenses`, default 4) instead. An explicit
@@ -318,7 +320,7 @@ Frontmatter buys exactly three things nothing else can, and two of them are usua
 |---|---|---|
 | `description:` | auto-delegation — Claude picks the agent unprompted | **Dead** — every skill names its agent explicitly, and auto-delegation is unreliable in practice |
 | `tools:` | an **enforced** boundary; prose saying "you are read-only" is advisory | **The real win** — verified enforced: a declared allowlist omits Bash/Write entirely |
-| `model:` | pins a default tier | **A default, not an override** — since **v2.1.251** the dispatch site's per-invocation `model` outranks frontmatter (order: per-invocation > frontmatter > `CLAUDE_CODE_SUBAGENT_MODEL` > session). So it does NOT bypass the ladder. Still prefer pinning at the dispatch site — that is where the `--model` > `models.cap` resolution is printed and auditable — but a frontmatter tier is a safe floor for an agent that must never run hot (`test-runner` pins `haiku`) |
+| `model:` | pins a default tier | **A default, not an override** — since **v2.1.251** the dispatch site's per-invocation `model` outranks frontmatter (order: per-invocation > frontmatter > `CLAUDE_CODE_SUBAGENT_MODEL` > session). So it does NOT bypass the ladder. Still prefer pinning at the dispatch site — that is where the `models.<role>` + `models.cap` resolution is printed and auditable — but a frontmatter tier is a safe floor for an agent that must never run hot (`test-runner` pins `haiku`) |
 
 Also weigh, before adding one:
 

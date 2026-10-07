@@ -14,8 +14,7 @@ do not load this file unless the stage is enabled (see the enablement rule below
 
 ## Enablement and gate
 
-This stage activates only on an explicit
-`--review-model <name>` flag or an explicit `pipeline.review_fix.enabled: true` in
+This stage activates only on an explicit `pipeline.review_fix.enabled: true` in
 `.claude/project.json`; `--no-review` always wins OFF. An absent or `enabled: false`
 `pipeline.review_fix` block means OFF — there is no default-on flip, now or later. When
 activated, two auto-off gates still apply: the diff is docs-only/touches no code surface (self-skip
@@ -23,7 +22,7 @@ activated, two auto-off gates still apply: the diff is docs-only/touches no code
 the code surface there and would otherwise silently disable the stage in the repo that dogfoods it).
 Runs after Stage 5, before Stage 6, once enabled and not auto-off'd. Fans out
 **one reviewer pass per configured lens** (parallel sub-agents on Claude; sequential inline passes
-on Copilot/Codex), each at the **reviewer** model — `models.code_review` / `--review-model`,
+on Copilot/Codex), each at the **reviewer** model — `models.code_review`,
 default `opus`, resolved per `skills/sdlc/templates/models.md`. That axis is separate from the
 `haiku < sonnet < opus` cap ladder and `models.cap` never lowers it.
 
@@ -143,7 +142,7 @@ Per `pipeline.review_fix.mode`:
 - **`off`**: emit findings to `review.json` only; Stage 5.8 does not run.
 
 **Independence enforcement — observe, never override.** Compare the reviewer's resolved
-value to the implementer's effective tier (its default after the cap is applied). When they
+value to the implementer's effective tier (`models.implement`, capped). When they
 differ (or the reviewer is `fable`, outside the ladder), `data.independence = "ok"`. When they
 collide, **dispatch the configured reviewer anyway** and mark the run
 `data.independence = "degraded"` in `review.json`: every finding that run is surfaced only,
@@ -155,8 +154,8 @@ review: reviewer (<model>) and implementer (<tier>) resolve to the same tier —
         different tier (or fable) to restore it.
 ```
 
-**The reviewer is never re-tiered on your behalf** — an explicit `models.code_review` /
-`--review-model` value is always the dispatched value (why: `docs/MODEL-AXES.md`).
+**The reviewer is never re-tiered on your behalf** — an explicit `models.code_review`
+value is always the dispatched value (why: `docs/MODEL-AXES.md`).
 
 **Also surfaced at Stage 7.** Whenever this run's `review.json.data.independence ==
 "degraded"`, Stage 7's report adds one line so the collision is visible even to a reader who

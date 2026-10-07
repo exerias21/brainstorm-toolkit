@@ -53,9 +53,9 @@ dispatching — `cleanup lenses: <a, b> (N of 2 defaults)` — same convention a
 
 Dispatch **one `general-purpose` agent per selected lens, in one message on Claude** (sequential
 inline passes on Copilot/Codex, per the standing runtime note in `skills/sdlc/templates/models.md`).
-**Sonnet by default** (`--model opus` only, per `skills/sdlc/templates/models.md` — this rides
+Tier `models.cleanup` (Sonnet default, per `skills/sdlc/templates/models.md` — this rides
 the Axis 1 cap ladder like every other fan-out stage, unlike Stage 5.7's reviewer axis). Print
-`model: <tier> (cap: <cap|none>)` before dispatching. Each agent is find-only for this pass — its
+`model: cleanup=<tier> (cap: <cap|none>)` before dispatching. Each agent is find-only for this pass — its
 role prompt says so explicitly, and it is given only the changed-file list plus the plan, never
 the whole repo — and returns findings as `{lens, file, line, issue, minimal_fix, safe_to_apply}`.
 `safe_to_apply` here is the agent's own opinion; the rubric below is what actually governs.
@@ -87,7 +87,7 @@ every `over-engineering` finding whose fix is not a pure deletion — is report-
 `mode`.
 
 When `mode` is not `"off"` and at least one finding is `safe_to_apply`, dispatch **one** more
-`general-purpose` agent — Sonnet by default, same model-line convention as above — given exactly
+`general-purpose` agent — tier `models.implement`, printed as `model: implement=<tier> (cap: <cap|none>)` — given exactly
 the confirmed `safe_to_apply` findings and their `minimal_fix`, to make **only** those edits, no
 others. This is "the cleanup agent" that needs `Edit`, and it is the only point in this stage
 that writes to the working tree. It never touches a file outside the Stage 0 scope above. This

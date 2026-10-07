@@ -258,6 +258,14 @@ EOF
 out="$(run_cap "$d" '{"tool_name":"Agent","tool_input":{"model":"opus","description":"do stuff"}}')"
 assert_empty "$out"
 
+CASE="cap: no models.cap (= no ceiling) -> enforce_cap:true is a no-op, an opus dispatch is not rewritten"
+d="$(cap_dir 13)"
+cat > "$d/.claude/project.json" <<'EOF'
+{"pipeline": {"enforce_cap": true}, "models": {"implement": "opus"}}
+EOF
+out="$(run_cap "$d" '{"tool_name":"Agent","tool_input":{"model":"opus","description":"do stuff"}}')"
+assert_empty "$out"
+
 # ── cap: interpreter resolution -- finding 1. The probe used to try only
 #    python3/python, never `py`, so a machine whose ONLY working interpreter is
 #    the `py` launcher had enforce_cap silently do nothing. Blind python3/python
@@ -1799,6 +1807,47 @@ PYEOF
 assert_match "$(cat "$d/ACTION_ITEMS.md")" 'generated'
 assert_match "$(cat "$d/ACTION_ITEMS.md")" '^## Now'
 assert_match "$(cat "$d/ACTION_ITEMS.md")" '^### backend'
+ok
+
+CASE="close-tasks waves: --write creates a missing file with the banner and regenerates a bannered one"
+d="$(ct_dir w06b)"
+printf '## Active / Pending\n- [ ] (P1) Solo row\n' > "$d/TASKS.md"
+run_ct "$d" waves --file TASKS.md --write ACTION_ITEMS.md
+assert_rc "$CT_RC" 0
+[ -f "$d/ACTION_ITEMS.md" ] || fail "waves --write did not create a missing ACTION_ITEMS.md"
+BANNER="$(printf '<!-- generated \xe2\x80\x94 edit TASKS.md')"
+assert_match "$(head -n 1 "$d/ACTION_ITEMS.md")" "^$BANNER"
+printf '%s\nstale\n' "$BANNER" > "$d/ACTION_ITEMS.md"
+run_ct "$d" waves --file TASKS.md --write ACTION_ITEMS.md
+assert_rc "$CT_RC" 0
+assert_match "$(cat "$d/ACTION_ITEMS.md")" 'Solo row'
+ok
+
+CASE="close-tasks waves: --write never overwrites a hand-written file (plain, BOM+CRLF); JSON carries write_skipped, exit 0"
+d="$(ct_dir w06c)"
+printf '## Active / Pending\n- [ ] (P1) Solo row\n' > "$d/TASKS.md"
+printf '# My priorities\nhand written\n' > "$d/ACTION_ITEMS.md"
+cp "$d/ACTION_ITEMS.md" "$d/orig.md"
+run_ct "$d" waves --file TASKS.md --write ACTION_ITEMS.md
+assert_rc "$CT_RC" 0
+assert_match "$CT_OUT" 'left untouched'
+CT_OUT="$(printf '%s
+' "$CT_OUT" | sed -n '/^{/,$p')"
+waves_check <<'PYEOF'
+assert d['written'] is None, d
+assert 'not generated' in d['write_skipped'], d
+PYEOF
+cmp -s "$d/ACTION_ITEMS.md" "$d/orig.md" || fail "waves --write modified a hand-written ACTION_ITEMS.md"
+printf '\xef\xbb\xbf# Curated\r\nline two\r\n' > "$d/ACTION_ITEMS.md"
+cp "$d/ACTION_ITEMS.md" "$d/orig.md"
+run_ct "$d" waves --file TASKS.md --write ACTION_ITEMS.md
+assert_rc "$CT_RC" 0
+CT_OUT="$(printf '%s
+' "$CT_OUT" | sed -n '/^{/,$p')"
+waves_check <<'PYEOF'
+assert d['written'] is None and d['write_skipped'], d
+PYEOF
+cmp -s "$d/ACTION_ITEMS.md" "$d/orig.md" || fail "waves --write modified a BOM/CRLF hand-written file"
 ok
 
 CASE="close-tasks waves: _manual_ rows go to needs_you; a row with no resolvable files runs in parallel and is listed in unknown_files"

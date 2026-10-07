@@ -141,8 +141,7 @@ initialize the state envelope at `.claude/pipeline/<slug>/` with
 `pipeline: "sdlc"`, `base_commit`, `status: "in_progress"`.
 
 **Independence pre-check (before any spend).** If the review stage resolves ON
-(`--review-model <name>` or `pipeline.review_fix.enabled: true`; `--no-review` always wins
-OFF), compute whether `models.code_review` collides with the implementer's effective tier per
+(`pipeline.review_fix.enabled: true`; `--no-review` always wins OFF), compute whether `models.code_review` collides with the implementer's effective tier per
 `skills/sdlc/templates/models.md` "Independence" — **do not open
 `skills/sdlc/templates/stage-5.7-review-fix.md` for this**, it is opt-in and a default run must
 never load it. On a collision, print the same degraded line Stage 5.7 emits before dispatching
@@ -249,14 +248,14 @@ Then apply the **live-code grounding** — follow `skills/sdlc/templates/convent
 decides single-agent vs. decompose.
 
 - **Single-agent (default):** dispatch one agent with `skills/sdlc/templates/stage-2-implement.md`,
-  substitute `{feature_name}` and `{plan_content}`; **Sonnet by default** (Opus
-  only on `--model opus`, per `skills/sdlc/templates/models.md`) on Claude,
+  substitute `{feature_name}` and `{plan_content}`; **`models.implement`** (Sonnet
+  default, per `skills/sdlc/templates/models.md`) on Claude,
   inline on Copilot/Codex. **State write (orchestrator, not the agent):** the
   agent's prompt writes nothing to disk — when it returns `git diff --numstat`, **you**
   write `stage-outputs/implement.json` from that summary, append `implement` to
   `run.json.stages_completed`, and refresh `updated_at`. No decompose/converge sidecars.
 - **Decompose (large multi-surface plan):** run 2a/2b/2c —
-  `skills/sdlc/templates/stage-2a-decompose.md` (Sonnet decomposer →
+  `skills/sdlc/templates/stage-2a-decompose.md` (decomposer at `models.implement` →
   `decompose.json`), `skills/sdlc/templates/stage-2b-dispatch.md` (one subagent
   per lane, sequential by `depends_on` → `implement-<lane>.json`), then
   `skills/sdlc/templates/stage-2c-converge.md` (orchestrator reconcile prompt — it
@@ -291,8 +290,7 @@ first failure; 3-iteration budget). Writes one `validate.json`.
 ## Stage 5.7 — Adversarial review
 
 **Opt-in, permanently OFF by default — resolve the gate before loading anything.** ON only on an
-explicit `--review-model <name>` flag or `pipeline.review_fix.enabled: true`; `--no-review` always
-wins OFF. When OFF, do not load the template — append `review` to `run.json.stages_skipped` and go
+`pipeline.review_fix.enabled: true`; `--no-review` always wins OFF. When OFF, do not load the template — append `review` to `run.json.stages_skipped` and go
 to Stage 6. When ON, **read `skills/sdlc/templates/stage-5.7-review-fix.md` now** and run it: it
 carries the lens fan-out and its cost knobs, the reviewer-model axis and its cap caveat, the verify
 pass and the circuit breaker. Runs after Stage 5, before Stage 6; writes `stage-outputs/review.json`.
