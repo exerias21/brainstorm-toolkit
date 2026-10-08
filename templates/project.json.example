@@ -194,10 +194,16 @@
     "action_items": {
       "_comment": "Optional. A generated 'what runs when' file (ACTION_ITEMS.md) built from TASKS.md by scripts/close-tasks.sh waves: a now wave and a next wave, grouped by lane. /sdlc Stage 6 regenerates it after closing rows, /sdlc --queue selects from the now wave, and /sdlc-status prints one line from it. Derived and gitignored; edit TASKS.md, never the file.",
       "enabled": false,
-      "_enabled_comment": "Default false -- but the feature is also ON whenever the file below already exists AND its first line is the generated banner ('<!-- generated — edit TASKS.md'). A hand-written file of that name never opts a repo in and is never overwritten, even with enabled true. Both the file path and the check resolve against the TASKS.md directory, not the cwd.",
+      "_enabled_comment": "false is a VETO: the feature is off whatever files exist. true turns it on. When absent it is on only if the file below exists AND its first line is the generated banner ('<!-- generated — edit TASKS.md'). Read both keys first -- never test the default name when file is set (bash scripts/close-tasks.sh waves --gate does this). A hand-written file never opts a repo in and is never overwritten, even with enabled true. The file path and the check resolve against the TASKS.md directory, not the cwd.",
       "file": "ACTION_ITEMS.md",
       "reassess": false,
       "_reassess_comment": "Default false. When true AND the open-row set changed since the last run, Stage 6 dispatches ONE Sonnet agent that proposes _after: / _lane: / _conflicts: row tags the file-and-phase rules cannot see. Every proposal needs a verbatim evidence quote from the plan; scripts/close-tasks.sh tag is the only writer, and a proposal whose quote is not found is dropped, never applied. Only has effect when action items are enabled."
+    },
+
+    "tasks": {
+      "_comment": "Optional. How /sdlc Stage 6 closes TASKS.md rows.",
+      "close_in_place": false,
+      "_close_in_place_comment": "Default false: a closed row moves to ## Done. true: scripts/close-tasks.sh close --in-place flips it to [x] (with its completion stamp) where it stands, so TASKS.md:N line citations stay valid; moved[] is empty."
     }
   }
 }

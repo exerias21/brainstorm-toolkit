@@ -170,6 +170,12 @@ Before approving a finding in loop `n+1`, check it against the union of all prio
 fresh bug: don't spawn another fix attempt, pause with `run.json.status = "paused"` and report the
 original fix + regression side by side (same shape as Stage 5's persistent-mismatch pause).
 
+**Scope of the fix pass.** The fix prompt is built only from confirmed `auto_fixable: true`
+findings. Do not attempt partial fixes of `auto_fixable: false` findings — surface them in the
+report. After the pass, update each applied finding's `status` in `review.json` (or, if you leave
+`review.json` untouched, list the applied `finding_id`s in `review-fix.json`) so the sidecar is
+not stale.
+
 **Writes a single cumulative** `stage-outputs/review-fix.json` (not per-iteration files), with a
 `loops[]` array carrying one entry per iteration. `review-fix` is recorded once in
 `run.json.stages_completed` regardless of loop count.

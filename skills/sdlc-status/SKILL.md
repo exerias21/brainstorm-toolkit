@@ -15,6 +15,8 @@ metadata:
 
 # Status — one-glance work readout
 
+> **Toolkit paths.** Every toolkit script or template path cited here resolves against the plugin root — this skill's base directory two levels up (`<base>/../..`) — when the skill is loaded from a plugin; a repo-local copy installed by `setup.sh` wins when it exists.
+
 ## Flow
 
 1. **Read `TASKS.md`** at the repo root. If missing, report "no TASKS.md yet — run `/repo-onboarding` or `/task <description>` to create one" and stop.
@@ -56,9 +58,12 @@ reported too. Print `drift_count` and one line per finding; say
 `backlog: no drift` when clean. Skip silently when `scripts/close-tasks.sh` is absent
 (`--no-copy-scripts` installs).
 
-**Waves line.** When `.claude/project.json` `pipeline.action_items.enabled` is `true` or the
-`pipeline.action_items.file` (default `ACTION_ITEMS.md`) exists beside `TASKS.md` **and** its first
-line is the generated banner (`<!-- generated — edit TASKS.md`), run
+**Waves line.** Run `bash scripts/close-tasks.sh waves --file TASKS.md --gate` first. The rule it
+applies: off when `pipeline.action_items.enabled` is `false` (a veto, whatever files exist), on when
+`true`, and when absent on only if the file named by `pipeline.action_items.file` (default
+`ACTION_ITEMS.md`) exists beside `TASKS.md` and its first line is the generated banner
+(`<!-- generated — edit TASKS.md`). Read both keys first; never test the default name when `file`
+is set. When it prints `enabled: true`, run
 `bash scripts/close-tasks.sh waves --file TASKS.md` — read-only, no `--write`: this skill never
 regenerates the file — and take `summary` and `overlaps[]` from its JSON. Skip silently when the
 feature is off or `scripts/close-tasks.sh` is absent (`--no-copy-scripts` installs).

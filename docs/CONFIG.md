@@ -113,6 +113,9 @@ This page mirrors `templates/project.json.example`; that file is the registry
       "enabled": false,
       "file": "ACTION_ITEMS.md",
       "reassess": false
+    },
+    "tasks": {
+      "close_in_place": false
     }
   }
 }
@@ -220,9 +223,11 @@ printing it, so the loop self-advances. It never chains a `confirm: true` action
 
 `pipeline.action_items` (`enabled`, `file`, `reassess`) controls the generated `ACTION_ITEMS.md` — which open `TASKS.md` rows
 can run now, which become ready next, grouped by lane (`bash scripts/close-tasks.sh waves`; JSON
-shape in `docs/BOARD-JSON.md`). It is **off by default but also on whenever the file named by
-`file` (default `ACTION_ITEMS.md`) already exists and its first line is the generated banner
-(`<!-- generated — edit TASKS.md`)**; a hand-written file of that name never opts a repo in, and
+shape in `docs/BOARD-JSON.md`). Resolution (`bash scripts/close-tasks.sh waves --file TASKS.md --gate` prints
+`{enabled, file, reason}`): **`enabled: false` is a veto** — off whatever files exist; `enabled: true`
+is on; when `enabled` is absent it is on only if the file named by `file` (default `ACTION_ITEMS.md`)
+already exists and its first line is the generated banner (`<!-- generated — edit TASKS.md`). Read both
+keys first; never test the default name when `file` is set. A hand-written file of that name never opts a repo in, and
 even with `enabled: true` it is never overwritten (`waves --write` reports `write_skipped`). Both
 the path and that check resolve against the `TASKS.md` directory, not the cwd. When
 on, `/sdlc` Stage 6 regenerates the file right after it closes its rows, `/sdlc --queue` selects
@@ -232,6 +237,11 @@ to Stage 6: when the open-row set changed since the last run, one Sonnet agent p
 `_after:` / `_lane:` / `_conflicts:` tags, and code applies only those whose evidence quote is
 found verbatim in the plan, through `close-tasks.sh tag`. Model tier follows
 `skills/sdlc/templates/models.md` (Axis 1, Sonnet by default).
+
+`pipeline.tasks.close_in_place` (default `false`) makes `/sdlc` Stage 6 close rows with
+`close-tasks.sh close --in-place`: a closed row flips to `[x]` (with its completion stamp) where it
+stands instead of moving to `## Done`, so `TASKS.md:N` line citations stay valid. `moved[]` is empty in
+that mode.
 
 ### Which skill reads which key
 
@@ -250,6 +260,7 @@ found verbatim in the plan, through `close-tasks.sh tag`. Model tier follows
 | `/sdlc`, `/brainstorm`, `/brainstorm-team`, `/dead-code-review`, `/repo-health`, `/docstring-sync` | `models.cap` (sub-agent tier ceiling; absent = none) |
 | `/sdlc` | `models.sanity` + `agents.sanity_focuses` (Stage 1.5 pre-flight, per focus; never gated, so it runs every time) |
 | `/sdlc` Stage 5 fix loop | `pipeline.fix_loop.escalate_last` (final-iteration escalation; excluded from Stage 5.7/5.8) |
+| `/sdlc` Stage 6 | `pipeline.tasks.close_in_place` |
 | `/sdlc` Stage 6, `--queue` | `pipeline.action_items.enabled`, `.file`, `.reassess` (regenerate `ACTION_ITEMS.md`; queue selects from the now wave; `reassess` opt-in) |
 | `/sdlc` | `models.code_review`, `models.code_review_second_pass`, `agents.code_review_*` (axis 2; never capped) |
 | `/sdlc` | `pipeline.review_fix.*`: stage *behavior* only (`enabled`, `mode`). Opt-in, permanently off by default. (`blocking` was removed 2026-09: `/sdlc` does no git writes, so a HIGH finding is reported first in Stage 7, never gated) |

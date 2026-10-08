@@ -15,6 +15,8 @@ metadata:
 
 # sdlc — the full SDLC pipeline, leaving the commit to you (no git writes)
 
+> **Toolkit paths.** Every toolkit script or template path cited here resolves against the plugin root — this skill's base directory two levels up (`<base>/../..`) — when the skill is loaded from a plugin; a repo-local copy installed by `setup.sh` wins when it exists.
+
 ## When to use
 
 | Skill | Input | Pipeline | Terminal action |
@@ -337,7 +339,8 @@ When Stage 6 wrote `data.waves`, add `waves: now N across L lane(s), next M` fro
 If the delivered diff departs from the plan (a step skipped,
 reordered, or solved differently), say where and why in one line each — the
 `plan-conformance-validator`'s
-partial/missing rows are the source. Make it explicit that **nothing was committed** — the next
+partial/missing rows are the source. Check `coauthor_trailer` in `.claude/project.json`: unless it is literally `true`, the suggested
+commit message contains no `Co-Authored-By` (or other attribution) line — strip one if present. Make it explicit that **nothing was committed** — the next
 move is yours.
 
 ## Skill-repo mode (auto-detected)

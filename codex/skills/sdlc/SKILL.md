@@ -272,7 +272,8 @@ silent close-out miss into a visible one; when `unmatched` is non-empty add
 wrote `data.waves`, add `waves: now N across L lane(s), next M` from its `summary` (`now`, `lanes`,
 `next`) and one warning line per `overlaps[]` entry; omit both when it did not. If the
 delivered diff departs from the plan (a step skipped, reordered, or solved differently), say where and why in
-one line each — the `plan-conformance-validator`'s partial/missing rows are the source. Make clear **nothing
+one line each — the `plan-conformance-validator`'s partial/missing rows are the source. Check `coauthor_trailer` in `.claude/project.json`: unless it is literally `true`, the suggested
+commit message contains no `Co-Authored-By` (or other attribution) line — strip one if present. Make clear **nothing
 was committed** — the next move is yours.
 
 ## Skill-repo mode (auto-detected)

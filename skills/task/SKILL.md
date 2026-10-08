@@ -14,6 +14,8 @@ metadata:
 
 # Task — single-task TDD execution
 
+> **Toolkit paths.** Every toolkit script or template path cited here resolves against the plugin root — this skill's base directory two levels up (`<base>/../..`) — when the skill is loaded from a plugin; a repo-local copy installed by `setup.sh` wins when it exists.
+
 ## Boundaries
 
 `/task` always executes TDD on the current branch. Want the full pipeline (evals + validate +

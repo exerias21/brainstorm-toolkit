@@ -14,6 +14,8 @@ metadata:
 
 # Brainstorm
 
+> **Toolkit paths.** Every toolkit script or template path cited here resolves against the plugin root — this skill's base directory two levels up (`<base>/../..`) — when the skill is loaded from a plugin; a repo-local copy installed by `setup.sh` wins when it exists.
+
 An interactive ideation skill that walks through a structured brainstorming process *with* the
 user. Unlike `/brainstorm-team` (which launches autonomous agents to produce a
 research document), this skill is conversational — it thinks out loud, asks questions, and iterates

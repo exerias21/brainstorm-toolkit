@@ -14,6 +14,8 @@ metadata:
 
 # Post-Change Validation
 
+> **Toolkit paths.** Every toolkit script or template path cited here resolves against the plugin root — this skill's base directory two levels up (`<base>/../..`) — when the skill is loaded from a plugin; a repo-local copy installed by `setup.sh` wins when it exists.
+
 ## Run the suites in a sub-agent (default)
 
 **Dispatch the `test-runner` agent** — by type `brainstorm-toolkit:test-runner`, or bare

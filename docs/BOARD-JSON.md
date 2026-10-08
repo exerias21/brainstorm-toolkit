@@ -111,6 +111,10 @@ old parsing code against the new output.
 
 # `close-tasks.sh waves` — what runs when
 
+`waves --file TASKS.md --gate` prints `{enabled, file, reason}` for the action-items enable rule
+(`pipeline.action_items.enabled: false` vetoes; `true` enables; absent → on only if the configured
+`file` exists with the generated banner on line 1) and nothing else.
+
 `waves --file TASKS.md [--write PATH]` groups the open `## Active / Pending` rows into waves.
 Read-only unless `--write` is passed; it never edits `TASKS.md`. Exit codes match `board`.
 

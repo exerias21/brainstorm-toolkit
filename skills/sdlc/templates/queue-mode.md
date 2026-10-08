@@ -18,11 +18,11 @@ Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
 
 1. **Select** the next item — highest-priority `Active / Pending` row (`[~]` first),
    **excluding `_manual_` rows** (a human-only row is never selected into the loop).
-   Mark it `[~]`. **When action items are enabled** (`pipeline.action_items.enabled`, or the
-   `pipeline.action_items.file` — default `ACTION_ITEMS.md` — exists beside `TASKS.md` **and** its
-   first line is the generated banner `<!-- generated — edit TASKS.md`, so a hand-written file of
-   that name never opts in; skipped
-   when `scripts/close-tasks.sh` is missing) select from the `now` wave of
+   Mark it `[~]`. **When action items are enabled** (`bash scripts/close-tasks.sh waves --file TASKS.md --gate`
+   prints `enabled: true`: `pipeline.action_items.enabled: false` is a veto, `true` a switch, and when
+   absent the configured `pipeline.action_items.file` — default `ACTION_ITEMS.md` — must exist beside
+   `TASKS.md` with the generated banner on line 1; read both keys first, never test the default name
+   when `file` is set; skipped when `scripts/close-tasks.sh` is unresolvable) select from the `now` wave of
    `bash scripts/close-tasks.sh waves --file TASKS.md` instead, priority within it — picking by
    plain priority would start a row whose dependency is not done. An **empty `now` wave, or one
    holding only `needs_you` rows, parks** via the Park protocol below with `<resume-cmd>` =
@@ -65,8 +65,8 @@ Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
    - `max_items` (default `5`, or the `[N]` arg) — items consumed this invocation.
    - `max_consecutive_failures` (default `2`) — distinct-item failures before parking.
 4. **Re-scan** `TASKS.md` for newly-appended rows and **go to 1**, until a stop
-   condition parks the loop or the queue is empty. With action items enabled, also run
-   `bash scripts/close-tasks.sh waves --file TASKS.md --write <file>` between items — the re-scan
+   condition parks the loop or the queue is empty. With action items enabled (the same `--gate`), also run
+   `bash scripts/close-tasks.sh waves --file TASKS.md --write <file from --gate>` between items — the re-scan
    alone re-reads `TASKS.md` and never regenerates the waves, so item 1 would select from stale ones.
 
 **On park**, which envelope work you do depends on *why* it parked:

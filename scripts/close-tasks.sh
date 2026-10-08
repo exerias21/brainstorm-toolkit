@@ -28,7 +28,7 @@
 #     `[x]` row at all -- `rows` reports every state so a caller can tell
 #     "already done" from "never tagged").
 #
-#   close --file TASKS.md --scope plan --key SLUG --plan-file PLAN.md [--dry-run]
+#   close --file TASKS.md --scope plan --key SLUG --plan-file PLAN.md [--dry-run] [--in-place]
 #     Closes every `[~]` row (never `[ ]`/`[x]`) tagged `_plan: SLUG_`, moving
 #     each to ## Done with a `_completed_at:` stamp. A row tagged with a
 #     DIFFERENT `_plan:` value that still looks like it belongs to this plan
@@ -40,7 +40,9 @@
 #     `[ ]`, so a later `--resume` reaching Stage 6 again can never close its
 #     own re-entry rows by construction.
 #
-#   close --file TASKS.md --scope resolved --ids-file FILE [--dry-run]
+#   close --file TASKS.md --scope resolved --ids-file FILE [--dry-run] [--in-place]
+#     (--in-place on either scope flips the row to [x] where it stands and does
+#     not move it; `moved[]` stays empty.)
 #     Closes exactly the rows matching each line of FILE (a substring unique
 #     to one row -- typically the row's linked task file path). Used by
 #     task-id / task-range / ad-hoc-description / queue-item runs, which
@@ -93,7 +95,7 @@
 #     a crash. Exit 0 whenever `--file` parses; exit 1 only when it's
 #     missing/unreadable. Full contract: docs/BOARD-JSON.md.
 #
-#   waves --file TASKS.md [--write ACTION_ITEMS.md]
+#   waves --file TASKS.md [--write ACTION_ITEMS.md] [--gate]
 #     Groups open rows into a now/next wave by lane; see `usage` below.
 #
 #   tag --file TASKS.md --row NEEDLE (--add|--remove) TAG
@@ -129,8 +131,11 @@ Usage:
     path-substring match against --plan-file, same as `close --scope plan`.
     Prints `{match_key, matched[]}`; each entry is `{line, text, state, phase,
     followup, manual}` with `state` one of `open`/`in_progress`/`done`.
-  close-tasks.sh close --file TASKS.md --scope plan --key SLUG --plan-file PLAN.md [--dry-run]
-  close-tasks.sh close --file TASKS.md --scope resolved --ids-file FILE [--dry-run]
+  close-tasks.sh close --file TASKS.md --scope plan --key SLUG --plan-file PLAN.md [--dry-run] [--in-place]
+  close-tasks.sh close --file TASKS.md --scope resolved --ids-file FILE [--dry-run] [--in-place]
+    --in-place flips each closed row to `[x]` (with its completion stamp) where it
+    stands instead of moving it to ## Done, so `TASKS.md:N` line citations hold;
+    `moved[]` stays empty.
   close-tasks.sh reconcile --file TASKS.md [--pipeline-dir .claude/pipeline] [--apply] [--json]
     (--json is a documented no-op: reconcile's output is always one JSON object
     on stdout, with or without the flag -- it exists so a caller following the
@@ -156,6 +161,11 @@ Usage:
     failure); exit 1 only when --file is missing/unreadable. Schema-version
     rule: additive fields never bump `schema`; a removed or retyped field does.
   close-tasks.sh waves --file TASKS.md [--write ACTION_ITEMS.md]
+  close-tasks.sh waves --file TASKS.md --gate
+    Prints `{enabled, file, reason}` -- whether action items are on, from
+    `.claude/project.json` beside TASKS.md (`pipeline.action_items.enabled` is a
+    veto when false, a switch when true; absent, on only when `file` exists and
+    line 1 is the generated banner). `file` is the resolved path.
     Read-only unless --write. Groups open `Active / Pending` rows into a `now`
     wave (no open order edge, one row per lane, no two that conflict) and a
     `next` wave (ready once every now row closes). Untagged rows are parallel by
@@ -188,6 +198,8 @@ PLAN_FILE=""
 IDS_FILE=""
 PIPELINE_DIR=".claude/pipeline"
 DRY_RUN=0
+IN_PLACE=0
+GATE=0
 APPLY=0
 REPO_NAME=""
 WRITE=""
@@ -205,6 +217,8 @@ while [ $# -gt 0 ]; do
     --ids-file) IDS_FILE="$2"; shift 2 ;;
     --pipeline-dir) PIPELINE_DIR="$2"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --in-place) IN_PLACE=1; shift ;;
+    --gate) GATE=1; shift ;;
     --apply) APPLY=1; shift ;;
     --json) shift ;;  # documented no-op -- reconcile's output is always JSON, flag or not
     --repo-name) REPO_NAME="$2"; shift 2 ;;
@@ -514,8 +528,17 @@ def do_close(args):
 
     if args.dry_run:
         result["closed"] = list(matched)
-        result["moved"] = list(matched)
+        result["moved"] = [] if args.in_place else list(matched)
         result["dry_run"] = True
+        print(json.dumps(result, indent=2))
+        return 0
+
+    if args.in_place:
+        new_lines = list(lines)
+        for i in close_idx:
+            new_lines[i] = close_row_text(lines[i])
+            result["closed"].append(lines[i])
+        write_lines(path, new_lines)
         print(json.dumps(result, indent=2))
         return 0
 
@@ -1157,7 +1180,43 @@ def render_waves(result, command):
     return '\n'.join(out) + '\n'
 
 
+BANNER = '<!-- generated — edit TASKS.md'
+
+
+def do_waves_gate(args):
+    base_dir = os.path.dirname(os.path.abspath(args.file)) or os.getcwd()
+    cfg = load_json(os.path.join(base_dir, '.claude', 'project.json'))
+    ai = {}
+    if isinstance(cfg, dict) and isinstance(cfg.get('pipeline'), dict):
+        ai = cfg['pipeline'].get('action_items')
+        ai = ai if isinstance(ai, dict) else {}
+    name = ai.get('file') if isinstance(ai.get('file'), str) and ai.get('file') else 'ACTION_ITEMS.md'
+    path = name if os.path.isabs(name) else os.path.join(base_dir, name)
+    enabled = ai.get('enabled')
+    if enabled is False:
+        on, reason = False, 'pipeline.action_items.enabled is false (veto)'
+    elif enabled is True:
+        on, reason = True, 'pipeline.action_items.enabled is true'
+    else:
+        first = None
+        try:
+            with open(path, 'r', encoding='utf-8-sig', newline='') as f:
+                first = f.readline()
+        except (OSError, UnicodeDecodeError):
+            pass
+        if first is None:
+            on, reason = False, f'enabled unset and {name} does not exist'
+        elif first.startswith(BANNER):
+            on, reason = True, f'enabled unset and {name} carries the generated banner'
+        else:
+            on, reason = False, f'enabled unset and {name} is hand-written (no banner)'
+    print(json.dumps({'enabled': on, 'file': path, 'reason': reason}))
+    return 0
+
+
 def do_waves(args):
+    if args.gate:
+        return do_waves_gate(args)
     lines = read_lines(args.file)
     sections = parse_sections(lines)
     base_dir = os.path.dirname(os.path.abspath(args.file)) or os.getcwd()
@@ -1671,6 +1730,8 @@ def main(argv):
     a.ids_file = ''
     a.pipeline_dir = '.claude/pipeline'
     a.dry_run = False
+    a.in_place = False
+    a.gate = False
     a.apply = False
     a.repo_name = ''
     a.write = ''
@@ -1695,6 +1756,10 @@ def main(argv):
             a.pipeline_dir = next(it)
         elif tok == '--dry-run':
             a.dry_run = True
+        elif tok == '--in-place':
+            a.in_place = True
+        elif tok == '--gate':
+            a.gate = True
         elif tok == '--apply':
             a.apply = True
         elif tok == '--repo-name':
@@ -1741,6 +1806,7 @@ case "$SUBCMD" in
     [ -n "$PLAN_FILE" ] && ARGS+=("--plan-file" "$PLAN_FILE")
     [ -n "$IDS_FILE" ] && ARGS+=("--ids-file" "$IDS_FILE")
     [ "$DRY_RUN" -eq 1 ] && ARGS+=("--dry-run")
+    [ "$IN_PLACE" -eq 1 ] && ARGS+=("--in-place")
     ;;
   reconcile)
     ARGS+=("--pipeline-dir" "$PIPELINE_DIR")
@@ -1752,6 +1818,7 @@ case "$SUBCMD" in
     ;;
   waves)
     [ -n "$WRITE" ] && ARGS+=("--write" "$WRITE")
+    [ "$GATE" -eq 1 ] && ARGS+=("--gate")
     ;;
   tag)
     ARGS+=("--row" "$ROW")

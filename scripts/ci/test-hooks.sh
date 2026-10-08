@@ -2032,5 +2032,93 @@ h3="$(printf '%s' "$CT_OUT" | bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,
 [ "$h1" != "$h3" ] || fail "open_hash did not change after the open-row set changed"
 ok
 
+# ── close-tasks.sh waves --gate: the enable rule as one command ─────────────
+gate_check() { # $1 = expected enabled (True|False), $2 = expected basename of file
+  local f="$ROOT_TMP/gate-out-$$.json" out rc
+  printf '%s' "$CT_OUT" > "$f"
+  set +e
+  out="$(bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys,os
+d=json.load(open(sys.argv[1],encoding="utf-8"))
+assert str(d["enabled"])==sys.argv[2],d
+assert os.path.basename(d["file"])==sys.argv[3] and d["reason"],d
+print("OK")' "$f" "$1" "$2" 2>&1)"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "gate assertions failed: $out :: $CT_OUT"
+}
+gate_dir() { # $1 = id, $2 = project.json body or empty
+  local g; g="$(ct_dir "$1")"
+  printf '## Active / Pending\n- [ ] (P1) Solo row\n' > "$g/TASKS.md"
+  mkdir -p "$g/.claude"
+  [ -n "$2" ] && printf '%s' "$2" > "$g/.claude/project.json"
+  printf '%s' "$g"
+}
+
+CASE="close-tasks waves --gate: enabled:false vetoes even a generated file"
+d="$(gate_dir g01 '{"pipeline":{"action_items":{"enabled":false}}}')"
+run_ct "$d" waves --file TASKS.md --write ACTION_ITEMS.md
+run_ct "$d" waves --file TASKS.md --gate
+assert_rc "$CT_RC" 0
+gate_check False ACTION_ITEMS.md
+ok
+
+CASE="close-tasks waves --gate: unset key + hand-written file is off"
+d="$(gate_dir g02 '{}')"
+printf '# mine\n' > "$d/ACTION_ITEMS.md"
+run_ct "$d" waves --file TASKS.md --gate
+gate_check False ACTION_ITEMS.md
+ok
+
+CASE="close-tasks waves --gate: unset key + generated file is on"
+d="$(gate_dir g03 '')"
+run_ct "$d" waves --file TASKS.md --write ACTION_ITEMS.md
+run_ct "$d" waves --file TASKS.md --gate
+gate_check True ACTION_ITEMS.md
+ok
+
+CASE="close-tasks waves --gate: enabled:true is on with no file"
+d="$(gate_dir g04 '{"pipeline":{"action_items":{"enabled":true}}}')"
+run_ct "$d" waves --file TASKS.md --gate
+gate_check True ACTION_ITEMS.md
+ok
+
+CASE="close-tasks waves --gate: a custom file is honoured and the default name is ignored"
+d="$(gate_dir g05 '{"pipeline":{"action_items":{"file":"ACTION_WAVES.md"}}}')"
+run_ct "$d" waves --file TASKS.md --write ACTION_ITEMS.md
+run_ct "$d" waves --file TASKS.md --gate
+gate_check False ACTION_WAVES.md
+run_ct "$d" waves --file TASKS.md --write ACTION_WAVES.md
+run_ct "$d" waves --file TASKS.md --gate
+gate_check True ACTION_WAVES.md
+ok
+
+# ── close-tasks.sh close --in-place ─────────────────────────────────────────
+CASE="close-tasks close --in-place: row stays on its line as [x], moved[] empty; default still moves"
+d="$(ct_dir ip1)"
+printf '## Active / Pending\n- [~] (P1) Alpha \xe2\x80\x94 plans/a.md _plan: a_\n- [ ] (P2) Beta\n\n## Done\n' > "$d/TASKS.md"
+printf 'plans/a.md\n' > "$d/ids.txt"
+cp "$d/TASKS.md" "$d/orig.md"
+run_ct "$d" close --file TASKS.md --scope resolved --ids-file ids.txt --in-place
+assert_rc "$CT_RC" 0
+f="$ROOT_TMP/ip-out-$$.json"; printf '%s' "$CT_OUT" > "$f"
+bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys
+d=json.load(open(sys.argv[1],encoding="utf-8"))
+assert d["moved"]==[] and len(d["closed"])==1,d
+L=open(sys.argv[2],encoding="utf-8").read().split("\n")
+assert L[1].startswith("- [x] (P1) Alpha") and "_completed_at:" in L[1],L
+assert L[2].startswith("- [ ] (P2) Beta"),L
+assert L.index("## Done")==4 and not any("Alpha" in l for l in L[5:]),L' "$f" "$d/TASKS.md" || fail "close --in-place assertions failed: $CT_OUT"
+cp "$d/orig.md" "$d/TASKS.md"
+run_ct "$d" close --file TASKS.md --scope resolved --ids-file ids.txt
+assert_rc "$CT_RC" 0
+printf '%s' "$CT_OUT" > "$f"
+bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys
+d=json.load(open(sys.argv[1],encoding="utf-8"))
+assert len(d["moved"])==1,d
+L=open(sys.argv[2],encoding="utf-8").read().split("\n")
+assert "Alpha" in "\n".join(L[L.index("## Done"):]) and "Alpha" not in L[1],L' "$f" "$d/TASKS.md" || fail "default close no longer moves the row"
+ok
+
+
 echo
 echo "test-hooks.sh: all cases ok"
