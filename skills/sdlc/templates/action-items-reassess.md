@@ -35,11 +35,11 @@ return `[]` when nothing is certain. A guessed `_after:` parks the queue.
 
 For each proposal, in order:
 
-1. Confirm `evidence` appears verbatim (after trimming surrounding whitespace) in the text of the
-   plan the row belongs to. Not found → rejected.
-2. Apply with `bash scripts/close-tasks.sh tag --file TASKS.md --row '<row>' --add '<tag>'` and
-   read its JSON. An `{error, code}` reply (unknown plan, ambiguous needle, bad grammar) →
-   rejected.
+1. Apply with `bash scripts/close-tasks.sh tag --file TASKS.md --row '<row>' --add '<tag>' --evidence '<evidence>'`
+   and read its JSON. `tag` itself refuses evidence that is under 20 characters after trimming or
+   not found inside the row's `#### Phase N` plan section (anywhere in the plan for a row with no
+   phase) — nothing is written. Any `{error, code}` reply (`bad_evidence`, unknown plan, ambiguous
+   needle, bad grammar) → rejected.
 
 You never edit `TASKS.md` by hand and never touch checkbox state; `tag` is the only writer.
 Rejected proposals go to `data.waves.rejected[]` as `{row, tag, reason}` and are never retried or

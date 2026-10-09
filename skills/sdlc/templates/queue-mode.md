@@ -24,8 +24,8 @@ Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
    `TASKS.md` with the generated banner on line 1; read both keys first, never test the default name
    when `file` is set; skipped when `scripts/close-tasks.sh` is unresolvable) select from the `now` wave of
    `bash scripts/close-tasks.sh waves --file TASKS.md` instead, priority within it — picking by
-   plain priority would start a row whose dependency is not done. An **empty `now` wave, or one
-   holding only `needs_you` rows, parks** via the Park protocol below with `<resume-cmd>` =
+   plain priority would start a row whose dependency is not done. An **empty `now` wave (with or
+   without `needs_you` rows) parks** via the Park protocol below with `<resume-cmd>` =
    `/sdlc-status` and the reason (`needs_you` rows, blocked rows, or nothing open); it never
    falls back to priority order.
 2. **Run** the full pipeline (Stages 1.5–6) for that item as a single-item run — its

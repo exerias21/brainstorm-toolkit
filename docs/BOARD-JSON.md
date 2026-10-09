@@ -122,12 +122,13 @@ Read-only unless `--write` is passed; it never edits `TASKS.md`. Exit codes matc
 {
   "schema": 1,
   "generated_at": "<iso8601 UTC>",
-  "summary": { "now": 1, "lanes": 2, "next": 3, "needs_you": 0, "unknown_files": 1, "conflicts": 0 },
+  "summary": { "now": 1, "lanes": 2, "next": 3, "later": 2, "needs_you": 0, "unknown_files": 1, "conflicts": 0 },
   "open_hash": "<16 hex chars>",
   "now":  { "<lane>": { "line": 15, "state": " ", "priority": "P2", "title": "...",
                         "plan_slug": "x", "phase": 1, "lane": "<lane>",
                         "overlaps": [ { "worktree": "/path", "branch": "b", "files": ["a.py"] } ] } },
   "next": { "<lane>": [ { /* same row shape, no overlaps */ } ] },
+  "later":         [ { /* same row shape */ "why": "waiting-on|blocked-by|cycle" } ],
   "needs_you":     [ { /* `_manual_` rows */ } ],
   "unknown_files": [ { /* candidate rows whose plan phase names no files */ } ],
   "overlaps":      [ { "line": 15, "lane": "<lane>", "overlaps": [ /* as on the row */ ] } ],
@@ -137,7 +138,8 @@ Read-only unless `--write` is passed; it never edits `TASKS.md`. Exit codes matc
 
 - **now** is the rows with no open order edge, at most one per lane (`[~]` first, then
   priority, then file order), and no two that conflict. **next** is the rows that become
-  ready if every now row closes. An empty now-wave is `"now": {}` — callers park and report;
+  ready if every now row closes. **later** is every other open candidate row (two hops out,
+  behind a Blocked row, or in an `_after:` cycle), each with a short `why`. An empty now-wave is `"now": {}` — callers park and report;
   they never fall back to plain priority order.
 - **Order edges:** within one `_plan:`, a row waits while a lower `_phase:` of that plan has
   a not-done row (`Active / Pending` or `Blocked`). An `_after:` tag replaces that inference
@@ -159,7 +161,7 @@ Read-only unless `--write` is passed; it never edits `TASKS.md`. Exit codes matc
   generated (no banner on line 1) — left untouched"`, stderr gets one warning, and the exit is
   still 0. A missing file is created; a bannered one is regenerated.
 - **`summary`** is counts only: `now` rows, `lanes` (distinct lanes across now and next),
-  `next` rows, `needs_you`, `unknown_files`, `conflicts`. **`open_hash`** fingerprints the
+  `next` rows, `later`, `needs_you`, `unknown_files`, `conflicts`. **`open_hash`** fingerprints the
   sorted not-done rows (Active / Pending and Blocked), so a caller can tell whether the backlog
   changed since the hash it stored.
 - **Schema:** `schema` is `1`; additive fields never bump it, same rule as `board`.

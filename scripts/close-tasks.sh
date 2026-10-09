@@ -174,16 +174,20 @@ Usage:
     trailer tags, which win. `_manual_` rows land in `needs_you`; rows whose
     plan phase names no files land in `unknown_files`. A now row whose files are
     dirty in ANOTHER git worktree gets `overlaps` (silently skipped outside git).
+    Open rows in neither wave (behind a chain, a Blocked row or an `_after:` cycle) are
+    listed in `later` with a `why` of waiting-on / blocked-by / cycle.
     Prints one JSON object (incl. a counts `summary`); --write also renders the
     lane-grouped file, but never over an existing file whose line 1 is not the
     generated banner (JSON gets `write_skipped`). Exit 0 whenever --file parses.
-  close-tasks.sh tag --file TASKS.md --row NEEDLE (--add|--remove) TAG
+  close-tasks.sh tag --file TASKS.md --row NEEDLE (--add|--remove) TAG [--evidence QUOTE]
     The only writer of `_after:` / `_conflicts:` / `_lane:`. TAG is
     `after:<plan>[:<phase>]`, `conflicts:<plan>[:<phase>]` or `lane:<name>`
     (values `[a-z0-9:/.-]`). NEEDLE must whole-token match exactly one open row;
     a referenced plan (and phase) must exist. Edits only that row's trailer,
     never its checkbox; idempotent. Prints `{line, tag, action, changed, text}`;
-    on refusal prints `{error, code}` and exits 1.
+    on refusal prints `{error, code}` and exits 1. --evidence refuses (`bad_evidence`,
+    nothing written) unless QUOTE, trimmed, is >= 20 characters and appears inside the
+    row's `#### Phase N` plan section (anywhere in the plan for a row with no phase).
 EOF
 }
 
@@ -205,6 +209,8 @@ REPO_NAME=""
 WRITE=""
 ROW=""
 ADD=""
+EVIDENCE=""
+EVIDENCE_SET=0
 REMOVE=""
 
 while [ $# -gt 0 ]; do
@@ -225,6 +231,7 @@ while [ $# -gt 0 ]; do
     --write) WRITE="$2"; shift 2 ;;
     --row) ROW="$2"; shift 2 ;;
     --add) ADD="$2"; shift 2 ;;
+    --evidence) EVIDENCE="$2"; EVIDENCE_SET=1; shift 2 ;;
     --remove) REMOVE="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "{\"error\":\"unknown arg: $1\"}" >&2; usage; exit 2 ;;
@@ -240,7 +247,7 @@ PYCORE="$(mktemp)"
 trap 'rm -f "$PYCORE"' EXIT
 
 cat > "$PYCORE" <<'PYEOF'
-import sys, os, re, json, shutil, subprocess, hashlib
+import sys, os, re, json, shutil, subprocess, hashlib, unicodedata
 from datetime import datetime, timezone
 
 SECTION_RE = re.compile(r'^##\s+(.+?)\s*$')
@@ -924,6 +931,8 @@ FILES_LINE_RE = re.compile(r'^\s*(?:[-*]\s+)?\**Files\**\s*:\**\s*(.*)$')
 PHASE_END_RE = re.compile(r'^#{1,4}\s')
 BACKTICK_RE = re.compile(r'`([^`\n]+)`')
 PATHISH_RE = re.compile(r'[\w@./-]*[./][\w@./-]*')
+FILE_EXTS = {'py', 'js', 'jsx', 'ts', 'tsx', 'json', 'md', 'sh', 'yml', 'yaml', 'toml', 'go',
+             'rs', 'java', 'rb', 'css', 'html', 'sql', 'c', 'h', 'cpp', 'txt', 'cfg', 'ini', 'lock'}
 
 
 def glob_to_regex(glob):
@@ -1028,8 +1037,17 @@ def section_files(section, base_dir):
         m = FILES_LINE_RE.match(l)
         if m:
             text = m.group(1)
-            toks = BACKTICK_RE.findall(text) or PATHISH_RE.findall(text)
-            found.extend(clean_path(t) for t in toks)
+            ticked = BACKTICK_RE.findall(text)
+            if ticked:
+                found.extend(clean_path(t) for t in ticked)
+            else:
+                # Bare prose tokens ("e.g.", "i.e.") match PATHISH_RE too: keep
+                # one only when it has a `/`, a known extension, or exists.
+                for t in PATHISH_RE.findall(text):
+                    p = clean_path(t)
+                    if p and ('/' in p or os.path.splitext(p)[1].lstrip('.').lower() in FILE_EXTS
+                              or os.path.exists(os.path.join(base_dir, p))):
+                        found.append(p)
         else:
             for t in BACKTICK_RE.findall(l):
                 p = clean_path(t)
@@ -1045,12 +1063,14 @@ def section_files(section, base_dir):
 
 def files_intersect(a, b):
     """Paths in both lists; a trailing-slash entry is a directory prefix."""
+    nfc = lambda p: unicodedata.normalize('NFC', p)  # macOS reports NFD names
     hit = set()
     for x in a:
         for y in b:
-            if x == y or (x.endswith('/') and y.startswith(x)):
+            nx, ny = nfc(x), nfc(y)
+            if nx == ny or (nx.endswith('/') and ny.startswith(nx)):
                 hit.add(y)
-            elif y.endswith('/') and x.startswith(y):
+            elif ny.endswith('/') and nx.startswith(ny):
                 hit.add(x)
     return sorted(hit)
 
@@ -1098,7 +1118,7 @@ def _git_exe():
 
 def _git(exe, cwd, *argv):
     try:
-        r = subprocess.run([exe] + list(argv), cwd=cwd, capture_output=True,
+        r = subprocess.run([exe, '-c', 'core.quotepath=off'] + list(argv), cwd=cwd, capture_output=True,
                            encoding='utf-8', errors='replace', timeout=30)
     except Exception:
         return None
@@ -1147,6 +1167,28 @@ def other_worktree_dirt(repo_dir):
     return out
 
 
+def repo_prefix(repo_dir):
+    """Path of repo_dir relative to its worktree root ('' at the root or outside
+    git), so plan paths line up with the root-relative names git reports."""
+    exe = _git_exe()
+    top = _git(exe, repo_dir, 'rev-parse', '--show-toplevel') if exe else None
+    if not top or not top.strip():
+        return ''
+    rel = os.path.relpath(os.path.realpath(repo_dir), os.path.realpath(top.strip())).replace(chr(92), '/')
+    return '' if rel in ('.', '') or rel.startswith('..') else rel + '/'
+
+
+def open_kind(sec):
+    """The one open-section rule: 'open' (Active / Pending), 'blocked' (Blocked)
+    or None (Done, Notes, anything else -- not taggable, not a wave candidate)."""
+    low = (sec or '').lower()
+    if 'blocked' in low:
+        return 'blocked'
+    if 'active' in low or 'pending' in low:
+        return 'open'
+    return None
+
+
 def render_waves(result, command):
     def row_line(r):
         pri = f"({r['priority']}) " if r['priority'] else ''
@@ -1171,6 +1213,8 @@ def render_waves(result, command):
         out += ['', 'Nothing queued behind the now wave.']
     for lane, rs in result['next'].items():
         out += ['', f'### {lane}'] + [row_line(r) for r in rs]
+    if result['later']:
+        out += ['', f"## Later ({len(result['later'])})", ''] +                [f"- {r['title']} ({r['why']})" for r in result['later']]
     if result['needs_you']:
         out += ['', '## Needs you', ''] + [row_line(r) for r in result['needs_you']]
     if result['unknown_files']:
@@ -1228,13 +1272,10 @@ def do_waves(args):
         sec = section_for(sections, i)
         if r is None or sec is None or r['state'] == 'x':
             continue
-        low = sec.lower()
-        if 'blocked' in low:
-            r['bucket'] = 'blocked'
-        elif 'active' in low or 'pending' in low:
-            r['bucket'] = 'open'
-        else:
+        kind = open_kind(sec)
+        if kind is None:
             continue
+        r['bucket'] = kind
         r['line'] = i + 1
         base = os.path.basename(r['plan'])[:-3] if r['plan'] else None
         slug = r['plan_slug'] or base
@@ -1315,8 +1356,39 @@ def do_waves(args):
             continue
         next_lane.setdefault(r['wlane'], []).append(r)
 
+    # Rows open but in neither wave: behind a chain, a Blocked row, or a cycle.
+    by_line = {r['line']: r for r in undone}
+    for r in cands:
+        r.setdefault('blockers', set())
+
+    def in_cycle(r):
+        seen, stack = set(), list(r['blockers'])
+        while stack:
+            n = stack.pop()
+            if n == r['line']:
+                return True
+            if n in seen:
+                continue
+            seen.add(n)
+            stack.extend(by_line.get(n, {}).get('blockers', ()))
+        return False
+
+    later_rows = []
+    in_next = {r['line'] for rs in next_lane.values() for r in rs}
+    for r in sorted(cands, key=order_key):
+        if r['line'] in now_lines or r['line'] in in_next:
+            continue
+        if in_cycle(r):
+            r['why'] = 'cycle'
+        elif any(by_line.get(b, {}).get('bucket') == 'blocked' for b in r['blockers']):
+            r['why'] = 'blocked-by'
+        else:
+            r['why'] = 'waiting-on'
+        later_rows.append(r)
+
     # Worktree overlap: only for rows in the now wave.
     dirt = other_worktree_dirt(base_dir) if now_rows else []
+    prefix = repo_prefix(base_dir) if dirt else ''
 
     def public(r):
         return {'line': r['line'], 'state': r['state'], 'priority': r['priority'],
@@ -1329,7 +1401,7 @@ def do_waves(args):
         row = public(r)
         mine = []
         for w in dirt:
-            hit = files_intersect(r['files'], w['files'])
+            hit = files_intersect([prefix + f for f in r['files']], w['files'])
             if hit:
                 mine.append({'worktree': w['worktree'], 'branch': w['branch'], 'files': hit})
         if mine:
@@ -1350,6 +1422,7 @@ def do_waves(args):
             'now': len(now_out),
             'lanes': len(set(now_out) | set(next_lane)),
             'next': sum(len(rs) for rs in next_lane.values()),
+            'later': len(later_rows),
             'needs_you': len(needs_you),
             'unknown_files': len(unknown),
             'conflicts': len(conflicts_out),
@@ -1359,6 +1432,7 @@ def do_waves(args):
         'open_hash': hashlib.sha256('\n'.join(open_lines).encode('utf-8')).hexdigest()[:16],
         'now': now_out,
         'next': {lane: [public(r) for r in rs] for lane, rs in next_lane.items()},
+        'later': [dict(public(r), why=r['why']) for r in later_rows],
         'needs_you': [public(r) for r in needs_you],
         'unknown_files': [public(r) for r in unknown],
         'overlaps': overlaps,
@@ -1410,6 +1484,29 @@ def split_eol(raw_line):
     return body, raw_line[len(body):]
 
 
+def check_evidence(evidence, row, base_dir):
+    """None when `evidence` (trimmed, >= 20 chars) occurs inside the row's own
+    `#### Phase N` section -- or, for a row with no phase, anywhere in its plan;
+    else the reason it was refused."""
+    ev = evidence.strip()
+    if len(ev) < 20:
+        return f'evidence must be at least 20 characters after trimming (got {len(ev)})'
+    pf = plan_file_for(row, base_dir) if row else None
+    if not pf:
+        return 'the row has no resolvable plan to check evidence against'
+    try:
+        plan_lines = read_lines(pf)
+    except Exception:
+        return 'the row plan could not be read'
+    if row['phase'] is not None:
+        hay, where = phase_section(plan_lines, row['phase']), f"Phase {row['phase']}"
+    else:
+        hay, where = plan_lines, 'the plan'
+    if ev not in chr(10).join(hay):
+        return f'evidence not found inside {where} of the row plan'
+    return None
+
+
 def do_tag(args):
     if not args.row:
         return tag_fail('--row <needle> is required', 'no_row')
@@ -1452,8 +1549,7 @@ def do_tag(args):
         rm = ROW_RE.match(line)
         if not rm or rm.group(2) == 'x':
             continue
-        sec = section_for(sections, i)
-        if sec is None or sec.lower() == 'done':
+        if open_kind(section_for(sections, i)) is None:
             continue
         if token_hit(args.row, line):
             hits.append(i)
@@ -1464,6 +1560,10 @@ def do_tag(args):
                         'ambiguous', lines=[h + 1 for h in hits])
     i = hits[0]
     line = bodies[i]
+    if args.evidence is not None:
+        bad = check_evidence(args.evidence, parse_row(line), base_dir)
+        if bad:
+            return tag_fail(bad, 'bad_evidence', line=i + 1)
     tr = trailer(line)
     token = f'_{key}: {value}_'
     existing = {'after': AFTER_RE, 'conflicts': CONFLICTS_RE, 'lane': LANE_RE}[key].findall(tr)
@@ -1737,6 +1837,7 @@ def main(argv):
     a.write = ''
     a.row = ''
     a.add = ''
+    a.evidence = None
     a.remove = ''
     it = iter(argv[1:])
     for tok in it:
@@ -1770,6 +1871,8 @@ def main(argv):
             a.row = next(it)
         elif tok == '--add':
             a.add = next(it)
+        elif tok == '--evidence':
+            a.evidence = next(it)
         elif tok == '--remove':
             a.remove = next(it)
 
@@ -1823,6 +1926,7 @@ case "$SUBCMD" in
   tag)
     ARGS+=("--row" "$ROW")
     [ -n "$ADD" ] && ARGS+=("--add" "$ADD")
+    [ "$EVIDENCE_SET" -eq 1 ] && ARGS+=("--evidence" "$EVIDENCE")
     [ -n "$REMOVE" ] && ARGS+=("--remove" "$REMOVE")
     ;;
   *)

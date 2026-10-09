@@ -58,6 +58,15 @@ deterministic and still covered by `scripts/ci/test-hooks.sh` (whose scope line 
 tool-call matcher, because there was no matcher worth wiring. It is a detector: it proves a
 protected test's bytes changed since arming; it does not stop the rewrite.
 
+## Plan references in code — a prose guard that failed, so a detector
+
+The dispatch-prompt guard against writing plan or task references into code was prose only, and a
+live run left `plans/<x>.md:38-40` in docstrings and a `TASKS.md:N` string in a data tuple (the
+old wording said "comments"). Q1 yes (a forgetful model is the failure), Q2 yes (a regex over
+added lines), Q3 yes (`scripts/ci/test-hooks.sh`), Q4: a detector, not a preventer, like
+`protect-tests.sh`. `scripts/plan-refs.sh scan` runs in `/sdlc` Stage 5 and every hit enters the
+fix loop. It reports and never blocks on its own; the CI pin on the guard sentence stays.
+
 ## The Workflow — a second expression that didn't earn its keep
 
 `sdlc-pipeline.workflow.js` (1,398 lines, plus a smaller one in `/brainstorm-deep`) mirrored the

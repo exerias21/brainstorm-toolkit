@@ -231,6 +231,7 @@ lane.
   },
   "new_failures": [],
   "preexisting_failures": [],
+  "plan_refs": [],
   "requirements": [
     { "criterion": "orders list paginates", "verdict": "met", "evidence": "app/orders.py:88" }
   ],
@@ -240,6 +241,8 @@ lane.
   "flow_witnessed": true
 }
 ```
+
+`plan_refs[]` holds the hits from `scripts/plan-refs.sh scan` — `{file, line, text, pattern}` each; any entry is a new failure for the fix loop, and the array is `[]` when clean.
 
 `requirements[].verdict` is `met` / `partial` / `missing`; `flow[].verdict` is `OK` / `MISMATCH`
 / `UNCLEAR` / `MISSING`. **`flow_witnessed`** records whether step 1 produced real test results

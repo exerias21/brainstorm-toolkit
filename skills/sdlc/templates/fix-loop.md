@@ -11,7 +11,7 @@ with no refactor, and given these two lines verbatim in its prompt:
 
 > GIT: never run a git command that writes — no stash, commit, checkout, switch, reset, restore, rebase, merge, clean, or branch creation. The working tree holds the user's uncommitted work; git that only reads (status, diff, log, show) is fine. If you need a clean baseline, report it as a blocker instead.
 
-> COMMENTS: never reference the plan in code — no plan file paths, plan/phase/step numbers, or TASKS.md rows in comments or docstrings. Write the reason itself; the plan does not ship with the code and its numbering means nothing once it is gone.
+> never write plan or task references (plans/ paths, task IDs, brainstorm names) into code — this covers comments, docstrings, string literals and data (e.g. `TASKS.md:N`, `task-N`, `plans/<file>.md`, phase/step numbers, a plan slug). Write the reason itself: the plan is deleted once delivered and TASKS.md rows move, so the reference rots.
 
 Then re-run the gate. Repeat to a maximum of **3 iterations, shared across Stage
 5's gates** (Stage 5.7/5.8 has its own separate budget).

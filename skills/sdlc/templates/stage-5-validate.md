@@ -40,6 +40,16 @@ as failures; `preexisting[]` is noted separately and does not gate.
   `skills/sdlc/templates/changed-files-gate.md`.
 - Eval regression (if `eval.runner` configured) — this is the only place evals run.
 
+#### Plan-reference scan — deterministic, runs every time
+
+Prose asked the implementers not to write plan or task references into code and it still failed
+on a live run, so check the added lines directly. Run
+`bash scripts/plan-refs.sh scan --base <run.json base_commit> --slug <feature_slug>` (plugin-root
+fallback per the skill's **Toolkit paths** note). It reads only added lines in code files and
+prints `{hits[], scanned_files}`; it never fails by itself. **Every hit is a new failure**:
+route it into the shared fix loop, whose agent rewrites the reference into the reason it
+stands for (the fix-loop prompt carries the rule). Record the hits in `data.plan_refs[]`.
+
 ### 2. Check the delivery against the plan
 
 **Skip when there is no plan target** (an ad-hoc `/sdlc` description) — there is nothing
@@ -87,14 +97,14 @@ Axis (b) is the flowsim step; its results live in `validate.json`'s `data.flow[]
 
 ### 3. Gate
 
-Green iff no new test failures **and** `requirements_green` **and** (`flow_green` **or** not
+Green iff no new test failures **and** `data.plan_refs[]` is empty **and** `requirements_green` **and** (`flow_green` **or** not
 `data.flow_witnessed`). On failure, route into the shared fix loop
 (`skills/sdlc/templates/fix-loop.md`; 3 iterations — Stage 5.7's budget is separate). A `MISMATCH` where the *code* is right and the
 *plan* is stale is a `plan-wrong` class — pause and say so; do not "fix" code to match a stale
 plan.
 
 **Writes** `stage-outputs/validate.json` with `data.layers{logs,frontend,backend,e2e,eval}`,
-`data.new_failures[]`, `data.preexisting_failures[]`, `data.requirements[]`, `data.flow[]`,
+`data.new_failures[]`, `data.preexisting_failures[]`, `data.plan_refs[]`, `data.requirements[]`, `data.flow[]`,
 `data.flow_witnessed`. `/sdlc-status` and `/repo-health` read `validate.json` for all of it.
 
 **On green**, also advance `run.json`: set `stage` to the next enabled stage (`review` when

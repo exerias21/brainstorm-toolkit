@@ -2001,7 +2001,7 @@ ok
 CASE="close-tasks tag: CRLF TASKS.md keeps CRLF on every line and the em-dash bytes"
 d="$(ct_dir t04)"
 tag_fixture "$d"
-sed -i 's/$/\r/' "$d/TASKS.md"
+awk '{ printf "%s\r\n", $0 }' "$d/TASKS.md" > "$d/TASKS.crlf" && mv "$d/TASKS.crlf" "$d/TASKS.md"  # BSD sed: no \r escape, no bare -i
 run_ct "$d" tag --file TASKS.md --row Alpha --add after:p:2
 assert_rc "$CT_RC" 0
 total="$(wc -l < "$d/TASKS.md")"
@@ -2019,7 +2019,7 @@ assert_rc "$CT_RC" 0
 h1="$(printf '%s' "$CT_OUT" | bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys; print(json.load(sys.stdin)["open_hash"])')"
 waves_check <<'PYEOF'
 s = d['summary']
-assert set(s) == {'now', 'lanes', 'next', 'needs_you', 'unknown_files', 'conflicts'}, s
+assert set(s) == {'now', 'lanes', 'next', 'later', 'needs_you', 'unknown_files', 'conflicts'}, s
 assert s['now'] == len(d['now']) and s['next'] == sum(len(v) for v in d['next'].values()), (s, d)
 assert s['needs_you'] == 0 and isinstance(d['open_hash'], str) and d['open_hash'], d
 PYEOF
@@ -2031,6 +2031,125 @@ run_ct "$d" waves --file TASKS.md
 h3="$(printf '%s' "$CT_OUT" | bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys; print(json.load(sys.stdin)["open_hash"])')"
 [ "$h1" != "$h3" ] || fail "open_hash did not change after the open-row set changed"
 ok
+
+CASE="close-tasks tag: a row under a non-open section (## Notes, ## Done (archive)) is refused; a second different _lane: is refused as lane_set"
+d="$(ct_dir t06)"
+tag_fixture "$d"
+printf -- '\n## Notes\n- [ ] Parked note row\n\n## Done (archive)\n- [ ] Old archived row\n' >> "$d/TASKS.md"
+run_ct "$d" tag --file TASKS.md --row "Parked note" --add lane:ops
+assert_rc "$CT_RC" 1
+assert_match "$CT_OUT" '"code": "no_match"'
+run_ct "$d" tag --file TASKS.md --row "archived" --add lane:ops
+assert_rc "$CT_RC" 1
+assert_match "$CT_OUT" '"code": "no_match"'
+run_ct "$d" tag --file TASKS.md --row Alpha --add lane:docs
+assert_rc "$CT_RC" 0
+cp "$d/TASKS.md" "$d/TASKS.before"
+run_ct "$d" tag --file TASKS.md --row Alpha --add lane:ops
+assert_rc "$CT_RC" 1
+assert_match "$CT_OUT" '"code": "lane_set"'
+cmp -s "$d/TASKS.md" "$d/TASKS.before" || fail "a lane_set refusal modified TASKS.md"
+ok
+
+CASE="close-tasks tag --evidence: short, absent or other-phase quotes are refused and write nothing; a 20+ char quote from the row's own phase is applied"
+d="$(ct_dir t07)"
+printf '### Implementation Steps\n#### Phase 1 \xe2\x80\x94 one\n1. step\n   Files: `src/a.py`\n   Alpha must finish before the api migration starts.\n#### Phase 2 \xe2\x80\x94 two\n2. step\n   Files: `src/b.py`\n   Beta reads the table that the migration creates.\n' > "$d/plans/p.md"
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [ ] (P1) Alpha work \xe2\x80\x94 plans/p.md _plan: p_ \xc2\xb7 _phase: 1_\n' >> "$d/TASKS.md"
+printf -- '- [ ] (P1) Beta work \xe2\x80\x94 plans/p.md _plan: p_ \xc2\xb7 _phase: 2_\n' >> "$d/TASKS.md"
+cp "$d/TASKS.md" "$d/TASKS.before"
+for ev in "" "   " "Files: src/a" "this sentence is nowhere in the plan text" "Beta reads the table that the migration creates."; do
+  run_ct "$d" tag --file TASKS.md --row Alpha --add after:p:2 --evidence "$ev"
+  assert_rc "$CT_RC" 1
+  assert_match "$CT_OUT" '"code": "bad_evidence"'
+done
+cmp -s "$d/TASKS.md" "$d/TASKS.before" || fail "a refused --evidence call modified TASKS.md"
+run_ct "$d" tag --file TASKS.md --row Beta --add after:p:1 --evidence "  Beta reads the table that the migration creates.  "
+assert_rc "$CT_RC" 0
+grep -q '_after: p:1_' "$d/TASKS.md" || fail "valid evidence was not applied"
+ok
+
+CASE="close-tasks waves: a row two hops out (phase 3 behind an undone phase 2) lands in later and in the --write file"
+d="$(ct_dir w11)"
+printf '### Implementation Steps\n#### Phase 1 \xe2\x80\x94 a\n1. s\n   Files: `src/a.py`\n#### Phase 2 \xe2\x80\x94 b\n2. s\n   Files: `src/b.py`\n#### Phase 3 \xe2\x80\x94 c\n3. s\n   Files: `src/c.py`\n' > "$d/plans/p.md"
+printf '## Active / Pending\n' > "$d/TASKS.md"
+for n in 1 2 3; do
+  printf -- '- [ ] (P1) Phase %s row \xe2\x80\x94 plans/p.md _plan: p_ \xc2\xb7 _phase: %s_\n' "$n" "$n" >> "$d/TASKS.md"
+done
+run_ct "$d" waves --file TASKS.md --write ACTION_ITEMS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert [r['title'] for r in d['later']] == ['Phase 3 row'] and d['later'][0]['why'] == 'waiting-on', d['later']
+assert d['summary']['later'] == 1, d['summary']
+PYEOF
+assert_match "$(cat "$d/ACTION_ITEMS.md")" '^## Later (1)$'
+assert_match "$(cat "$d/ACTION_ITEMS.md")" 'Phase 3 row'
+ok
+
+CASE="close-tasks waves: an _after: cycle puts both rows in later with why cycle"
+d="$(ct_dir w12)"
+wv_plan "$d/plans/c.md" src/a.py src/b.py
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [ ] (P1) Cycle X \xe2\x80\x94 plans/c.md _plan: c_ \xc2\xb7 _phase: 1_ \xc2\xb7 _after: c:2_\n' >> "$d/TASKS.md"
+printf -- '- [ ] (P1) Cycle Y \xe2\x80\x94 plans/c.md _plan: c_ \xc2\xb7 _phase: 2_ \xc2\xb7 _after: c:1_\n' >> "$d/TASKS.md"
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert d['now'] == {} and d['next'] == {}, d
+assert sorted(r['title'] for r in d['later']) == ['Cycle X', 'Cycle Y'], d['later']
+assert all(r['why'] == 'cycle' for r in d['later']), d['later']
+PYEOF
+ok
+
+CASE="close-tasks waves: a row behind a Blocked row is later (blocked-by)"
+d="$(ct_dir w13)"
+wv_plan "$d/plans/b.md" src/a.py src/b.py
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [ ] (P1) Second \xe2\x80\x94 plans/b.md _plan: b_ \xc2\xb7 _phase: 2_\n' >> "$d/TASKS.md"
+printf -- '\n## Blocked\n- [ ] (P1) First \xe2\x80\x94 plans/b.md _plan: b_ \xc2\xb7 _phase: 1_\n' >> "$d/TASKS.md"
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert [(r['title'], r['why']) for r in d['later']] == [('Second', 'blocked-by')], d['later']
+PYEOF
+ok
+
+CASE="close-tasks waves: bare 'e.g.' / 'etc.' prose on a Files: line makes no pseudo-file, so two plans do not conflict"
+d="$(ct_dir w14)"
+for n in x y; do
+  printf '### Implementation Steps\n#### Phase 1 \xe2\x80\x94 one\n1. step\n   Files: e.g. etc. i.e. whatever\n' > "$d/plans/$n.md"
+done
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [ ] (P1) Plan x \xe2\x80\x94 plans/x.md _plan: x_ \xc2\xb7 _phase: 1_ \xc2\xb7 _lane: one_\n' >> "$d/TASKS.md"
+printf -- '- [ ] (P1) Plan y \xe2\x80\x94 plans/y.md _plan: y_ \xc2\xb7 _phase: 1_ \xc2\xb7 _lane: two_\n' >> "$d/TASKS.md"
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert d['conflicts'] == [] and sorted(d['now']) == ['one', 'two'], d
+PYEOF
+ok
+
+CASE="close-tasks waves: a TASKS.md in a subdirectory still sees overlap with another worktree (root-relative paths)"
+d="$(ct_dir w15)"
+if (cd "$d" && git init -q) >/dev/null 2>&1; then
+  mkdir -p "$d/sub/plans" "$d/sub/src"
+  printf 'x\n' > "$d/sub/src/a.py"
+  wv_plan "$d/sub/plans/p.md" src/a.py src/x.py
+  printf '## Active / Pending\n' > "$d/sub/TASKS.md"
+  printf -- '- [ ] (P1) Touches a \xe2\x80\x94 plans/p.md _plan: p_ \xc2\xb7 _phase: 1_\n' >> "$d/sub/TASKS.md"
+  (cd "$d" && git add -A && git -c user.name=t -c user.email=t@t commit -q -m init) >/dev/null 2>&1 || fail "nested overlap fixture: commit failed"
+  (cd "$d" && git worktree add -q -b other2 "$ROOT_TMP/ct-w15-other") >/dev/null 2>&1 || fail "nested overlap fixture: worktree add failed"
+  printf 'dirty-there\n' >> "$ROOT_TMP/ct-w15-other/sub/src/a.py"
+  run_ct "$d/sub" waves --file TASKS.md
+  assert_rc "$CT_RC" 0
+  waves_check <<'PYEOF'
+ov = d['now']['backend']['overlaps']
+assert len(ov) == 1 and ov[0]['files'] == ['sub/src/a.py'], ov
+PYEOF
+  ok
+else
+  echo "[skip] nested waves overlap: git init unavailable"
+fi
 
 # ── close-tasks.sh waves --gate: the enable rule as one command ─────────────
 gate_check() { # $1 = expected enabled (True|False), $2 = expected basename of file
@@ -2119,6 +2238,111 @@ L=open(sys.argv[2],encoding="utf-8").read().split("\n")
 assert "Alpha" in "\n".join(L[L.index("## Done"):]) and "Alpha" not in L[1],L' "$f" "$d/TASKS.md" || fail "default close no longer moves the row"
 ok
 
+
+
+# ── plan-refs.sh: added-line scan for plan/task references in code ─────────
+
+PLAN_REFS="$PLUGIN_ROOT/scripts/plan-refs.sh"
+
+pr_repo() {
+  local d="$ROOT_TMP/pr-$1"
+  mkdir -p "$d/src" "$d/plans"
+  (cd "$d" && git init -q . && git config user.email t@t && git config user.name t \
+    && git config core.autocrlf false \
+    && printf 'x = 1\n' > src/a.py && printf '# notes\n' > notes.md \
+    && printf 'old = "plans/legacy.md"\n' > src/old.py \
+    && git add -A && git commit -q -m base)
+  printf '%s' "$d"
+}
+
+# pr_scan <dir> [extra args] -> PR_OUT; asserts exit 0.
+pr_scan() {
+  local proj="$1"; shift
+  set +e
+  PR_OUT="$(cd "$proj" && bash "$PLAN_REFS" scan --base HEAD "$@" 2>&1)"
+  PR_RC=$?
+  set -e
+  PR_OUT="$(printf '%s' "$PR_OUT" | tr -d '\r')"
+  assert_rc "$PR_RC" 0
+}
+
+# pr_check <expected-hit-count> <python-expr over d (parsed JSON)>
+pr_check() {
+  printf '%s' "$PR_OUT" > "$ROOT_TMP/pr.json"
+  bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys
+d=json.load(open(sys.argv[1],encoding="utf-8"))
+assert len(d["hits"])==int(sys.argv[2]),d
+assert eval(sys.argv[3]),d' "$ROOT_TMP/pr.json" "$1" "${2:-True}" || fail "plan-refs assertion failed: $PR_OUT"
+}
+
+CASE="plan-refs: a plan path in a .py comment is a hit"
+d="$(pr_repo 01)"
+printf '# see plans/my-feature.md for why\n' >> "$d/src/a.py"
+pr_scan "$d"
+pr_check 1 'd["hits"][0]["file"]=="src/a.py" and d["hits"][0]["pattern"]=="plan-path" and d["hits"][0]["line"]==2'
+ok
+
+CASE="plan-refs: TASKS.md:N inside a string literal is a hit"
+d="$(pr_repo 02)"
+printf 'ROWS = [("a", "TASKS.md:244")]\n' >> "$d/src/a.py"
+pr_scan "$d"
+pr_check 1 'd["hits"][0]["pattern"]=="tasks-row"'
+ok
+
+CASE="plan-refs: task-12 is a hit"
+d="$(pr_repo 03)"
+printf '# fixed under task-12\n' >> "$d/src/a.py"
+pr_scan "$d"
+pr_check 1 'd["hits"][0]["pattern"]=="task-id"'
+ok
+
+CASE="plan-refs: the run slug is a hit as a whole token only"
+d="$(pr_repo 04)"
+printf '# part of widget-sync\nwidget_sync_total = 3\n# widget-syncing is a different token\n' >> "$d/src/a.py"
+pr_scan "$d" --slug widget-sync
+pr_check 1 'd["hits"][0]["pattern"]=="slug" and d["hits"][0]["line"]==2'
+ok
+
+CASE="plan-refs: no hit in .md files, plans/, TASKS.md or .claude/"
+d="$(pr_repo 05)"
+printf 'see plans/x.md and task-3 and TASKS.md:9\n' >> "$d/notes.md"
+printf 'see plans/x.md and task-3\n' > "$d/plans/p.md"
+printf -- '- [ ] task-3 plans/x.md TASKS.md:9\n' > "$d/TASKS.md"
+mkdir -p "$d/.claude" && printf 'task-3 plans/x.md\n' > "$d/.claude/note.json"
+pr_scan "$d"
+pr_check 0 'd["scanned_files"]==0'
+ok
+
+CASE="plan-refs: a pre-existing reference on an unchanged line is not a hit"
+d="$(pr_repo 06)"
+printf 'y = 2\n' >> "$d/src/a.py"
+pr_scan "$d"
+pr_check 0 'd["scanned_files"]==1'
+ok
+
+CASE="plan-refs: an untracked new file is scanned in full"
+d="$(pr_repo 07)"
+printf '# plan\n' > "$d/plans/brainstorm-widget-sync.md"
+printf 'a = 1\n# brainstorm-widget-sync decided this\n' > "$d/src/new.py"
+pr_scan "$d"
+pr_check 1 'd["hits"][0]["file"]=="src/new.py" and d["hits"][0]["pattern"]=="brainstorm-name" and d["hits"][0]["line"]==2'
+ok
+
+CASE="plan-refs: CRLF content is handled and text carries no CR"
+d="$(pr_repo 08)"
+printf 'a = 1\r\n# phase 2 of the plan\r\n' > "$d/src/crlf.py"
+printf 'z = 3\r\n# plans/q.md\r\n' >> "$d/src/a.py"
+pr_scan "$d"
+pr_check 2 'all("\r" not in h["text"] for h in d["hits"]) and {h["pattern"] for h in d["hits"]}=={"phase-of-plan","plan-path"}'
+ok
+
+CASE="plan-refs: an arbitrary brainstorm-* word is not a hit; an existing plan stem is, a missing one is not"
+d="$(pr_repo 09)"
+printf '# plan\n' > "$d/plans/team-brainstorm-real-thing.md"
+printf 'x = "brainstorm-toolkit"\n# team-brainstorm-real-thing\n# brainstorm-no-such-plan\n' >> "$d/src/a.py"
+pr_scan "$d"
+pr_check 1 'd["hits"][0]["line"]==3 and d["hits"][0]["pattern"]=="brainstorm-name"'
+ok
 
 echo
 echo "test-hooks.sh: all cases ok"

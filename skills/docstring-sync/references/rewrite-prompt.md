@@ -41,7 +41,7 @@ given — an edit you cannot verify against the function's actual body is not a 
 - `ambiguous-cannot-verify` — the flagged claim's truth is genuinely unclear from the code alone,
   so any rewrite would be a guess.
 
-COMMENTS: never reference the plan in code — no plan file paths, plan/phase/step numbers, or TASKS.md rows in comments or docstrings. Write the reason itself; the plan does not ship with the code and its numbering means nothing once it is gone.
+never write plan or task references (plans/ paths, task IDs, brainstorm names) into code — this covers comments, docstrings, string literals and data (e.g. `TASKS.md:N`, `task-N`, `plans/<file>.md`, phase/step numbers, a plan slug). Write the reason itself: the plan is deleted once delivered and TASKS.md rows move, so the reference rots.
 
 ## Output
 

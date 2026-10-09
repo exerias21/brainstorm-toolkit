@@ -93,9 +93,9 @@ Don't manufacture a hollow test, and don't punt the task to another skill.
 2. **Mark the TASKS.md row in-progress** (`[ ]` → `[~]`) and, on Claude, `TaskUpdate status:
    in_progress`.
 3. **Implement the change**, following existing patterns, until the test passes without
-   weakening it. COMMENTS: never reference the plan in code — no plan file paths, plan/phase/step
-   numbers, or TASKS.md rows in comments or docstrings. Write the reason itself; the plan does
-   not ship with the code and its numbering means nothing once it is gone.
+   weakening it. Rule: never write plan or task references (plans/ paths, task IDs, brainstorm names) into code — this covers comments, docstrings, string literals and data (e.g.
+   `TASKS.md:N`, `task-N`, `plans/<file>.md`, phase/step numbers, a plan slug). Write the
+   reason itself: the plan is deleted once delivered and TASKS.md rows move, so it rots.
 4. **Run the wider test suite** if one is configured (`/test-check` or the project's root test
    command).
 
