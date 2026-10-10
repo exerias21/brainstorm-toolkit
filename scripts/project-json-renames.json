@@ -1,5 +1,5 @@
 {
-  "//": "Dead .claude/project.json keys and the keys that replaced them; read by CI to keep docs/MODEL-AXES.md and forbidden-phrases.txt in step with it.",
+  "//": "Dead .claude/project.json keys and the keys that replaced them; read by CI to keep docs/MODEL-AXES.md and forbidden-phrases.txt in step with it, and by scripts/migrate-project-json.sh to move a consumer's old keys to the new ones.",
   "renames": [
     {"old": "pipeline.sanity_check.model", "new": "models.sanity", "note": "moved to the models.<role> contract"},
     {"old": "pipeline.sanity_check.focuses", "new": "agents.sanity_focuses", "note": "fan-out width and focus lists live under agents"},

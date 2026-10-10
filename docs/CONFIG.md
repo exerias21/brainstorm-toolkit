@@ -231,18 +231,27 @@ compose.
 
 ### Check your file
 
-Run this from the repo root. It loads `.claude/project.json`, fails loudly if the JSON does
-not parse, and lists every key that is not in `.claude/project.json.example` (which `setup.sh`
-installs), so a typo or a dead key shows up. Comment keys (starting with `_` or `//`) are skipped. From a
-toolkit checkout use `bash scripts/py.sh` in place of `python`.
+Run this from the repo root:
 
 ```bash
-python -c "import json;f=lambda p:json.load(open(p));w=lambda u,e,p='':[x for k,v in u.items() if not k.startswith(('_','//')) for x in (w(v,e[k],p+k+'.') if k in e and isinstance(v,dict) and isinstance(e[k],dict) else [] if k in e else [p+k])];print('not in the example:',w(f('.claude/project.json'),f('.claude/project.json.example')) or 'none')"
+bash scripts/migrate-project-json.sh check
 ```
 
-`none` means every key is one the toolkit knows. A bare name is a typo or a key nothing reads.
-The example leaves map-valued keys such as `models.sanity` as `null`, so the check does not
-look inside them.
+It reads `.claude/project.json` and prints JSON: `moves` (dead keys that have a replacement,
+with the value that would move), `conflicts` (a dead key whose replacement already holds a
+different value, so both are left alone), and `unknown` (every key not in
+`.claude/project.json.example`, which `setup.sh` installs, so a typo or a key nothing reads shows
+up; comment keys starting with `_` or `//` are skipped). Malformed JSON exits 1. `check` never
+writes.
+
+```bash
+bash scripts/migrate-project-json.sh apply
+```
+
+`apply` writes a `project.json.bak-<timestamp>` copy, then moves each dead key's value to its
+replacement, keeping key order, line endings and indent. A second run finds nothing to move and
+writes nothing. `unknown` is empty when every key is one the toolkit knows; the example leaves
+map-valued keys such as `models.sanity` as `null`, so the check does not look inside them.
 
 ## Reference
 

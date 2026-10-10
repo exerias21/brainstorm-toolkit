@@ -2440,5 +2440,147 @@ pr_scan "$d"
 pr_check 1 'd["hits"][0]["line"]==3 and d["hits"][0]["pattern"]=="brainstorm-name"'
 ok
 
+# ── migrate-project-json.sh: dead-key renames, value-preserving ──────────
+MIGRATE="$PLUGIN_ROOT/scripts/migrate-project-json.sh"
+
+# mj_run <dir> <check|apply> -> MJ_OUT (stdout JSON), MJ_RC
+mj_run() {
+  local proj="$1" sub="$2"
+  set +e
+  MJ_OUT="$(cd "$proj" && bash "$MIGRATE" "$sub" 2>"$ROOT_TMP/mj.err")"
+  MJ_RC=$?
+  set -e
+  MJ_OUT="$(printf '%s' "$MJ_OUT" | tr -d '\r')"
+}
+# mj_py <dir> <python body over d (stdout JSON) and p (file path)>
+mj_py() {
+  printf '%s' "$MJ_OUT" > "$ROOT_TMP/mj.json"
+  bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys
+d=json.load(open(sys.argv[1],encoding="utf-8"))
+p=sys.argv[2]+"/.claude/project.json"
+assert eval(sys.argv[3]),d' "$ROOT_TMP/mj.json" "$1" "$2" || fail "migrate assertion failed: $MJ_OUT"
+}
+mj_dir() { mkdir -p "$ROOT_TMP/mj-$1/.claude"; printf '%s' "$ROOT_TMP/mj-$1"; }
+mj_baks() { ls "$1/.claude" | grep -c 'project.json.bak-' || true; }
+
+CASE="migrate-project-json: pipeline.* and models.focuses keys move to models.*/agents.*, other keys and order kept"
+d="$(mj_dir 01)"
+cat > "$d/.claude/project.json" <<'EOT2'
+{
+  "_comment": "keep me",
+  "test": {"unit": "pytest"},
+  "pipeline": {
+    "sanity_check": {"model": "haiku", "focuses": ["a"]},
+    "review_fix": {"enabled": true, "lenses": ["correctness"]},
+    "decompose_min_tasks": 5
+  },
+  "models": {"implement": "sonnet", "focuses": ["a"]}
+}
+EOT2
+mj_run "$d" apply
+assert_rc "$MJ_RC" 0
+printf '%s' "$MJ_OUT" > "$ROOT_TMP/mj.json"
+bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys
+d=json.load(open(sys.argv[1],encoding="utf-8"))
+j=json.load(open(sys.argv[2]+"/.claude/project.json",encoding="utf-8"))
+assert len(d["applied"])==5 and d["conflicts"]==[],d
+assert j["models"]["sanity"]=="haiku" and j["agents"]["code_review_lenses"]==["correctness"] and j["agents"]["decompose_min_tasks"]==5,j
+assert j["agents"]["sanity_focuses"]==["a"] and "focuses" not in j["models"],j
+assert j["_comment"]=="keep me" and j["test"]=={"unit":"pytest"} and j["pipeline"]=={"review_fix":{"enabled":True}},j
+assert list(j)[:3]==["_comment","test","pipeline"],list(j)' "$ROOT_TMP/mj.json" "$d" || fail "migrate result wrong: $MJ_OUT"
+grep -q 'moved pipeline.sanity_check.model -> models.sanity' "$ROOT_TMP/mj.err" || fail "no stderr move line"
+ok
+
+CASE="migrate-project-json: a target holding a different value is a conflict -- both keys left, reported, no backup"
+d="$(mj_dir 02)"
+printf '{"pipeline":{"decompose_min_tasks":3},"agents":{"decompose_min_tasks":9}}\n' > "$d/.claude/project.json"
+cp "$d/.claude/project.json" "$ROOT_TMP/mj02.orig"
+mj_run "$d" apply
+assert_rc "$MJ_RC" 0
+mj_py "$d" 'len(d["conflicts"])==1 and d["applied"]==[] and "backup" not in d'
+cmp -s "$d/.claude/project.json" "$ROOT_TMP/mj02.orig" || fail "conflict file was modified"
+[ "$(mj_baks "$d")" = "0" ] || fail "backup written for a no-op"
+ok
+
+CASE="migrate-project-json: second apply is a no-op -- no new backup, file byte-identical"
+d="$(mj_dir 03)"
+printf '{"models":{"focuses":["x"]}}\n' > "$d/.claude/project.json"
+mj_run "$d" apply
+assert_rc "$MJ_RC" 0
+[ "$(mj_baks "$d")" = "1" ] || fail "first apply should leave one backup"
+cp "$d/.claude/project.json" "$ROOT_TMP/mj03.after"
+mj_run "$d" apply
+assert_rc "$MJ_RC" 0
+mj_py "$d" 'd["applied"]==[] and d["moves"]==[]'
+cmp -s "$d/.claude/project.json" "$ROOT_TMP/mj03.after" || fail "second apply changed the file"
+[ "$(mj_baks "$d")" = "1" ] || fail "second apply wrote another backup"
+ok
+
+CASE="migrate-project-json: an old key whose target already holds an equal value is dropped; check is read-only"
+d="$(mj_dir 04)"
+printf '{"pipeline":{"decompose_min_tasks":4},"agents":{"decompose_min_tasks":4}}\n' > "$d/.claude/project.json"
+cp "$d/.claude/project.json" "$ROOT_TMP/mj04.orig"
+mj_run "$d" check
+assert_rc "$MJ_RC" 0
+mj_py "$d" 'len(d["moves"])==1 and d["conflicts"]==[]'
+cmp -s "$d/.claude/project.json" "$ROOT_TMP/mj04.orig" || fail "check modified the file"
+mj_run "$d" apply
+mj_py "$d" 'json.load(open(p,encoding="utf-8"))=={"agents":{"decompose_min_tasks":4}}'
+ok
+
+CASE="migrate-project-json: CRLF line endings, 4-space indent and missing trailing newline survive"
+d="$(mj_dir 05)"
+printf '{\r\n    "pipeline": {\r\n        "decompose_min_tasks": 5\r\n    },\r\n    "x": "\xc3\xa9"\r\n}' > "$d/.claude/project.json"
+mj_run "$d" apply
+assert_rc "$MJ_RC" 0
+bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import sys
+b=open(sys.argv[1]+"/.claude/project.json","rb").read()
+assert b.count(b"\r\n")==b.count(b"\n")>=4,b
+assert b"\n    \"x\"" in b.replace(b"\r\n",b"\n") and not b.endswith(b"\n"),b
+assert "é".encode("utf-8") in b,b' "$d" || fail "format not preserved"
+ok
+
+CASE="migrate-project-json: unknown keys are listed, comment keys skipped"
+d="$(mj_dir 06)"
+printf '{"_note":1,"//":"c","bogus":1,"models":{"implement":"sonnet","nope":2}}\n' > "$d/.claude/project.json"
+mj_run "$d" check
+assert_rc "$MJ_RC" 0
+mj_py "$d" 'sorted(d["unknown"])==["bogus","models.nope"] and d["moves"]==[]'
+ok
+
+CASE="migrate-project-json: the toolkit template wins over a stale repo-local project.json.example"
+d="$(mj_dir 09)"
+printf '{"models":{"implement":"sonnet"}}
+' > "$d/.claude/project.json"
+printf '{"test":{}}
+' > "$d/.claude/project.json.example"
+mj_run "$d" check
+assert_rc "$MJ_RC" 0
+mj_py "$d" 'd["unknown"]==[] and d["example"].replace("\\","/").endswith("templates/project.json.example")'
+ok
+
+CASE="migrate-project-json: missing file is a no-op for check and apply"
+d="$(mj_dir 07)"
+mj_run "$d" apply
+assert_rc "$MJ_RC" 0
+mj_py "$d" 'd["exists"] is False and d["moves"]==[] and d["applied"]==[]'
+[ ! -e "$d/.claude/project.json" ] || fail "missing file was created"
+ok
+
+CASE="migrate-project-json: malformed JSON exits 1 and leaves the file unchanged"
+d="$(mj_dir 08)"
+printf '{"pipeline": {oops' > "$d/.claude/project.json"
+cp "$d/.claude/project.json" "$ROOT_TMP/mj08.orig"
+mj_run "$d" apply
+assert_rc "$MJ_RC" 1
+cmp -s "$d/.claude/project.json" "$ROOT_TMP/mj08.orig" || fail "malformed file was modified"
+[ "$(mj_baks "$d")" = "0" ] || fail "backup written for malformed file"
+ok
+
+CASE="migrate-project-json: bad usage exits 2"
+set +e; bash "$MIGRATE" bogus >/dev/null 2>&1; rc=$?; set -e
+assert_rc "$rc" 2
+ok
+
 echo
 echo "test-hooks.sh: all cases ok"
