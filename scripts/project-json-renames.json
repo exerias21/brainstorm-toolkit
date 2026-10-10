@@ -1,0 +1,14 @@
+{
+  "//": "Dead .claude/project.json keys and the keys that replaced them; read by CI to keep docs/MODEL-AXES.md and forbidden-phrases.txt in step with it.",
+  "renames": [
+    {"old": "pipeline.sanity_check.model", "new": "models.sanity", "note": "moved to the models.<role> contract"},
+    {"old": "pipeline.sanity_check.focuses", "new": "agents.sanity_focuses", "note": "fan-out width and focus lists live under agents"},
+    {"old": "pipeline.review_fix.model", "new": "models.code_review", "note": "reviewer model is its own axis under models"},
+    {"old": "pipeline.review_fix.second_pass_model", "new": "models.code_review_second_pass", "note": "moved to the models.<role> contract"},
+    {"old": "pipeline.review_fix.lenses", "new": "agents.code_review_lenses", "note": "fan-out width and lens lists live under agents"},
+    {"old": "pipeline.review_fix.passes", "new": "agents.code_review_passes", "note": "counts live under agents"},
+    {"old": "pipeline.review_fix.max_fix_loops", "new": "agents.code_review_max_fix_loops", "note": "counts live under agents"},
+    {"old": "pipeline.decompose_min_tasks", "new": "agents.decompose_min_tasks", "note": "counts live under agents"},
+    {"old": "models.focuses", "new": "agents.sanity_focuses", "note": "seen in consumer repos but never a documented key; focus lists live under agents"}
+  ]
+}
