@@ -198,6 +198,8 @@
       "file": "ACTION_ITEMS.md",
       "hub_threshold": 3,
       "_hub_threshold_comment": "Default 3 (minimum 2; lower or invalid values fall back to 3). A file named by the plan-phase file lists of this many DISTINCT plans (a manifest, a changelog) is a hub: it is left out of inferred conflicts and listed in the waves JSON as hub_files, because otherwise it serialises every plan against every other. Explicit _conflicts: tags are unaffected.",
+      "max_bugs_per_lane": 5,
+      "_max_bugs_per_lane_comment": "Default 5 (a positive integer; anything else falls back to 5). The most _bug_ rows the generated ACTION_ITEMS.md shows per lane, counting the now row; the rest are dropped from the rendered file and the waves JSON next wave and counted in bugs_hidden. TASKS.md keeps every row.",
       "ignore_conflict_files": [],
       "_ignore_conflict_files_comment": "Default []. Glob patterns (fnmatch-style, matched against the repo-relative path, e.g. \"docs/**\" or \"*.lock\"). A matching file is left out of inferred conflicts and is not reported as a hub. Explicit _conflicts: tags are unaffected.",
       "reassess": false,

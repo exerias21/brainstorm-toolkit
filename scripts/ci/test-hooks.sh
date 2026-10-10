@@ -2115,7 +2115,7 @@ assert_rc "$CT_RC" 0
 h1="$(printf '%s' "$CT_OUT" | bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys; print(json.load(sys.stdin)["open_hash"])')"
 waves_check <<'PYEOF'
 s = d['summary']
-assert set(s) == {'now', 'lanes', 'next', 'later', 'needs_you', 'unknown_files', 'conflicts', 'hub_files'}, s
+assert set(s) == {'now', 'lanes', 'next', 'later', 'needs_you', 'unknown_files', 'conflicts', 'hub_files', 'bugs', 'bugs_hidden'}, s
 assert s['now'] == len(d['now']) and s['next'] == sum(len(v) for v in d['next'].values()), (s, d)
 assert s['needs_you'] == 0 and isinstance(d['open_hash'], str) and d['open_hash'], d
 PYEOF
@@ -2580,6 +2580,116 @@ ok
 CASE="migrate-project-json: bad usage exits 2"
 set +e; bash "$MIGRATE" bogus >/dev/null 2>&1; rc=$?; set -e
 assert_rc "$rc" 2
+ok
+
+# --- `_bug_` row flag ---------------------------------------------------------
+bug_fixture() {
+  printf '## Active / Pending\n' > "$1/TASKS.md"
+  printf -- '- [ ] (P1) Plain one \xe2\x80\x94 plans/p.md _plan: p_\n' >> "$1/TASKS.md"
+  printf -- '- [ ] (P2) Crash on save _bug_ \xe2\x80\x94 plans/p.md _plan: p_ \xc2\xb7 _bug_\n' >> "$1/TASKS.md"
+  printf -- '- [ ] (P3) Mentions _bug_ in prose only \xe2\x80\x94 plans/p.md _plan: q_\n' >> "$1/TASKS.md"
+}
+
+CASE="close-tasks rows/board --tag bug: only trailer-tagged bug rows; bug field set; title stripped of _bug_"
+d="$(ct_dir bug1)"
+bug_fixture "$d"
+run_ct "$d" rows --plan p --file TASKS.md --tag bug
+assert_rc "$CT_RC" 0
+printf '%s' "$CT_OUT" | bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys; d=json.load(sys.stdin); assert [m["line"] for m in d["matched"]]==[3] and d["matched"][0]["bug"] is True, d' || fail "rows --tag bug: $CT_OUT"
+run_ct "$d" rows --file TASKS.md --tag bug
+assert_rc "$CT_RC" 0
+printf '%s' "$CT_OUT" | bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys; d=json.load(sys.stdin); assert [m["line"] for m in d["matched"]]==[3], d' || fail "rows --tag bug without --plan: $CT_OUT"
+run_ct "$d" board --file TASKS.md --tag bug
+assert_rc "$CT_RC" 0
+printf '%s' "$CT_OUT" | bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys; d=json.load(sys.stdin); t=d["tasks"]; assert [x["line"] for x in t]==[3] and t[0]["bug"] is True, t; assert t[0]["title"]=="Crash on save _bug_", t' || fail "board --tag bug: $CT_OUT"
+run_ct "$d" board --file TASKS.md
+printf '%s' "$CT_OUT" | bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys; d=json.load(sys.stdin); t=d["tasks"]; assert [x["bug"] for x in t]==[False,True,False], t' || fail "board bug field: $CT_OUT"
+ok
+
+CASE="close-tasks --tag: an unknown value is a usage error (exit 2)"
+d="$(ct_dir bug2)"
+bug_fixture "$d"
+run_ct "$d" rows --plan p --file TASKS.md --tag nonsense
+assert_rc "$CT_RC" 2
+run_ct "$d" board --file TASKS.md --tag nonsense
+assert_rc "$CT_RC" 2
+ok
+
+CASE="close-tasks tag: --add bug / --remove bug round trip restores the bytes; idempotent"
+d="$(ct_dir bug3)"
+printf '## Active / Pending\n- [ ] (P2) Alpha thing \xe2\x80\x94 plans/p.md _plan: p_\n- [ ] (P2) Beta thing\n' > "$d/TASKS.md"
+cp "$d/TASKS.md" "$d/TASKS.orig"
+run_ct "$d" tag --file TASKS.md --row Alpha --add bug
+assert_rc "$CT_RC" 0
+assert_match "$CT_OUT" '"changed": true'
+grep -q 'Alpha thing — plans/p.md _plan: p_ · _bug_$' "$d/TASKS.md" || fail "bug tag not appended to the trailer: $(cat "$d/TASKS.md")"
+run_ct "$d" tag --file TASKS.md --row Alpha --add bug
+assert_match "$CT_OUT" '"changed": false'
+run_ct "$d" tag --file TASKS.md --row Beta --add bug
+assert_rc "$CT_RC" 0
+grep -q 'Beta thing — _bug_$' "$d/TASKS.md" || fail "bug tag not added to a row with no trailer"
+run_ct "$d" tag --file TASKS.md --row Beta --remove bug
+run_ct "$d" tag --file TASKS.md --row Alpha --remove bug
+assert_rc "$CT_RC" 0
+cmp -s "$d/TASKS.md" "$d/TASKS.orig" || fail "tag bug round trip did not restore the original bytes"
+ok
+
+CASE="close-tasks waves: bug rows sort first in a lane, summary.bugs counts them, the per-lane cap hides the rest"
+d="$(ct_dir bug4)"
+printf '## Active / Pending\n- [ ] (P1) Urgent plain\n' > "$d/TASKS.md"
+for n in 1 2 3 4 5 6; do printf -- '- [ ] (P1) Bug %s \xe2\x80\x94 _bug_\n' "$n" >> "$d/TASKS.md"; done
+run_ct "$d" waves --file TASKS.md --write "$d/AI.md"
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+name = lambda r: r['title'].rstrip(' —')
+assert [name(r) for r in d['now'].values()] == ['Bug 1'], d['now']
+assert [name(r) for r in d['next']['general']] == ['Bug 2', 'Bug 3', 'Bug 4', 'Bug 5', 'Urgent plain'], d['next']
+assert d['summary']['bugs'] == 6 and d['summary']['bugs_hidden'] == 1, d['summary']
+assert d['bugs_hidden'] == {'general': 1}, d['bugs_hidden']
+assert all(r['bug'] for r in d['now'].values()), d['now']
+PYEOF
+grep -q 'Bug 5' "$d/AI.md" || fail "Bug 5 should render"
+grep -q 'Bug 6' "$d/AI.md" && fail "Bug 6 should be hidden from the rendered file"
+grep -q '1 more bug row' "$d/AI.md" || fail "hidden count note missing from the rendered file"
+mkdir -p "$d/.claude"
+printf '{"pipeline":{"action_items":{"max_bugs_per_lane":2}}}' > "$d/.claude/project.json"
+run_ct "$d" waves --file TASKS.md
+waves_check <<'PYEOF'
+assert d['summary']['bugs_hidden'] == 4 and d['summary']['bugs'] == 6, d['summary']
+PYEOF
+printf '{"pipeline":{"action_items":{"max_bugs_per_lane":"lots"}}}' > "$d/.claude/project.json"
+run_ct "$d" waves --file TASKS.md
+waves_check <<'PYEOF'
+assert d['summary']['bugs_hidden'] == 1, d['summary']
+PYEOF
+ok
+
+CASE="close-tasks waves: the hub rule still works with a bug row present"
+d="$(ct_dir bug5)"
+wv_hub_fixture "$d" .claude-plugin/plugin.json r p q
+printf -- '- [ ] (P1) Loose bug \xe2\x80\x94 _bug_\n' >> "$d/TASKS.md"
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert d['conflicts'] == [] and d['summary']['hub_files'] == 1, d['summary']
+assert d['summary']['bugs'] == 1, d['summary']
+assert sorted(d['now']) == ['general', 'l-p', 'l-q', 'l-r'], d['now']
+PYEOF
+ok
+
+CASE="close-tasks waves: a (P0) row parses priority P0 and sorts ahead of P1"
+d="$(ct_dir p0)"
+printf '## Active / Pending
+- [ ] (P1) Later one
+- [ ] (P0) Sev zero
+' > "$d/TASKS.md"
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+r = list(d['now'].values())[0]
+assert r['priority'] == 'P0' and r['title'] == 'Sev zero', d['now']
+assert [x['priority'] for x in d['next']['general']] == ['P1'], d['next']
+PYEOF
 ok
 
 echo

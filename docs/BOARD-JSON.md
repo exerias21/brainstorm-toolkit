@@ -2,7 +2,7 @@
 
 > **✓ Live contract — current and maintained.**
 
-`bash scripts/close-tasks.sh board --file TASKS.md [--repo-name NAME] [--pipeline-dir .claude/pipeline]`
+`bash scripts/close-tasks.sh board --file TASKS.md [--repo-name NAME] [--pipeline-dir .claude/pipeline] [--tag bug]` (`--tag bug` keeps only `_bug_` rows in `tasks[]`)
 emits **one JSON object** on stdout describing everything this repo knows about its own work:
 `TASKS.md` rows joined against `.claude/pipeline/*/run.json` envelopes.
 
@@ -38,6 +38,7 @@ the same `{match_key, matched[]}` shape rather than the full board.
       "completed_at": null,       // the `_completed_at: ..._` tag value, or null
       "followup": false,          // true iff `_followup_` appears in the row's TRAILER (after the last " -- ")
       "manual": false,            // true iff `_manual_` appears in the row's TRAILER -- a human-only row
+      "bug": false,               // true iff `_bug_` appears in the row's TRAILER -- a defect row (priority is the severity)
       "after": [],                // `_after: <plan>[:<phase>]_` values from the TRAILER (list; [] when none)
       "conflicts": [],            // `_conflicts: <plan>[:<phase>]_` values from the TRAILER
       "lane": null,               // the `_lane: <name>_` value from the TRAILER, or null
@@ -122,7 +123,7 @@ Read-only unless `--write` is passed; it never edits `TASKS.md`. Exit codes matc
 {
   "schema": 1,
   "generated_at": "<iso8601 UTC>",
-  "summary": { "now": 1, "lanes": 2, "next": 3, "later": 2, "needs_you": 0, "unknown_files": 1, "conflicts": 0, "hub_files": 0 },
+  "summary": { "now": 1, "lanes": 2, "next": 3, "later": 2, "needs_you": 0, "unknown_files": 1, "conflicts": 0, "hub_files": 0, "bugs": 0, "bugs_hidden": 0 },
   "open_hash": "<16 hex chars>",
   "now":  { "<lane>": { "line": 15, "state": " ", "priority": "P2", "title": "...",
                         "plan_slug": "x", "phase": 1, "lane": "<lane>",
@@ -133,7 +134,8 @@ Read-only unless `--write` is passed; it never edits `TASKS.md`. Exit codes matc
   "unknown_files": [ { /* candidate rows whose plan phase names no files */ } ],
   "overlaps":      [ { "line": 15, "lane": "<lane>", "overlaps": [ /* as on the row */ ] } ],
   "conflicts":     [ { "lines": [15, 22], "source": "inferred|explicit", "files": ["a.py"] } ],
-  "hub_files":     [ { "file": "plugin.json", "plans": ["plan-a", "plan-b", "plan-c"] } ]
+  "hub_files":     [ { "file": "plugin.json", "plans": ["plan-a", "plan-b", "plan-c"] } ],
+  "bugs_hidden":   { "<lane>": 1 }
 }
 ```
 
@@ -151,6 +153,11 @@ Read-only unless `--write` is passed; it never edits `TASKS.md`. Exit codes matc
   out of inferred conflicts and listed in `hub_files[]` (`file` + sorted `plans`; `summary.hub_files`
   is the count). Files matching `pipeline.action_items.ignore_conflict_files` globs are left out
   too, unreported. Explicit `_conflicts:` and the worktree overlap warning are unaffected.
+- **Bug rows:** a `_bug_` row sorts ahead of non-bug rows in its lane (the `[~]` row still
+  leads). `summary.bugs` counts every open bug row. At most `pipeline.action_items.max_bugs_per_lane`
+  (default 5) bug rows render per lane, the now row included; the rest are removed from `next`
+  and `unknown_files` (so the JSON matches the rendered file) and counted in the top-level `bugs_hidden` map
+  (`{lane: n}`, empty when nothing is hidden) and `summary.bugs_hidden`. Rows have a `bug` field.
 - **Files** for a row come from the `Files:` lines and existing backticked repo paths in its
   plan's `#### Phase N` section; the plan file comes from the row's plan path, else its
   `_plan:` slug under `plans/` then `docs/plans/`, all resolved against the `TASKS.md`

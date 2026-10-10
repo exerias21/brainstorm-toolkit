@@ -107,7 +107,7 @@ implements, Opus reviews, plus the gotchas file and the module list:
 | `pipeline.output` | How chatty is the run? | `verbosity`: `quiet` (default) or `normal`. |
 | `pipeline.stop_gate` | Should a red `test.unit` block the Stop event mid-run? | `"off"` (default) or `"tests"`; `stop_gate_timeout` is in seconds. Claude and Codex only. |
 | `pipeline.enforce_cap` | Should `models.cap` be enforced by a hook? | Claude only. Rewrites an over-cap dispatch to the cap; the reviewer is exempt. |
-| `pipeline.action_items` | Do you want the generated `ACTION_ITEMS.md` waves? | `enabled`, `file`, `reassess`, `hub_threshold`, `ignore_conflict_files`. See the reference below. |
+| `pipeline.action_items` | Do you want the generated `ACTION_ITEMS.md` waves? | `enabled`, `file`, `reassess`, `hub_threshold`, `ignore_conflict_files`, `max_bugs_per_lane`. See the reference below. |
 | `pipeline.tasks.close_in_place` | Should closed rows stay on their lines? | `true` flips a closed row to `[x]` where it stands, so `TASKS.md:N` citations stay valid. |
 | `discipline` globs | Which paths count as frontend, backend, data, docs, deploy-delta? | Override only for a non-standard layout; see below. |
 | `migrations` | Where are migrations, and how do I tell what is applied? | `/repo-health` only. `dir` and `applied_check`. |
@@ -471,6 +471,11 @@ JSON as `hub_files`. `pipeline.action_items.ignore_conflict_files` (default `[]`
 fnmatch-style globs matched against the repo-relative path; matching files are excluded from
 inferred conflicts too and are not reported as hubs. Neither affects an explicit `_conflicts:` tag
 or the other-worktree overlap warning.
+
+`pipeline.action_items.max_bugs_per_lane` (default `5`; a positive integer, anything else falls back to
+`5`) caps how many `_bug_` rows `waves` renders per lane, the now row included, so a large bug backlog
+cannot swamp `ACTION_ITEMS.md`. Hidden rows leave the waves JSON `next` wave too and are counted in
+`bugs_hidden` / `summary.bugs_hidden`; `TASKS.md` keeps every row.
 
 `pipeline.action_items` (`enabled`, `file`, `reassess`) controls the generated `ACTION_ITEMS.md` — which open `TASKS.md` rows
 can run now, which become ready next, grouped by lane (`bash scripts/close-tasks.sh waves`; JSON

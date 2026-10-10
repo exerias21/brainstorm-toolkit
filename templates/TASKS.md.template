@@ -23,6 +23,10 @@ Current work items for AI agents (Claude Code, GitHub Copilot, etc.) and humans 
   close-out. `reconcile` and the scope gate skip it.
 - `_manual_` — a row only a human can do. The scope gate never takes it and never
   marks it `[~]`; the queue and task-range paths skip it too.
+- `_bug_` — a bug row (a defect, found by a hunt or filed by hand). Its `(P0)`-`(P3)` priority
+  is the severity; there is no second scale. The narrative (repro, evidence) lives in a linked
+  hunt report, not in the row. `waves` lists bug rows first within a lane;
+  `close-tasks.sh rows|board --tag bug` filters to them.
 - `_after: <plan>[:<phase>]_` — optional; this row waits until every open row of that plan
   (or plan phase) is done. A row's own linked task file (`plans/tasks/task-N-<slug>.md`) is
   also accepted. It replaces the default "phase N waits on phase N-1" order for this row.

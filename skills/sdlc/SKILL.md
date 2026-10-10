@@ -131,7 +131,7 @@ array from the existing envelope rather than re-deriving anything from session m
 
 5. **Queue mode** — arg is `--queue [N]`. Select the work set from `TASKS.md` **by
    state + priority** (not a hand-typed range): the `Active / Pending` rows, top
-   `N` (or `pipeline.loop.max_items`, default 5) by priority `P1 > P2 > P3`, an
+   `N` (or `pipeline.loop.max_items`, default 5) by priority `P0 > P1 > P2 > P3`, an
    `[~]` in-progress row first. Then loop the pipeline over them with a re-scan and
    stop conditions — see **Queue mode** below (that re-scan is what makes it a loop,
    not a one-shot range).

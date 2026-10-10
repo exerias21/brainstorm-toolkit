@@ -154,6 +154,7 @@ last ` — `):
 | `_plan: <slug>_` | Which plan the row belongs to; the key Stage 6 closes on |
 | `_phase: <N>_` | Groups a plan's rows so one phase can run and close as a unit |
 | `_manual_` | Only a human can do it; the pipeline never takes it |
+| `_bug_` | A bug row; its `(P0)`-`(P3)` priority is the severity, and `waves` lists it first in its lane |
 | `_followup_` | Deliberately left open after its plan finished |
 | `_after: <plan>[:<phase>]_` | Wait until that plan (phase) is done |
 | `_conflicts: <plan>[:<phase>]_` | Never run in the same wave as that plan (phase) |
