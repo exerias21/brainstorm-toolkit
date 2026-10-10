@@ -1923,6 +1923,26 @@ assert t[1]['after'] == [] and t[1]['lane'] is None, t[1]
 PYEOF
 ok
 
+CASE="close-tasks board/waves: a title documenting tag syntax keeps its text; trailer tags are still stripped"
+d="$(ct_dir w11)"
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [ ] (P2) Row tags `_after:/_conflicts:/_lane:` parsed in close-tasks.sh \xe2\x80\x94 docs/plans/x.md _plan: x_ \xc2\xb7 _phase: 1_\n' >> "$d/TASKS.md"
+printf -- '- [ ] (P2) Plain title \xe2\x80\x94 docs/plans/y.md _plan: y_ \xc2\xb7 _phase: 1_\n' >> "$d/TASKS.md"
+run_ct "$d" board --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+t = d['tasks']
+assert t[0]['title'] == 'Row tags `_after:/_conflicts:/_lane:` parsed in close-tasks.sh', t[0]
+assert t[1]['title'] == 'Plain title', t[1]
+PYEOF
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+titles = [r['title'] for lane in d['now'].values() for r in [lane]] + [r['title'] for r in d['unknown_files']]
+assert any('_after:/_conflicts:/_lane:' in t for t in titles), titles
+PYEOF
+ok
+
 # ── close-tasks.sh tag: the only writer of _after:/_conflicts:/_lane: ────────
 
 tag_fixture() {

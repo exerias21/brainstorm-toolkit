@@ -326,6 +326,16 @@ def strip_bare_tags(text):
     return text[:idx + 3] + BARE_TAG_STRIP_RE.sub('', text[idx + 3:])
 
 
+def strip_keyed_tags(text):
+    """TAG_STRIP_RE, confined to the trailer (see `trailer()` above) so a title
+    that documents tag syntax in prose -- e.g. `_after:/_conflicts:/_lane:` --
+    keeps its text instead of being eaten from one underscore to the next."""
+    idx = text.rfind(' — ')
+    if idx == -1:
+        return text
+    return text[:idx + 3] + TAG_STRIP_RE.sub('', text[idx + 3:])
+
+
 def read_lines(path):
     with open(path, encoding='utf-8') as f:
         return f.read().splitlines()
@@ -729,7 +739,7 @@ def parse_row(line):
     pm = PRIORITY_RE.match(body)
     priority = f'P{pm.group(1)}' if pm else None
     title_full = body[pm.end():].lstrip() if pm else body
-    title = strip_bare_tags(TAG_STRIP_RE.sub('', title_full)).rstrip()
+    title = strip_bare_tags(strip_keyed_tags(title_full)).rstrip()
     plan_m = PLAN_PATH_RE.search(title_full)
     plan = plan_m.group(0) if plan_m else None
     # The plan path rides in its own field, so leaving it in `title` too makes

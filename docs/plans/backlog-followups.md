@@ -179,3 +179,34 @@ evidence-backed bug rows. Device/emulator driving stays out of core (it is the e
 - **Hub files by fixed list** (`plugin.json`, `marketplace.json`) — rejected as the only rule:
   repo-specific; the threshold rule generalises, the ignore list covers the rest.
 - **Migration as prose only** — that is today's state, and it failed silently in a consumer repo.
+
+### Sanity-check corrections (2026-10-10, before implementation)
+
+- **Version bumps:** one bump per phase, carried by the phase's last step (2, 5, 9, 10) —
+  0.18.14, 0.18.15, 0.18.16, 0.18.17. Earlier steps in a phase change shipped files without a bump.
+- **Step 1:** the keyed strip moves into the trailer only; `strip_bare_tags` is already
+  trailer-confined and is the pattern to follow (`parse_row`, the `title = ...` line).
+- **Step 2:** `waves` reads only `enabled`/`file` from `pipeline.action_items` today — add a config
+  read for `hub_threshold` / `ignore_conflict_files` (and step 6's `max_bugs_per_lane`). Hub
+  exclusion applies **only** to the inferred plan-vs-plan conflict loop, never to the
+  dirty-worktree overlap match.
+- **Step 3:** `forbidden-phrases.txt` rows are regexes (only 3 are dead keys: `sanity_check\.model`,
+  `pipeline\.review_fix\.model`, `pipeline\.sanity_check\.focuses`). The CI check passes when each
+  such dead-key regex matches at least one table `old`; identify dead-key rows by a dotted-key
+  shape, skip flag/filename rows. MODEL-AXES' flags row (`--model`/`--review-model`) is not a key
+  rename — skip it.
+- **Step 4:** embedded Python via `scripts/py.sh` only; read/write in binary or `newline=''` with
+  `encoding='utf-8'`; CRLF fixtures built with `printf`, never a heredoc; Windows paths via argv.
+- **Step 5:** `setup.sh`'s "`.claude/project.json` is never touched" comment/message changes to
+  say only dead-key renames are applied (backup kept). All prose names the command as
+  `bash scripts/migrate-project-json.sh apply`. Headless onboarding applies (backup makes it safe).
+- **Step 6:** `do_tag`'s grammar takes valueless `bug` (like `_manual_`).
+- **Step 7:** `/task` has no separate fix loop — add the red-check to its step 4 (TDD). The
+  revert/re-run/restore is done by the orchestrator, never by a sub-agent.
+- **Step 10:** `/repo-health` has no Copilot/Codex overlay, so the sequential-lenses note lives in
+  `hunt.md`. The consolidator dispatch is `review:`-prefixed (Axis 2, exempt from the cap hook)
+  and `models.md`'s Axis 2 scope adds the hunt consolidator. Lens dispatches pass an explicit
+  `model:` from `models.hunt` and print the `model:` line. Description is 536 chars → append ≤14.
+  Lens and consolidator prompts carry the no-git-writes sentence; `git status --short` after.
+- **Step 11:** files also include `evals/skills/cases/<hunt case>.json` and a planted-bug fixture
+  under `evals/skills/fixtures/` (assert on the filed row / report file, `tree_unchanged` on code).
