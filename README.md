@@ -38,8 +38,12 @@ All skills run on all three tools. † marks skills with a Copilot-optimized ove
 `/sdlc` is the heaviest thing in the toolkit and the reason most of the rest exists.
 
 ```
-scope-gate → sanity → implement → evals → fix → validate → flowsim → [review] → [cleanup] → hand-off
+0 resolve input + scope gate
+  → 1.5 sanity → 2 implement → 3 evals → 5 validate (+ fix loop)
+  → [5.7 review → 5.8 fix] → [5.9 cleanup] → 6 hand-off → 7 report
 ```
+
+Brackets are opt-in. Stage 3 runs only with `eval.runner` and is skipped in skill repos.
 
 **It does no git writes.** No commit, no branch, no push, no PR, at any stage. It hands back a
 validated working tree and a suggested commit message; you decide what to commit and when.
@@ -48,18 +52,36 @@ what makes it safe to point at a branch that already has an open PR.
 
 **What it takes.** A plan file, a task id, a task range (`1-5`), or a plain description.
 
-**What it does on its own.** Stage 2 splits a large multi-surface plan into per-lane subagents
-plus a converge step; small or single-surface plans run one agent. There is no flag for this,
-the gate is automatic.
+**What each stage does:**
 
-**Two flags worth knowing:**
+| Stage | What happens |
+|---|---|
+| 0 Resolve + scope gate | Reads the plan and its tagged `TASKS.md` rows. For a plan file it takes the **lowest open plan phase** and parks the rest, leaving a resume sentinel so the next run picks up the following phase. |
+| 1.5 Sanity | Pre-flight over the plan (`paths`, `completeness`, `gotchas` focuses). Auto-patches the plan, or stops on a blocker before any code is written. |
+| 2 Implement | One agent, or an automatic split into per-lane agents plus a converge step for a large multi-surface plan. Model: `models.implement`. |
+| 3 Evals | Only with `eval.runner` configured; skipped silently otherwise. |
+| 5 Validate | The Haiku `test-runner` agent runs the suites; a plan-conformance check covers requirements and flow; a deterministic **plan-reference scan** over added code lines flags plan or task references written into code. Failures go through the shared 3-iteration fix loop. |
+| 5.7 / 5.8 Review, fix | Opt-in via `pipeline.review_fix.enabled`. Lens reviewers run on `models.code_review`; only `auto_fixable` findings are fixed. |
+| 5.9 Cleanup | Opt-in quality pass. |
+| 6 Hand-off | Secret scan, diff, a suggested commit message (with a `Co-Authored-By` trailer only when `coauthor_trailer` is `true`), `TASKS.md` close-out through `scripts/close-tasks.sh` (`pipeline.tasks.close_in_place` keeps closed rows on their lines), regenerated `ACTION_ITEMS.md` when action items are enabled, a decisions log, and gotcha capture with the `Next:` seam. |
+| 7 Report | Files changed, suggested commit message, validation verdicts, the `tasks: N closed` line, and anything left open. Nothing was committed. |
+
+**Flags:**
 
 | Flag | Effect |
 |---|---|
 | `--resume` | Pick up a paused or failed prior run from its state envelope, keyed on the resolved slug |
-| `--queue [N]` | Attended backlog loop: works pending `TASKS.md` rows by priority, re-scans between items so work added mid-run joins, and parks on anything paused. Still no git writes |
+| `--queue [N]` | Attended backlog loop: works pending `TASKS.md` rows by priority (from the now wave when action items are enabled), re-scans between items so work added mid-run joins, and parks on anything paused or on an empty now wave. Still no git writes |
+| `--no-scope-gate` | Run the whole plan in one go instead of its lowest open phase |
+| `--no-review` | Force the review stage off for this run, whatever the config says |
+| `--cleanup` / `--no-cleanup` | Force the cleanup stage on or off for this run |
 
-The adversarial Review→Fix stage is **off unless you turn it on**, and warn-only on surviving
+**No flag picks a model.** Every tier is a key in `.claude/project.json`: `models.implement`
+for the implementer, `models.code_review` for the reviewer, one key per role. The recommended
+pairing is Sonnet implements, Opus reviews (`pipeline.review_fix.enabled: true` plus
+`models.code_review: "opus"`). See [docs/CONFIG.md](docs/CONFIG.md).
+
+The adversarial review stage is **off unless you turn it on**, and warn-only on surviving
 findings rather than blocking the hand-off, matching its warn-only secret scan. See the case
 study below for why it exists.
 
@@ -67,15 +89,16 @@ study below for why it exists.
 
 ```mermaid
 flowchart LR
-    A[/repo-onboarding/]:::setup --> B[AGENTS.md + TASKS.md<br/>project.json + GOTCHAS.md]
+    A[/repo-onboarding/]:::setup --> B[AGENTS.md + TASKS.md<br/>project.json + GOTCHAS.md<br/>optional ACTION_ITEMS.md]
     B --> C[/brainstorm/]
     B --> D[/task/]
-    C --> F[plans/brainstorm-*.md]
+    C --> F[plan + tagged TASKS.md rows]
     D --> H[inline TDD]
-    F --> I[/sdlc {plan}/]:::core
+    F --> I[/sdlc {plan}<br/>fresh session/]:::core
     H --> J[you commit]
     I --> J
     J --> K[PR + merge]
+    S[/sdlc-status/<br/>queue, waves, --reconcile] -.-> I
 
     subgraph "Anytime, in parallel"
       N[/repo-health/<br/>scored sweep]
@@ -86,7 +109,6 @@ flowchart LR
 
     classDef setup fill:#e8e8ff,stroke:#5555aa
     classDef core fill:#e0ffe0,stroke:#338833
-    classDef pipe fill:#fff0e0,stroke:#cc7733
 ```
 
 A skill repo (one with `.claude-plugin/marketplace.json` at its root) writes plans to
@@ -98,23 +120,60 @@ Or in plain text:
    /repo-onboarding                (once per repo)
           │
           ▼
-   AGENTS.md + TASKS.md + project.json + GOTCHAS.md + CHEATSHEET.md
+   AGENTS.md + TASKS.md + project.json + GOTCHAS.md   (+ optional ACTION_ITEMS.md)
           │
-          ├──► /brainstorm   ──► plan file
-          │                          │
+          ├──► /brainstorm   ──► plan file + tagged TASKS.md rows
+          │                          │   (new session)
           │                          ▼
           ├──► /task         ──► TDD inline ──┬──► you commit ──► PR
           │                                   │
           └──► /sdlc <plan>  ──► full ────────┘
-                    sanity → implement → evals → fix → validate → flowsim
+                    scope gate → sanity → implement → evals → validate
+                    → [review → fix] → hand-off
                     (no git writes; it hands you a validated tree)
 
    Anytime:
+     /sdlc-status   — queue readout, waves line, --reconcile for drift
      /repo-health   — scored hygiene sweep
-     /sdlc-status   — what's active, what's left?
      /flowsim       — verify a plan's claimed flows match the code
      /gotcha        — capture a pitfall
 ```
+
+The recommended habit: brainstorm in one session, then run `/sdlc <plan>` in a fresh one, so
+the pipeline starts from the plan on disk rather than from a long conversation. Flow tracing
+happens inside Stage 5's plan check; `/flowsim` stays available as an anytime utility.
+
+## The backlog: TASKS.md, tags and ACTION_ITEMS.md
+
+`TASKS.md` is the only backlog. `/sdlc-status`, the `--queue` loop and the Stop hooks all read
+it, and it outlives any session. Rows carry optional italic tags in their trailer (after the
+last ` — `):
+
+| Tag | Meaning |
+|---|---|
+| `_plan: <slug>_` | Which plan the row belongs to; the key Stage 6 closes on |
+| `_phase: <N>_` | Groups a plan's rows so one phase can run and close as a unit |
+| `_manual_` | Only a human can do it; the pipeline never takes it |
+| `_followup_` | Deliberately left open after its plan finished |
+| `_after: <plan>[:<phase>]_` | Wait until that plan (phase) is done |
+| `_conflicts: <plan>[:<phase>]_` | Never run in the same wave as that plan (phase) |
+| `_lane: <name>_` | The lane the row is filed under; one active row per lane |
+
+`scripts/close-tasks.sh` is the one script that reads and writes those rows:
+
+- `rows --plan <slug>`: read-only lookup of every row tagged to a plan, in any state.
+- `close`: flip claimed rows to done; `--in-place` flips them to `[x]` where they stand instead of moving them to `## Done`.
+- `reconcile`: report drift between `TASKS.md` and the pipeline envelopes; `--apply` repairs it after one confirmation.
+- `board`: read-only JSON export of rows, runs and plans with no row. Schema in [docs/BOARD-JSON.md](docs/BOARD-JSON.md).
+- `waves`: group open rows by lane into `now`, `next` and `later` (with why each later row waits); `--gate` prints whether action items are on, `--write <file>` renders the file.
+- `tag`: the only writer of `_after:` / `_conflicts:` / `_lane:`; adds or removes one tag on one open row, and `--evidence` requires a verbatim plan quote before it writes.
+
+`ACTION_ITEMS.md` is the generated view of the waves: what can run now, what becomes ready
+next, what is waiting, grouped by lane. Never hand-edit it; edit `TASKS.md` and it regenerates
+at hand-off. A hand-written file of that name is never overwritten and never switches the
+feature on. Opt in with `pipeline.action_items.enabled: true`, or by having a generated file
+(its first line is the generated banner) already in place; `enabled: false` always vetoes. When
+it is on, `--queue` selects from the now wave and `/sdlc-status` prints a one-line summary.
 
 ## Install
 
@@ -128,18 +187,18 @@ If you use the Claude Code plugin system, add this repo as a marketplace source 
 /plugin install brainstorm-toolkit
 ```
 
-**This ships skills + agents + hooks, but not `scripts/`.** A plugin-only install has no
-repo-local `scripts/close-tasks.sh`, `protect-tests.sh`, or `record-decision.sh`, so Stage 6
-close-out reports `tasks: 0 closed` forever, the test-immutability detector never arms, and no
-decision gets recorded — silently, unless you know to look.
+**This ships skills + agents + hooks.** A plugin-only install has no repo-local `scripts/`, so
+the skills resolve `scripts/close-tasks.sh`, `plan-refs.sh` and the rest from the plugin root
+instead (repo-local copy first, then the plugin root, then `~/.claude/brainstorm-toolkit/`).
+`protect-tests.sh` and `record-decision.sh` follow the same lookup.
 
 `setup.sh` has no flag to skip skills — `--no-hooks` only skips hook installation, not the
 skills/agents steps — so running it on top of a plugin install re-registers every skill a
 second time (once from the plugin, once as files under `.claude/skills/<name>/`). Pick one
 path for skills:
 
-- **Stay on the plugin** (this option) and accept the `scripts/` gap above, or copy just that
-  directory without going through `setup.sh`: `cp -r <plugin-checkout>/scripts ./scripts`
+- **Stay on the plugin** (this option), or pin a repo-local copy of the scripts without going
+  through `setup.sh`: `cp -r <plugin-checkout>/scripts ./scripts`
   (skip `scripts/ci/` and `scripts/sync-global.sh` — those are plugin-repo-only tooling with no
   use in a consumer).
 - **Skip the plugin** and use `setup.sh` (Option B below) for everything instead — skills,
@@ -282,6 +341,7 @@ Every `project.json` key is optional: skills skip steps gracefully when config i
 agent counts. **Every key is optional**, and a missing key means the skill skips that step
 rather than guessing, so a repo with no `project.json` still works.
 
+- **Start here: [Filling it out](docs/CONFIG.md#filling-it-out)**, a guide that gets an empty repo to a correct file: the fast path, a minimal and a recommended file, what each block answers, a worked polyglot example, common mistakes, and a one-liner that flags typos and dead keys.
 - **[docs/CONFIG.md](docs/CONFIG.md):** the full key reference, plus which skill reads which key.
 - **[templates/project.json.example](templates/project.json.example):** a commented starting point.
 - `/repo-onboarding` writes the file for you. It walks every key in
