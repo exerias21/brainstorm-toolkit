@@ -82,12 +82,10 @@ Detect the argument shape:
    below (basename minus extension, minus a leading `brainstorm-` /
    `team-brainstorm-` / `pbi-NNN-` / `task-NNN-` prefix) **before** this call, not
    the raw basename: `/brainstorm` tags rows with the *stripped* slug
-   (`_plan: add-orders_`, never `_plan: brainstorm-add-orders_`), so passing the
-   raw basename used to match zero rows even when correctly-tagged rows were
-   open — never `reconcile | grep <slug>`: `reconcile` only reports drift against
+   (`_plan: add-orders_`, never `_plan: brainstorm-add-orders_`), so pass the
+   stripped slug, never the raw basename — never `reconcile | grep <slug>`: `reconcile` only reports drift against
    *existing* pipeline envelopes, so on a first run for this plan it always
-   returns zero rows even though correctly-tagged rows are sitting open (a
-   live miss on 2026-09-20). `rows` reads TASKS.md alone, matching the
+   returns zero rows even though correctly-tagged rows are sitting open. `rows` reads TASKS.md alone, matching the
    `_plan: <slug>_` marker `/brainstorm` appends, with a legacy path-substring
    fallback for untagged rows. **Do not mark any row `[~]` yet** — the
    **Scope gate** below (after `parse.json`) decides which of these rows are

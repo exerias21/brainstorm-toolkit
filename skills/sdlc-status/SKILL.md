@@ -10,7 +10,7 @@ description: >
   cleanup of stale/orphaned pipeline envelopes.
 argument-hint: "[--prune-stale] [--reconcile]"
 metadata:
-   brainstorm-toolkit-applies-to: claude copilot codex
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Status — one-glance work readout
@@ -83,7 +83,7 @@ feature is off or `scripts/close-tasks.sh` is absent (`--no-copy-scripts` instal
    A non-terminal pipeline run is the one thing worth making loud — it's how a
    skipped/abandoned pipeline becomes visible instead of lingering in JSON.
 
-## Next step (absorbed from the former `/next` and `/triage`)
+## Next step
 
 After the summary, print **one** recommended next command with a one-line reason. Highest
 match wins; stop at the first hit:

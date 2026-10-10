@@ -8,7 +8,7 @@ description: >
   how the codebase is laid out, or when /onboard, /discovery, /codelearn, or
   /init-toolkit is invoked.
 metadata:
-   brainstorm-toolkit-applies-to: claude copilot codex
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Repo Onboarding / Discovery

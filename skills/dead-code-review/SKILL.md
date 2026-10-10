@@ -36,7 +36,7 @@ dependency calls have the highest blast radius (raise it with `models.dead_code_
 the defaults of `models.dead_code_review` in `project.json` (a string for all lenses, or a map keyed
 `server`, `client`, `data`, `docs`, `scripts`); resolve per `skills/sdlc/templates/models.md`, print
 `model: dead_code_review <lens>=<tier>, … (cap: <cap|none>)` and pass `model` explicitly on every
-dispatch. NO subagents.
+dispatch.
 
 **Read `references/lenses.md` (next to this SKILL.md) now** — it carries the five lenses and
 their per-surface checklists, plus the shared reporting contract.

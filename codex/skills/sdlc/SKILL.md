@@ -67,8 +67,8 @@ regardless of verbosity — the per-dispatch `model:` line, gate verdicts, PAUSE
   appends, falling back to a legacy path-substring match for untagged rows. **Do not mark
   them `[~]` yet** — the **Scope gate** below (after `parse.json`) decides which rows are in
   scope this run and marks only those. Stage 6's close-out flips taken rows via
-  `scripts/close-tasks.sh`. Without this lookup the close-out has nothing to resolve, which
-  is why a finished plan used to close nothing on this runtime. A `rows` call returning no
+  `scripts/close-tasks.sh`. Without this lookup the close-out has nothing to resolve and
+  closes nothing. A `rows` call returning no
   `matched[]` updates no `TASKS.md` — expected, not a miss.
 **If `.claude/project.json` is absent while `project.json.example` is present, warn once
 here** — every gated setting (`models.cap`, `pipeline.*`, test commands) is silently inert

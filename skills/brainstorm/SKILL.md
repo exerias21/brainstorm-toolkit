@@ -24,7 +24,7 @@ on ideas together with the user before producing an implementation plan.
 ## How It Works
 
 The conversational loop stays in the **main context window** for Steps 1–3, 5, and 6. Do not
-delegate exploration or ideation to subagents outside Step 4b and Step 7.
+delegate exploration or ideation to subagents outside Step 4b, Step 6.5 (vet modes) and Step 7.
 
 ### Step 0: Set the frame (no Plan mode)
 
@@ -241,7 +241,9 @@ it; it carries the modes, their agent prompts, the merge rule and the post-vet h
 ### Step 7: Validate the Plan
 
 Spawn a dedicated **validation agent** (via the Agent tool) to read the saved plan with fresh
-context and stress-test it against this checklist:
+context and stress-test it against this checklist. Tier is `models.brainstorm`, resolved per
+`skills/sdlc/templates/models.md` as in Step 4b; print `model: brainstorm=<tier> (cap: <cap|none>)` and
+pass that `model` explicitly:
 
 - Are the referenced files/patterns still accurate? (grep/read to verify)
 - Are there missing steps or dependencies?

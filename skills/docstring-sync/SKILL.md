@@ -110,7 +110,7 @@ each group is exactly one file's claims, plus that file's full source for any sy
 Dispatch one triage sub-agent per file group, using
 `<skill-dir>/references/triage-prompt.md` as the role prompt verbatim — **parallel,
 single message, multiple tool calls on Claude**; on Copilot and Codex, run each group inline and
-sequentially in this session, per the standing runtime note in `skills/repo-health/SKILL.md`.
+sequentially in this session (Copilot and Codex have no sub-agent seam, so every "dispatch" runs inline).
 Before each dispatch, resolve the tier (`models.docstring_sync`, Sonnet by default) per
 `skills/sdlc/templates/models.md`, print `model: docstring_sync=<tier> (cap: <cap|none>)` and pass
 `model` explicitly.

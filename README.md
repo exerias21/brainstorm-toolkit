@@ -15,7 +15,7 @@ Most AI-agent task systems bolt on heavyweight task databases, multi-agent orche
 | Skill | Applies to | Use for |
 |---|---|---|
 | `README.md` | Claude + Copilot + Codex | Print every installed skill + the typical chains. The always-current view; `CHEATSHEET.md` is the printable companion. |
-| `/brainstorm` | Claude + Copilot + Codex † | Conversational feature ideation with lens-divergent wildcards (Plan mode on Claude, linear on Copilot) |
+| `/brainstorm` | Claude + Copilot + Codex † | Conversational feature ideation with lens-divergent wildcards (no Plan mode; linear on Copilot) |
 | `/brainstorm-team` | Claude + Copilot + Codex † | 6-agent team for competitive + product research incl. a lateral-thinking agent (sequential on Copilot) |
 | `/task` | Claude + Copilot + Codex | Create one bounded task and execute it with TDD on the current branch. No flags, always TDD |
 | `/sdlc` | Claude + Copilot + Codex † | The full pipeline, ending in a validated working tree you commit yourself. [Details below.](#the-pipeline-sdlc) |

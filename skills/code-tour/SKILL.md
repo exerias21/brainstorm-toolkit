@@ -8,7 +8,7 @@ description: >
   WHY. Triggers on /code-tour, /docstrings, /codetour, /onboarding-docs. Unlike /repo-onboarding
   (contract files) and /repo-health (read-only sweep), this writes documentation into the source.
 metadata:
-   brainstorm-toolkit-applies-to: claude copilot codex
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Code Tour — documentation as teaching material
