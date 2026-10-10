@@ -75,6 +75,11 @@ regardless of verbosity — the per-dispatch `model:` line, gate verdicts, PAUSE
 here** — every gated setting (`models.cap`, `pipeline.*`, test commands) is silently inert
 and the run reports `cap: none`.
 
+Then, if `.claude/project.json` exists, run `bash scripts/migrate-project-json.sh check` (path
+resolution as for the other toolkit scripts) and print one warning line per move: `<old> is
+ignored — rename to <new>; run bash scripts/migrate-project-json.sh apply`, and per conflict a
+line saying both keys are set and `<new>` wins. Never apply from `/sdlc`; continue either way.
+
 - **Task id** (`task-NNN` or a row number) → read that row + linked task file;
   its `parent_plan:` becomes the Stage 5 plan target.
 - **Task range** (`N-M`, `task-N..task-M`, `tasks N-M`) → resolve every

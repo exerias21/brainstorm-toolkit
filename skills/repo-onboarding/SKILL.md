@@ -78,6 +78,11 @@ In the main context window (no subagents), survey the repo structure:
 
 ### Step 2 — Propose the config
 
+If `.claude/project.json` already exists, first run `bash scripts/migrate-project-json.sh check`
+(toolkit path: repo-local `scripts/`; else the plugin root, this skill's base directory two levels
+up, `<base>/../..`; else `~/.claude/brainstorm-toolkit/`) and offer `apply` for any dead keys it
+lists. Headless: apply (a `.bak` is written) and list the moves in the report.
+
 Build a draft `project.json` from what you found. Fill in:
 
 - `test.unit` — from detected test framework
@@ -100,6 +105,10 @@ Build a draft `project.json` from what you found. Fill in:
   — ask (Step 3).** Default `false`. Do not infer it from existing history: a repo whose
   log already shows the trailer may have been committed by a different tool or by a
   contributor who wants it, and neither implies consent for this checkout.
+- `discipline.data_globs` — the default `**/migrations/**` misses alembic: when a
+  `**/alembic/versions` tree exists, propose adding `**/alembic/**`.
+- `discipline.frontend_globs` — when the frontend root is not `frontend/` (e.g. `portal/` holding
+  a `package.json` plus `.ts`/`.tsx` files), propose globs rooted there (`portal/**/*.tsx`, ...).
 - `modules` — inferred from top-level code directories (`src/`, `api/`, `web/`, `packages/*`, etc.)
 - `models.implement`, `models.code_review`, `models.cap` — **choices, not detection** (Step 3).
   `models.cap` is a ceiling that only lowers; absent = no ceiling. **Recommend omitting it**;

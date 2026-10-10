@@ -37,6 +37,10 @@ each stage below names the one it loads.
   **But** if `project.json` is absent while `project.json.example` is present,
   warn once at Stage 0 — every gated setting (`models.cap`, `pipeline.*`, test
   commands) is silently inert and the run will report `cap: none`.
+  Then, if `.claude/project.json` exists, run `bash scripts/migrate-project-json.sh check`
+  and print one warning line per move: `<old> is ignored — rename to <new>; run bash
+  scripts/migrate-project-json.sh apply`, and per conflict a line saying both keys are set and
+  `<new>` wins. Never apply from `/sdlc`; continue either way.
 
 ## Output verbosity (default: quiet)
 

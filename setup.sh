@@ -351,10 +351,21 @@ fi
 # Install the reference .example file if missing; refresh it when --force is
 # used. Consumers can review it to discover newly-added optional fields like
 # eval.thresholds and pipeline.poka_yoke. The user's actual
-# .claude/project.json is never touched.
+# .claude/project.json is left alone except for dead-key renames (backup kept).
 echo "[4/7] Project config example (skip-on-exist unless --force)"
 copy_if_new "$PLUGIN_ROOT/templates/project.json.example" "$TARGET/.claude/project.json.example"
 if [[ -f "$TARGET/.claude/project.json" ]]; then
+  # Only dead-key renames are applied; the script writes a .bak first and never aborts setup.
+  mig_json="$(mktemp)"
+  if mig_out="$(bash "$PLUGIN_ROOT/scripts/migrate-project-json.sh" apply --file "$TARGET/.claude/project.json" 2>&1 >"$mig_json")"; then
+    [[ -n "$mig_out" ]] && sed 's/^/  /' <<<"$mig_out"
+    if ! grep -q '"conflicts": \[\]' "$mig_json"; then
+      echo "  warning: a dead key and its replacement are both set in .claude/project.json; left untouched, the new key wins"
+    fi
+  else
+    echo "  warning: could not migrate dead keys in .claude/project.json (left unchanged)"
+  fi
+  rm -f "$mig_json"
   echo "  note: .claude/project.json present — review .claude/project.json.example for new optional fields"
 else
   echo "  note: .claude/project.json not present — copy from .claude/project.json.example to start"
