@@ -18,7 +18,16 @@ Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
 
 1. **Select** the next item — highest-priority `Active / Pending` row (`[~]` first),
    **excluding `_manual_` rows** (a human-only row is never selected into the loop).
-   Mark it `[~]`.
+   Mark it `[~]`. **When action items are enabled** (`bash scripts/close-tasks.sh waves --file TASKS.md --gate`
+   prints `enabled: true`: `pipeline.action_items.enabled: false` is a veto, `true` a switch, and when
+   absent the configured `pipeline.action_items.file` — default `ACTION_ITEMS.md` — must exist beside
+   `TASKS.md` with the generated banner on line 1; read both keys first, never test the default name
+   when `file` is set; skipped when `scripts/close-tasks.sh` is unresolvable) select from the `now` wave of
+   `bash scripts/close-tasks.sh waves --file TASKS.md` instead, priority within it — picking by
+   plain priority would start a row whose dependency is not done. An **empty `now` wave (with or
+   without `needs_you` rows) parks** via the Park protocol below with `<resume-cmd>` =
+   `/sdlc-status` and the reason (`needs_you` rows, blocked rows, or nothing open); it never
+   falls back to priority order.
 2. **Run** the full pipeline (Stages 1.5–6) for that item as a single-item run — its
    own **canonical envelope** and its own shared 3-iteration fix budget. **Each item's
    `feature_slug` is distinct per row** — `<plan-slug>-<row-id>` (e.g. row `Q1` of
@@ -56,7 +65,9 @@ Loop (knobs under `project.json` `pipeline.loop.*`, all optional):
    - `max_items` (default `5`, or the `[N]` arg) — items consumed this invocation.
    - `max_consecutive_failures` (default `2`) — distinct-item failures before parking.
 4. **Re-scan** `TASKS.md` for newly-appended rows and **go to 1**, until a stop
-   condition parks the loop or the queue is empty.
+   condition parks the loop or the queue is empty. With action items enabled (the same `--gate`), also run
+   `bash scripts/close-tasks.sh waves --file TASKS.md --write <file from --gate>` between items — the re-scan
+   alone re-reads `TASKS.md` and never regenerates the waves, so item 1 would select from stale ones.
 
 **On park**, which envelope work you do depends on *why* it parked:
 - **An item's own pipeline paused/failed** (`stop_on: pause`) → that **item's** envelope gets

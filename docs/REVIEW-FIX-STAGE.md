@@ -1,5 +1,7 @@
 # Adversarial Review→Fix stage for `/sdlc`
 
+> **Update (2026-10):** the `--model` and `--review-model` flags described below were removed; every model tier is now a `project.json` key. Live contract: `skills/sdlc/templates/models.md`.
+
 > **⚠ Historical design record — read as a snapshot, not as current state.** This plan was
 > written when the repo had *two* pipeline skills (`/sdlc` and `/sdlc-lite`) and a
 > Workflow-backed execution path. Both are gone: the surviving skill took the `/sdlc` name,

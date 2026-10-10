@@ -132,11 +132,11 @@ fall back to text-only behavior when it isn't. Make the dependency soft.
 
 ### Step 5 — Dispatch fix agent (if real failures remain)
 
-Spawn a fix agent with structured failure data. Use Sonnet for targeted fixes; escalate to Opus only if failures span many files or suggest structural issues — and only when not capped (honors `project.json` `models.cap` / `--model`; Sonnet-first by default).
+Spawn a fix agent with structured failure data. Dispatch at the same tier this agent was dispatched at (`models.e2e`, Sonnet default, capped by `models.cap`) — never escalate on your own.
 
 ```
 Agent(
-  model="sonnet",
+  model="<tier this agent was dispatched at: models.e2e>",
   description="Fix e2e failures for {feature_slug}",
   prompt="""
     Fix the following e2e test failures. Each failure includes the test name,
@@ -149,7 +149,7 @@ Agent(
 
     GIT: never run a git command that writes — no stash, commit, checkout, switch, reset, restore, rebase, merge, clean, or branch creation. The working tree holds the user's uncommitted work; git that only reads (status, diff, log, show) is fine. If you need a clean baseline, report it as a blocker instead.
 
-    COMMENTS: never reference the plan in code — no plan file paths, plan/phase/step numbers, or TASKS.md rows in comments or docstrings. Write the reason itself; the plan does not ship with the code and its numbering means nothing once it is gone.
+    never write plan or task references (plans/ paths, task IDs, brainstorm names) into code — this covers comments, docstrings, string literals and data (e.g. `TASKS.md:N`, `task-N`, `plans/<file>.md`, phase/step numbers, a plan slug). Write the reason itself: the plan is deleted once delivered and TASKS.md rows move, so the reference rots.
 
     If the test file references auth setup or navigation patterns, check
     {test.e2e_patterns_file} for repo-specific conventions before editing.

@@ -231,6 +231,7 @@ lane.
   },
   "new_failures": [],
   "preexisting_failures": [],
+  "plan_refs": [],
   "requirements": [
     { "criterion": "orders list paginates", "verdict": "met", "evidence": "app/orders.py:88" }
   ],
@@ -240,6 +241,8 @@ lane.
   "flow_witnessed": true
 }
 ```
+
+`plan_refs[]` holds the hits from `scripts/plan-refs.sh scan` — `{file, line, text, pattern}` each; any entry is a new failure for the fix loop, and the array is `[]` when clean.
 
 `requirements[].verdict` is `met` / `partial` / `missing`; `flow[].verdict` is `OK` / `MISMATCH`
 / `UNCLEAR` / `MISSING`. **`flow_witnessed`** records whether step 1 produced real test results
@@ -286,11 +289,25 @@ still gates. Both arrays are absent, same as standard mode, when there was no pl
   "branch": "feature-branch",
   "files_changed": ["api/routes/orders.py"],
   "committed": false,
-  "suggested_commit_msg": "feat: add orders endpoint"
+  "suggested_commit_msg": "feat: add orders endpoint",
+  "data": {
+    "tasks": {},
+    "waves": {
+      "summary": {"now": 1, "lanes": 2, "next": 3, "needs_you": 0, "unknown_files": 1, "conflicts": 0},
+      "overlaps": [],
+      "rejected": []
+    }
+  }
 }
 ```
 `/sdlc` does no git writes; it records what it would commit and leaves
 the tree for the user. `committed` is always `false`.
+
+`data.tasks` is the close script's output object — shape in the `data.tasks.resolved` row above.
+`data.waves` is optional and absent when action items are off or `scripts/close-tasks.sh` is
+missing: `summary` and `overlaps[]` are copied from `close-tasks.sh waves` (never its full JSON —
+`docs/BOARD-JSON.md`), and `rejected[]` holds reassess proposals that failed verification as
+`{row, tag, reason}`.
 
 ---
 

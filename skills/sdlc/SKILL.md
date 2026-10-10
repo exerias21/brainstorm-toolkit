@@ -15,6 +15,8 @@ metadata:
 
 # sdlc — the full SDLC pipeline, leaving the commit to you (no git writes)
 
+> **Toolkit paths.** Every toolkit script or template path cited here resolves against the plugin root — this skill's base directory two levels up (`<base>/../..`) — when the skill is loaded from a plugin; a repo-local copy installed by `setup.sh` wins when it exists.
+
 ## When to use
 
 | Skill | Input | Pipeline | Terminal action |
@@ -141,8 +143,7 @@ initialize the state envelope at `.claude/pipeline/<slug>/` with
 `pipeline: "sdlc"`, `base_commit`, `status: "in_progress"`.
 
 **Independence pre-check (before any spend).** If the review stage resolves ON
-(`--review-model <name>` or `pipeline.review_fix.enabled: true`; `--no-review` always wins
-OFF), compute whether `models.code_review` collides with the implementer's effective tier per
+(`pipeline.review_fix.enabled: true`; `--no-review` always wins OFF), compute whether `models.code_review` collides with the implementer's effective tier per
 `skills/sdlc/templates/models.md` "Independence" — **do not open
 `skills/sdlc/templates/stage-5.7-review-fix.md` for this**, it is opt-in and a default run must
 never load it. On a collision, print the same degraded line Stage 5.7 emits before dispatching
@@ -249,14 +250,14 @@ Then apply the **live-code grounding** — follow `skills/sdlc/templates/convent
 decides single-agent vs. decompose.
 
 - **Single-agent (default):** dispatch one agent with `skills/sdlc/templates/stage-2-implement.md`,
-  substitute `{feature_name}` and `{plan_content}`; **Sonnet by default** (Opus
-  only on `--model opus`, per `skills/sdlc/templates/models.md`) on Claude,
+  substitute `{feature_name}` and `{plan_content}`; **`models.implement`** (Sonnet
+  default, per `skills/sdlc/templates/models.md`) on Claude,
   inline on Copilot/Codex. **State write (orchestrator, not the agent):** the
   agent's prompt writes nothing to disk — when it returns `git diff --numstat`, **you**
   write `stage-outputs/implement.json` from that summary, append `implement` to
   `run.json.stages_completed`, and refresh `updated_at`. No decompose/converge sidecars.
 - **Decompose (large multi-surface plan):** run 2a/2b/2c —
-  `skills/sdlc/templates/stage-2a-decompose.md` (Sonnet decomposer →
+  `skills/sdlc/templates/stage-2a-decompose.md` (decomposer at `models.implement` →
   `decompose.json`), `skills/sdlc/templates/stage-2b-dispatch.md` (one subagent
   per lane, sequential by `depends_on` → `implement-<lane>.json`), then
   `skills/sdlc/templates/stage-2c-converge.md` (orchestrator reconcile prompt — it
@@ -291,8 +292,7 @@ first failure; 3-iteration budget). Writes one `validate.json`.
 ## Stage 5.7 — Adversarial review
 
 **Opt-in, permanently OFF by default — resolve the gate before loading anything.** ON only on an
-explicit `--review-model <name>` flag or `pipeline.review_fix.enabled: true`; `--no-review` always
-wins OFF. When OFF, do not load the template — append `review` to `run.json.stages_skipped` and go
+`pipeline.review_fix.enabled: true`; `--no-review` always wins OFF. When OFF, do not load the template — append `review` to `run.json.stages_skipped` and go
 to Stage 6. When ON, **read `skills/sdlc/templates/stage-5.7-review-fix.md` now** and run it: it
 carries the lens fan-out and its cost knobs, the reviewer-model axis and its cap caveat, the verify
 pass and the circuit breaker. Runs after Stage 5, before Stage 6; writes `stage-outputs/review.json`.
@@ -334,10 +334,13 @@ when `unmatched` is non-empty, add `(U unmatched — see /sdlc-status --reconcil
 When `review.json.data.independence == "degraded"`, add the line `independence: degraded —
 findings surfaced only, never auto-fixed` (wording: `skills/sdlc/templates/stage-5.7-review-fix.md`
 "Independence enforcement").
+When Stage 6 wrote `data.waves`, add `waves: now N across L lane(s), next M` from its `summary`
+(`now`, `lanes`, `next`) and one warning line per `overlaps[]` entry; omit both when it did not.
 If the delivered diff departs from the plan (a step skipped,
 reordered, or solved differently), say where and why in one line each — the
 `plan-conformance-validator`'s
-partial/missing rows are the source. Make it explicit that **nothing was committed** — the next
+partial/missing rows are the source. Check `coauthor_trailer` in `.claude/project.json`: unless it is literally `true`, the suggested
+commit message contains no `Co-Authored-By` (or other attribution) line — strip one if present. Make it explicit that **nothing was committed** — the next
 move is yours.
 
 ## Skill-repo mode (auto-detected)

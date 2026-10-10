@@ -14,8 +14,7 @@ do not load this file unless the stage is enabled (see the enablement rule below
 
 ## Enablement and gate
 
-This stage activates only on an explicit
-`--review-model <name>` flag or an explicit `pipeline.review_fix.enabled: true` in
+This stage activates only on an explicit `pipeline.review_fix.enabled: true` in
 `.claude/project.json`; `--no-review` always wins OFF. An absent or `enabled: false`
 `pipeline.review_fix` block means OFF — there is no default-on flip, now or later. When
 activated, two auto-off gates still apply: the diff is docs-only/touches no code surface (self-skip
@@ -23,7 +22,7 @@ activated, two auto-off gates still apply: the diff is docs-only/touches no code
 the code surface there and would otherwise silently disable the stage in the repo that dogfoods it).
 Runs after Stage 5, before Stage 6, once enabled and not auto-off'd. Fans out
 **one reviewer pass per configured lens** (parallel sub-agents on Claude; sequential inline passes
-on Copilot/Codex), each at the **reviewer** model — `models.code_review` / `--review-model`,
+on Copilot/Codex), each at the **reviewer** model — `models.code_review`,
 default `opus`, resolved per `skills/sdlc/templates/models.md`. That axis is separate from the
 `haiku < sonnet < opus` cap ladder and `models.cap` never lowers it.
 
@@ -116,7 +115,7 @@ template, so they must be quoted into the dispatched prompt, not cross-reference
 
 > GIT: never run a git command that writes — no stash, commit, checkout, switch, reset, restore, rebase, merge, clean, or branch creation. The working tree holds the user's uncommitted work; git that only reads (status, diff, log, show) is fine. If you need a clean baseline, report it as a blocker instead.
 
-> COMMENTS: never reference the plan in code — no plan file paths, plan/phase/step numbers, or TASKS.md rows in comments or docstrings. Write the reason itself; the plan does not ship with the code and its numbering means nothing once it is gone.
+> never write plan or task references (plans/ paths, task IDs, brainstorm names) into code — this covers comments, docstrings, string literals and data (e.g. `TASKS.md:N`, `task-N`, `plans/<file>.md`, phase/step numbers, a plan slug). Write the reason itself: the plan is deleted once delivered and TASKS.md rows move, so the reference rots.
 
 **`auto_fixable` rubric (default-deny):** a finding is `auto_fixable: true` only if it corrects an
 existing explicit contract (plan acceptance criterion, docstring/type signature, schema, test
@@ -143,7 +142,7 @@ Per `pipeline.review_fix.mode`:
 - **`off`**: emit findings to `review.json` only; Stage 5.8 does not run.
 
 **Independence enforcement — observe, never override.** Compare the reviewer's resolved
-value to the implementer's effective tier (its default after the cap is applied). When they
+value to the implementer's effective tier (`models.implement`, capped). When they
 differ (or the reviewer is `fable`, outside the ladder), `data.independence = "ok"`. When they
 collide, **dispatch the configured reviewer anyway** and mark the run
 `data.independence = "degraded"` in `review.json`: every finding that run is surfaced only,
@@ -155,8 +154,8 @@ review: reviewer (<model>) and implementer (<tier>) resolve to the same tier —
         different tier (or fable) to restore it.
 ```
 
-**The reviewer is never re-tiered on your behalf** — an explicit `models.code_review` /
-`--review-model` value is always the dispatched value (why: `docs/MODEL-AXES.md`).
+**The reviewer is never re-tiered on your behalf** — an explicit `models.code_review`
+value is always the dispatched value (why: `docs/MODEL-AXES.md`).
 
 **Also surfaced at Stage 7.** Whenever this run's `review.json.data.independence ==
 "degraded"`, Stage 7's report adds one line so the collision is visible even to a reader who
@@ -170,6 +169,12 @@ Before approving a finding in loop `n+1`, check it against the union of all prio
 `fixed_fingerprints` — a match means oscillation (a later fix reintroduced an earlier one), not a
 fresh bug: don't spawn another fix attempt, pause with `run.json.status = "paused"` and report the
 original fix + regression side by side (same shape as Stage 5's persistent-mismatch pause).
+
+**Scope of the fix pass.** The fix prompt is built only from confirmed `auto_fixable: true`
+findings. Do not attempt partial fixes of `auto_fixable: false` findings — surface them in the
+report. After the pass, update each applied finding's `status` in `review.json` (or, if you leave
+`review.json` untouched, list the applied `finding_id`s in `review-fix.json`) so the sidecar is
+not stale.
 
 **Writes a single cumulative** `stage-outputs/review-fix.json` (not per-iteration files), with a
 `loops[]` array carrying one entry per iteration. `review-fix` is recorded once in

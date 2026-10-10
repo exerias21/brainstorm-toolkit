@@ -6,10 +6,10 @@ directories from `.claude/project.json` `modules` (or, absent that, from the rep
 the language/package manifests tell you where the code lives). A repo with no such surface
 skips that lens and says so.
 
-Tiers are the *starting* tier for each lens. Resolve the real one per
-`skills/sdlc/templates/models.md` (`--model <tier>` > `models.cap` > the tier here) and print
-`model: <tier> (cap: <cap|none>)` before dispatching. The fan-out is Sonnet-first, so the
-Opus-tier lens runs Sonnet unless the user opts up. Agents do **not** spawn sub-agents.
+Tiers are the defaults of `models.dead_code_review` (string, or map keyed `server`, `client`,
+`data`, `docs`, `scripts`). Resolve the real one per `skills/sdlc/templates/models.md` and print
+`model: dead_code_review <lens>=<tier>, … (cap: <cap|none>)` before dispatching, passing `model`
+explicitly. Agents do **not** spawn sub-agents.
 
 ---
 
@@ -41,7 +41,7 @@ The UI layer: components, views, client-side state, the API client.
 - Unused package dependencies — grep for the package's import specifier across the tree
 - Stale test files — tests for components that no longer exist
 
-## Lens 3 — Data layer and migrations (Opus tier — Sonnet by default under the cap)
+## Lens 3 — Data layer and migrations (Sonnet; raise with `models.dead_code_review: {data: opus}`)
 
 Highest blast radius: a wrong drop here can destroy production data, which is why the tier is
 raised. **Never issue DDL** — this lens reports, it does not execute.

@@ -38,6 +38,9 @@ the same `{match_key, matched[]}` shape rather than the full board.
       "completed_at": null,       // the `_completed_at: ..._` tag value, or null
       "followup": false,          // true iff `_followup_` appears in the row's TRAILER (after the last " -- ")
       "manual": false,            // true iff `_manual_` appears in the row's TRAILER -- a human-only row
+      "after": [],                // `_after: <plan>[:<phase>]_` values from the TRAILER (list; [] when none)
+      "conflicts": [],            // `_conflicts: <plan>[:<phase>]_` values from the TRAILER
+      "lane": null,               // the `_lane: <name>_` value from the TRAILER, or null
       "line": 15                  // 1-based line number in --file
     }
   ],
@@ -105,3 +108,85 @@ the same `{match_key, matched[]}` shape rather than the full board.
 `runs[]`, or the top-level object is always safe to ignore. **A removed or retyped field
 bumps it** — if `schema` changes, assume every field's shape needs re-checking before trusting
 old parsing code against the new output.
+
+# `close-tasks.sh waves` — what runs when
+
+`waves --file TASKS.md --gate` prints `{enabled, file, reason}` for the action-items enable rule
+(`pipeline.action_items.enabled: false` vetoes; `true` enables; absent → on only if the configured
+`file` exists with the generated banner on line 1) and nothing else.
+
+`waves --file TASKS.md [--write PATH]` groups the open `## Active / Pending` rows into waves.
+Read-only unless `--write` is passed; it never edits `TASKS.md`. Exit codes match `board`.
+
+```jsonc
+{
+  "schema": 1,
+  "generated_at": "<iso8601 UTC>",
+  "summary": { "now": 1, "lanes": 2, "next": 3, "later": 2, "needs_you": 0, "unknown_files": 1, "conflicts": 0 },
+  "open_hash": "<16 hex chars>",
+  "now":  { "<lane>": { "line": 15, "state": " ", "priority": "P2", "title": "...",
+                        "plan_slug": "x", "phase": 1, "lane": "<lane>",
+                        "overlaps": [ { "worktree": "/path", "branch": "b", "files": ["a.py"] } ] } },
+  "next": { "<lane>": [ { /* same row shape, no overlaps */ } ] },
+  "later":         [ { /* same row shape */ "why": "waiting-on|blocked-by|cycle" } ],
+  "needs_you":     [ { /* `_manual_` rows */ } ],
+  "unknown_files": [ { /* candidate rows whose plan phase names no files */ } ],
+  "overlaps":      [ { "line": 15, "lane": "<lane>", "overlaps": [ /* as on the row */ ] } ],
+  "conflicts":     [ { "lines": [15, 22], "source": "inferred|explicit", "files": ["a.py"] } ]
+}
+```
+
+- **now** is the rows with no open order edge, at most one per lane (`[~]` first, then
+  priority, then file order), and no two that conflict. **next** is the rows that become
+  ready if every now row closes. **later** is every other open candidate row (two hops out,
+  behind a Blocked row, or in an `_after:` cycle), each with a short `why`. An empty now-wave is `"now": {}` — callers park and report;
+  they never fall back to plain priority order.
+- **Order edges:** within one `_plan:`, a row waits while a lower `_phase:` of that plan has
+  a not-done row (`Active / Pending` or `Blocked`). An `_after:` tag replaces that inference
+  for its row. **Conflicts:** `_conflicts:` plus two rows (of different plan phases) whose
+  plan-phase file lists intersect. A row with no resolvable files has no inferred conflicts and
+  is listed in `unknown_files`.
+- **Files** for a row come from the `Files:` lines and existing backticked repo paths in its
+  plan's `#### Phase N` section; the plan file comes from the row's plan path, else its
+  `_plan:` slug under `plans/` then `docs/plans/`, all resolved against the `TASKS.md`
+  directory. **Lane:** `_lane:` > the first surface (changed-files-gate order, with
+  the gate's per-surface glob overrides) any of its files matches > `general`.
+- **`overlaps`** is read-only git (`worktree list`, `diff --name-only HEAD`, untracked files)
+  over every OTHER worktree; it is `[]` outside git, without git, or on any git failure.
+- **`--write PATH`** also renders the lane-grouped markdown (with a "generated — edit
+  TASKS.md, not this file" banner and the generating command) and adds `"written": PATH` to
+  the JSON. The file carries no timestamp, so identical input yields identical bytes. An existing
+  file whose line 1 is not that banner (BOM/CRLF tolerated) is a hand-written file and is never
+  overwritten: the JSON gets `"written": null` and `"write_skipped": "<path> exists and is not
+  generated (no banner on line 1) — left untouched"`, stderr gets one warning, and the exit is
+  still 0. A missing file is created; a bannered one is regenerated.
+- **`summary`** is counts only: `now` rows, `lanes` (distinct lanes across now and next),
+  `next` rows, `later`, `needs_you`, `unknown_files`, `conflicts`. **`open_hash`** fingerprints the
+  sorted not-done rows (Active / Pending and Blocked), so a caller can tell whether the backlog
+  changed since the hash it stored.
+- **Schema:** `schema` is `1`; additive fields never bump it, same rule as `board`.
+
+# `close-tasks.sh tag` — the one writer of row tags
+
+`tag --file TASKS.md --row NEEDLE (--add|--remove) TAG` adds or removes one `_after:`,
+`_conflicts:` or `_lane:` tag on a single open row. `TAG` is `after:<plan>[:<phase>]`,
+`conflicts:<plan>[:<phase>]` or `lane:<name>` (values `[a-z0-9:/.-]`; a lane is `[a-z0-9.-]`).
+
+```jsonc
+{ "line": 12, "tag": "_after: p:1_", "action": "add|remove", "changed": true,
+  "text": "<the row after the edit>" }
+// refusal, exit 1:
+{ "error": "...", "code": "bad_grammar|unknown_plan|unknown_phase|no_match|ambiguous|lane_set|bad_mode|no_row" }
+```
+
+- `NEEDLE` must whole-token match exactly one open row (not `[x]`, not under `## Done`);
+  zero matches is `no_match`, several is `ambiguous` (with `lines[]`).
+- On `--add`, a referenced plan must resolve (slug under `plans/` then `docs/plans/`, or a
+  linked task-file path) and a referenced phase must have a `#### Phase N` heading. `--remove`
+  skips those checks so a stale tag can always be cleared.
+- Only the row's trailer changes: the tag is appended as `· _tag: v_` (or ` — _tag: v_` on a
+  row with no trailer), never the checkbox. `changed: false` means the tag was already present
+  (add) or absent (remove); the file is not rewritten. A row holds one `_lane:` — adding a
+  different one is `lane_set`.
+- The write goes through a same-directory temp file and `os.replace`; line endings (CRLF
+  included) and non-ASCII bytes are preserved.

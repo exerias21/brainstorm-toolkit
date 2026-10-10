@@ -14,6 +14,8 @@ metadata:
 
 # Brainstorm
 
+> **Toolkit paths.** Every toolkit script or template path cited here resolves against the plugin root — this skill's base directory two levels up (`<base>/../..`) — when the skill is loaded from a plugin; a repo-local copy installed by `setup.sh` wins when it exists.
+
 An interactive ideation skill that walks through a structured brainstorming process *with* the
 user. Unlike `/brainstorm-team` (which launches autonomous agents to produce a
 research document), this skill is conversational — it thinks out loud, asks questions, and iterates
@@ -150,9 +152,9 @@ vs data-model-first vs AI-leaning — and include at least one simpler than expe
 **Step 4b — Wildcards (four lens subagents in parallel).** In a single message, dispatch
 four Agent tool calls with `subagent_type: general-purpose`. Each agent receives the user's
 seed idea, your Step 2/3 summary, and exactly one lens prompt. Cap each response at 200
-words. **Sonnet by default** — resolve the tier per `skills/sdlc/templates/models.md`
-(`--model <tier>` > `project.json` `models.cap` > default) and print
-`model: <tier> (cap: <cap|none>)` before dispatching.
+words. **Sonnet by default** — tier is `models.brainstorm` in `project.json`, resolved per
+`skills/sdlc/templates/models.md`; print `model: brainstorm=<tier> (cap: <cap|none>)` and pass
+that `model` explicitly on each dispatch.
 
 1. **First Principles** — strip the idea to its physics. What is the user *actually* trying
    to accomplish at the most basic level? Propose the simplest mechanism that delivers that

@@ -14,8 +14,8 @@
 #                                         dispatches with that prefix for exactly this reason.
 #
 # INERT unless .claude/project.json has BOTH `pipeline.enforce_cap: true` AND a valid
-# `models.cap`. Opt-in because the hook cannot see a per-run `--model opus`: with enforcement
-# on, the config cap is policy and a flag above it is clamped. Every rewrite is reported to the
+# `models.cap`. Opt-in because it clamps a `models.<role>` set above the cap: with enforcement
+# on, the config cap is policy. A missing `models.cap` (= no ceiling) is a no-op. Every rewrite is reported to the
 # human as `systemMessage` (costs no model tokens). Never blocks, never denies.
 #
 # Interpreter resolution is shared with every other hook under scripts/hooks/ via

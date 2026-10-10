@@ -22,7 +22,7 @@ one validator misses.
   `public api`, `deploy`, `rollback`, `prod`) in "Files to change" or
   "Implementation Steps" → suggest `ultra` to the user. These flag
   high-blast-radius plans where extra scrutiny is worth it (opt up with
-  `--model opus` for the vet reviewers if warranted).
+  `models.brainstorm: "opus"` in `project.json` for the vet reviewers if warranted).
 - User can always override the suggestion via explicit `--vet <mode>`.
 
 **Mode behavior**:
@@ -35,14 +35,15 @@ Reuse the three prompts at `skills/sdlc/templates/stage-1.5-sanity-check.md`
 (`paths`, `completeness`, `gotchas`) so vetting language is consistent across
 skills. Substitute `{plan_file}` = the saved plan path from Step 6 and
 `{feature_name}` = the topic slug. Per-focus defaults apply — `paths: haiku`
-(mechanical), `completeness: sonnet` and `gotchas: sonnet` (judgment) — each still capped,
-resolved per `skills/sdlc/templates/models.md`; print `model: paths=<t>, completeness=<t>,
-gotchas=<t> (cap: <cap|none>)`, then dispatch all three in a single message. Cost: ~3 small
+(mechanical), `completeness: sonnet` and `gotchas: sonnet` (judgment) — the `models.sanity`
+key, same focus names, resolved per `skills/sdlc/templates/models.md`; print
+`model: sanity paths=<t>, completeness=<t>, gotchas=<t> (cap: <cap|none>)`, pass each explicitly, then dispatch all three in a single message. Cost: ~3 small
 agents, ~30s.
 
 #### `deep` — `light` + 1 Sonnet stress-test agent
-After the 3 agents return, dispatch one agent — Sonnet by default, resolved per
-`skills/sdlc/templates/models.md`; print the `model:` line first — with this prompt:
+After the 3 agents return, dispatch one agent — Sonnet by default, `models.brainstorm`, resolved per
+`skills/sdlc/templates/models.md`; print `model: brainstorm=<tier> (cap: <cap|none>)` first and
+pass it explicitly — with this prompt:
 
 > Read the plan at {plan_file}. Try to find a way it would fail. Apply
 > inversion: assume the plan is wrong, and identify the single most likely
@@ -51,15 +52,13 @@ After the 3 agents return, dispatch one agent — Sonnet by default, resolved pe
 > it, and a one-line fix.
 
 #### `ultra` — `deep` + 2 top-tier agents in parallel
-Model cap applies: these two reviewers are **Sonnet by default** (Opus only on
-`--model opus` opt-up), resolved per
-`skills/sdlc/templates/models.md` (`--model <tier>` > `project.json`
-`models.cap` > default). Before dispatch, print `model: <tier> (cap: <cap|none>)`
-and emit the session-model nudge once when a cap is active.
-After Sonnet stress-test, dispatch the two agents (Sonnet by default; Opus on
-`--model opus` opt-up) in a single message:
+These two reviewers are **Sonnet by default**, tier `models.brainstorm` in `project.json`,
+resolved per `skills/sdlc/templates/models.md`. Before dispatch, print
+`model: brainstorm=<tier> (cap: <cap|none>)`, pass it explicitly, and emit the session-model
+nudge once when a cap is active.
+After Sonnet stress-test, dispatch the two agents in a single message:
 
-1. **architectural-coherence** (capped tier — Sonnet by default). Prompt:
+1. **architectural-coherence** (`models.brainstorm`). Prompt:
    > Read the plan at {plan_file} and the project's CLAUDE.md/AGENTS.md.
    > Check whether the plan's structure fits the codebase's existing
    > architecture: layering, abstraction boundaries, naming conventions,
@@ -67,7 +66,7 @@ After Sonnet stress-test, dispatch the two agents (Sonnet by default; Opus on
    > "the plan works in isolation but violates the established X
    > convention." Cap report at 300 words.
 
-2. **edge-case-divergence** (capped tier — Sonnet by default). Prompt:
+2. **edge-case-divergence** (`models.brainstorm`). Prompt:
    > Read the plan at {plan_file}. For each acceptance criterion,
    > enumerate 3–5 edge cases the plan does NOT explicitly handle:
    > nulls, empty inputs, concurrent writes, partial failures, auth

@@ -20,7 +20,8 @@ implementation follows the repo instead of reinventing it:
 ### Implementation Steps
 Numbered list of concrete steps, each with:
 - What to do
-- Which files to create/modify
+- Which files to create/modify, as a step-level `Files: \`path\`, \`path\`` line —
+  `close-tasks.sh waves` reads it to tell which rows can run in parallel
 - Key patterns to follow (reference existing code from the block above)
 
 Optional: group steps under `#### Phase N — <title>` headings when there are more than

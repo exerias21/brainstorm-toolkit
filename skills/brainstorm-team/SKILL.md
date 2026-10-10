@@ -54,7 +54,7 @@ against it (see below).
 **Planner nudge (once per session).** Read `models.planner` from `.claude/project.json`
 (`haiku|sonnet|opus|fable`; default `"opus"` when the file, key, or value is missing or
 invalid — never detect the host model). This nudge is about *your* work, not the team's: the 6
-teammates below dispatch at a fixed Sonnet (team-wide, capped per `models.cap`) regardless of
+teammates below dispatch at `models.brainstorm_team` (Sonnet by default, team-wide) regardless of
 your session model, so `models.planner` governs only the context-loading, scoping and
 final-assembly work you do directly. Print once: `Loading context and assembling the final
 document run on your session model. Recommended: <planner> — switch now if you aren't on it.
@@ -69,7 +69,7 @@ When triggered, create an agent team with this structure. Adapt the specific res
 ### Default Team (Full Product Review)
 
 ```
-Create an agent team with 6 teammates for a product strategy session. Use Sonnet for each teammate (team-wide; honors the model cap — a `haiku` cap lowers it, see `skills/sdlc/templates/models.md`, `--model <tier>` > `project.json models.cap` > default). Require plan approval before any teammate writes files.
+Create an agent team with 6 teammates for a product strategy session. Use the `models.brainstorm_team` tier for each teammate (Sonnet by default, team-wide; resolved per `skills/sdlc/templates/models.md`) — print `model: brainstorm_team=<tier> (cap: <cap|none>)` and pass `model` explicitly on every teammate. Require plan approval before any teammate writes files.
 
 PROJECT CONTEXT:
 {PROJECT_CONTEXT}

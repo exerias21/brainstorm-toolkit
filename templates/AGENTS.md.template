@@ -49,6 +49,7 @@ When `/sdlc` runs, it writes a transparent state journal under `.claude/pipeline
 - Keep changes minimal and focused on the current task.
 - Don't add speculative error handling or future-proofing.
 - When in doubt about a pattern, look at nearby code rather than importing new conventions.
+- **Never write plan or task references (plans/ paths, task IDs, brainstorm names) into code** — comments, docstrings, string literals and data alike. Plans are deleted once delivered and TASKS.md rows move, so the reference rots; write the reason itself.
 
 ## Hooks (Claude-only)
 

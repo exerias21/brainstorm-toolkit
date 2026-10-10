@@ -10,8 +10,8 @@ hook section) and no new-hook checklist (the shipped hooks below are the checkli
 
 ## `models.cap` — prose that earned a hook
 
-Axis 1 (fan-out tier) was prose-only first: every dispatch site resolves `--model` >
-`project.json` `models.cap` > default and prints `model: <tier> (cap: <cap|none>)` before
+Axis 1 (fan-out tier) was prose-only first: every dispatch site resolves `project.json` `models.<role>` >
+default, then `models.cap` and prints `model: <tier> (cap: <cap|none>)` before
 dispatching. The miss is named in `scripts/hooks/enforce-model-cap.sh`'s own header: "a dispatch
 with no `model` inherits the session model with zero error and zero log line." That's Q1 (holds
 even when the model forgets) and Q2 (the check is a stdin-JSON read, a `project.json` lookup, and
@@ -58,6 +58,15 @@ deterministic and still covered by `scripts/ci/test-hooks.sh` (whose scope line 
 tool-call matcher, because there was no matcher worth wiring. It is a detector: it proves a
 protected test's bytes changed since arming; it does not stop the rewrite.
 
+## Plan references in code — a prose guard that failed, so a detector
+
+The dispatch-prompt guard against writing plan or task references into code was prose only, and a
+live run left `plans/<x>.md:38-40` in docstrings and a `TASKS.md:N` string in a data tuple (the
+old wording said "comments"). Q1 yes (a forgetful model is the failure), Q2 yes (a regex over
+added lines), Q3 yes (`scripts/ci/test-hooks.sh`), Q4: a detector, not a preventer, like
+`protect-tests.sh`. `scripts/plan-refs.sh scan` runs in `/sdlc` Stage 5 and every hit enters the
+fix loop. It reports and never blocks on its own; the CI pin on the guard sentence stays.
+
 ## The Workflow — a second expression that didn't earn its keep
 
 `sdlc-pipeline.workflow.js` (1,398 lines, plus a smaller one in `/brainstorm-deep`) mirrored the
@@ -91,7 +100,7 @@ never routes hook commands through the tool-permission path. That is fine when t
 person's own file, which git does not report as tracked. `setup.sh` does **not** gitignore
 `.claude/project.json` unconditionally — it only always-ignores pure machine-state paths
 (`.claude/pipeline/`, `.claude/.next-action`, `.claude/.auto-continue-hops`,
-`.claude/.stop-gate-hops`); whether `.claude/project.json` itself is gitignored is a genuine team
+`.claude/.stop-gate-hops`, `ACTION_ITEMS.md`); whether `.claude/project.json` itself is gitignored is a genuine team
 decision `/repo-onboarding`'s Step 3 ("What should git ignore?") asks about, not something
 setup.sh decides either way. So the trust check below does not read `.gitignore` at all — an
 UNTRACKED `project.json` is trusted by design regardless of whether it also happens to be

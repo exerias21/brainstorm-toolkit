@@ -82,12 +82,12 @@ first, then the overlays — see [`../AGENTS.md`](../AGENTS.md).
 
 ## Model tiers
 
-- **Fan-out is Sonnet-first.** `models.cap` in `project.json` (or per-run `--model <tier>`) is a
-  **ceiling** — it only lowers dispatches above it (Opus→cap), never raises Haiku/Sonnet.
-  `--model opus` opts a run up. Canonical spec: `skills/sdlc/templates/models.md`.
+- **Fan-out is Sonnet-first.** Every tier is a `models.<role>` key in `project.json` (no CLI flag); `models.cap`
+  is an optional **ceiling** — it only lowers dispatches above it (Opus→cap), never raises Haiku/Sonnet.
+  Setting a role key to `"opus"` is the opt-up. Canonical spec: `skills/sdlc/templates/models.md`.
 - **Reviewer axis (shipped, opt-in).** The Review→Fix stage adds a *separate* reviewer model
   (default **Opus** — strong, independent from the Sonnet implementer), opt-in via
-  `--review-model <name>`. Fable is a cost-aware opt-in (`--review-model fable`) — now usage-billed
+  `pipeline.review_fix.enabled: true`. Fable is a cost-aware opt-in (`models.code_review: "fable"`) — now usage-billed
   after its 2026-07-07 promotional sunset. Design of record:
   [`REVIEW-FIX-STAGE.md`](REVIEW-FIX-STAGE.md). Live contract:
   [`../skills/sdlc/templates/stage-5.7-review-fix.md`](../skills/sdlc/templates/stage-5.7-review-fix.md);

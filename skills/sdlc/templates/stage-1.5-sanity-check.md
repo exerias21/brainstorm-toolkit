@@ -30,8 +30,7 @@ invalid value (unknown tier, or a map entry that isn't one) falls through to tha
 built-in default, per `skills/sdlc/templates/models.md` "Invalid input". Raising a focus costs
 on **every** run that reaches Stage 1.5 — which is every run, since the stage is never gated.
 
-Each focus's resolved value then still passes through the **model cap** (`models.cap` /
-`--model`) as usual — see `skills/sdlc/templates/models.md` for the ceiling rule and why
+Each focus's resolved value then still passes through the **model cap** (`models.cap`) as usual — see `skills/sdlc/templates/models.md` for the ceiling rule and why
 `models.sanity` is the only way to raise a focus above its built-in default.
 
 Print, per dispatched focus (not one resolved tier): `model: paths=<t>, completeness=<t>,

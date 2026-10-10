@@ -252,6 +252,8 @@ wholesale, so a *tool-specific* runtime reference must live in that overlay's ow
 
 **Skill names**: NO aliases — one name per skill, no back-compat shims. All current names comply with RFC 1123 (the audit found zero non-compliant skills). The earlier flagged `/gotcha vs GOTCHAS.md` was a false alarm — the skill operates on the file; they correctly follow different conventions.
 
+**Model flags removed**: `--model` / `--review-model` removed; every tier is a project.json key (`models.<role>`, `models.code_review`; review is switched on by `pipeline.review_fix.enabled`). No aliases, no shim — a leftover flag is ignored. Contract: `skills/sdlc/templates/models.md`; the old-to-new key map is in `docs/MODEL-AXES.md`. (`scripts/loop-runner.sh --model M` is an unrelated engine-CLI flag and is untouched.)
+
 Renames are **rare but not forbidden** — `/sdlc-lite` → `/sdlc` (after the two pipeline skills merged) and `/status` → `/sdlc-status` (a collision with a pre-existing user skill) both happened. When one is unavoidable:
 
 > **Never run `s|/old|/new|g` across the repo.** A global substitution rewrites every sentence that *talks about* the name, not just the name, and the damage is silent — `validate_skills.py` and `check_install_refs.py` only prove that **paths resolve**, so none of it fails CI. Six corruptions have shipped this way: a `FLOW.md` diagram showing `/sdlc` doing "branch → commit → push → PR" (it does no git writes), `` `sdlc`, `sdlc`, or `task` ``, and three distinct table rows collapsing under one command.
@@ -280,7 +282,7 @@ script surfaces as an allowlist entry with a reason, not a silent skip.
 
 **Artifact IDs**: aliases supported indefinitely. `task-N` (legacy, no padding) is recognized as equivalent to `task-NNN` by any code that resolves task IDs. New artifacts use the canonical zero-padded form. No batch migration.
 
-**Flags**: aliases supported indefinitely in skills that still take flags. `/task` is zero-flag by design. `/sdlc` already ships `--model <tier>` (see `models.md`) and now also `--review-model <name>` / `--no-review` (see `models.md`) — both follow the `--no-X`/`--X <value>` forms above. Skills that do accept flags use `--no-X` for boolean negation; older `--skip-X` aliases are tolerated where they appear historically.
+**Flags**: aliases supported indefinitely in skills that still take flags. `/task` is zero-flag by design. `/sdlc` ships `--no-review` (see `models.md`), which follows the `--no-X` form above; the former `--model <tier>` and `--review-model <name>` flags are gone (see below). Skills that do accept flags use `--no-X` for boolean negation; older `--skip-X` aliases are tolerated where they appear historically.
 
 **Paths**: forward-only. New artifacts land in canonical directories. Existing artifacts in old layouts stay where they are — moving them would break references in tracked plan files.
 

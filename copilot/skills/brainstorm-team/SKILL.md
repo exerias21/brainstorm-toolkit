@@ -15,7 +15,7 @@ metadata:
 
 Six research passes executed in order by you, producing a single strategy document at `plans/team-brainstorm-<topic-slug>.md` (or `docs/plans/team-brainstorm-<topic-slug>.md` in a skill repo — see "Final output" below), at the repo root, written via the Copilot agent's file-write mechanism — NOT under `.claude/`. The Claude canonical runs these as parallel workers; this version runs them sequentially. Output is the same shape, just slower.
 
-**Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/models.md`) governs each worker's tier on the Claude canonical. Here the passes run inline in the session model, so the cap is advisory — set your session model to the cap tier for the savings.
+**Model tier** (`models.brainstorm_team` and `models.cap` in `project.json` — see `skills/sdlc/templates/models.md`) governs each worker's tier on the Claude canonical. Here the passes run inline in the session model, so the tier is advisory — set your session model to the cap tier for the savings.
 
 ## Before starting — load project context
 

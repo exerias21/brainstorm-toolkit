@@ -286,6 +286,8 @@ OPEN_LIST_PREFIXES: dict[str, str] = {
     "pipeline.*.model": "historical dead-key SHAPE (pipeline.sanity_check."
         "model / pipeline.review_fix.model, both renamed away already -- "
         "see forbidden-phrases.txt); describes the pattern, not a live key",
+    "models.<role>": "placeholder for the per-dispatch-role keys "
+        "(models.implement, models.fix, ...) -- names the family generically",
     "models.*_effort": "documents a key that deliberately does NOT exist "
         "('there is deliberately no models.*_effort key') -- a negation, "
         "not an open list, but still must never be flagged as unknown",

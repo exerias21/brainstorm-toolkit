@@ -70,23 +70,26 @@ Execution tiers — how much process the ask deserves:
 Cost control — two INDEPENDENT model axes. Keep them straight:
 
 ```
-  AXIS 1 — the fan-out ladder (haiku < sonnet < opus). A CEILING.
-    project.json → "models": { "cap": "sonnet" }   (standing policy)
-    per run:       /sdlc {plan} --model sonnet
-                   (precedence: flag > config > built-in default)
+  AXIS 1 — the fan-out ladder (haiku < sonnet < opus). No CLI flag:
+    every dispatch role has its own project.json key.
+    "models": { "implement": "sonnet", "fix": "sonnet", "validate": ...,
+                "sanity": ..., "test_runner": ..., "e2e": ..., "cleanup": ...,
+                "brainstorm": ..., "dead_code_review": ..., ... }
+    models.cap is an optional CEILING (absent = none):
+    "models": { "cap": "sonnet" }
 
     The cap only ever LOWERS: Opus dispatches drop to it; Haiku is NOT
-    upgraded. The per-stage key models.sanity is the ONLY way to RAISE
-    a per-focus default above its built-in tier (paths: haiku;
-    completeness/gotchas: sonnet). Governs sub-agents only — for full
-    savings also set your session model.
+    upgraded. A role's own key is the ONLY way to RAISE it above its
+    built-in tier. Governs sub-agents only — for full savings also set
+    your session model.
 
     DEFAULT is Sonnet-first: /sdlc, /brainstorm --vet and every other
-    fan-out dispatch run on Sonnet out of the box; --model opus is the
-    deliberate opt-up.
+    fan-out dispatch run on Sonnet out of the box; set the role's key
+    to "opus" for the deliberate opt-up.
 
   AXIS 2 — the adversarial reviewer (Stage 5.7/5.8 only). NEVER capped.
-    "models": { "code_review": "opus" }  or  --review-model <name>
+    "models": { "code_review": "opus" }  plus  pipeline.review_fix.enabled: true
+    Recommended pairing: Sonnet implements, Opus reviews.
     Accepts fable, which is NOT a rung on the ladder. Opt-in permanently:
     the stage never runs unless explicitly enabled.
 
@@ -224,10 +227,10 @@ where the skill ran. There's no cross-tool dispatch.
   `skills/sdlc/templates/models.md`. The model/count keys were consolidated
   into the top-level `models` and `agents` blocks; old `pipeline.*.model`
   keys are no longer read and fall back to the built-in default.
-- **`--model opus` didn't speed up / strengthen a stage** → the cap is a
-  ceiling and can only lower. Stage 1.5's `paths` focus defaults to Haiku
-  (the other two focuses default to Sonnet); it is raised only by its
-  per-stage key (`models.sanity`).
+- **A stage ran on a cheaper model than I wanted** → the cap is a
+  ceiling and can only lower. Each role is raised only by its own key
+  (`models.implement`, `models.sanity`, ...); Stage 1.5's `paths` focus
+  defaults to Haiku and the other two focuses to Sonnet.
 - **A new skill isn't in this map** → it landed after this template was
   generated. `README.md` will show it; edit this file to keep the map
   current.

@@ -295,6 +295,25 @@ does not, and can ship now.
     - **Never used for facts.** This verb never checks whether a claim is *true* — that is
       `verify-claim`'s job. It only classifies which kind of sentence a line is, so code can
       decide whether the sentence belongs where it sits.
+6b. **Parked verbs `depends-on`, `classify-lane`, `conflicts`.** Not built now — revisit once
+    `scripts/judge.py` exists (step 10), as the future backend of the opt-in action-items
+    reassess step (`skills/sdlc/templates/action-items-reassess.md`), which today dispatches one
+    Sonnet agent for the same job.
+    - **Origin:** `close-tasks.sh waves` orders rows by plan phase and plan-phase `Files:`
+      overlap; a dependency or collision those rules cannot see is what the reassess step
+      proposes `_after:` / `_lane:` / `_conflicts:` row tags for.
+    - Input for all three: `{"row_a", "row_b", "context"}` (or `{"row", "context"}` for the lane
+      verb) — the row texts plus the plan-phase excerpts they point at.
+    - Noul `depends-on`: "Must `row_b` finish before `row_a` can start?" Noul `conflicts`: "Would
+      doing `row_a` and `row_b` at the same time collide on the same files or state?" Choice
+      `classify-lane` over the lane names (`frontend` / `backend` / `data` / `docs` /
+      `deploy-delta` / `general`): "Which surface does this row mainly change?"
+    - **Shadow first:** record what each verb would tag beside the agent's proposals, and do not tag from it until labelled data supports promotion.
+    - **Verdict cache keyed by the hash of both rows** (one row for `classify-lane`), so an
+      unchanged pair is never re-asked.
+    - **Bands:** the existing three-band line in *Conventions & reuse* applies unchanged —
+      **< 0.30** no, **0.30–0.70** uncertain → listed in `ACTION_ITEMS.md` as "possible" and
+      never tagged, **> 0.70** tag, through `close-tasks.sh tag` like every other writer.
 7. **Labelled sets, one per verb, built from transcripts already on disk (limpet's method).**
    - Label = **what the human did next.** A stop, verdict or report the human replied to with
      pushback or a correction is a positive; one they accepted and moved on from is a negative.

@@ -13,7 +13,8 @@ tools: Read, Grep, Glob, Bash
      status and failure lines is mechanical work; spending a larger tier on it buys nothing and
      the whole point of this agent is to be cheap. tools: Bash is required (it runs the suite);
      Read/Grep/Glob let it locate a failing test file to quote one line. No Write, no Edit —
-     it reports, it never fixes. Fixing is the orchestrator's job, with the structure below. -->
+     it reports, it never fixes. Fixing is the orchestrator's job, with the structure below.
+     The dispatch site passes `models.test_runner`, which outranks this pin. -->
 
 # Test runner (structured reporter)
 

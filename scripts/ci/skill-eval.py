@@ -600,8 +600,10 @@ _FANOUT_TIER_RANK = {"haiku": 1, "sonnet": 2, "opus": 3}
 
 
 def assert_agent_models_within_cap(target: Path, params: dict, ctx: dict) -> AssertionResult:
-    cap = params.get("cap", "sonnet")
-    cap_rank = _FANOUT_TIER_RANK.get(cap, 0)
+    # An absent "cap" means no ceiling (models.cap absent = none); only the
+    # no-model / off-ladder checks below still apply.
+    cap = params.get("cap")
+    cap_rank = _FANOUT_TIER_RANK.get(cap, 0) if cap else max(_FANOUT_TIER_RANK.values())
     pinned = ctx.get("pinned_agents") or {}
     agent_uses: list[dict] = ctx.get("agent_tool_uses") or []
     violations: list[str] = []
@@ -645,7 +647,7 @@ def assert_agent_models_within_cap(target: Path, params: dict, ctx: dict) -> Ass
     if violations:
         return AssertionResult(False, "; ".join(violations))
     return AssertionResult(
-        True, f"all {len(agent_uses)} agent dispatch(es) within cap {cap}"
+        True, f"all {len(agent_uses)} agent dispatch(es) within cap {cap or 'none'}"
     )
 
 

@@ -1,6 +1,8 @@
 # Stage 2a — Decompose agent prompt
 
-One Sonnet agent. Runs **only** after the Stage 2 gate decides to decompose
+One decompose agent — tier is `models.implement` (Sonnet default), per
+`skills/sdlc/templates/models.md`; print `model: implement=<tier> (cap: <cap|none>)` and pass
+`model` explicitly. Runs **only** after the Stage 2 gate decides to decompose
 (`surfaces_touched >= 2` AND `task_count >= DECOMPOSE_MIN_TASKS` AND the planned
 files are disjoint across surfaces). It classifies the plan's `files_to_change`
 by the `changed-files-gate.md` surface globs and emits the lane plan.
@@ -11,7 +13,7 @@ dispatch.
 
 ---
 
-## Agent: decompose (Sonnet)
+## Agent: decompose (`models.implement`)
 
 **description**: Decompose {feature_name} into implementation lanes
 
@@ -50,8 +52,6 @@ For EACH lane, produce:
 - steps[]:     the implementation steps that belong to this lane
 - depends_on[]: lane names whose output this lane codes against (default
                dependency order data -> backend -> frontend)
-- model:       "sonnet" by default, "opus" if the lane is high-complexity
-               (large surface, intricate logic, many interdependent steps)
 - contract:    the INTERFACE this lane exposes to or consumes from others —
                shared types, endpoint shapes, the seam other lanes must honor.
                This is what keeps isolated workers consistent: downstream lanes
@@ -77,7 +77,6 @@ OUTPUT a JSON object EXACTLY in this shape (this becomes decompose.json data):
       "files": ["..."],
       "steps": ["..."],
       "depends_on": [],
-      "model": "sonnet",
       "contract": "..."
     }
   ]

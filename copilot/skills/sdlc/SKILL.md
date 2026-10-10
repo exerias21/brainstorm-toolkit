@@ -18,7 +18,7 @@ the sanity-check on Claude; this overlay runs every stage inline, one at a time.
 Same stages, same shared templates, same Stage 6: **no git writes** — it hands
 you a validated tree to commit yourself.
 
-**Model-tier cap** (`models.cap` in `project.json`, or `--model <tier>`; flag > config > default — see `skills/sdlc/templates/models.md`) is honored wherever sub-agents are dispatched. On this runtime every stage runs inline in the session model, so the cap is advisory here — set your session model to the cap tier for the savings.
+**Model-tier cap** (`models.cap` in `project.json`, a ceiling only, absent = none; per-role keys `models.<role>` set each tier — see `skills/sdlc/templates/models.md`) is honored wherever sub-agents are dispatched. On this runtime every stage runs inline in the session model, so the cap is advisory here — set your session model to the cap tier for the savings.
 
 > **`skills/sdlc/templates/*` paths below are real, installed files on this runtime.**
 > `setup.sh` ships that shared template tree alongside the skills and rewrites the citation
@@ -120,8 +120,7 @@ otherwise (DQ6):** `plan_hash: "sha256:$( (sha256sum <plan> 2>/dev/null || shasu
 `/sdlc-status`/`/repo-health` staleness detection.
 
 **Independence pre-check (before any spend).** If the review stage resolves ON
-(`--review-model <name>` or `pipeline.review_fix.enabled: true`; `--no-review` always wins
-OFF), compute whether `models.code_review` collides with the implementer's effective tier per
+(`pipeline.review_fix.enabled: true`; `--no-review` always wins OFF), compute whether `models.code_review` collides with the implementer's effective tier per
 `skills/sdlc/templates/models.md` "Independence" — **do not open
 `skills/sdlc/templates/stage-5.7-review-fix.md` for this**, it is opt-in and a default run must
 never load it. On a collision, print the same degraded line Stage 5.7 emits before dispatching
@@ -208,8 +207,8 @@ failures (no refactor), re-run the gate, 3 iterations max, then emit its PAUSE b
 
 **`pipeline.fix_loop.escalate_last` on this runtime.** There is no sub-agent seam to escalate —
 every fix attempt already runs inline in your session model, so a `true` value does not raise
-the last iteration's tier here. `--model opus` doesn't help either — it only raises the
-(advisory) sub-agent cap, and there is no sub-agent dispatch on this runtime to raise. Instead,
+the last iteration's tier here. Raising `models.cap` doesn't help either — there is no sub-agent
+dispatch on this runtime to raise. Instead,
 add one line to the PAUSE block: `Escalate: switch your session model to opus, then re-run with
 --resume`.
 
@@ -226,8 +225,8 @@ cannot fail the stage or open the fix loop. The requirements axis gates either w
 
 ## Stages 5.7 / 5.8 — Adversarial review + fix loop
 
-**Opt-in, permanently OFF by default.** Activates only on an explicit `--review-model <name>`
-flag or an explicit `pipeline.review_fix.enabled: true`; `--no-review` always wins OFF. An
+**Opt-in, permanently OFF by default.** Activates only on an explicit
+`pipeline.review_fix.enabled: true`; `--no-review` always wins OFF. An
 absent or `enabled: false` block means OFF.
 
 Resolve that gate **before** opening anything. When it is OFF, append `review` to
@@ -253,6 +252,7 @@ as the pipeline produced it. You review and commit.
 on this runtime — the secret scan and the gotcha capture protocol both run in-session). It
 carries the diff report and suggested commit message, the `TASKS.md` close-out and re-entry
 rows, and the terminal state write.
+The action-items reassess step, when it fires, also runs inline — no sub-agent.
 
 ## Stage 7 — Report
 
@@ -265,9 +265,12 @@ including `tasks: 0 closed (0 matched)` when nothing matched — that line is wh
 silent close-out miss into a visible one; when `unmatched` is non-empty add
 `(U unmatched — see /sdlc-status --reconcile)`. When `review.json.data.independence ==
 "degraded"`, add the line `independence: degraded — findings surfaced only, never auto-fixed`
-(wording: `skills/sdlc/templates/stage-5.7-review-fix.md` "Independence enforcement"). If the
+(wording: `skills/sdlc/templates/stage-5.7-review-fix.md` "Independence enforcement"). When Stage 6
+wrote `data.waves`, add `waves: now N across L lane(s), next M` from its `summary` (`now`, `lanes`,
+`next`) and one warning line per `overlaps[]` entry; omit both when it did not. If the
 delivered diff departs from the plan (a step skipped, reordered, or solved differently), say where and why in
-one line each — the `plan-conformance-validator`'s partial/missing rows are the source. Make clear **nothing
+one line each — the `plan-conformance-validator`'s partial/missing rows are the source. Check `coauthor_trailer` in `.claude/project.json`: unless it is literally `true`, the suggested
+commit message contains no `Co-Authored-By` (or other attribution) line — strip one if present. Make clear **nothing
 was committed** — the next move is yours.
 
 ## Skill-repo mode (auto-detected)

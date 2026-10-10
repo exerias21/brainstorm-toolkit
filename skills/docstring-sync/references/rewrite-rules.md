@@ -62,7 +62,7 @@ or executes, which is a behavior change wearing a docs-only disguise.
 
 ## COMMENTS — verbatim, every edit
 
-> COMMENTS: never reference the plan in code — no plan file paths, plan/phase/step numbers, or TASKS.md rows in comments or docstrings. Write the reason itself; the plan does not ship with the code and its numbering means nothing once it is gone.
+> never write plan or task references (plans/ paths, task IDs, brainstorm names) into code — this covers comments, docstrings, string literals and data (e.g. `TASKS.md:N`, `task-N`, `plans/<file>.md`, phase/step numbers, a plan slug). Write the reason itself: the plan is deleted once delivered and TASKS.md rows move, so the reference rots.
 
 This is the rule the pointer policy above exists to enforce on repair. It also applies to any
 *new* text this run writes: harvesting a reason from an on-disk plan means inlining that reason,

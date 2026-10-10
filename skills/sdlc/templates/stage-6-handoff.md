@@ -22,9 +22,11 @@ order is the difference between "usually closes" and "closes."
      git add <files>
      git commit -m "feat: <title>"
    ```
-   **Co-author trailer**: only when `.claude/project.json` `coauthor_trailer` is `true`,
-   end the suggested message with a blank line and
-   `Co-Authored-By: Claude <noreply@anthropic.com>`. Absent or `false` ⇒ no trailer.
+   **Co-author trailer — read `coauthor_trailer` from `.claude/project.json` first.** Only when
+   it is literally `true`, end the suggested message with a blank line and
+   `Co-Authored-By: Claude <noreply@anthropic.com>`. Absent, `false` or anything else: the message
+   and `handoff.json` `suggested_commit_msg` contain **no** `Co-Authored-By` (or any other
+   attribution) line — if you drafted one by habit, strip it before reporting or writing the sidecar.
    **Range semantics**: process tasks in order; the changes from all tasks
    accumulate in the working tree. You decide how to slice commits (per task,
    or one bundle). Sanity-check (1.5) ran once up front; Stage 5's plan check and
@@ -37,8 +39,12 @@ order is the difference between "usually closes" and "closes."
    ships this script under the repo-local `scripts/` tree unless the consumer chose
    `--no-copy-scripts` **or never ran `setup.sh` at all — a Claude-plugin-only install
    (README Option A) never receives `scripts/`, the same missing-path shape**; if the path is
-   missing, report it as a **known install gap**, not politely, and skip close-out rather than
-   failing the whole hand-off — the pipeline still delivers a validated tree.)
+   missing, fall back to the plugin root's `scripts/close-tasks.sh` (the skill's base directory
+   two levels up, `<base>/../..`); only when neither exists, report a **known install gap**, not
+   politely, and skip close-out rather than failing the whole hand-off — the pipeline still
+   delivers a validated tree.) **Close in place:** when `pipeline.tasks.close_in_place` is `true`
+   (read with graceful skip; default false), add `--in-place` to every `close` call below — the
+   rows flip to `[x]` where they stand and `moved[]` is empty, so `TASKS.md:N` line citations hold.
 
    - **Plan-file run** (Stage 0 resolved a `.md` plan path):
      `bash scripts/close-tasks.sh close --file TASKS.md --scope plan --key <feature_slug> --plan-file <plan_file>`.
@@ -70,6 +76,26 @@ order is the difference between "usually closes" and "closes."
    genuinely matched zero rows, that's an empty `matched`/`closed`/`unmatched` — expected, not
    a miss; say so in the report rather than treating it as an error.
 
+   **Regenerate the action items — right after close-out, before step 4.** Run
+   `bash scripts/close-tasks.sh waves --file TASKS.md --gate` and read its `{enabled, file, reason}`:
+   the rule is off if `pipeline.action_items.enabled` is `false` (a veto, whatever files exist), on
+   if `true`, and when absent on only if the file named by `pipeline.action_items.file` (default
+   `ACTION_ITEMS.md`) exists and its first line is the generated banner (`<!-- generated — edit TASKS.md`).
+   Read both keys first; never test the default name when `file` is set — do not `ls ACTION_ITEMS.md`.
+   A hand-written file is never overwritten (the script reports `write_skipped`). Not enabled, or
+   `scripts/close-tasks.sh` unresolvable (the install gap above): skip silently and leave
+   `data.waves` absent. Otherwise run
+   `bash scripts/close-tasks.sh waves --file TASKS.md --write <file from --gate>` and read the JSON from the
+   pipe or a repo-relative path — never Git Bash `/tmp`, which the Python body cannot see on
+   Windows. Keep only its `summary` object and `overlaps[]` for `handoff.json` `data.waves` (plus
+   `rejected[]` below) — never the full JSON. A non-zero exit skips the step; it never fails
+   Stage 6.
+
+   **Reassess gate.** When `pipeline.action_items.reassess` is `true` **and** the JSON's
+   `open_hash` differs from the contents of the bare file `.claude/pipeline/.action-items-hash`
+   (absent counts as differs): **read `skills/sdlc/templates/action-items-reassess.md` now** and
+   run it. Otherwise do not open it.
+
    **Seam on unmatched.** A non-empty `unmatched[]` means at least one row looked like it
    belonged to this run but didn't get closed (a key mismatch, an ambiguous match, or a
    resolved id that no longer exists on disk) — drop the reconciliation seam so it doesn't
@@ -100,7 +126,8 @@ order is the difference between "usually closes" and "closes."
 
    **State write — right here, before step 4.** `stage-outputs/handoff.json` =
    `{branch, files_changed[], committed: false, suggested_commit_msg, data: {tasks: {match_key,
-   matched[], closed[], moved[], unmatched[]}}}`. **Always set `run.json.status` to a settled
+   matched[], closed[], moved[], unmatched[]}, waves: {summary, overlaps[], rejected[]}}}`
+   (`waves` omitted when the regenerate step skipped). **Always set `run.json.status` to a settled
    value** (`complete` when finished, or `paused` — a resumable state that `--resume` picks
    up, not a terminal one; see `skills/sdlc/templates/state-schema.md` — if you stopped
    mid-pipeline) **now** — never leave it

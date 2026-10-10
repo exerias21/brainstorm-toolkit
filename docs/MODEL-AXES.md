@@ -74,7 +74,7 @@ original rule *corrected* a collision by bumping the reviewer one tier up, or ma
 safeguard:
 
 1. The reviewer's default is `opus`, the ceiling. A bump can only fire when the reviewer is
-   *below* the ceiling — i.e. only when the user set `models.code_review` / `--review-model`
+   *below* the ceiling — i.e. only when the user set `models.code_review`
    explicitly. The bump therefore never protected a default; it only overrode explicit config.
 2. Under the standing `cap: sonnet`, the implementer is `sonnet`, so `code_review: "sonnet"` —
    the exact edit the stage's own cap-warning recommends — always collided and always ran
@@ -89,7 +89,7 @@ reviewer, it says so; the toolkit never spends Opus on the user's behalf.
 PreToolUse(Agent) hook, opt-in via `pipeline.enforce_cap`. It is verification-shaped, like the
 poka-yoke secret hook: it does not decide the tier, it clamps a `model` that exceeds the cap and
 fills one that is missing. It distinguishes Axis 2 by the `review:` description prefix that
-stage-5.7 requires on every reviewer dispatch. It cannot see `--model`, which is why it is
+stage-5.7 requires on every reviewer dispatch. It clamps a role you deliberately set above `models.cap`, which is why it is
 opt-in rather than default.
 
 Related harness knob, for the record: Claude Code's `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`
@@ -114,6 +114,7 @@ The old keys are **no longer read** (clean break, 2026-07-26):
 | `pipeline.review_fix.passes` | `agents.code_review_passes` |
 | `pipeline.review_fix.max_fix_loops` | `agents.code_review_max_fix_loops` |
 | `pipeline.decompose_min_tasks` | `agents.decompose_min_tasks` |
+| `--model <tier>` / `--review-model <name>` flags (removed 2026-10) | `models.<role>` keys / `models.code_review` (+ `pipeline.review_fix.enabled`) |
 
 `pipeline.review_fix.enabled` / `.mode` / `.blocking` stay under `pipeline.review_fix` — they
 are stage *behavior*, not model or count selection. (`.confidence_threshold`,

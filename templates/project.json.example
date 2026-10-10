@@ -52,15 +52,42 @@
 
   "modules": ["api", "web", "worker"],
 
-  "_models_comment": "EVERY model-tier knob lives here -- canonical contract: skills/sdlc/templates/models.md. TWO INDEPENDENT AXES. Axis 1 (the fan-out ladder: cap/sanity; values haiku|sonnet|opus) is bounded by the cap. Axis 2 (code_review*; values haiku|sonnet|opus|fable) is NOT governed by the cap -- 'cap' never lowers a reviewer model, and an explicit code_review value is always the dispatched value: if it lands on the implementer's tier the run is marked independence: degraded (findings surfaced, never auto-fixed) -- it is never silently bumped to a higher tier. 'cap' is a CEILING that only ever LOWERS, so a per-stage default CANNOT be raised by cap or --model; its per-stage key here is the only lever -- 'sanity' is the one wired today, see its own comment below for the per-focus defaults and its string-or-map shape. 'planner' is a THIRD kind, on NEITHER axis and never lowered by the cap -- see its own comment below. Per-run overrides: --model <tier> (axis 1), --review-model <name> (axis 2).",
+  "_models_comment": "EVERY model-tier choice lives here -- there is no CLI flag; canonical contract: skills/sdlc/templates/models.md. Each dispatch role has its own key (a string tier haiku|sonnet|opus, or a per-sub-role map where noted); a repo that sets nothing runs every role at its built-in default. TWO INDEPENDENT AXES. Axis 1 (every role key except code_review*/planner) is bounded by models.cap, a ceiling that only LOWERS and is absent = no ceiling. Axis 2 (code_review*; values haiku|sonnet|opus|fable) is NOT governed by the cap, and an explicit code_review value is always the dispatched value. 'planner' is a THIRD kind, on NEITHER axis. Recommended pairing: Sonnet implements (models.implement), Opus reviews (pipeline.review_fix.enabled: true + models.code_review: \"opus\").",
   "models": {
-    "cap": "sonnet",
+    "cap": "opus",
+    "_cap_comment": "Optional; absent = NO ceiling (the built-in defaults are already Sonnet-first, so nothing is lowered unless you set this). A CEILING that only ever LOWERS a per-role tier on the haiku < sonnet < opus ladder: effective = min(models.<role> ?? built-in default, cap). It never raises a tier and never touches Axis 2 (code_review*) or planner. Example value shown caps nothing below opus; set \"sonnet\" to hold every fan-out to Sonnet.",
     "sanity": null,
-    "_sanity_comment": "Optional, default null (= built-in per-focus defaults). Stage 1.5 (plan pre-flight, never gated -- it runs on every /sdlc run) resolves THREE FOCUSES independently: paths: haiku (mechanical -- does the file/symbol exist?), completeness: sonnet and gotchas: sonnet (both judgment calls -- a cheap tier tends to misread 'not yet implemented' as a plan gap). Accepts either a STRING (haiku|sonnet|opus, replaces every focus -- the original shape, unchanged) or a MAP (e.g. {\"completeness\": \"opus\"}), where a focus missing from the map keeps its own built-in default. Either shape's resolved value then still passes through models.cap as usual. An invalid value (unknown tier, or a map entry that isn't one) falls through to that focus's own built-in default -- never a guess. See skills/sdlc/templates/models.md 'Per-stage tiers (Axis 1)'.",
+    "_sanity_comment": "Optional, default null (= built-in per-focus defaults: paths haiku, completeness sonnet, gotchas sonnet). Controls the plan pre-flight focuses (/sdlc Stage 1.5, never gated; /brainstorm vet-light uses the same three focus names). String (haiku|sonnet|opus, replaces every focus) or MAP (e.g. {\"completeness\": \"opus\"}; a focus missing from the map keeps its own default). Invalid value -> that focus's built-in default.",
+    "implement": "sonnet",
+    "_implement_comment": "Optional, default \"sonnet\". Controls the /sdlc implementer, the Stage 2a decomposer, every Stage 2b lane (one tier for all lanes) and the Stage 5.9 cleanup-apply agent. Recommended pairing: Sonnet implements, Opus reviews (pipeline.review_fix.enabled: true + models.code_review: \"opus\").",
+    "fix": "sonnet",
+    "_fix_comment": "Optional, default \"sonnet\". Controls the Stage 5 fix-loop agent. pipeline.fix_loop.escalate_last still raises only the last iteration one rung (to opus at most), then capped.",
+    "validate": "sonnet",
+    "_validate_comment": "Optional, default \"sonnet\". Controls the Stage 5 plan-conformance-validator.",
+    "test_runner": "haiku",
+    "_test_runner_comment": "Optional, default \"haiku\". Controls test-runner agent dispatches (/sdlc Stage 5, /test-check). The dispatch passes this as an explicit model, which outranks the agent's own frontmatter pin.",
+    "e2e": "sonnet",
+    "_e2e_comment": "Optional, default \"sonnet\". Controls e2e-test-runner dispatches (/sdlc Stage 5, /test-check --loop), including any in-loop escalation -- raise it here instead.",
+    "cleanup": "sonnet",
+    "_cleanup_comment": "Optional, default \"sonnet\". Controls the /sdlc Stage 5.9 cleanup lenses.",
+    "reassess": "sonnet",
+    "_reassess_comment": "Optional, default \"sonnet\". Controls the /sdlc Stage 6 action-items reassess agent.",
+    "brainstorm": "sonnet",
+    "_brainstorm_comment": "Optional, default \"sonnet\". Controls /brainstorm explorers, the vet-deep stress-test and vet-ultra agents.",
+    "brainstorm_team": "sonnet",
+    "_brainstorm_team_comment": "Optional, default \"sonnet\". Controls the six /brainstorm-team teammates.",
+    "dead_code_review": null,
+    "_dead_code_review_comment": "Optional, default null (= {server: sonnet, client: sonnet, data: sonnet, docs: haiku, scripts: haiku}). Controls the /dead-code-review lenses. String (every lens) or MAP keyed server|client|data|docs|scripts; a lens missing from the map keeps its default.",
+    "repo_health": null,
+    "_repo_health_comment": "Optional, default null (= each check's built-in tier: the mechanical checks stay haiku, rules-drift sonnet). Controls the /repo-health agent checks. String (every check) or a MAP keyed by check name; a check missing from the map keeps its default.",
+    "docstring_sync": "sonnet",
+    "_docstring_sync_comment": "Optional, default \"sonnet\". Controls the /docstring-sync triage and rewrite agents.",
     "planner": "opus",
     "_planner_comment": "Optional, default \"opus\". One of haiku|sonnet|opus|fable. ADVISORY ONLY -- a session-model RECOMMENDATION for /brainstorm and /brainstorm-team's planning conversation, which runs on your host session model rather than a sub-agent. On NEITHER model axis: models.cap never lowers it, and it never governs a dispatch. Printed once per session, verbatim: 'Planning runs on your session model. Recommended: <planner> -- switch before the clarifying rounds if you aren't on it.' Never detects the host model. An unrecognized value falls through to the default. See skills/sdlc/templates/models.md 'A third kind'.",
     "code_review": "opus",
-    "code_review_second_pass": "sonnet"
+    "_code_review_comment": "Optional, default \"opus\" (Axis 2: never capped). Controls the /sdlc Stage 5.7 review lenses, verify and fix-planner. Stage 5.7 runs only when pipeline.review_fix.enabled is true. Values haiku|sonnet|opus|fable. If it resolves to the implementer's tier (models.implement) the run is marked independence: degraded -- findings surfaced, never auto-fixed.",
+    "code_review_second_pass": "sonnet",
+    "_code_review_second_pass_comment": "Optional, default \"sonnet\" (Axis 2: never capped). Controls the Stage 5.7 second-pass reviewer; only read when agents.code_review_passes is 2."
   },
   "_agents_comment": "How MANY agents each fan-out stage dispatches. Cost scales roughly linearly -- one agent (or reviewer call) per entry. Unrecognized entries are ignored with one warning; the lists are deliberately open so a repo can add its own. See skills/sdlc/templates/models.md.",
   "agents": {
@@ -106,7 +133,7 @@
     "skip_secret_scan": false,
     "_poka_yoke_comment": "Claude-only. When true, /repo-onboarding writes a PreToolUse hook to .claude/settings.json that blocks Write/Edit when a likely secret is in the payload. Enabling this key alone does NOT install the hook — see AGENTS.md 'Hooks (Claude-only)' for the settings.json schema. Copilot consumers gain nothing from this key (no PreToolUse equivalent); rely on the Stage 6 gitleaks scan instead.",
     "poka_yoke": false,
-    "_enforce_cap_comment": "Claude-only, default false. When true, the PreToolUse(Agent) hook scripts/hooks/enforce-model-cap.sh (wired by setup.sh / the plugin) makes models.cap deterministic: a dispatch whose model ranks above the cap is rewritten to the cap, and a dispatch that omits model gets the cap unless its agent definition pins a tier. Dispatches whose description starts 'review:' (the Axis 2 reviewer) are exempt. Trade-off: the hook cannot see a per-run --model flag, so with enforcement on the config cap is policy and --model opus is clamped -- raise models.cap for that run instead. Each rewrite is shown to you as a systemMessage; it never blocks.",
+    "_enforce_cap_comment": "Claude-only, default false. When true, the PreToolUse(Agent) hook scripts/hooks/enforce-model-cap.sh (wired by setup.sh / the plugin) makes models.cap deterministic: a dispatch whose model ranks above the cap is rewritten to the cap, and a dispatch that omits model gets the cap unless its agent definition pins a tier. Dispatches whose description starts 'review:' (the Axis 2 reviewer) are exempt. With enforcement on, models.cap is policy: a role you set above it (e.g. models.implement: \"opus\" under cap \"sonnet\") is clamped, so raise or remove models.cap instead. A repo with no models.cap is never rewritten. Each rewrite is shown to you as a systemMessage; it never blocks.",
     "enforce_cap": false,
     "_stop_gate_comment": "Claude/Codex only (Copilot gets no wiring), default \"off\". Set \"tests\" to make the Stop hook scripts/hooks/stop-gate.sh re-run test.unit whenever an /sdlc run's envelope is in_progress and block the handoff (decision:block) on a red result, bounded by pipeline.loop.max_hops consecutive failures before it stands down. Inert (zero output) unless stop_gate is \"tests\" AND an in_progress envelope exists AND test.unit is configured. It never blocks when test.unit is missing on PATH, and it stands down for stop_hook_active or a pending .claude/.next-action sentinel so it is never a second Stop-hook blocker -- see docs/SEAM.md.",
     "stop_gate": "off",
@@ -134,11 +161,11 @@
     "fix_loop": {
       "_comment": "Optional, OFF by default. Stage 5's shared 3-iteration fix budget (skills/sdlc/templates/fix-loop.md). Excluded entirely from Stage 5.7/5.8, which has its own separate budget and whose reviewer axis (models.code_review) is not on this ladder.",
       "escalate_last": false,
-      "_escalate_last_comment": "When true, ONLY the final iteration of Stage 5's shared fix-loop budget dispatches its fix agent at min(stage_tier + 1, effective_cap) on the haiku < sonnet < opus ladder, printing 'model: <tier> (cap: <cap>, escalated)' in place of the ordinary dispatch line. Under the default cap 'sonnet', min(sonnet + 1, sonnet) is a no-op -- nothing changes. The case where it actually acts is models.cap: \"opus\" (or --model opus): iterations 1-2 dispatch at Sonnet (the fix agent's built-in tier -- the cap only ever lowers, so opus doesn't raise it), and the last iteration dispatches at Opus. Without this key, every retry stays on the same tier by design -- a fix loop is not a place to guess your way up the ladder silently. Copilot/Codex (no sub-agent seam): when true, the PAUSED block adds 'Escalate: re-run with --model opus --resume' instead of escalating inline. scripts/hooks/enforce-model-cap.sh needs no change for this -- an escalation that stays within the cap is never rewritten."
+      "_escalate_last_comment": "When true, ONLY the final iteration of Stage 5's shared fix-loop budget dispatches its fix agent at min(stage_tier + 1, effective_cap) on the haiku < sonnet < opus ladder, printing 'model: <tier> (cap: <cap>, escalated)' in place of the ordinary dispatch line. With models.cap: \"sonnet\", min(sonnet + 1, sonnet) is a no-op -- nothing changes. With no cap (or \"opus\") iterations 1-2 dispatch at models.fix (default Sonnet) and the last iteration dispatches one rung up, at Opus. Without this key, every retry stays on the same tier by design -- a fix loop is not a place to guess your way up the ladder silently. Copilot/Codex (no sub-agent seam): when true, the PAUSED block adds 'Escalate: set models.fix to opus in .claude/project.json, then --resume' instead of escalating inline. scripts/hooks/enforce-model-cap.sh needs no change for this -- an escalation that stays within the cap is never rewritten."
     },
 
     "review_fix": {
-      "_comment": "Optional, OFF by default. Adversarial Review->Fix stage (Stage 5.7 review / Stage 5.8 fix loop) for /sdlc -- an N-lens adversarial review + fix loop that runs after Stage 5, before the Stage 6 hand-off. Default reviewer model 'opus' (see skills/sdlc/templates/models.md; the reviewer model itself lives at models.code_review). Omit this whole block to accept the defaults below (stage stays OFF). OPT-IN, PERMANENTLY: there is no default-on flip, planned or shipped. An explicit --review-model <name> flag or an explicit enabled:true here is required to activate the stage; omitted, absent, or enabled:false all mean OFF.",
+      "_comment": "Optional, OFF by default. Adversarial Review->Fix stage (Stage 5.7 review / Stage 5.8 fix loop) for /sdlc -- an N-lens adversarial review + fix loop that runs after Stage 5, before the Stage 6 hand-off. Default reviewer model 'opus' (see skills/sdlc/templates/models.md; the reviewer model itself lives at models.code_review). Omit this whole block to accept the defaults below (stage stays OFF). OPT-IN, PERMANENTLY: there is no default-on flip, planned or shipped. An explicit enabled:true here is required to activate the stage; omitted, absent, or enabled:false all mean OFF.",
       "enabled": false,
       "mode": "interactive",
       "_mode_comment": "One of 'interactive' (default: each confirmed finding's fix spec is presented for approve/edit/skip, then the run pauses before Stage 6 with anything remaining surfaced), 'auto' (auto-approve every confirmed auto_fixable:true finding, bounded by agents.code_review_max_fix_loops -- design-decision findings, auto_fixable:false, are NEVER auto-approved in any mode), 'off' (report only, Stage 5.8 does not run). There is no confidence or consecutive-approval throttle: the auto_fixable rubric and the loop budget are the whole bound.",
@@ -162,6 +189,21 @@
       "_max_hops_comment": "Auto-continue (L9) hop budget: max self-continue chain length before the Stop hook parks. Default 5.",
       "auto_continue": false,
       "_auto_continue_comment": "Claude/Codex only, OFF by default. When true, the Stop hook EXECUTES a single non-confirm .next-action sentinel (decision:block) instead of only printing it, so the loop self-advances. Never chains a confirm:true action; bounded by max_hops."
+    },
+
+    "action_items": {
+      "_comment": "Optional. A generated 'what runs when' file (ACTION_ITEMS.md) built from TASKS.md by scripts/close-tasks.sh waves: a now wave and a next wave, grouped by lane. /sdlc Stage 6 regenerates it after closing rows, /sdlc --queue selects from the now wave, and /sdlc-status prints one line from it. Derived and gitignored; edit TASKS.md, never the file.",
+      "enabled": false,
+      "_enabled_comment": "false is a VETO: the feature is off whatever files exist. true turns it on. When absent it is on only if the file below exists AND its first line is the generated banner ('<!-- generated — edit TASKS.md'). Read both keys first -- never test the default name when file is set (bash scripts/close-tasks.sh waves --gate does this). A hand-written file never opts a repo in and is never overwritten, even with enabled true. The file path and the check resolve against the TASKS.md directory, not the cwd.",
+      "file": "ACTION_ITEMS.md",
+      "reassess": false,
+      "_reassess_comment": "Default false. When true AND the open-row set changed since the last run, Stage 6 dispatches ONE Sonnet agent that proposes _after: / _lane: / _conflicts: row tags the file-and-phase rules cannot see. Every proposal needs a verbatim evidence quote from the plan; scripts/close-tasks.sh tag is the only writer, and a proposal whose quote is not found is dropped, never applied. Only has effect when action items are enabled."
+    },
+
+    "tasks": {
+      "_comment": "Optional. How /sdlc Stage 6 closes TASKS.md rows.",
+      "close_in_place": false,
+      "_close_in_place_comment": "Default false: a closed row moves to ## Done. true: scripts/close-tasks.sh close --in-place flips it to [x] (with its completion stamp) where it stands, so TASKS.md:N line citations stay valid; moved[] is empty."
     }
   }
 }
