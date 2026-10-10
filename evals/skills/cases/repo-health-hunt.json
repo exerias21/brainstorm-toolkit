@@ -1,0 +1,40 @@
+{
+  "name": "repo-health-hunt",
+  "fixture": "hunt-pager",
+  "prompt": "/repo-health --hunt",
+  "max_budget_usd": 3.0,
+  "assertions": [
+    {
+      "type": "file_matches",
+      "glob": "TASKS.md",
+      "pattern": "(?m)^- \\[ \\] \\(P[0-3]\\) .*(pager|page_slice|[Pp]agina).*_bug_\\s*$",
+      "_why": "the planted off-by-one in pager.py must be filed as a _bug_ row in the structured backlog, with a (Pn) severity and the _bug_ trailer -- not merely mentioned in the chat output."
+    },
+    {
+      "type": "file_not_matches",
+      "glob": "TASKS.md",
+      "pattern": "(?m)^.*(slug|slugify).*_bug_",
+      "_why": "negative control: slug.py is correct, so no filed row may name it. A hunt that files anything for it has dropped the evidence rule."
+    },
+    {
+      "type": "file_matches",
+      "glob": "plans/bug-hunts/*.md",
+      "pattern": "pager\\.py:\\d+",
+      "_why": "the hunt report must exist under plans/bug-hunts/ and carry the file:line evidence for the finding."
+    },
+    {
+      "type": "tree_unchanged",
+      "paths": ["pager.py", "slug.py"],
+      "_why": "a hunt is read-only on code: it files rows and a report, never fixes. Scoped to the code files because TASKS.md and plans/bug-hunts/ legitimately change."
+    },
+    {
+      "type": "git_head_unchanged",
+      "_why": "no git writes -- HEAD must stay on the fixture commit."
+    },
+    {
+      "type": "agent_models_within_cap",
+      "cap": "sonnet",
+      "_why": "lens dispatches carry an explicit models.hunt tier under the fixture's models.cap; the review:-prefixed consolidator is Axis 2 and the assertion exempts it."
+    }
+  ]
+}
