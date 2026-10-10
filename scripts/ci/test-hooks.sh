@@ -2695,7 +2695,7 @@ ok
 CASE="close-tasks rows --tag bug: priority + title fields, no dangling separator"
 d="$(ct_dir rowsprio)"
 printf -- '## Active / Pending
-- [ ] (P0) Crash on save â _bug_
+- [ ] (P0) Crash on save — _bug_
 - [ ] (P2) Not a bug
 ' > "$d/TASKS.md"
 run_ct "$d" rows --tag bug --file TASKS.md
