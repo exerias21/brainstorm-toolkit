@@ -16,6 +16,20 @@ with no refactor, and given these two lines verbatim in its prompt:
 Then re-run the gate. Repeat to a maximum of **3 iterations, shared across Stage
 5's gates** (Stage 5.7/5.8 has its own separate budget).
 
+**Red-check a regression guard.** When the fix loop (or its fix agent) adds or accepts a test as
+the guard for a fix, that test only counts if it **fails with the fix reverted** — a guard that
+passes either way proves nothing and will be trusted later. You, the orchestrator, run this; never
+a dispatched sub-agent. Revert the fix in the working tree by re-applying the inverse edit (no git
+writes — no stash, checkout, or restore), run that one test, and confirm it fails for the expected
+reason, not a collateral error. Then restore the fix and confirm it passes. If it passes with the
+fix reverted, the guard is weak: rewrite it and red-check again. Treat a guard as weak when it:
+
+- asserts only on mocks it set up itself;
+- asserts only that no exception was raised;
+- compares to a snapshot regenerated with the fix in place;
+- never imports or exercises the changed code;
+- is skipped or marked xfail.
+
 **Opt-in last-try escalation (`pipeline.fix_loop.escalate_last`, default `false`).** When true,
 only the **final** iteration of this budget dispatches its fix agent at
 `min(stage_tier + 1, effective_cap)` on the `haiku < sonnet < opus` ladder, and prints
