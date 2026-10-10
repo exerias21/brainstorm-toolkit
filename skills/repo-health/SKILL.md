@@ -226,8 +226,8 @@ The fix command is `/sdlc-status --reconcile`.
 
 Skip silently when `TASKS.md` is absent, and with reason `no close-tasks.sh` when the script
 did not install. Run `bash scripts/close-tasks.sh rows --tag bug --file TASKS.md` — read-only.
-Keep rows whose `state` is `open` or `in_progress`; `rows` carries no `priority` field, so read
-it from the `(P0)`–`(P3)` prefix of each row's `text` (no prefix counts as P3). Report the open
+Keep rows whose `state` is `open` or `in_progress`; take each row's `priority` field (`P0`–`P3`;
+null counts as P3) and its `title`. Report the open
 count per priority and list the top 5 by priority, highest first (ties: file order), each as
 `(Pn) title (line N)`. Count only: never fix, close or re-prioritise a row here.
 

@@ -2692,5 +2692,19 @@ assert [x['priority'] for x in d['next']['general']] == ['P1'], d['next']
 PYEOF
 ok
 
+CASE="close-tasks rows --tag bug: priority + title fields, no dangling separator"
+d="$(ct_dir rowsprio)"
+printf -- '## Active / Pending
+- [ ] (P0) Crash on save â _bug_
+- [ ] (P2) Not a bug
+' > "$d/TASKS.md"
+run_ct "$d" rows --tag bug --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+m = d['matched']
+assert len(m) == 1 and m[0]['priority'] == 'P0' and m[0]['title'] == 'Crash on save', m
+PYEOF
+ok
+
 echo
 echo "test-hooks.sh: all cases ok"

@@ -509,6 +509,8 @@ def cmd_rows_plan(lines, key, plan_file, tag=''):
             'line': i + 1,
             'text': line.strip(),
             'state': STATE_LABEL.get(fields['state'], 'open'),
+            'priority': fields['priority'],
+            'title': fields['title'],
             'phase': fields['phase'],
             'followup': fields['followup'],
             'manual': fields['manual'],
@@ -775,6 +777,8 @@ def parse_row(line):
     if plan:
         title = PLAN_PATH_RE.sub('', title).rstrip()
         title = re.sub(r'[\s—–-]+$', '', title).rstrip()
+    # A trailer that held only tags leaves its separator behind once they are stripped.
+    title = re.sub(r'\s+—$', '', title)
     tag_m = PLAN_TAG_RE.search(line)
     plan_slug = tag_m.group(1) if tag_m else None
     phase_m = PHASE_RE.search(line)
