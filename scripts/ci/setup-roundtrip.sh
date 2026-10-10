@@ -143,3 +143,82 @@ if [[ "$STOP_GATE_TIMEOUT" -lt 300 ]]; then
   exit 1
 fi
 echo "[setup-roundtrip] OK: stop-gate Stop hook timeout is ${STOP_GATE_TIMEOUT}s (>= 300s)"
+
+# 5. sync-global.sh round trip (the shell-install route, README Option C). HOME is pointed
+#    at a scratch dir -- never the real ~/.claude. Run once per JSON backend: jq when
+#    present, then the python fallback (BRAINSTORM_NO_JQ=1 forces it).
+echo "[setup-roundtrip] (5) sync-global.sh round trip"
+
+SG="$PLUGIN_ROOT/scripts/sync-global.sh"
+SG_VERSION="$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$PLUGIN_ROOT/.claude-plugin/plugin.json" | head -n 1)"
+SG_HOOKS="$(grep -c '"command": "bash' "$PLUGIN_ROOT/hooks/hooks.json")"
+SG_SKILLS="$(for d in "$PLUGIN_ROOT"/skills/*/; do basename "$d"; done)"
+
+sg_fail() { echo "[setup-roundtrip] FAIL (sync-global/$SG_MODE): $1" >&2; exit 1; }
+sg_count() { grep -c -- "$1" "$2" || true; }
+sg_baks() { ls "$H/.claude" | grep -c '^settings\.json\.bak-' || true; }
+sg_tree() { (cd "$H" && find . -type f | sort | while read -r f; do printf '%s %s\n' "$f" "$(cksum < "$f")"; done); }
+
+sg_round_trip() {
+  SG_MODE="$1"
+  H="$ROOT_TMP/sg-$SG_MODE/home"
+  RT="$H/.claude/brainstorm-toolkit"
+  mkdir -p "$H/.claude/skills/my-user-skill" "$H/.claude/agents"
+  printf 'user skill\n' > "$H/.claude/skills/my-user-skill/SKILL.md"
+  printf 'user agent\n' > "$H/.claude/agents/my-user-agent.md"
+  printf '%s\n' '{"theme":"dark","hooks":{"Stop":[{"matcher":"*","hooks":[{"type":"command","command":"echo user-hook"}]}]}}' \
+    > "$H/.claude/settings.json"
+  sg() { HOME="$H" bash "$SG" "$@"; }
+
+  before="$(sg_tree)"
+  sg --dry-run >/dev/null
+  [[ "$before" == "$(sg_tree)" ]] || sg_fail "--dry-run wrote something"
+
+  sg >/dev/null
+  for s in $SG_SKILLS; do [[ -f "$H/.claude/skills/$s/SKILL.md" ]] || sg_fail "skill $s not installed"; done
+  [[ -f "$H/.claude/agents/test-runner.md" ]] || sg_fail "agents not installed"
+  [[ -f "$RT/scripts/py.sh" && -f "$RT/scripts/close-tasks.sh" && -f "$RT/scripts/hooks/next-action.sh" ]] || sg_fail "runtime scripts missing"
+  [[ -f "$RT/templates/TASKS.md.template" && -f "$RT/.claude-plugin/plugin.json" ]] || sg_fail "runtime templates/plugin.json missing"
+  [[ ! -e "$RT/scripts/ci" && ! -e "$RT/scripts/sync-global.sh" ]] || sg_fail "repo-only scripts leaked into the runtime dir"
+  [[ "$(sg_count "\"version\": \"$SG_VERSION\"" "$RT/INSTALL.json")" == 1 ]] || sg_fail "INSTALL.json version"
+  [[ "$(sg_count 'brainstorm-toolkit/scripts/hooks/' "$H/.claude/settings.json")" == "$SG_HOOKS" ]] || sg_fail "hook count != hooks.json"
+  [[ "$(sg_count 'bash \\"\(/\|[A-Za-z]:/\)' "$H/.claude/settings.json")" == "$SG_HOOKS" ]] || sg_fail "a hook path is not absolute+quoted"
+  [[ "$(sg_count 'CLAUDE_PLUGIN_ROOT' "$H/.claude/settings.json")" == 0 ]] || sg_fail "unexpanded CLAUDE_PLUGIN_ROOT"
+  grep -q '"echo user-hook"' "$H/.claude/settings.json" || sg_fail "user hook lost"
+  grep -q '"theme": "dark"' "$H/.claude/settings.json" || sg_fail "unrelated setting lost"
+  [[ -f "$H/.claude/skills/my-user-skill/SKILL.md" && -f "$H/.claude/agents/my-user-agent.md" ]] || sg_fail "user skill/agent touched"
+  [[ "$(sg_baks)" == 1 ]] || sg_fail "expected exactly 1 settings backup after install"
+
+  sg >/dev/null
+  [[ "$(sg_count 'brainstorm-toolkit/scripts/hooks/' "$H/.claude/settings.json")" == "$SG_HOOKS" ]] || sg_fail "re-run duplicated hooks"
+  [[ "$(sg_baks)" == 1 ]] || sg_fail "no-op re-run wrote a backup"
+
+  # A hook left by an older checkout is replaced, not duplicated -- and gets its own backup.
+  "$PY" -c '
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d["hooks"]["Stop"].append({"matcher": "*", "hooks": [{"type": "command", "command": "bash /old/repo/scripts/hooks/next-action.sh"}]})
+json.dump(d, open(p, "w"))' "$H/.claude/settings.json"
+  sg >/dev/null
+  grep -q '/old/repo' "$H/.claude/settings.json" && sg_fail "stale hook survived"
+  [[ "$(sg_count 'brainstorm-toolkit/scripts/hooks/' "$H/.claude/settings.json")" == "$SG_HOOKS" ]] || sg_fail "stale replace changed hook count"
+  [[ "$(sg_baks)" == 2 ]] || sg_fail "expected 2 distinct backups after the stale replace"
+
+  st="$(sg --status)"
+  printf '%s\n' "$st" | grep -q "installed: $SG_VERSION" || sg_fail "--status lacks installed version"
+  printf '%s\n' "$st" | grep -q MISSING && sg_fail "--status reports a missing hook"
+  [[ "$(printf '%s\n' "$st" | grep -c '^    present')" == "$SG_HOOKS" ]] || sg_fail "--status present count"
+
+  sg --uninstall >/dev/null
+  for s in $SG_SKILLS; do [[ ! -e "$H/.claude/skills/$s" ]] || sg_fail "skill $s survived uninstall"; done
+  [[ ! -e "$H/.claude/agents/test-runner.md" && ! -e "$RT" ]] || sg_fail "agents/runtime survived uninstall"
+  grep -q 'brainstorm-toolkit' "$H/.claude/settings.json" && sg_fail "toolkit hooks survived uninstall"
+  grep -q '"echo user-hook"' "$H/.claude/settings.json" || sg_fail "uninstall removed the user hook"
+  [[ -f "$H/.claude/skills/my-user-skill/SKILL.md" && -f "$H/.claude/agents/my-user-agent.md" ]] || sg_fail "uninstall removed user skill/agent"
+  [[ "$(sg_baks)" == 3 ]] || sg_fail "expected 3 backups after uninstall"
+  echo "[setup-roundtrip] OK: sync-global round trip ($SG_MODE)"
+}
+
+if command -v jq >/dev/null 2>&1; then sg_round_trip jq; else echo "[setup-roundtrip] note: jq not on PATH -- jq backend not exercised"; fi
+BRAINSTORM_NO_JQ=1 sg_round_trip python

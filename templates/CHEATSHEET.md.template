@@ -155,7 +155,7 @@ Ideation family — pick by ambiguity, not by topic:
 |---|---|---|
 | Plugin | `/plugin marketplace add <repo>` then `/plugin install brainstorm-toolkit` | Claude Code, all repos |
 | `setup.sh` | `bash <plugin>/setup.sh --target . --tools all` | this repo (Claude + Copilot + Codex) |
-| Global | `bash <plugin>/scripts/sync-global.sh` | `~/.claude/`, no plugin registration |
+| Global | `bash <checkout>/scripts/sync-global.sh` | `~/.claude/` (skills, runtime root, hooks), no plugin registration |
 
 `--tools` takes `claude` \| `copilot` \| `codex` \| `both` \| `all`. Re-run
 `setup.sh` any time; it skips existing files unless you pass `--force`, and

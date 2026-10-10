@@ -15,7 +15,7 @@ metadata:
 
 # sdlc — the full SDLC pipeline, leaving the commit to you (no git writes)
 
-> **Toolkit paths.** Every toolkit script or template path cited here resolves against the plugin root — this skill's base directory two levels up (`<base>/../..`) — when the skill is loaded from a plugin; a repo-local copy installed by `setup.sh` wins when it exists.
+> **Toolkit paths.** Every toolkit script or template path cited here resolves, first hit wins, against: a repo-local copy installed by `setup.sh`; else the plugin root (this skill's base directory two levels up, `<base>/../..`) when it holds that path; else `~/.claude/brainstorm-toolkit/` (the global shell install).
 
 ## When to use
 

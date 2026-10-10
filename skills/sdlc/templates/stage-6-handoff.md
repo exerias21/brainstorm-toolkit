@@ -40,7 +40,8 @@ order is the difference between "usually closes" and "closes."
    `--no-copy-scripts` **or never ran `setup.sh` at all — a Claude-plugin-only install
    (README Option A) never receives `scripts/`, the same missing-path shape**; if the path is
    missing, fall back to the plugin root's `scripts/close-tasks.sh` (the skill's base directory
-   two levels up, `<base>/../..`); only when neither exists, report a **known install gap**, not
+   two levels up, `<base>/../..`), then `~/.claude/brainstorm-toolkit/scripts/close-tasks.sh`
+   (the global shell install); only when none exists, report a **known install gap**, not
    politely, and skip close-out rather than failing the whole hand-off — the pipeline still
    delivers a validated tree.) **Close in place:** when `pipeline.tasks.close_in_place` is `true`
    (read with graceful skip; default false), add `--in-place` to every `close` call below — the

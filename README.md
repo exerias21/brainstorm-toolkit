@@ -38,8 +38,12 @@ All skills run on all three tools. † marks skills with a Copilot-optimized ove
 `/sdlc` is the heaviest thing in the toolkit and the reason most of the rest exists.
 
 ```
-scope-gate → sanity → implement → evals → fix → validate → flowsim → [review] → [cleanup] → hand-off
+0 resolve input + scope gate
+  → 1.5 sanity → 2 implement → 3 evals → 5 validate (+ fix loop)
+  → [5.7 review → 5.8 fix] → [5.9 cleanup] → 6 hand-off → 7 report
 ```
+
+Brackets are opt-in. Stage 3 runs only with `eval.runner` and is skipped in skill repos.
 
 **It does no git writes.** No commit, no branch, no push, no PR, at any stage. It hands back a
 validated working tree and a suggested commit message; you decide what to commit and when.
@@ -48,18 +52,36 @@ what makes it safe to point at a branch that already has an open PR.
 
 **What it takes.** A plan file, a task id, a task range (`1-5`), or a plain description.
 
-**What it does on its own.** Stage 2 splits a large multi-surface plan into per-lane subagents
-plus a converge step; small or single-surface plans run one agent. There is no flag for this,
-the gate is automatic.
+**What each stage does:**
 
-**Two flags worth knowing:**
+| Stage | What happens |
+|---|---|
+| 0 Resolve + scope gate | Reads the plan and its tagged `TASKS.md` rows. For a plan file it takes the **lowest open plan phase** and parks the rest, leaving a resume sentinel so the next run picks up the following phase. |
+| 1.5 Sanity | Pre-flight over the plan (`paths`, `completeness`, `gotchas` focuses). Auto-patches the plan, or stops on a blocker before any code is written. |
+| 2 Implement | One agent, or an automatic split into per-lane agents plus a converge step for a large multi-surface plan. Model: `models.implement`. |
+| 3 Evals | Only with `eval.runner` configured; skipped silently otherwise. |
+| 5 Validate | The Haiku `test-runner` agent runs the suites; a plan-conformance check covers requirements and flow; a deterministic **plan-reference scan** over added code lines flags plan or task references written into code. Failures go through the shared 3-iteration fix loop. |
+| 5.7 / 5.8 Review, fix | Opt-in via `pipeline.review_fix.enabled`. Lens reviewers run on `models.code_review`; only `auto_fixable` findings are fixed. |
+| 5.9 Cleanup | Opt-in quality pass. |
+| 6 Hand-off | Secret scan, diff, a suggested commit message (with a `Co-Authored-By` trailer only when `coauthor_trailer` is `true`), `TASKS.md` close-out through `scripts/close-tasks.sh` (`pipeline.tasks.close_in_place` keeps closed rows on their lines), regenerated `ACTION_ITEMS.md` when action items are enabled, a decisions log, and gotcha capture with the `Next:` seam. |
+| 7 Report | Files changed, suggested commit message, validation verdicts, the `tasks: N closed` line, and anything left open. Nothing was committed. |
+
+**Flags:**
 
 | Flag | Effect |
 |---|---|
 | `--resume` | Pick up a paused or failed prior run from its state envelope, keyed on the resolved slug |
-| `--queue [N]` | Attended backlog loop: works pending `TASKS.md` rows by priority, re-scans between items so work added mid-run joins, and parks on anything paused. Still no git writes |
+| `--queue [N]` | Attended backlog loop: works pending `TASKS.md` rows by priority (from the now wave when action items are enabled), re-scans between items so work added mid-run joins, and parks on anything paused or on an empty now wave. Still no git writes |
+| `--no-scope-gate` | Run the whole plan in one go instead of its lowest open phase |
+| `--no-review` | Force the review stage off for this run, whatever the config says |
+| `--cleanup` / `--no-cleanup` | Force the cleanup stage on or off for this run |
 
-The adversarial Review→Fix stage is **off unless you turn it on**, and warn-only on surviving
+**No flag picks a model.** Every tier is a key in `.claude/project.json`: `models.implement`
+for the implementer, `models.code_review` for the reviewer, one key per role. The recommended
+pairing is Sonnet implements, Opus reviews (`pipeline.review_fix.enabled: true` plus
+`models.code_review: "opus"`). See [docs/CONFIG.md](docs/CONFIG.md).
+
+The adversarial review stage is **off unless you turn it on**, and warn-only on surviving
 findings rather than blocking the hand-off, matching its warn-only secret scan. See the case
 study below for why it exists.
 
@@ -67,15 +89,16 @@ study below for why it exists.
 
 ```mermaid
 flowchart LR
-    A[/repo-onboarding/]:::setup --> B[AGENTS.md + TASKS.md<br/>project.json + GOTCHAS.md]
+    A[/repo-onboarding/]:::setup --> B[AGENTS.md + TASKS.md<br/>project.json + GOTCHAS.md<br/>optional ACTION_ITEMS.md]
     B --> C[/brainstorm/]
     B --> D[/task/]
-    C --> F[plans/brainstorm-*.md]
+    C --> F[plan + tagged TASKS.md rows]
     D --> H[inline TDD]
-    F --> I[/sdlc {plan}/]:::core
+    F --> I[/sdlc {plan}<br/>fresh session/]:::core
     H --> J[you commit]
     I --> J
     J --> K[PR + merge]
+    S[/sdlc-status/<br/>queue, waves, --reconcile] -.-> I
 
     subgraph "Anytime, in parallel"
       N[/repo-health/<br/>scored sweep]
@@ -86,7 +109,6 @@ flowchart LR
 
     classDef setup fill:#e8e8ff,stroke:#5555aa
     classDef core fill:#e0ffe0,stroke:#338833
-    classDef pipe fill:#fff0e0,stroke:#cc7733
 ```
 
 A skill repo (one with `.claude-plugin/marketplace.json` at its root) writes plans to
@@ -98,23 +120,60 @@ Or in plain text:
    /repo-onboarding                (once per repo)
           │
           ▼
-   AGENTS.md + TASKS.md + project.json + GOTCHAS.md + CHEATSHEET.md
+   AGENTS.md + TASKS.md + project.json + GOTCHAS.md   (+ optional ACTION_ITEMS.md)
           │
-          ├──► /brainstorm   ──► plan file
-          │                          │
+          ├──► /brainstorm   ──► plan file + tagged TASKS.md rows
+          │                          │   (new session)
           │                          ▼
           ├──► /task         ──► TDD inline ──┬──► you commit ──► PR
           │                                   │
           └──► /sdlc <plan>  ──► full ────────┘
-                    sanity → implement → evals → fix → validate → flowsim
+                    scope gate → sanity → implement → evals → validate
+                    → [review → fix] → hand-off
                     (no git writes; it hands you a validated tree)
 
    Anytime:
+     /sdlc-status   — queue readout, waves line, --reconcile for drift
      /repo-health   — scored hygiene sweep
-     /sdlc-status   — what's active, what's left?
      /flowsim       — verify a plan's claimed flows match the code
      /gotcha        — capture a pitfall
 ```
+
+The recommended habit: brainstorm in one session, then run `/sdlc <plan>` in a fresh one, so
+the pipeline starts from the plan on disk rather than from a long conversation. Flow tracing
+happens inside Stage 5's plan check; `/flowsim` stays available as an anytime utility.
+
+## The backlog: TASKS.md, tags and ACTION_ITEMS.md
+
+`TASKS.md` is the only backlog. `/sdlc-status`, the `--queue` loop and the Stop hooks all read
+it, and it outlives any session. Rows carry optional italic tags in their trailer (after the
+last ` — `):
+
+| Tag | Meaning |
+|---|---|
+| `_plan: <slug>_` | Which plan the row belongs to; the key Stage 6 closes on |
+| `_phase: <N>_` | Groups a plan's rows so one phase can run and close as a unit |
+| `_manual_` | Only a human can do it; the pipeline never takes it |
+| `_followup_` | Deliberately left open after its plan finished |
+| `_after: <plan>[:<phase>]_` | Wait until that plan (phase) is done |
+| `_conflicts: <plan>[:<phase>]_` | Never run in the same wave as that plan (phase) |
+| `_lane: <name>_` | The lane the row is filed under; one active row per lane |
+
+`scripts/close-tasks.sh` is the one script that reads and writes those rows:
+
+- `rows --plan <slug>`: read-only lookup of every row tagged to a plan, in any state.
+- `close`: flip claimed rows to done; `--in-place` flips them to `[x]` where they stand instead of moving them to `## Done`.
+- `reconcile`: report drift between `TASKS.md` and the pipeline envelopes; `--apply` repairs it after one confirmation.
+- `board`: read-only JSON export of rows, runs and plans with no row. Schema in [docs/BOARD-JSON.md](docs/BOARD-JSON.md).
+- `waves`: group open rows by lane into `now`, `next` and `later` (with why each later row waits); `--gate` prints whether action items are on, `--write <file>` renders the file.
+- `tag`: the only writer of `_after:` / `_conflicts:` / `_lane:`; adds or removes one tag on one open row, and `--evidence` requires a verbatim plan quote before it writes.
+
+`ACTION_ITEMS.md` is the generated view of the waves: what can run now, what becomes ready
+next, what is waiting, grouped by lane. Never hand-edit it; edit `TASKS.md` and it regenerates
+at hand-off. A hand-written file of that name is never overwritten and never switches the
+feature on. Opt in with `pipeline.action_items.enabled: true`, or by having a generated file
+(its first line is the generated banner) already in place; `enabled: false` always vetoes. When
+it is on, `--queue` selects from the now wave and `/sdlc-status` prints a one-line summary.
 
 ## Install
 
@@ -128,18 +187,18 @@ If you use the Claude Code plugin system, add this repo as a marketplace source 
 /plugin install brainstorm-toolkit
 ```
 
-**This ships skills + agents + hooks, but not `scripts/`.** A plugin-only install has no
-repo-local `scripts/close-tasks.sh`, `protect-tests.sh`, or `record-decision.sh`, so Stage 6
-close-out reports `tasks: 0 closed` forever, the test-immutability detector never arms, and no
-decision gets recorded — silently, unless you know to look.
+**This ships skills + agents + hooks.** A plugin-only install has no repo-local `scripts/`, so
+the skills resolve `scripts/close-tasks.sh`, `plan-refs.sh` and the rest from the plugin root
+instead (repo-local copy first, then the plugin root, then `~/.claude/brainstorm-toolkit/`).
+`protect-tests.sh` and `record-decision.sh` follow the same lookup.
 
 `setup.sh` has no flag to skip skills — `--no-hooks` only skips hook installation, not the
 skills/agents steps — so running it on top of a plugin install re-registers every skill a
 second time (once from the plugin, once as files under `.claude/skills/<name>/`). Pick one
 path for skills:
 
-- **Stay on the plugin** (this option) and accept the `scripts/` gap above, or copy just that
-  directory without going through `setup.sh`: `cp -r <plugin-checkout>/scripts ./scripts`
+- **Stay on the plugin** (this option), or pin a repo-local copy of the scripts without going
+  through `setup.sh`: `cp -r <plugin-checkout>/scripts ./scripts`
   (skip `scripts/ci/` and `scripts/sync-global.sh` — those are plugin-repo-only tooling with no
   use in a consumer).
 - **Skip the plugin** and use `setup.sh` (Option B below) for everything instead — skills,
@@ -192,60 +251,76 @@ Re-running `setup.sh` is safe: it skips existing files unless you pass `--force`
 
 ### Option C: `sync-global.sh` (user-scope, no plugin, no marketplace)
 
-Options A and B install **per repo**. Option C installs **once, globally**, for machines where
-the plugin route isn't available: an org policy that sets `disableSideloadFlags` (blocking
-`--plugin-dir`), a locked-down marketplace, or simply not wanting a plugin registration:
+Options A and B install **per repo** (or via the plugin). Option C installs **once, globally, from
+a checkout**, for machines where the plugin route isn't available or wanted: an org policy that
+sets `disableSideloadFlags`, a locked-down marketplace, or one shell-managed setup shared by
+Windows (Git Bash) and WSL:
 
 ```bash
 git clone https://github.com/exerias21/brainstorm-toolkit.git ~/brainstorm-toolkit
 
 bash ~/brainstorm-toolkit/scripts/sync-global.sh --dry-run   # preview, writes nothing
 bash ~/brainstorm-toolkit/scripts/sync-global.sh             # apply
+bash ~/brainstorm-toolkit/scripts/sync-global.sh --status    # installed vs. repo version, hooks
 ```
 
-It copies `skills/*` → `~/.claude/skills/<name>/` and `agents/*` → `~/.claude/agents/`, then
-`jq`-merges the Stop and `SessionStart` hooks into `~/.claude/settings.json` with **absolute**
-paths. Claude Code discovers all of it natively: no plugin, no sideload flag.
+It reaches the same runtime surface as the plugin:
+
+- every skill under `skills/` → `~/.claude/skills/<name>/`, and `agents/*` → `~/.claude/agents/`;
+- a self-contained **runtime root**, `~/.claude/brainstorm-toolkit/`, holding `scripts/` (the
+  `close-tasks.sh` / `plan-refs.sh` / `py.sh` / hook scripts the skills run; `scripts/ci/` and
+  `sync-global.sh` itself are left out, as in `setup.sh`), `templates/`,
+  `.claude-plugin/plugin.json` and an `INSTALL.json` (version, source repo and commit, install
+  time, skills, hooks). Skills fall back to it when no repo-local `scripts/` exists;
+- **every hook `hooks/hooks.json` declares**, merged into `~/.claude/settings.json` with the same
+  events, matchers and timeouts, as quoted absolute `bash "<path>"` commands into the runtime
+  root. The list is read from `hooks.json` at run time (jq, or python through `scripts/py.sh` when
+  jq is absent), so it cannot drift from the plugin's; CI enforces that. On Windows the path is
+  written as `C:/Users/...`, which Git Bash's `bash` accepts.
 
 | Flag | Effect |
 |---|---|
 | `--dry-run` | Print every action plus a unified `settings.json` diff; write nothing |
-| `--skills a,b,c` | Sync a subset instead of all 13 (see *token weight* below) |
-| `--prune-relative-hooks` | Also drop pre-existing `next-action.sh` Stop hooks wired by a **relative** path |
+| `--status` | Installed vs. repo version and commit, which hooks are present or missing |
+| `--skills a,b,c` | Sync a subset of skills (see *token weight* below) |
+| `--prune-relative-hooks` | Also drop toolkit hooks in global settings wired by a **relative** path |
 | `--no-hooks` | Skip the `settings.json` wiring entirely |
-| `--uninstall` | Remove exactly what this script installed |
+| `--uninstall` | Remove the toolkit's skills, agents, runtime dir and hook entries; keep all else |
 | `--repo <dir>` | Toolkit root (default: the script's own parent) |
 
-Four things worth knowing:
+Things worth knowing:
 
 - **It copies, it never symlinks.** Symlinked skills and agents have known discovery bugs
   (missing from `/skills` autocomplete, "Unknown skill" at invoke, subagents not found), and a
-  symlink would let a `git checkout` in the repo silently swap your live skills mid-session.
-  **Re-run the script after every `git pull`:** that explicit step is the point.
-- **Hook paths are hardcoded on purpose.** `${CLAUDE_PLUGIN_ROOT}` only expands inside the
-  plugin runtime; in a global `settings.json` it stays a literal and the hook silently no-ops.
-  The same applies to a *repo-relative* command like `bash scripts/hooks/next-action.sh`, which is fine
-  in a project-scoped `.claude/settings.json` (which is what `setup.sh` writes), but as a
-  **global** hook it fires in every repo and fails in each one lacking that file.
-  `--prune-relative-hooks` cleans that up.
-- **Pruning is scoped per skill directory.** The sync runs `rsync --delete` *inside each skill
-  directory it owns*, never against `~/.claude/skills/` as a whole, so a file you deleted
-  from a toolkit skill disappears on the next sync, while unrelated user skills installed by
-  other tools are never touched. (`--delete` here is rsync's flag, used internally; it is not
-  a `sync-global.sh` option. To remove what the script installed, use `--uninstall`.)
-- **Token weight.** A global sync makes all 13 skills resident in *every* repo, and several
+  symlink would let a `git checkout` in the repo silently swap your live skills mid-session. The
+  runtime dir is built beside the old one and swapped in, so a running session never sees a
+  half-written tree. **Update = `git pull`, then re-run the script.**
+- **Hooks never point into the checkout.** They point at the runtime copy, so switching branches
+  in the checkout changes nothing until you re-run. `${CLAUDE_PLUGIN_ROOT}` only expands inside
+  the plugin runtime, which is why the paths are written out. A re-run replaces toolkit hooks
+  that point at an older path (including old installs that pointed into the checkout) instead of
+  duplicating them; anything else in `settings.json` is untouched, and every write is preceded by
+  a uniquely named `settings.json.bak-<timestamp>`.
+- **Skill replacement is scoped per skill directory**, never against `~/.claude/skills/` as a
+  whole, so unrelated user skills are never touched.
+- **Token weight.** A global sync makes every skill resident in *every* repo, and several
   (`/sdlc`, `/sdlc-status`) assume the `AGENTS.md` / `.claude/project.json` contract.
   Use `--skills` to install just the ones that travel well: `/brainstorm`, `/brainstorm-team`,
-  `/gotcha`, and keep the pipeline skills per repo via
-  `setup.sh`.
+  `/gotcha`, and keep the pipeline skills per repo via `setup.sh`.
 
-Don't run Option C **and** Option A together: double registration means each skill is discovered
-twice and the Stop hook fires twice, and `next-action.sh` consumes the sentinel on first read, so
-the second pass sees an empty seam. The script warns if it detects the plugin still enabled.
+Don't combine Option C with Option A: double registration discovers each skill twice and fires
+every hook twice. `--status` and the install warn when the plugin is also installed. To switch from
+the plugin:
+
+```bash
+claude plugin uninstall brainstorm-toolkit@brainstorm-toolkit --scope user
+claude plugin marketplace remove brainstorm-toolkit
+bash ~/brainstorm-toolkit/scripts/sync-global.sh
+```
 
 ### Windows note
 
-`setup.sh` is bash; run it under **WSL, Linux, or macOS**. It writes `CLAUDE.md` as a plain copy of `AGENTS.md` (never a symlink; Windows-native git and WSL/NTFS handle symlinks inconsistently); keep the two files in sync.
+`setup.sh` is bash; run it under **WSL, Linux, or macOS**. `sync-global.sh` (Option C) also runs under Windows **Git Bash** and writes hook paths as `C:/...` for it. It writes `CLAUDE.md` as a plain copy of `AGENTS.md` (never a symlink; Windows-native git and WSL/NTFS handle symlinks inconsistently); keep the two files in sync.
 
 ## The cross-tool contract
 
@@ -266,6 +341,7 @@ Every `project.json` key is optional: skills skip steps gracefully when config i
 agent counts. **Every key is optional**, and a missing key means the skill skips that step
 rather than guessing, so a repo with no `project.json` still works.
 
+- **Start here: [Filling it out](docs/CONFIG.md#filling-it-out)**, a guide that gets an empty repo to a correct file: the fast path, a minimal and a recommended file, what each block answers, a worked polyglot example, common mistakes, and a one-liner that flags typos and dead keys.
 - **[docs/CONFIG.md](docs/CONFIG.md):** the full key reference, plus which skill reads which key.
 - **[templates/project.json.example](templates/project.json.example):** a commented starting point.
 - `/repo-onboarding` writes the file for you. It walks every key in
@@ -326,7 +402,7 @@ by a live-data check. Total cost: ~240k tokens across 3 passes, each 1–6 minut
 - **`scripts/close-tasks.sh`:** the one place that flips a `TASKS.md` row from open to done (`close`), reports/fixes bidirectional drift against pipeline envelopes (`reconcile`), looks up every row tagged to a plan (`rows --plan <key>`, read-only — the lookup `/sdlc` Stage 0 uses instead of a hand-grep), and — read-only, no flags that write — exports the whole work state (`TASKS.md` rows joined to envelopes, plus `plans/*.md` with no row referencing them) as one JSON object (`board`), and groups the open rows into a `now` wave and a `next` wave by lane — parallel by default, ordered by plan phase and `_after:` / `_conflicts:` / `_lane:` tags, with a warning when a ready row's files are dirty in another git worktree (`waves`, read-only; `--write ACTION_ITEMS.md` renders the file), and — the only writer of those row tags — adds or removes one `_after:` / `_conflicts:` / `_lane:` tag on exactly one open row (`tag --row <needle> --add|--remove <tag>`; trailer only, never the checkbox, idempotent). See `docs/BOARD-JSON.md`.
 - **`scripts/loop-runner.sh`:** batch-handoff queue runner for long backlogs. Drives `/sdlc --queue` in a **fresh headless process every `pipeline.loop.batch_size` completed items**, so context resets at a clean item boundary instead of growing all run. Batch size resolves `--queue X` flag > `pipeline.loop.batch_size` > `pipeline.loop.max_items` > 5. See `docs/LOOP-HYGIENE.md`.
 - **`scripts/hooks/next-action.sh`:** the Stop hook behind the `.next-action` seam. Reads the sentinel once, prints `Next: <command>`, deletes it. With `pipeline.loop.auto_continue: true` it instead **executes** a single non-`confirm` entry (`decision: block`), bounded by `pipeline.loop.max_hops`. See `docs/SEAM.md`.
-- **`scripts/sync-global.sh`:** user-scope installer for machines without the plugin route (see *Install → Option C*). Copies `skills/*` and `agents/*` into `~/.claude/` and `jq`-merges the Stop + `SessionStart` hooks with absolute paths. `--dry-run` previews, `--uninstall` reverses. Copies rather than symlinks, so re-run it after each `git pull`.
+- **`scripts/sync-global.sh`:** shell installer for machines without the plugin route (see *Install → Option C*). Copies every skill and agent into `~/.claude/`, installs a runtime root at `~/.claude/brainstorm-toolkit/` (scripts, templates, `INSTALL.json`) and merges every hook from `hooks/hooks.json` into `settings.json` with absolute paths. `--dry-run` previews, `--status` reports, `--uninstall` reverses. Copies rather than symlinks, so re-run it after each `git pull`.
 - **`scripts/hooks/reseed-context.sh`:** installed as a Claude `SessionStart` hook (matcher `compact|clear`) and a Codex `PostCompact` hook. After a compaction or clear it re-points the orchestrator at the loop's durable on-disk state (pipeline envelope + sentinel), so auto-compaction stays lossless for a long `--queue` run.
 - **`scripts/plan-refs.sh`:** deterministic detector for plan/task references written into code (`plans/<file>.md`, `TASKS.md:N`, `task-N`, brainstorm/plan slugs). `scan --base <commit> [--slug <slug>]` reads only added lines (diff plus untracked files) in code files and prints `{hits[], scanned_files}`; read-only, always exits 0. `/sdlc` Stage 5 runs it and routes every hit into the fix loop. Covered by `scripts/ci/test-hooks.sh`.
 - **`scripts/protect-tests.sh`:** test-immutability detector (`arm` / `verify` / `disarm`). Records a test file's sha256 into the run envelope's `data.protected_tests` at the red stage and re-checks it at close-out, so a test silently rewritten to make the implementation pass is caught. Takes `--slug <name>` to address one envelope directly instead of falling back to the most recent in-progress one. A plain CLI, not a wired hook — a `PreToolUse` matcher is routable around via `sed -i`; see `docs/ENFORCEMENT.md`. Covered by `scripts/ci/test-hooks.sh`.
@@ -355,7 +431,7 @@ schedules, three budgets:
 
 | What | Loads | Budget |
 |---|---|---|
-| Frontmatter `description` | **Every session, every runtime, always** — whether or not the skill fires | ≤550 chars each (600 ceiling); ≤7,500 chars for all 13 |
+| Frontmatter `description` | **Every session, every runtime, always** — whether or not the skill fires | ≤550 chars each (600 ceiling); ≤7,500 chars for the whole set |
 | `SKILL.md` body | When that skill triggers | ≤500 lines (the Agent Skills spec ceiling). Length is not the signal; a stage body that belongs in `templates/` is. |
 | `templates/` and `references/` | When a stage actually runs — a self-skipping stage never loads its template | No fixed ceiling; add a `## Contents` TOC past ~150 lines so a partial read still shows full scope |
 | `docs/` | **Never** — `setup.sh` does not install it | Unbounded. This is where design history goes. |

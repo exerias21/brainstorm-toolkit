@@ -14,7 +14,7 @@ metadata:
 
 # Brainstorm
 
-> **Toolkit paths.** Every toolkit script or template path cited here resolves against the plugin root — this skill's base directory two levels up (`<base>/../..`) — when the skill is loaded from a plugin; a repo-local copy installed by `setup.sh` wins when it exists.
+> **Toolkit paths.** Every toolkit script or template path cited here resolves, first hit wins, against: a repo-local copy installed by `setup.sh`; else the plugin root (this skill's base directory two levels up, `<base>/../..`) when it holds that path; else `~/.claude/brainstorm-toolkit/` (the global shell install).
 
 An interactive ideation skill that walks through a structured brainstorming process *with* the
 user. Unlike `/brainstorm-team` (which launches autonomous agents to produce a

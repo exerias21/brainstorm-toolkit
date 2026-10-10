@@ -12,6 +12,240 @@ carries an inline comment for every key. `/repo-onboarding` writes this file for
 This page mirrors `templates/project.json.example`; that file is the registry
 `scripts/ci/check_contracts.py` validates against — update it first.
 
+## Filling it out
+
+A guide for getting from an empty repo to a correct file. The reference below it is the
+complete key list; this part is the order to think in.
+
+- [Fastest path: `/repo-onboarding`](#fastest-path-repo-onboarding)
+- [A minimal file and a recommended file](#a-minimal-file-and-a-recommended-file)
+- [Block by block: the question each answers](#block-by-block-the-question-each-answers)
+- [A worked example](#a-worked-example)
+- [Common mistakes](#common-mistakes)
+- [Check your file](#check-your-file)
+
+### Fastest path: `/repo-onboarding`
+
+Let the skill write the file. It scans the repo (manifests, compose
+services, CI workflows, test config, migrations) and walks **every** key in
+`project.json.example`, putting each in one bucket: **detected** (with evidence), **not
+applicable** (with why) or **unknown**. The unknowns are reported at the end, so a key nobody
+thought to look for still gets noticed.
+
+It then asks the choices detection cannot make, in one batch with the recommended answer
+first:
+
+| It asks | Key | Recommended |
+|---|---|---|
+| Which model implements the work | `models.implement` | `sonnet` |
+| Review stage on, and which model reviews | `pipeline.review_fix.enabled` + `models.code_review` | on + `opus` |
+| A ceiling for every fan-out | `models.cap` | omit (no ceiling) |
+| Which model pre-flights the plan | `models.sanity` / `agents.sanity_focuses` | omit (built-in per-focus defaults) |
+| How many review lenses (only if review is on) | `agents.code_review_lenses` | all four, or `["correctness", "security"]` to halve the cost |
+| How to bring the app up for manual verification | `stack.up` / `stack.rebuild` / `stack.url` | what it detected |
+| What git should ignore | `.gitignore` entries, not a config key | `project.json`, `TASKS.md`, `plans/` |
+| Co-author trailer on suggested commits | `coauthor_trailer` | `false` |
+
+Run headless (CI, `claude -p`) and it asks nothing: it takes those defaults, writes the file
+anyway and names every assumed value in its report so each is one edit to correct.
+
+### A minimal file and a recommended file
+
+Every key is optional, so a file can be three lines. This is enough for `/test-check` and for
+`/sdlc` to know where your tests live and what your trunk is called:
+
+```json
+{
+  "main_branch": "main",
+  "test": {
+    "unit": "pytest tests/ -q"
+  }
+}
+```
+
+The recommended file adds the cost and quality levers worth deciding on day one: Sonnet
+implements, Opus reviews, plus the gotchas file and the module list:
+
+```json
+{
+  "main_branch": "main",
+  "test": {
+    "unit": "pytest tests/ -q"
+  },
+  "models": {
+    "implement": "sonnet",
+    "code_review": "opus"
+  },
+  "pipeline": {
+    "review_fix": {
+      "enabled": true
+    }
+  },
+  "gotchas_file": "GOTCHAS.md",
+  "modules": ["api", "web", "worker"]
+}
+```
+
+### Block by block: the question each answers
+
+| Block | The question it answers | Notes |
+|---|---|---|
+| `main_branch` | What is trunk called? | Continuity detection stays quiet on it. Detected from `origin/HEAD`. |
+| `test.unit` | How do I run the backend tests? | Keep it **clean-checkout-safe**: no network, credentials or running services. It runs in the `test-runner` agent whenever a backend surface changed, and the opt-in stop gate re-runs it. Put anything that needs a database or an API key behind a different command. |
+| `test.frontend` | How do I run the frontend tests? | Runs when a frontend surface changed. |
+| `test.e2e` | How do I run the browser suite? | Without it, touching the frontend raises a soft-stop each run ("frontend changed but no visual check ran"), so set it or accept the prompt. `e2e_max_fix_loops`, `e2e_patterns_file` and `e2e_rerun_failed_only` tune `/test-check --loop` only. |
+| `logs.*` | How do I read service logs? | `command` takes `{service}` and `{tail}`; `services` lists what to audit. |
+| `stack.*` | How do I bring the app up to click through it? | `up`, `rebuild` (force-recreate, for when a dependency manifest changed) and `url`. Printed at hand-off, **never auto-run**. |
+| `eval.*` | Is there an eval runner? | `runner` is what turns Stage 3 on; without it the stage is skipped. `features_dir` and `thresholds.min_pass_rate` tune the runner. |
+| `models.*` | Which tier does each role use? | One key per role; unset means the built-in default (Sonnet-first, Haiku for the mechanical checks). `cap` is a ceiling that only lowers, and absent means no ceiling. `code_review` and `code_review_second_pass` are a separate axis the cap never touches. If `code_review` lands on the implementer's tier the run is marked `independence: degraded` and findings are surfaced, never auto-fixed. [Table below.](#models) |
+| `agents.*` | How many agents does each fan-out dispatch? | Review lenses, sanity focuses, cleanup lenses, and the thresholds that make Stage 2 split into lanes (`decompose_min_tasks`, `decompose_min_files`). |
+| `pipeline.review_fix` | Is the adversarial review on? | `enabled` (off by default, permanently) and `mode` (`interactive`, `auto`, `off`). |
+| `pipeline.scope` | How is an oversized plan cut? | `max_steps_per_run` is the fallback cut for a plan with no phase headings. |
+| `pipeline.loop` | How does `--queue` and the auto-continue loop behave? | `max_items`, `batch_size`, `max_hops`, `auto_continue` (off by default). |
+| `pipeline.fix_loop` | Should the last fix attempt escalate a tier? | `escalate_last`, off by default. |
+| `pipeline.cleanup` | Is the cleanup pass on? | `enabled` and `mode`, off by default. |
+| `pipeline.output` | How chatty is the run? | `verbosity`: `quiet` (default) or `normal`. |
+| `pipeline.stop_gate` | Should a red `test.unit` block the Stop event mid-run? | `"off"` (default) or `"tests"`; `stop_gate_timeout` is in seconds. Claude and Codex only. |
+| `pipeline.enforce_cap` | Should `models.cap` be enforced by a hook? | Claude only. Rewrites an over-cap dispatch to the cap; the reviewer is exempt. |
+| `pipeline.action_items` | Do you want the generated `ACTION_ITEMS.md` waves? | `enabled`, `file`, `reassess`. See the reference below. |
+| `pipeline.tasks.close_in_place` | Should closed rows stay on their lines? | `true` flips a closed row to `[x]` where it stands, so `TASKS.md:N` citations stay valid. |
+| `discipline` globs | Which paths count as frontend, backend, data, docs, deploy-delta? | Override only for a non-standard layout; see below. |
+| `migrations` | Where are migrations, and how do I tell what is applied? | `/repo-health` only. `dir` and `applied_check`. |
+| `gotchas_file` | Where do pitfalls live? | Default `GOTCHAS.md`. |
+| `modules` | What are the top-level code areas? | Read by `/brainstorm`. |
+| `coauthor_trailer` | Should a suggested commit message credit Claude? | `false` unless you opt in. |
+
+#### Models
+
+The roles you will most often touch: `implement` (the implementer, the decomposer and every
+lane), `fix` (the Stage 5 fix-loop agent), `validate` (the plan-conformance check),
+`test_runner` (Haiku by default), `code_review` and `code_review_second_pass` (the reviewer
+axis), and `planner` (an advisory session-model nudge for `/brainstorm`, not a dispatch). The
+full role table is in the reference below.
+
+#### When to override the `discipline` globs
+
+The defaults cover common layouts. Override a list only when yours does not match, and note
+that an override **replaces** the default list, so carry over the patterns you still want.
+
+- **Migrations outside a `migrations/` directory.** The default `data_globs` catches
+  `**/migrations/**`; an alembic tree at `engine/alembic/versions/` is missed. Add
+  `engine/alembic/versions/**`.
+- **A frontend root not named `frontend/`.** The defaults key on file extension, but a
+  TypeScript-only tree such as `portal/**/*.ts` is classed as backend (`**/*.ts` is a default
+  backend glob). Put `portal/**/*.ts` in `frontend_globs` and narrow `backend_globs`.
+- **Lockfiles and compose files.** `deploy_delta_globs` flags "rebuild required, not restart"
+  when the diff touches one. Add `docker-compose.yml`, or a nested `engine/requirements.txt`.
+
+### A worked example
+
+A polyglot repo: a Python engine with alembic migrations, a Next.js portal, and Postgres in
+compose.
+
+```json
+{
+  "main_branch": "main",
+  "python": "python3",
+  "test": {
+    "unit": "cd engine && pytest tests/unit -q",
+    "frontend": "cd portal && pnpm test --run",
+    "e2e": "cd portal && npx playwright test --reporter=json"
+  },
+  "logs": {
+    "command": "docker compose logs {service} --tail={tail}",
+    "services": ["engine", "portal", "db"]
+  },
+  "stack": {
+    "up": "docker compose up -d --build",
+    "rebuild": "docker compose up -d --build --force-recreate",
+    "url": "http://localhost:3000"
+  },
+  "models": {
+    "implement": "sonnet",
+    "code_review": "opus"
+  },
+  "agents": {
+    "code_review_lenses": ["correctness", "security"]
+  },
+  "migrations": {
+    "dir": "engine/alembic/versions",
+    "applied_check": "docker compose exec -T db psql -U app -tAc \"select version_num from alembic_version\""
+  },
+  "discipline": {
+    "frontend_globs": ["portal/**/*.ts", "portal/**/*.tsx", "portal/**/*.css"],
+    "backend_globs": ["engine/**/*.py"],
+    "data_globs": ["engine/alembic/versions/**", "**/*.sql"],
+    "deploy_delta_globs": ["engine/requirements.txt", "engine/Dockerfile", "portal/package.json", "portal/pnpm-lock.yaml", "docker-compose.yml"]
+  },
+  "pipeline": {
+    "review_fix": {
+      "enabled": true
+    },
+    "action_items": {
+      "enabled": true
+    },
+    "tasks": {
+      "close_in_place": true
+    }
+  },
+  "gotchas_file": "GOTCHAS.md",
+  "modules": ["engine", "portal"]
+}
+```
+
+- `test.unit` points at `tests/unit`, the suite that needs no database. Integration tests that
+  need the compose `db` service stay out of it.
+- `portal/**/*.ts` is listed under `frontend_globs`, and `backend_globs` is narrowed to the
+  engine, so a portal change is classed as frontend and `test.frontend` and `test.e2e` run
+  for it.
+- `data_globs` carries the alembic path because the default `**/migrations/**` would miss it.
+- `deploy_delta_globs` lists the nested manifests and the compose file, so a dependency bump
+  prints "rebuild required" in the report.
+- `agents.code_review_lenses` trimmed to two lenses roughly halves the review stage's cost.
+- `action_items.enabled` and `close_in_place` are opt-ins; leave them out for a repo that does
+  not use waves.
+- No `models.cap`: the defaults are already Sonnet-first, so there is nothing to lower.
+
+### Common mistakes
+
+- **Treating `models.cap` as "use this model".** It only lowers. To raise a role, set that
+  role's own key (`models.implement`, `models.fix`, ...). Omit `cap` unless you want a ceiling.
+- **Using a key from an older layout.** Model and lens settings that once lived in the
+  sanity-check and review-fix blocks of `pipeline` moved to `models` and `agents`
+  (the map is in [MODEL-AXES.md](MODEL-AXES.md)). An old key is not an error: it is silently
+  ignored and you get the built-in default. The reviewer is `models.code_review`; the sanity
+  focuses are `agents.sanity_focuses`; the sanity model is `models.sanity`. Only `enabled` and
+  `mode` stay under `pipeline.review_fix`.
+- **Expecting a flag to pick a model.** No flag does. Edit the key.
+- **Keys nothing reads.** A key such as an integration-test command under `test` is not a toolkit key. It is fine as
+  a note to humans and is never run. If you want it run, wire it into `test.unit`.
+- **A `test.unit` that needs services or credentials.** It will fail on a clean checkout and
+  in the stop gate. Point it at the suite that runs without them.
+- **Forgetting `test.e2e` on a frontend repo.** Not an error, but each run that touches the
+  frontend raises a soft-stop asking about the missing visual check.
+- **Believing a hand-written `ACTION_ITEMS.md` switches the feature on.** It does not, and it
+  is never overwritten. Only `pipeline.action_items.enabled: true` or a generated file (first
+  line is the generated banner) opts in; `enabled: false` always vetoes.
+- **Invalid JSON.** No trailing commas and no `//` or `/* */` comments. A key starting with
+  `_` (such as `_comment`) is the supported way to leave a note, and is ignored.
+
+### Check your file
+
+Run this from the repo root. It loads `.claude/project.json`, fails loudly if the JSON does
+not parse, and lists every key that is not in `.claude/project.json.example` (which `setup.sh`
+installs), so a typo or a dead key shows up. Comment keys (starting with `_` or `//`) are skipped. From a
+toolkit checkout use `bash scripts/py.sh` in place of `python`.
+
+```bash
+python -c "import json;f=lambda p:json.load(open(p));w=lambda u,e,p='':[x for k,v in u.items() if not k.startswith(('_','//')) for x in (w(v,e[k],p+k+'.') if k in e and isinstance(v,dict) and isinstance(e[k],dict) else [] if k in e else [p+k])];print('not in the example:',w(f('.claude/project.json'),f('.claude/project.json.example')) or 'none')"
+```
+
+`none` means every key is one the toolkit knows. A bare name is a typo or a key nothing reads.
+The example leaves map-valued keys such as `models.sanity` as `null`, so the check does not
+look inside them.
+
+## Reference
+
 `.claude/project.json`, all keys optional (`_comment` keys below are stripped for readability
 — the real file's inline comments are more detailed than this page):
 
