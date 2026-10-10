@@ -258,6 +258,16 @@ hands you a validated tree; the rename is recorded under *Migration policy* in `
 Two flags gate whole templates rather than sections — `--queue` (`queue-mode.md`) and the
 review stage's opt-in. Keep it that way: a flag nobody passed should cost nothing.
 
+### Keeping the shell install in parity
+
+`scripts/sync-global.sh` is the third install route (plugin, `setup.sh`, shell). It reads
+`hooks/hooks.json` at run time and copies `scripts/`, `templates/` and `plugin.json` into
+`~/.claude/brainstorm-toolkit/`. So a change to `hooks/hooks.json`, or to which repo-root
+`scripts/` or `templates/` paths skills call, must keep `sync-global.sh` in parity: never list
+hook scripts in it (CI's `shell-install-parity` check enforces the hook half), and extend its
+runtime copy when a skill starts citing a new repo-root directory. `scripts/ci/setup-roundtrip.sh`
+exercises the full install/re-run/uninstall round trip against a scratch `HOME`.
+
 ### When a rule earns a hook, not just prose
 
 A skill is an advisory control — it can only ask the model to follow it. The hooks in

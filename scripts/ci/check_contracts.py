@@ -1017,6 +1017,75 @@ def check_hooks_json_interpreter(root: Path) -> list[Finding]:
     return findings
 
 
+# ── shell-install-parity (scripts/sync-global.sh vs hooks/hooks.json) ────────
+#
+# sync-global.sh is the shell install route (README Option C). It must wire exactly the
+# hooks the plugin does, and the only way to keep that true is to never restate the list:
+# it reads hooks/hooks.json at run time and swaps ${CLAUDE_PLUGIN_ROOT} for the runtime
+# root. This check fails if (a) sync-global.sh names any hooks.json script (a hard-coded
+# list that could drift), (b) it stops reading hooks/hooks.json, (c) a hooks.json command
+# no longer carries the ${CLAUDE_PLUGIN_ROOT} placeholder the substitution relies on, or
+# (d) setup.sh's scripts/ copy excludes something sync-global.sh does not also exclude.
+
+_SETUP_SCRIPTS_COPY_RE = re.compile(r'copy_tree_if_new\s+"[^"]*scripts"\s+"[^"]*scripts"\s+"([^"]*)"')
+
+
+def check_shell_install_parity(root: Path) -> list[Finding]:
+    hooks_json = root / "hooks" / "hooks.json"
+    sync = root / "scripts" / "sync-global.sh"
+    if not hooks_json.is_file() or not sync.is_file():
+        return []
+    rel = relposix(root, sync)
+    text = sync.read_text(encoding="utf-8", errors="replace")
+    findings: list[Finding] = []
+    try:
+        data = json.loads(hooks_json.read_text(encoding="utf-8", errors="replace"))
+    except json.JSONDecodeError:
+        return []
+    basenames: set[str] = set()
+    for groups in (data.get("hooks") or {}).values():
+        for group in groups or []:
+            for hook in (group or {}).get("hooks") or []:
+                command = hook.get("command", "") if isinstance(hook, dict) else ""
+                if "${CLAUDE_PLUGIN_ROOT}" not in command:
+                    findings.append(Finding(
+                        "hooks/hooks.json", 1,
+                        f"hook command `{command}` lacks ${{CLAUDE_PLUGIN_ROOT}} -- "
+                        "sync-global.sh rewrites that placeholder, so this hook would be "
+                        "wired verbatim (and broken) in the shell install",
+                        "shell-install-parity",
+                    ))
+                name = command.strip().strip("\"'").rsplit("/", 1)[-1].strip("\"'")
+                if name:
+                    basenames.add(name)
+    for lineno, line in enumerate(text.splitlines(), 1):
+        for name in sorted(basenames):
+            if name in line:
+                findings.append(Finding(
+                    rel, lineno,
+                    f"sync-global.sh names hook script `{name}` -- the hook set must be "
+                    "derived from hooks/hooks.json at run time, not listed here",
+                    "shell-install-parity",
+                ))
+    if "hooks/hooks.json" not in text:
+        findings.append(Finding(
+            rel, 1, "sync-global.sh does not read hooks/hooks.json -- the shell install "
+            "would no longer track the plugin's hook set", "shell-install-parity",
+        ))
+    setup = root / "setup.sh"
+    if setup.is_file():
+        m = _SETUP_SCRIPTS_COPY_RE.search(setup.read_text(encoding="utf-8", errors="replace"))
+        for token in (m.group(1).split() if m else []):
+            if token != "sync-global.sh" and token not in text:
+                findings.append(Finding(
+                    rel, 1,
+                    f"setup.sh excludes `{token}` from the scripts/ copy but sync-global.sh "
+                    "does not mention it -- the runtime dir would ship what the repo install skips",
+                    "shell-install-parity",
+                ))
+    return findings
+
+
 # ── description-budget (skills/*/SKILL.md) ──────────────────────────────────
 #
 # Frontmatter `description` is resident on every session, every turn, on all
@@ -1392,6 +1461,7 @@ def run_all(root: Path, phrases_file: Path) -> dict[str, list[Finding]]:
         "header-list-count": check_header_list_counts(header_list_scope_files(root), root),
         "portable-invocation": check_bare_python3(files, root) + check_hooks_json_interpreter(root),
         "description-budget": check_description_budget(root),
+        "shell-install-parity": check_shell_install_parity(root),
     }
 
 
@@ -1820,6 +1890,37 @@ def self_test_description_budget_warning() -> bool:
     return ok
 
 
+def self_test_shell_install_parity() -> bool:
+    """Self-test for shell-install-parity: a sync-global.sh that hard-codes one
+    hooks.json script name, plus a hooks.json command missing the placeholder."""
+    with tempfile.TemporaryDirectory(prefix="check_contracts_selftest_shell_") as tmp:
+        root = Path(tmp)
+        (root / "hooks").mkdir(parents=True)
+        (root / "scripts").mkdir(parents=True)
+        (root / "hooks" / "hooks.json").write_text(
+            json.dumps({"hooks": {"Stop": [{"matcher": "*", "hooks": [
+                {"type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hooks/next-action.sh\""},
+                {"type": "command", "command": "bash \"/abs/scripts/hooks/stop-gate.sh\""},
+            ]}]}}),
+            encoding="utf-8",
+        )
+        (root / "scripts" / "sync-global.sh").write_text(
+            "#!/usr/bin/env bash\n# reads hooks/hooks.json\n"
+            "HOOK=\"bash $RT/scripts/hooks/next-action.sh\"\n",
+            encoding="utf-8",
+        )
+        findings = check_shell_install_parity(root)
+    ok = len(findings) == 2
+    print(
+        f"[{'OK' if ok else 'FAIL'}] shell-install-parity: expected 2 violation(s) (one "
+        f"hard-coded hook script, one hooks.json command without the placeholder), "
+        f"caught {len(findings)}"
+    )
+    for f in findings:
+        print(f"    {f.path}:{f.line}: {f.message}")
+    return ok
+
+
 def self_test() -> int:
     with tempfile.TemporaryDirectory(prefix="check_contracts_selftest_") as tmp:
         root = Path(tmp)
@@ -1868,6 +1969,8 @@ def self_test() -> int:
     if not self_test_header_list_count():
         ok = False
     if not self_test_portable_invocation():
+        ok = False
+    if not self_test_shell_install_parity():
         ok = False
     if not self_test_description_budget_per_skill():
         ok = False
