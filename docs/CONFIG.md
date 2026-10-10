@@ -302,6 +302,7 @@ map-valued keys such as `models.sanity` as `null`, so the check does not look in
     "code_review_max_lenses": 4,
     "code_review_passes": 1,
     "code_review_max_fix_loops": 3,
+    "hunt_lenses": ["correctness", "error-handling", "data-contracts"],
     "decompose_min_tasks": 6,
     "decompose_min_files": 12,
     "cleanup_lenses": ["over-engineering", "docstring-currency"],
@@ -413,6 +414,7 @@ different reviewer catches what it missed and keeps the review independent.
 | `dead_code_review` | `/dead-code-review` lenses (string or map `server`/`client`/`data`/`docs`/`scripts`) | `server`/`client`/`data` sonnet, `docs`/`scripts` haiku |
 | `repo_health` | `/repo-health` checks (string or per-check map) | each check's built-in tier |
 | `docstring_sync` | `/docstring-sync` triage + rewrite | `sonnet` |
+| `hunt` | `/repo-health --hunt` lenses (consolidator runs on `code_review`, Axis 2) | `sonnet` |
 | `code_review`, `code_review_second_pass` | Axis 2: Stage 5.7 reviewers (never capped) | `opus`, `sonnet` |
 | `planner` | advisory session-model nudge | `opus` |
 
@@ -438,7 +440,8 @@ unrecognized value falls through to the default.
 `agents.*` sets **how many** agents each fan-out stage dispatches. Cost scales roughly
 linearly: one agent (or reviewer call) per entry, so trimming
 `agents.code_review_lenses` to `["correctness", "security"]` roughly halves the review
-stage. All of it governs sub-agents only, never the session orchestrator.
+stage. `agents.hunt_lenses` picks the `/repo-health --hunt` lenses (default all three, on
+`models.hunt`). All of it governs sub-agents only, never the session orchestrator.
 
 `pipeline.scope.max_steps_per_run` bounds Stage 0's scope gate for a plan-file `/sdlc` run
 (default `8`) — the fallback step-count cut used only when the plan has no `#### Phase N`

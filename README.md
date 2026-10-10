@@ -23,7 +23,7 @@ Most AI-agent task systems bolt on heavyweight task databases, multi-agent orche
 | `/repo-onboarding` | Claude + Copilot + Codex | Generate AGENTS.md + TASKS.md + project.json + GOTCHAS.md |
 | `/code-tour` | Claude + Copilot + Codex | Turn a codebase into teaching material: why-focused docstrings plus a guided reading path (`TOUR.md`) with exercises. |
 | `/docstring-sync` | Claude + Copilot + Codex | Repair docstrings and comments that drifted from their code: stale claims, param/return mismatches, placeholder stubs, and rotted pointers to plan files or tickets. Deterministic checks find everything; you review the diff. Never commits. |
-| `/repo-health` | Claude + Copilot + Codex | Read-only hygiene sweep (dead code + tests + deps + secrets + gotchas-currency + rules drift); prints a scored report and the highest-impact next command. |
+| `/repo-health` | Claude + Copilot + Codex | Read-only hygiene sweep (dead code + tests + deps + secrets + gotchas-currency + rules drift); prints a scored report and the highest-impact next command. `--hunt [<area>]` hunts bugs and files `_bug_` rows instead. |
 | `/test-check` | Claude + Copilot + Codex | Run configured tests + log audit after changes (one-shot, no fix loop) |
 | `/test-check --loop` | Claude + Copilot + Codex † | Run e2e/browser tests in a fix loop with flaky-test guard (dispatches `e2e-test-runner` agent on Claude, inline on Copilot). Reach for this instead of hand-composing a Playwright agent fan-out; it fixes what it finds. |
 | `/gotcha` | Claude + Copilot + Codex | View/append project pitfalls. Auto-drafted at loop-exit by `/task`, `/sdlc` on real traps (objective trigger), and injected at `/brainstorm` start |

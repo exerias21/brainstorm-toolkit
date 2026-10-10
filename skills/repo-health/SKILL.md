@@ -6,8 +6,8 @@ description: >
   says /repo-health, asks for a "hygiene check", "weekly sweep", "is this repo healthy", "what
   should I clean up", or before a release. Never modifies code — produces a report and a
   `.next-action` suggestion. Run after merges land, not mid-implementation. For a deep dead-code
-  investigation use /dead-code-review; for PR-scoped review use /sdlc's Stage 5.
-argument-hint: "[--no-dead-code] [--no-tests] [--no-deps] [--no-secrets] [--no-gotchas] [--no-migrations] [--no-pipeline-state] [--no-memory]"
+  investigation use /dead-code-review; for PR-scoped review use /sdlc's Stage 5. --hunt: bugs.
+argument-hint: "[--no-dead-code] [--no-tests] [--no-deps] [--no-secrets] [--no-gotchas] [--no-migrations] [--no-pipeline-state] [--no-memory] [--hunt [<area>]]"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
 ---
@@ -29,6 +29,14 @@ next command. Never modifies code, never opens a PR.
   pipeline envelopes, no memory pointer), so a repo without that surface
   never sees the check — these are **project-agnostic by construction**.
   Skipped checks appear in the report as `skip` with the reason.
+- `--hunt [<area>]`: bug-hunt mode (below). `<area>` is a path or glob; default whole repo.
+
+## Hunt mode (`--hunt`)
+
+Only when `--hunt` is passed: **read `skills/repo-health/references/hunt.md` now** and follow it
+instead of the Procedure below. Hunt **replaces** the normal sweep for that run (no checks, no
+score) and files `_bug_` rows in `TASKS.md`; it never edits code. A run without `--hunt` never
+opens that file.
 
 ## Procedure
 
