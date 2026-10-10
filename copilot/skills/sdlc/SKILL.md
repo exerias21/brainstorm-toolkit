@@ -146,6 +146,8 @@ plan's own phase boundaries, handles a plan with zero rows and `_manual_`-only p
 warn-only reconcile check before taking, records `run.json.data.scope_gate` (accumulating
 `taken_phases` across re-runs), and prints the verdict line.
 
+**Bug rows.** If any taken row carries `_bug_` (the `bug` field from `close-tasks.sh rows`), **read `skills/sdlc/templates/bug-triage.md` now**; otherwise never open it.
+
 **Skill-repo detection** (automatic): if `.claude-plugin/marketplace.json` exists at repo root,
 switch to **Skill-repo mode** below for the rest of the run. **Vendored-skill guard:** if it is
 absent but the plan's changed files target `.claude/skills/**`, `.github/skills/**` or

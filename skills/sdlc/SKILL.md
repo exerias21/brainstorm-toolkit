@@ -180,6 +180,8 @@ plan's own phase boundaries, handles a plan with zero rows and `_manual_`-only p
 warn-only reconcile check before taking, records `run.json.data.scope_gate` (accumulating
 `taken_phases` across re-runs), and prints the verdict line.
 
+**Bug rows.** If any taken row carries `_bug_` (the `bug` field from `close-tasks.sh rows`), **read `skills/sdlc/templates/bug-triage.md` now**; otherwise never open it.
+
 **Native task mirror (Claude only; skip silently elsewhere).** Once the stage list for this run
 is known, call `TaskCreate` once per stage that will actually run — the gates above have already
 decided which those are, so a review-off run creates no `review` task. Mark each `in_progress` on
