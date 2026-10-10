@@ -122,7 +122,7 @@ Read-only unless `--write` is passed; it never edits `TASKS.md`. Exit codes matc
 {
   "schema": 1,
   "generated_at": "<iso8601 UTC>",
-  "summary": { "now": 1, "lanes": 2, "next": 3, "later": 2, "needs_you": 0, "unknown_files": 1, "conflicts": 0 },
+  "summary": { "now": 1, "lanes": 2, "next": 3, "later": 2, "needs_you": 0, "unknown_files": 1, "conflicts": 0, "hub_files": 0 },
   "open_hash": "<16 hex chars>",
   "now":  { "<lane>": { "line": 15, "state": " ", "priority": "P2", "title": "...",
                         "plan_slug": "x", "phase": 1, "lane": "<lane>",
@@ -132,7 +132,8 @@ Read-only unless `--write` is passed; it never edits `TASKS.md`. Exit codes matc
   "needs_you":     [ { /* `_manual_` rows */ } ],
   "unknown_files": [ { /* candidate rows whose plan phase names no files */ } ],
   "overlaps":      [ { "line": 15, "lane": "<lane>", "overlaps": [ /* as on the row */ ] } ],
-  "conflicts":     [ { "lines": [15, 22], "source": "inferred|explicit", "files": ["a.py"] } ]
+  "conflicts":     [ { "lines": [15, 22], "source": "inferred|explicit", "files": ["a.py"] } ],
+  "hub_files":     [ { "file": "plugin.json", "plans": ["plan-a", "plan-b", "plan-c"] } ]
 }
 ```
 
@@ -145,7 +146,11 @@ Read-only unless `--write` is passed; it never edits `TASKS.md`. Exit codes matc
   a not-done row (`Active / Pending` or `Blocked`). An `_after:` tag replaces that inference
   for its row. **Conflicts:** `_conflicts:` plus two rows (of different plan phases) whose
   plan-phase file lists intersect. A row with no resolvable files has no inferred conflicts and
-  is listed in `unknown_files`.
+  is listed in `unknown_files`. A file named by
+  `pipeline.action_items.hub_threshold` (default 3) or more distinct plans is a **hub**: it is left
+  out of inferred conflicts and listed in `hub_files[]` (`file` + sorted `plans`; `summary.hub_files`
+  is the count). Files matching `pipeline.action_items.ignore_conflict_files` globs are left out
+  too, unreported. Explicit `_conflicts:` and the worktree overlap warning are unaffected.
 - **Files** for a row come from the `Files:` lines and existing backticked repo paths in its
   plan's `#### Phase N` section; the plan file comes from the row's plan path, else its
   `_plan:` slug under `plans/` then `docs/plans/`, all resolved against the `TASKS.md`

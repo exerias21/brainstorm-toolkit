@@ -107,7 +107,7 @@ implements, Opus reviews, plus the gotchas file and the module list:
 | `pipeline.output` | How chatty is the run? | `verbosity`: `quiet` (default) or `normal`. |
 | `pipeline.stop_gate` | Should a red `test.unit` block the Stop event mid-run? | `"off"` (default) or `"tests"`; `stop_gate_timeout` is in seconds. Claude and Codex only. |
 | `pipeline.enforce_cap` | Should `models.cap` be enforced by a hook? | Claude only. Rewrites an over-cap dispatch to the cap; the reviewer is exempt. |
-| `pipeline.action_items` | Do you want the generated `ACTION_ITEMS.md` waves? | `enabled`, `file`, `reassess`. See the reference below. |
+| `pipeline.action_items` | Do you want the generated `ACTION_ITEMS.md` waves? | `enabled`, `file`, `reassess`, `hub_threshold`, `ignore_conflict_files`. See the reference below. |
 | `pipeline.tasks.close_in_place` | Should closed rows stay on their lines? | `true` flips a closed row to `[x]` where it stands, so `TASKS.md:N` citations stay valid. |
 | `discipline` globs | Which paths count as frontend, backend, data, docs, deploy-delta? | Override only for a non-standard layout; see below. |
 | `migrations` | Where are migrations, and how do I tell what is applied? | `/repo-health` only. `dir` and `applied_check`. |
@@ -454,6 +454,14 @@ is reset at a clean boundary; `max_hops` bounds the auto-continue chain.
 hook executes a single non-`confirm` `.next-action` entry instead of just
 printing it, so the loop self-advances. It never chains a `confirm: true` action
 (i.e. never a commit or any other git write). See `docs/LOOP-HYGIENE.md`.
+
+`pipeline.action_items.hub_threshold` (default `3`, minimum `2`; lower or invalid values fall back to
+`3`) makes a file named by that many **distinct** plans' phase file lists a *hub* (a manifest or
+changelog every plan touches): it is excluded from inferred conflicts and reported in the waves
+JSON as `hub_files`. `pipeline.action_items.ignore_conflict_files` (default `[]`) is a list of
+fnmatch-style globs matched against the repo-relative path; matching files are excluded from
+inferred conflicts too and are not reported as hubs. Neither affects an explicit `_conflicts:` tag
+or the other-worktree overlap warning.
 
 `pipeline.action_items` (`enabled`, `file`, `reassess`) controls the generated `ACTION_ITEMS.md` — which open `TASKS.md` rows
 can run now, which become ready next, grouped by lane (`bash scripts/close-tasks.sh waves`; JSON

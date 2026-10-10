@@ -1789,6 +1789,82 @@ assert [c['source'] for c in d['conflicts']] == ['explicit'], d['conflicts']
 PYEOF
 ok
 
+# Rows for plans p/q/r (phase 1, one lane each) that all name $3 in their phase-1 file list.
+wv_hub_fixture() {
+  local d="$1" f="$2" n
+  printf '## Active / Pending\n' > "$d/TASKS.md"
+  for n in "${@:3}"; do
+    wv_plan "$d/plans/$n.md" "$f" "src/$n-2.py"
+    printf -- '- [ ] (P1) %s one \xe2\x80\x94 plans/%s.md _plan: %s_ \xc2\xb7 _phase: 1_ \xc2\xb7 _lane: l-%s_\n' "$n" "$n" "$n" "$n" >> "$d/TASKS.md"
+  done
+}
+
+CASE="close-tasks waves: a file named by three plans is a hub -- no inferred conflict, listed in hub_files"
+d="$(ct_dir w-hub1)"
+wv_hub_fixture "$d" .claude-plugin/plugin.json r p q
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert d['conflicts'] == [], d['conflicts']
+assert d['hub_files'] == [{'file': '.claude-plugin/plugin.json', 'plans': ['p', 'q', 'r']}], d['hub_files']
+assert d['summary']['hub_files'] == 1 and d['summary']['conflicts'] == 0, d['summary']
+assert sorted(d['now']) == ['l-p', 'l-q', 'l-r'], d['now']
+PYEOF
+ok
+
+CASE="close-tasks waves: a file named by only two plans still conflicts and is not a hub"
+d="$(ct_dir w-hub2)"
+wv_hub_fixture "$d" .claude-plugin/plugin.json p q
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert [(c['source'], c['files']) for c in d['conflicts']] == [('inferred', ['.claude-plugin/plugin.json'])], d['conflicts']
+assert d['hub_files'] == [] and d['summary']['hub_files'] == 0, d['hub_files']
+PYEOF
+ok
+
+CASE="close-tasks waves: hub_threshold from project.json is honoured; an invalid value falls back to 3"
+d="$(ct_dir w-hub3)"
+wv_hub_fixture "$d" src/shared.py p q
+mkdir -p "$d/.claude"
+printf '{"pipeline":{"action_items":{"hub_threshold":2}}}' > "$d/.claude/project.json"
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert d['conflicts'] == [] and [h['file'] for h in d['hub_files']] == ['src/shared.py'], (d['conflicts'], d['hub_files'])
+PYEOF
+printf '{"pipeline":{"action_items":{"hub_threshold":1}}}' > "$d/.claude/project.json"
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert len(d['conflicts']) == 1 and d['hub_files'] == [], (d['conflicts'], d['hub_files'])
+PYEOF
+ok
+
+CASE="close-tasks waves: ignore_conflict_files globs drop a file from inferred conflicts without reporting a hub"
+d="$(ct_dir w-hub4)"
+wv_hub_fixture "$d" docs/CHANGELOG.md p q
+mkdir -p "$d/.claude"
+printf '{"pipeline":{"action_items":{"ignore_conflict_files":["docs/*.md"]}}}' > "$d/.claude/project.json"
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert d['conflicts'] == [] and d['hub_files'] == [], (d['conflicts'], d['hub_files'])
+PYEOF
+ok
+
+CASE="close-tasks waves: an explicit _conflicts: still conflicts on a hub file"
+d="$(ct_dir w-hub5)"
+wv_hub_fixture "$d" .claude-plugin/plugin.json p q r
+sed -i 's/_lane: l-p_/_lane: l-p_ \xc2\xb7 _conflicts: q:1_/' "$d/TASKS.md"
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert [c['source'] for c in d['conflicts']] == ['explicit'], d['conflicts']
+assert [h['file'] for h in d['hub_files']] == ['.claude-plugin/plugin.json'], d['hub_files']
+PYEOF
+ok
+
 CASE="close-tasks waves: one row per lane (priority, then [~], decides); --write renders ACTION_ITEMS.md"
 d="$(ct_dir w06)"
 wv_plan "$d/plans/p.md" src/a.py src/x.py
@@ -2039,7 +2115,7 @@ assert_rc "$CT_RC" 0
 h1="$(printf '%s' "$CT_OUT" | bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys; print(json.load(sys.stdin)["open_hash"])')"
 waves_check <<'PYEOF'
 s = d['summary']
-assert set(s) == {'now', 'lanes', 'next', 'later', 'needs_you', 'unknown_files', 'conflicts'}, s
+assert set(s) == {'now', 'lanes', 'next', 'later', 'needs_you', 'unknown_files', 'conflicts', 'hub_files'}, s
 assert s['now'] == len(d['now']) and s['next'] == sum(len(v) for v in d['next'].values()), (s, d)
 assert s['needs_you'] == 0 and isinstance(d['open_hash'], str) and d['open_hash'], d
 PYEOF

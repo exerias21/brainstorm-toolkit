@@ -247,7 +247,7 @@ PYCORE="$(mktemp)"
 trap 'rm -f "$PYCORE"' EXIT
 
 cat > "$PYCORE" <<'PYEOF'
-import sys, os, re, json, shutil, subprocess, hashlib, unicodedata
+import sys, os, re, json, shutil, subprocess, hashlib, unicodedata, fnmatch
 from datetime import datetime, timezone
 
 SECTION_RE = re.compile(r'^##\s+(.+?)\s*$')
@@ -1268,6 +1268,22 @@ def do_waves_gate(args):
     return 0
 
 
+def waves_conflict_config(base_dir):
+    """(hub_threshold, ignore_conflict_files) from pipeline.action_items; a
+    missing or invalid value falls back to 3 / []."""
+    cfg = load_json(os.path.join(base_dir, '.claude', 'project.json'))
+    ai = {}
+    if isinstance(cfg, dict) and isinstance(cfg.get('pipeline'), dict):
+        ai = cfg['pipeline'].get('action_items')
+        ai = ai if isinstance(ai, dict) else {}
+    t = ai.get('hub_threshold')
+    if isinstance(t, bool) or not isinstance(t, int) or t < 2:
+        t = 3
+    g = ai.get('ignore_conflict_files')
+    g = [x for x in g if isinstance(x, str) and x] if isinstance(g, list) else []
+    return t, g
+
+
 def do_waves(args):
     if args.gate:
         return do_waves_gate(args)
@@ -1309,6 +1325,7 @@ def do_waves(args):
                     plan_cache[pf] = []
             files = section_files(phase_section(plan_cache[pf], r['phase']), base_dir)
         r['files'] = files
+        r['plan_id'] = r['pkey'] or (os.path.splitext(os.path.basename(pf))[0] if pf else None)
         r['wlane'] = r['lane'] or (lane_of(files, surfaces) if files else 'general')
         if not files:
             unknown.append(r)
@@ -1326,6 +1343,22 @@ def do_waves(args):
     for r in cands:
         r['blockers'] = blockers_of(r)
 
+    # A file named by many plans' phase lists (a manifest, a changelog) is a hub:
+    # it would serialise every plan against every other, so it is reported
+    # separately and left out of inferred conflicts. Explicit `_conflicts:` tags
+    # and the worktree-overlap warning still see it.
+    hub_threshold, ignore_globs = waves_conflict_config(base_dir)
+    plans_by_file = {}
+    for r in cands:
+        for f in r['files']:
+            if r['plan_id']:
+                plans_by_file.setdefault(f, set()).add(r['plan_id'])
+    hub_files = {f: sorted(ps) for f, ps in plans_by_file.items() if len(ps) >= hub_threshold}
+    ignored = lambda f: any(fnmatch.fnmatchcase(f, g) for g in ignore_globs)
+
+    def inferable(fs):
+        return [f for f in fs if f not in hub_files and not ignored(f)]
+
     conflict_pairs = {}  # frozenset({line, line}) -> {source, files}
     for idx, a in enumerate(cands):
         for ref in a['conflicts']:
@@ -1338,7 +1371,7 @@ def do_waves(args):
                 continue  # siblings of one plan phase share its file list wholesale
             if a['line'] in b['blockers'] or b['line'] in a['blockers']:
                 continue  # an order edge already keeps these two apart
-            hit = files_intersect(a['files'], b['files'])
+            hit = files_intersect(inferable(a['files']), inferable(b['files']))
             if hit:
                 key = frozenset((a['line'], b['line']))
                 if key not in conflict_pairs:
@@ -1424,6 +1457,8 @@ def do_waves(args):
         x, y = sorted(key)
         conflicts_out.append({'lines': [x, y], 'source': info['source'], 'files': info['files']})
 
+    hub_files_out = [{'file': f, 'plans': hub_files[f]} for f in sorted(hub_files) if not ignored(f)]
+
     open_lines = sorted(lines[r['line'] - 1].strip() for r in undone)
     result = {
         'schema': 1,
@@ -1436,6 +1471,7 @@ def do_waves(args):
             'needs_you': len(needs_you),
             'unknown_files': len(unknown),
             'conflicts': len(conflicts_out),
+            'hub_files': len(hub_files_out),
         },
         # Fingerprint of the undone-row set, so a caller can tell whether the
         # backlog changed since it last looked.
@@ -1447,6 +1483,7 @@ def do_waves(args):
         'unknown_files': [public(r) for r in unknown],
         'overlaps': overlaps,
         'conflicts': conflicts_out,
+        'hub_files': hub_files_out,
     }
     if args.write:
         command = f'bash scripts/close-tasks.sh waves --file {args.file} --write {args.write}'

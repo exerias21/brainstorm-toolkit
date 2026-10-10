@@ -196,6 +196,10 @@
       "enabled": false,
       "_enabled_comment": "false is a VETO: the feature is off whatever files exist. true turns it on. When absent it is on only if the file below exists AND its first line is the generated banner ('<!-- generated — edit TASKS.md'). Read both keys first -- never test the default name when file is set (bash scripts/close-tasks.sh waves --gate does this). A hand-written file never opts a repo in and is never overwritten, even with enabled true. The file path and the check resolve against the TASKS.md directory, not the cwd.",
       "file": "ACTION_ITEMS.md",
+      "hub_threshold": 3,
+      "_hub_threshold_comment": "Default 3 (minimum 2; lower or invalid values fall back to 3). A file named by the plan-phase file lists of this many DISTINCT plans (a manifest, a changelog) is a hub: it is left out of inferred conflicts and listed in the waves JSON as hub_files, because otherwise it serialises every plan against every other. Explicit _conflicts: tags are unaffected.",
+      "ignore_conflict_files": [],
+      "_ignore_conflict_files_comment": "Default []. Glob patterns (fnmatch-style, matched against the repo-relative path, e.g. \"docs/**\" or \"*.lock\"). A matching file is left out of inferred conflicts and is not reported as a hub. Explicit _conflicts: tags are unaffected.",
       "reassess": false,
       "_reassess_comment": "Default false. When true AND the open-row set changed since the last run, Stage 6 dispatches ONE Sonnet agent that proposes _after: / _lane: / _conflicts: row tags the file-and-phase rules cannot see. Every proposal needs a verbatim evidence quote from the plan; scripts/close-tasks.sh tag is the only writer, and a proposal whose quote is not found is dropped, never applied. Only has effect when action items are enabled."
     },
