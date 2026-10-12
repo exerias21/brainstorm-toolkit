@@ -5,8 +5,7 @@ description: >
   context, generates multiple approaches, evaluates tradeoffs, and writes an action plan to
   `plans/`. Use whenever the user says /brainstorm, mentions "brainstorm", "let's think through",
   "I have an idea", "what if we", "how should we approach", "let's explore", or wants to ideate
-  on a feature or change before jumping into code. This is the conversational planning companion
-  — for heavy autonomous multi-agent product research, use /brainstorm-team instead.
+  on a feature or change before jumping into code.
 argument-hint: "[topic] [--vet light|deep|ultra|none] - optional: topic + multi-agent vet mode"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex

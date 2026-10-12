@@ -5,8 +5,8 @@ description: >
   gotchas-currency in parallel, rolling findings into a single scored report. Use when the user
   says /repo-health, asks for a "hygiene check", "weekly sweep", "is this repo healthy", "what
   should I clean up", or before a release. Never modifies code — produces a report and a
-  `.next-action` suggestion. Run after merges land, not mid-implementation. For a deep dead-code
-  investigation use /dead-code-review; for PR-scoped review use /sdlc's Stage 5. --hunt: bugs.
+  `.next-action` suggestion. Run after merges land, not mid-implementation. `--hunt [<area>]` runs a
+  bug hunt that files evidence-backed `_bug_` rows.
 argument-hint: "[--no-dead-code] [--no-tests] [--no-deps] [--no-secrets] [--no-gotchas] [--no-migrations] [--no-pipeline-state] [--no-memory] [--hunt [<area>]]"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
@@ -18,7 +18,8 @@ metadata:
 
 Composes existing checks into one weekly-sweep workflow. Read-only: produces
 a scored report and drops a `.claude/.next-action` with the highest-impact
-next command. Never modifies code, never opens a PR.
+next command. Never modifies code, never opens a PR. For a deep dead-code investigation use
+`/dead-code-review`; for PR-scoped review use `/sdlc`'s Stage 5.
 
 ## Arguments
 

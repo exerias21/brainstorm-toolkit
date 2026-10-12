@@ -5,8 +5,7 @@ description: >
   or an ad-hoc description: sanity-check -> implement -> evals -> fix ->
   validate -> flowsim, then hand off the validated changes for you to commit.
   No commit, no branch, no push, no PR. Codex overlay of the canonical skill --
-  every stage runs inline (sequential, no parallel sub-agents). Use /task instead for a
-  single small TDD fix with no plan.
+  every stage runs inline (sequential, no parallel sub-agents).
 metadata:
   brainstorm-toolkit-applies-to: codex
 ---

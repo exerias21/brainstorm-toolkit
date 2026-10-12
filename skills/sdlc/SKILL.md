@@ -6,8 +6,7 @@ description: >
   flowsim, then hand off the validated changes in your working tree for you to
   commit. Never commits, branches, pushes, or opens a PR — no git writes at all.
   Use when you want full SDLC discipline on work you will review and commit
-  yourself, e.g. onto an open PR's branch. Use /task instead for a single small
-  TDD fix with no plan.
+  yourself, e.g. onto an open PR's branch.
 argument-hint: "plan-file | task-id | task-range | description  [--resume] [--queue N] [--no-scope-gate]"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex

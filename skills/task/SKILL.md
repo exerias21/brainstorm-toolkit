@@ -3,8 +3,7 @@ name: task
 description: >
   Create a bounded, single-purpose task and execute it with TDD. Appends a row to
   TASKS.md, writes a task file at plans/tasks/task-N-<slug>.md, and runs a write-test
-  → implement → verify loop. Use for small to medium items that are too concrete for
-  /brainstorm and too small to justify the full /sdlc pipeline. Invoke via /task or
+  → implement → verify loop. Use for small to medium items. Invoke via /task or
   when the user asks to "just do X", "quick fix", "small change", or names one concrete,
   bounded ask with no plan behind it.
 argument-hint: "<description>"

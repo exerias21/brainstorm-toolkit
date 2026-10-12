@@ -5,8 +5,7 @@ description: >
   or an ad-hoc description: sanity-check -> implement -> evals -> fix ->
   validate -> flowsim, then hand off the validated changes for you to commit.
   No commit, no branch, no push, no PR. Copilot overlay of the canonical skill --
-  every stage runs inline (no parallel sub-agents, no Plan mode). Use /task instead for a
-  single small TDD fix with no plan.
+  every stage runs inline (no parallel sub-agents, no Plan mode).
 metadata:
   brainstorm-toolkit-applies-to: copilot
 ---
