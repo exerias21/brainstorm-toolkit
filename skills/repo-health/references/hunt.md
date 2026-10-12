@@ -18,8 +18,9 @@ Print `model: hunt=<tier> (cap: <cap|none>)` before the first lens dispatch, and
 `model: code_review=<tier> (axis 2)` before the consolidator. A dispatch with no `model` bypasses
 the cap with zero log line, so pass `model` explicitly on every one.
 
-Then record the before-state per file: `git status --porcelain`, and for each path it lists, that
-file's `git hash-object`.
+Then record the before-state per file: `git status --porcelain -uall` (so a new directory lists
+its files, not one `dir/` entry), and for each path it lists, that file's `git hash-object`; a
+path that is missing in either snapshot counts as changed.
 Step 6 compares against it, which is the only way to tell a lens's edit from work already
 uncommitted in the tree.
 
