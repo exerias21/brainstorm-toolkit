@@ -4,7 +4,8 @@
 # WHY THIS IS A SCRIPT: a hand-edit of a consumer's project.json drops comment keys, reorders
 # keys or flips CRLF to LF; a rewrite has to be value-preserving, which prose cannot guarantee.
 # It keeps key order, line endings, BOM, indent and trailing newline, but it is not byte-exact:
-# the file is re-serialized, so an inline array or object is expanded one item per line. The rename table is data (project-json-renames.json, next to this script).
+# the file is re-serialized, so an inline array or object is expanded one item per line.
+# The rename table is data (project-json-renames.json, next to this script).
 #
 #   migrate-project-json.sh check [--file .claude/project.json]
 #     Prints {file, exists, example, moves:[{old,new,value}], conflicts:[{old,new,old_value,
@@ -199,8 +200,9 @@ if mode == "apply":
             sys.stderr.write("conflict: %s cannot move to %s, because %s is set to a non-object; left untouched\n"
                              % (c["old"], c["new"], c["blocked_by"]))
         else:
-            sys.stderr.write("conflict: %s and %s are both set; left untouched, the new key wins\n"
-                             % (c["old"], c["new"]))
+            by = (" (filled from %s in this run)" % c["new_set_by"]) if c.get("new_set_by") else ""
+            sys.stderr.write("conflict: %s and %s%s are both set; left untouched, the new key wins\n"
+                             % (c["old"], c["new"], by))
 out(report)
 PYEOF
 bash "$SELF_DIR/py.sh" "$PYCORE" "$SUBCMD" "$FILE" "$SELF_DIR/project-json-renames.json" "$SELF_DIR/../templates/project.json.example"

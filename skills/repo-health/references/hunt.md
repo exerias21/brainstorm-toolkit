@@ -18,7 +18,8 @@ Print `model: hunt=<tier> (cap: <cap|none>)` before the first lens dispatch, and
 `model: code_review=<tier> (axis 2)` before the consolidator. A dispatch with no `model` bypasses
 the cap with zero log line, so pass `model` explicitly on every one.
 
-Then record the before-state: `git status --porcelain` plus `git diff | git hash-object --stdin`.
+Then record the before-state per file: `git status --porcelain`, and for each path it lists, that
+file's `git hash-object`.
 Step 6 compares against it, which is the only way to tell a lens's edit from work already
 uncommitted in the tree.
 
@@ -86,8 +87,9 @@ File at most 10 rows; any beyond stay in the report only, and the report says so
 
 ## 6. Verify and hand off
 
-Re-run the step 1 snapshot. Only the report and `TASKS.md` may differ from the before-state. If
-anything else does, name each file plainly, do not revert it (it may be the user's work), and
+Re-run the step 1 snapshot and compare it file by file. Only the report and `TASKS.md` may be new
+or changed; gitignored files are invisible to this check. If anything else changed, name each
+file plainly, do not revert it (it may be the user's work), and
 stop. Print the confirmed count by severity, the rows filed, and the report
 path. When at least one row was filed, append the structured `.next-action` line using the same
 guard and dedupe as the normal sweep, with `cmd` `/sdlc <TASKS.md line number of the top bug row>` (a bare row number — a title would be

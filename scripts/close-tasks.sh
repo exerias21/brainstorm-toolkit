@@ -352,7 +352,8 @@ def strip_keyed_tags(text):
     idx = text.rfind(' — ')
     if idx == -1:
         # No trailer: strip only a run of tags that ends the row, so prose earlier in
-        # the title that documents tag syntax survives.
+        # the title that documents tag syntax survives. Prose that ENDS in a tag-shaped
+        # run (`... documents _plan: x_`) still loses it; give the row a trailer to keep it.
         return TRAILING_TAGS_RE.sub('', text)
     return text[:idx + 3] + TAG_STRIP_RE.sub('', text[idx + 3:])
 
