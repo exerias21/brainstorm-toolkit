@@ -48,6 +48,10 @@ re-opens the cited `file:line`, confirms the quoted line is really there and rea
 claimed, and returns `confirmed` (with a possibly corrected severity), `overruled` (with the
 reason) or `unverified`. It may overrule a lens, and merges findings that share a `file:line`.
 
+Overrule, never file, a finding about input outside the code's documented contract (wrong type,
+`None`, a value the docstring excludes) when the code fails loudly on it — a raised exception
+there is correct behavior, not a bug. Only *silent* wrong output on such input is a finding.
+
 ## 4. Dedupe
 
 Run `bash scripts/close-tasks.sh rows --tag bug --file TASKS.md`. A confirmed finding whose
