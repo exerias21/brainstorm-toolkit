@@ -107,7 +107,7 @@ implements, Opus reviews, plus the gotchas file and the module list:
 | `pipeline.output` | How chatty is the run? | `verbosity`: `quiet` (default) or `normal`. |
 | `pipeline.stop_gate` | Should a red `test.unit` block the Stop event mid-run? | `"off"` (default) or `"tests"`; `stop_gate_timeout` is in seconds. Claude and Codex only. |
 | `pipeline.enforce_cap` | Should `models.cap` be enforced by a hook? | Claude only. Rewrites an over-cap dispatch to the cap; the reviewer is exempt. |
-| `pipeline.action_items` | Do you want the generated `ACTION_ITEMS.md` waves? | `enabled`, `file`, `reassess`. See the reference below. |
+| `pipeline.action_items` | Do you want the generated `ACTION_ITEMS.md` waves? | `enabled`, `file`, `reassess`, `hub_threshold`, `ignore_conflict_files`, `max_bugs_per_lane`. See the reference below. |
 | `pipeline.tasks.close_in_place` | Should closed rows stay on their lines? | `true` flips a closed row to `[x]` where it stands, so `TASKS.md:N` citations stay valid. |
 | `discipline` globs | Which paths count as frontend, backend, data, docs, deploy-delta? | Override only for a non-standard layout; see below. |
 | `migrations` | Where are migrations, and how do I tell what is applied? | `/repo-health` only. `dir` and `applied_check`. |
@@ -231,18 +231,27 @@ compose.
 
 ### Check your file
 
-Run this from the repo root. It loads `.claude/project.json`, fails loudly if the JSON does
-not parse, and lists every key that is not in `.claude/project.json.example` (which `setup.sh`
-installs), so a typo or a dead key shows up. Comment keys (starting with `_` or `//`) are skipped. From a
-toolkit checkout use `bash scripts/py.sh` in place of `python`.
+Run this from the repo root:
 
 ```bash
-python -c "import json;f=lambda p:json.load(open(p));w=lambda u,e,p='':[x for k,v in u.items() if not k.startswith(('_','//')) for x in (w(v,e[k],p+k+'.') if k in e and isinstance(v,dict) and isinstance(e[k],dict) else [] if k in e else [p+k])];print('not in the example:',w(f('.claude/project.json'),f('.claude/project.json.example')) or 'none')"
+bash scripts/migrate-project-json.sh check
 ```
 
-`none` means every key is one the toolkit knows. A bare name is a typo or a key nothing reads.
-The example leaves map-valued keys such as `models.sanity` as `null`, so the check does not
-look inside them.
+It reads `.claude/project.json` and prints JSON: `moves` (dead keys that have a replacement,
+with the value that would move), `conflicts` (a dead key whose replacement already holds a
+different value, so both are left alone), and `unknown` (every key not in
+`.claude/project.json.example`, which `setup.sh` installs, so a typo or a key nothing reads shows
+up; comment keys starting with `_` or `//` are skipped). Malformed JSON exits 1. `check` never
+writes.
+
+```bash
+bash scripts/migrate-project-json.sh apply
+```
+
+`apply` writes a `project.json.bak-<timestamp>` copy, then moves each dead key's value to its
+replacement, keeping key order, line endings and indent. A second run finds nothing to move and
+writes nothing. `unknown` is empty when every key is one the toolkit knows; the example leaves
+map-valued keys such as `models.sanity` as `null`, so the check does not look inside them.
 
 ## Reference
 
@@ -293,6 +302,7 @@ look inside them.
     "code_review_max_lenses": 4,
     "code_review_passes": 1,
     "code_review_max_fix_loops": 3,
+    "hunt_lenses": ["correctness", "error-handling", "data-contracts"],
     "decompose_min_tasks": 6,
     "decompose_min_files": 12,
     "cleanup_lenses": ["over-engineering", "docstring-currency"],
@@ -404,6 +414,7 @@ different reviewer catches what it missed and keeps the review independent.
 | `dead_code_review` | `/dead-code-review` lenses (string or map `server`/`client`/`data`/`docs`/`scripts`) | `server`/`client`/`data` sonnet, `docs`/`scripts` haiku |
 | `repo_health` | `/repo-health` checks (string or per-check map) | each check's built-in tier |
 | `docstring_sync` | `/docstring-sync` triage + rewrite | `sonnet` |
+| `hunt` | `/repo-health --hunt` lenses (consolidator runs on `code_review`, Axis 2) | `sonnet` |
 | `code_review`, `code_review_second_pass` | Axis 2: Stage 5.7 reviewers (never capped) | `opus`, `sonnet` |
 | `planner` | advisory session-model nudge | `opus` |
 
@@ -429,7 +440,8 @@ unrecognized value falls through to the default.
 `agents.*` sets **how many** agents each fan-out stage dispatches. Cost scales roughly
 linearly: one agent (or reviewer call) per entry, so trimming
 `agents.code_review_lenses` to `["correctness", "security"]` roughly halves the review
-stage. All of it governs sub-agents only, never the session orchestrator.
+stage. `agents.hunt_lenses` picks the `/repo-health --hunt` lenses (default all three, on
+`models.hunt`). All of it governs sub-agents only, never the session orchestrator.
 
 `pipeline.scope.max_steps_per_run` bounds Stage 0's scope gate for a plan-file `/sdlc` run
 (default `8`) — the fallback step-count cut used only when the plan has no `#### Phase N`
@@ -454,6 +466,22 @@ is reset at a clean boundary; `max_hops` bounds the auto-continue chain.
 hook executes a single non-`confirm` `.next-action` entry instead of just
 printing it, so the loop self-advances. It never chains a `confirm: true` action
 (i.e. never a commit or any other git write). See `docs/LOOP-HYGIENE.md`.
+
+`pipeline.action_items.hub_threshold` (default `3`, minimum `2`; lower or invalid values fall back to
+`3`) makes a file named by that many **distinct** plans' phase file lists a *hub* (a manifest or
+changelog every plan touches): it is excluded from inferred conflicts and reported in the waves
+JSON as `hub_files`. `pipeline.action_items.ignore_conflict_files` (default `[]`) is a list of
+fnmatch-style globs matched against the repo-relative path; matching files are excluded from
+inferred conflicts too and are not reported as hubs. In fnmatch `*` also matches `/`, so `*.json`
+ignores every JSON file at any depth; anchor with a directory (`config/*.json`) to narrow it.
+Hub status is recomputed on every run from the open rows, so a pair that conflicts today can run
+in parallel once a third plan naming the file is opened, and the reverse when one closes. Neither affects an explicit `_conflicts:` tag
+or the other-worktree overlap warning.
+
+`pipeline.action_items.max_bugs_per_lane` (default `5`; a positive integer, anything else falls back to
+`5`) caps how many `_bug_` rows `waves` renders per lane, the now row included, so a large bug backlog
+cannot swamp `ACTION_ITEMS.md`. Hidden rows leave the waves JSON `next` wave too and are counted in
+`bugs_hidden` / `summary.bugs_hidden`; `TASKS.md` keeps every row.
 
 `pipeline.action_items` (`enabled`, `file`, `reassess`) controls the generated `ACTION_ITEMS.md` — which open `TASKS.md` rows
 can run now, which become ready next, grouped by lane (`bash scripts/close-tasks.sh waves`; JSON

@@ -124,13 +124,15 @@ fi
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  close-tasks.sh rows --plan SLUG [--file TASKS.md] [--plan-file PLAN.md]
+  close-tasks.sh rows --plan SLUG [--file TASKS.md] [--plan-file PLAN.md] [--tag bug]
     Read-only. Reports every TASKS.md row tagged `_plan: SLUG_` (any state,
     any section, no pipeline envelope involved) -- a first run reports the
     same rows a tenth run would. Untagged legacy rows fall back to a
     path-substring match against --plan-file, same as `close --scope plan`.
     Prints `{match_key, matched[]}`; each entry is `{line, text, state, phase,
-    followup, manual}` with `state` one of `open`/`in_progress`/`done`.
+    followup, manual, bug}` with `state` one of `open`/`in_progress`/`done`.
+    `--tag bug` keeps only `_bug_` rows (the only value for now; any other
+    exits 2); with `--tag` the SLUG may be empty to list them across all plans.
   close-tasks.sh close --file TASKS.md --scope plan --key SLUG --plan-file PLAN.md [--dry-run] [--in-place]
   close-tasks.sh close --file TASKS.md --scope resolved --ids-file FILE [--dry-run] [--in-place]
     --in-place flips each closed row to `[x]` (with its completion stamp) where it
@@ -150,7 +152,7 @@ Usage:
     `_phase: N_` tag names a phase outside that list is read as a
     legitimately-parked later phase, not drift. Also flags a row's `_phase:
     N_` tag naming a phase its own plan file has no `#### Phase N` heading for.
-  close-tasks.sh board --file TASKS.md [--repo-name NAME] [--pipeline-dir .claude/pipeline]
+  close-tasks.sh board --file TASKS.md [--repo-name NAME] [--pipeline-dir .claude/pipeline] [--tag bug]
     Read-only. Emits one JSON object: TASKS.md rows (tasks[], in FILE ORDER so
     `line` round-trips to source) + pipeline envelopes (runs[], newest-first
     by `updated_at` when parseable, else the envelope file's mtime -- most
@@ -160,6 +162,7 @@ Usage:
     whenever --file parses (malformed envelopes surface as warnings[], not a
     failure); exit 1 only when --file is missing/unreadable. Schema-version
     rule: additive fields never bump `schema`; a removed or retyped field does.
+    `--tag bug` keeps only `_bug_` rows in tasks[]; rows expose `bug`.
   close-tasks.sh waves --file TASKS.md [--write ACTION_ITEMS.md]
   close-tasks.sh waves --file TASKS.md --gate
     Prints `{enabled, file, reason}` -- whether action items are on, from
@@ -171,7 +174,11 @@ Usage:
     `next` wave (ready once every now row closes). Untagged rows are parallel by
     default; ordering and conflicts come from `_phase:` order within a plan,
     plan-phase `Files:` overlap, and the `_after:` / `_conflicts:` / `_lane:`
-    trailer tags, which win. `_manual_` rows land in `needs_you`; rows whose
+    trailer tags, which win. `_bug_` rows sort first within a lane; at most
+    `pipeline.action_items.max_bugs_per_lane` (default 5) bug rows render per
+    lane -- the rest leave `next` and are counted in `bugs_hidden` (per lane) and
+    `summary.bugs_hidden`; `summary.bugs` counts every open bug row.
+    `_manual_` rows land in `needs_you`; rows whose
     plan phase names no files land in `unknown_files`. A now row whose files are
     dirty in ANOTHER git worktree gets `overlaps` (silently skipped outside git).
     Open rows in neither wave (behind a chain, a Blocked row or an `_after:` cycle) are
@@ -180,9 +187,9 @@ Usage:
     lane-grouped file, but never over an existing file whose line 1 is not the
     generated banner (JSON gets `write_skipped`). Exit 0 whenever --file parses.
   close-tasks.sh tag --file TASKS.md --row NEEDLE (--add|--remove) TAG [--evidence QUOTE]
-    The only writer of `_after:` / `_conflicts:` / `_lane:`. TAG is
-    `after:<plan>[:<phase>]`, `conflicts:<plan>[:<phase>]` or `lane:<name>`
-    (values `[a-z0-9:/.-]`). NEEDLE must whole-token match exactly one open row;
+    The only writer of `_after:` / `_conflicts:` / `_lane:` / `_bug_`. TAG is
+    `after:<plan>[:<phase>]`, `conflicts:<plan>[:<phase>]`, `lane:<name>`
+    (values `[a-z0-9:/.-]`) or the valueless `bug`. NEEDLE must whole-token match exactly one open row;
     a referenced plan (and phase) must exist. Edits only that row's trailer,
     never its checkbox; idempotent. Prints `{line, tag, action, changed, text}`;
     on refusal prints `{error, code}` and exits 1. --evidence refuses (`bad_evidence`,
@@ -212,6 +219,7 @@ ADD=""
 EVIDENCE=""
 EVIDENCE_SET=0
 REMOVE=""
+TAG=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -233,6 +241,7 @@ while [ $# -gt 0 ]; do
     --add) ADD="$2"; shift 2 ;;
     --evidence) EVIDENCE="$2"; EVIDENCE_SET=1; shift 2 ;;
     --remove) REMOVE="$2"; shift 2 ;;
+    --tag) TAG="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "{\"error\":\"unknown arg: $1\"}" >&2; usage; exit 2 ;;
   esac
@@ -247,7 +256,7 @@ PYCORE="$(mktemp)"
 trap 'rm -f "$PYCORE"' EXIT
 
 cat > "$PYCORE" <<'PYEOF'
-import sys, os, re, json, shutil, subprocess, hashlib, unicodedata
+import sys, os, re, json, shutil, subprocess, hashlib, unicodedata, fnmatch
 from datetime import datetime, timezone
 
 SECTION_RE = re.compile(r'^##\s+(.+?)\s*$')
@@ -257,8 +266,12 @@ PLAN_TAG_RE = re.compile(r'_plan:\s*([a-z0-9-]+)_')
 PHASE_RE = re.compile(r'_phase:\s*(\d+)_')
 BLOCKED_REASON_RE = re.compile(r'_blocked_reason:\s*([^_]+?)_')
 COMPLETED_AT_RE = re.compile(r'_completed_at:\s*([^_]+?)_')
-PRIORITY_RE = re.compile(r'^\(P([1-3])\)')
-PLAN_PATH_RE = re.compile(r'[\w./-]*plans/[\w./-]+\.md')
+PRIORITY_RE = re.compile(r'^\(P([0-3])\)')
+# A bug-hunt report lives under plans/bug-hunts/ but is not a plan: it has no phases, and
+# reading it as one would give every row of a hunt the same plan id.
+PLAN_PATH_RE = re.compile(r'[\w./-]*plans/(?!bug-hunts/)[\w./-]+\.md')
+# The `(path:line)` a `_bug_` row cites in its title -- that row's file set for `waves`.
+BUG_FILE_RE = re.compile(r'\(([\w./-]+\.\w+):\d+\)')
 # A row DELIBERATELY left open after its plan completed -- a follow-up the run
 # surfaced and chose not to do. Without this marker `reconcile` cannot tell a
 # deferred follow-up from a forgotten close-out, so it reports every such row as
@@ -270,6 +283,9 @@ FOLLOWUP_RE = re.compile(r'_followup(?::\s*[^_]+?)?_')
 # the queue Select and task-range paths skip it, and reconcile exempts it
 # exactly like FOLLOWUP_RE. Bare flag, no value.
 MANUAL_RE = re.compile(r'_manual_')
+# A defect row (found by a bug hunt or filed by hand). Bare flag, trailer-only
+# like `_manual_`; severity is the row's ordinary (P0)-(P3) priority.
+BUG_RE = re.compile(r'_bug_')
 # Ordering / conflict / lane tags for `waves`. Values are `[a-z0-9:/.-]` -- no
 # `_`, which is what ends a tag -- and a tag counts ONLY in the trailer (see
 # `trailer()`), so prose that mentions one is never parsed as one.
@@ -279,10 +295,13 @@ LANE_RE = re.compile(r'_lane:\s*([a-z0-9.-]+)_')
 # Strips one or more chained `_key: value_` markers (joined by ` \xb7 `) off a
 # row's tail so `title` reads as prose, not "prose _plan: x_ \xb7 _phase: 1_".
 TAG_STRIP_RE = re.compile(r'\s*(?:\xb7\s*)?_[a-z_]+:\s*[^_]+?_')
+# The same markers as a run at the very end of a row with no separator -- e.g. the
+# `_completed_at:` that close-out appends to a hand-written row.
+TRAILING_TAGS_RE = re.compile(r'(?:\s*(?:\xb7\s*)?_[a-z_]+:\s*[^_]+?_)+\s*$')
 # Valueless flags need their own pattern: TAG_STRIP_RE requires `key: value`,
 # and widening it to make the colon optional would swallow ordinary `_italics_`
 # out of every title. Enumerate the bare flags instead.
-BARE_TAG_STRIP_RE = re.compile(r'\s*(?:\xb7\s*)?_(?:followup|manual)_')
+BARE_TAG_STRIP_RE = re.compile(r'\s*(?:\xb7\s*)?_(?:followup|manual|bug)_')
 # `#### Phase N` heading finder -- used by reconcile's phase_tag_without_heading
 # check to confirm a row's `_phase: N_` tag actually names a phase its plan file
 # declares.
@@ -318,12 +337,25 @@ def trailer(line):
 
 def strip_bare_tags(text):
     """BARE_TAG_STRIP_RE, confined to the trailer (see `trailer()` above) so a
-    title merely mentioning `_followup_`/`_manual_` in prose is not mangled by
+    title merely mentioning `_followup_`/`_manual_`/`_bug_` in prose is not mangled by
     display-stripping the same way whole-line matching would be."""
     idx = text.rfind(' — ')
     if idx == -1:
         return text
     return text[:idx + 3] + BARE_TAG_STRIP_RE.sub('', text[idx + 3:])
+
+
+def strip_keyed_tags(text):
+    """TAG_STRIP_RE, confined to the trailer (see `trailer()` above) so a title
+    that documents tag syntax in prose -- e.g. `_after:/_conflicts:/_lane:` --
+    keeps its text instead of being eaten from one underscore to the next."""
+    idx = text.rfind(' — ')
+    if idx == -1:
+        # No trailer: strip only a run of tags that ends the row, so prose earlier in
+        # the title that documents tag syntax survives. Prose that ENDS in a tag-shaped
+        # run (`... documents _plan: x_`) still loses it; give the row a trailer to keep it.
+        return TRAILING_TAGS_RE.sub('', text)
+    return text[:idx + 3] + TAG_STRIP_RE.sub('', text[idx + 3:])
 
 
 def read_lines(path):
@@ -450,10 +482,19 @@ def cmd_close_plan(lines, key, plan_file):
     return matched, unmatched, close_idx
 
 
+ROW_TAG_FILTERS = ('bug',)
+
+
+def row_has_tag(fields, tag):
+    """`--tag` filter: does the parsed row carry flag `tag`? Only names in
+    ROW_TAG_FILTERS reach here (main() refuses the rest)."""
+    return bool(fields.get(tag))
+
+
 STATE_LABEL = {'x': 'done', '~': 'in_progress', ' ': 'open'}
 
 
-def cmd_rows_plan(lines, key, plan_file):
+def cmd_rows_plan(lines, key, plan_file, tag=''):
     """Every row tagged for plan `key`, in ANY section and ANY checkbox state
     -- unlike cmd_close_plan (which only ever touches `[~]` rows outside
     ## Done), this is a pure read used to answer "what rows exist for this
@@ -465,24 +506,32 @@ def cmd_rows_plan(lines, key, plan_file):
     for i, line in enumerate(lines):
         if not ROW_RE.match(line):
             continue
-        is_match, _has_different_tag = plan_row_key_match(line, key, plan_base, plan_file)
-        if not is_match:
+        if key:
+            is_match, _has_different_tag = plan_row_key_match(line, key, plan_base, plan_file)
+            if not is_match:
+                continue
+        elif not tag:
             continue
         fields = parse_row(line)
+        if tag and not row_has_tag(fields, tag):
+            continue
         matched.append({
             'line': i + 1,
             'text': line.strip(),
             'state': STATE_LABEL.get(fields['state'], 'open'),
+            'priority': fields['priority'],
+            'title': fields['title'],
             'phase': fields['phase'],
             'followup': fields['followup'],
             'manual': fields['manual'],
+            'bug': fields['bug'],
         })
     return matched
 
 
 def do_rows(args):
     lines = read_lines(args.file)
-    matched = cmd_rows_plan(lines, args.plan, args.plan_file)
+    matched = cmd_rows_plan(lines, args.plan, args.plan_file, args.tag)
     result = {"match_key": args.plan, "matched": matched}
     print(json.dumps(result, indent=2))
     return 0
@@ -729,7 +778,7 @@ def parse_row(line):
     pm = PRIORITY_RE.match(body)
     priority = f'P{pm.group(1)}' if pm else None
     title_full = body[pm.end():].lstrip() if pm else body
-    title = strip_bare_tags(TAG_STRIP_RE.sub('', title_full)).rstrip()
+    title = strip_bare_tags(strip_keyed_tags(title_full)).rstrip()
     plan_m = PLAN_PATH_RE.search(title_full)
     plan = plan_m.group(0) if plan_m else None
     # The plan path rides in its own field, so leaving it in `title` too makes
@@ -738,6 +787,8 @@ def parse_row(line):
     if plan:
         title = PLAN_PATH_RE.sub('', title).rstrip()
         title = re.sub(r'[\s—–-]+$', '', title).rstrip()
+    # A trailer that held only tags leaves its separator behind once they are stripped.
+    title = re.sub(r'\s+—$', '', title)
     tag_m = PLAN_TAG_RE.search(line)
     plan_slug = tag_m.group(1) if tag_m else None
     phase_m = PHASE_RE.search(line)
@@ -758,6 +809,8 @@ def parse_row(line):
         # Additive field, same rule: a row only a human can do. Trailer-only
         # for the same reason `followup` is.
         'manual': bool(MANUAL_RE.search(trailer(line))),
+        # Additive field, same rule: a defect row.
+        'bug': bool(BUG_RE.search(trailer(line))),
         # Additive fields, same rule and same trailer-only reading: row-level
         # ordering (`after`), conflict (`conflicts`) and lane (`lane`) overrides
         # that `waves` honours over its own inference.
@@ -855,6 +908,8 @@ def do_board(args):
             if row_belongs_to_envelope(line, r['_name'], r['_run'], r['_candidates']):
                 started_at = r['_started_at']
                 break
+        if args.tag and not row_has_tag(fields, args.tag):
+            continue
         tasks.append({
             'state': fields['state'],
             'section': sec,
@@ -868,6 +923,7 @@ def do_board(args):
             'completed_at': fields['completed_at'],
             'followup': fields['followup'],
             'manual': fields['manual'],
+            'bug': fields['bug'],
             'after': fields['after'],
             'conflicts': fields['conflicts'],
             'lane': fields['lane'],
@@ -1213,6 +1269,8 @@ def render_waves(result, command):
         out += ['', 'Nothing queued behind the now wave.']
     for lane, rs in result['next'].items():
         out += ['', f'### {lane}'] + [row_line(r) for r in rs]
+    for lane, n in result.get('bugs_hidden', {}).items():
+        out += ['', f'{n} more bug row(s) in {lane} not shown -- see TASKS.md.']
     if result['later']:
         out += ['', f"## Later ({len(result['later'])})", ''] +                [f"- {r['title']} ({r['why']})" for r in result['later']]
     if result['needs_you']:
@@ -1258,6 +1316,34 @@ def do_waves_gate(args):
     return 0
 
 
+def waves_bug_cap(base_dir):
+    """pipeline.action_items.max_bugs_per_lane; a missing or invalid value
+    (non-integer, bool, < 1) falls back to 5."""
+    cfg = load_json(os.path.join(base_dir, '.claude', 'project.json'))
+    ai = {}
+    if isinstance(cfg, dict) and isinstance(cfg.get('pipeline'), dict):
+        ai = cfg['pipeline'].get('action_items')
+        ai = ai if isinstance(ai, dict) else {}
+    n = ai.get('max_bugs_per_lane')
+    return 5 if isinstance(n, bool) or not isinstance(n, int) or n < 1 else n
+
+
+def waves_conflict_config(base_dir):
+    """(hub_threshold, ignore_conflict_files) from pipeline.action_items; a
+    missing or invalid value falls back to 3 / []."""
+    cfg = load_json(os.path.join(base_dir, '.claude', 'project.json'))
+    ai = {}
+    if isinstance(cfg, dict) and isinstance(cfg.get('pipeline'), dict):
+        ai = cfg['pipeline'].get('action_items')
+        ai = ai if isinstance(ai, dict) else {}
+    t = ai.get('hub_threshold')
+    if isinstance(t, bool) or not isinstance(t, int) or t < 2:
+        t = 3
+    g = ai.get('ignore_conflict_files')
+    g = [x for x in g if isinstance(x, str) and x] if isinstance(g, list) else []
+    return t, g
+
+
 def do_waves(args):
     if args.gate:
         return do_waves_gate(args)
@@ -1298,7 +1384,10 @@ def do_waves(args):
                 except Exception:
                     plan_cache[pf] = []
             files = section_files(phase_section(plan_cache[pf], r['phase']), base_dir)
+        if not files and r['bug']:
+            files = sorted(set(BUG_FILE_RE.findall(r['title'])))
         r['files'] = files
+        r['plan_id'] = r['pkey'] or (os.path.splitext(os.path.basename(pf))[0] if pf else None)
         r['wlane'] = r['lane'] or (lane_of(files, surfaces) if files else 'general')
         if not files:
             unknown.append(r)
@@ -1316,6 +1405,22 @@ def do_waves(args):
     for r in cands:
         r['blockers'] = blockers_of(r)
 
+    # A file named by many plans' phase lists (a manifest, a changelog) is a hub:
+    # it would serialise every plan against every other, so it is reported
+    # separately and left out of inferred conflicts. Explicit `_conflicts:` tags
+    # and the worktree-overlap warning still see it.
+    hub_threshold, ignore_globs = waves_conflict_config(base_dir)
+    plans_by_file = {}
+    for r in cands:
+        for f in r['files']:
+            if r['plan_id']:
+                plans_by_file.setdefault(f, set()).add(r['plan_id'])
+    hub_files = {f: sorted(ps) for f, ps in plans_by_file.items() if len(ps) >= hub_threshold}
+    ignored = lambda f: any(fnmatch.fnmatchcase(f, g) for g in ignore_globs)
+
+    def inferable(fs):
+        return [f for f in fs if f not in hub_files and not ignored(f)]
+
     conflict_pairs = {}  # frozenset({line, line}) -> {source, files}
     for idx, a in enumerate(cands):
         for ref in a['conflicts']:
@@ -1328,7 +1433,7 @@ def do_waves(args):
                 continue  # siblings of one plan phase share its file list wholesale
             if a['line'] in b['blockers'] or b['line'] in a['blockers']:
                 continue  # an order edge already keeps these two apart
-            hit = files_intersect(a['files'], b['files'])
+            hit = files_intersect(inferable(a['files']), inferable(b['files']))
             if hit:
                 key = frozenset((a['line'], b['line']))
                 if key not in conflict_pairs:
@@ -1339,7 +1444,7 @@ def do_waves(args):
 
     def order_key(r):
         pri = int(r['priority'][1]) if r['priority'] else 4
-        return (0 if r['state'] == '~' else 1, pri, r['line'])
+        return (0 if r['state'] == '~' else 1, 0 if r['bug'] else 1, pri, r['line'])
 
     ready = sorted((r for r in cands if not r['blockers']), key=order_key)
     now_rows = []
@@ -1386,6 +1491,29 @@ def do_waves(args):
             r['why'] = 'waiting-on'
         later_rows.append(r)
 
+    # Cap rendered bug rows per lane (the now row counts) so a large bug
+    # backlog cannot swamp the file. Hidden rows leave `next` entirely, so the
+    # JSON matches the rendered file, and are counted in `bugs_hidden`.
+    bug_cap = waves_bug_cap(base_dir)
+    bugs_hidden = {}
+    hidden_lines = set()
+    for lane in list(next_lane):
+        used = 1 if lane in now_lane and now_lane[lane]['bug'] else 0
+        kept = []
+        for r in next_lane[lane]:
+            if r['bug']:
+                if used >= bug_cap:
+                    bugs_hidden[lane] = bugs_hidden.get(lane, 0) + 1
+                    hidden_lines.add(r['line'])
+                    continue
+                used += 1
+            kept.append(r)
+        if kept:
+            next_lane[lane] = kept
+        else:
+            del next_lane[lane]
+    unknown = [r for r in unknown if r['line'] not in hidden_lines]
+
     # Worktree overlap: only for rows in the now wave.
     dirt = other_worktree_dirt(base_dir) if now_rows else []
     prefix = repo_prefix(base_dir) if dirt else ''
@@ -1393,7 +1521,7 @@ def do_waves(args):
     def public(r):
         return {'line': r['line'], 'state': r['state'], 'priority': r['priority'],
                 'title': r['title'], 'plan_slug': r['plan_slug'], 'phase': r['phase'],
-                'lane': r.get('wlane') or r['lane'] or 'general'}
+                'bug': r['bug'], 'lane': r.get('wlane') or r['lane'] or 'general'}
 
     overlaps = []
     now_out = {}
@@ -1414,6 +1542,8 @@ def do_waves(args):
         x, y = sorted(key)
         conflicts_out.append({'lines': [x, y], 'source': info['source'], 'files': info['files']})
 
+    hub_files_out = [{'file': f, 'plans': hub_files[f]} for f in sorted(hub_files) if not ignored(f)]
+
     open_lines = sorted(lines[r['line'] - 1].strip() for r in undone)
     result = {
         'schema': 1,
@@ -1426,6 +1556,9 @@ def do_waves(args):
             'needs_you': len(needs_you),
             'unknown_files': len(unknown),
             'conflicts': len(conflicts_out),
+            'hub_files': len(hub_files_out),
+            'bugs': sum(1 for r in undone if r['bucket'] == 'open' and r['bug']),
+            'bugs_hidden': sum(bugs_hidden.values()),
         },
         # Fingerprint of the undone-row set, so a caller can tell whether the
         # backlog changed since it last looked.
@@ -1437,6 +1570,8 @@ def do_waves(args):
         'unknown_files': [public(r) for r in unknown],
         'overlaps': overlaps,
         'conflicts': conflicts_out,
+        'hub_files': hub_files_out,
+        'bugs_hidden': bugs_hidden,
     }
     if args.write:
         command = f'bash scripts/close-tasks.sh waves --file {args.file} --write {args.write}'
@@ -1469,7 +1604,7 @@ def do_waves(args):
 # `_lane:` row tags. It edits one open row's trailer and nothing else.
 # ---------------------------------------------------------------------------
 
-TAG_SPEC_RE = re.compile(r'^_?(after|conflicts|lane):\s*([a-z0-9:/.-]+?)_?$')
+TAG_SPEC_RE = re.compile(r'^_?(?:(after|conflicts|lane):\s*([a-z0-9:/.-]+?)|(bug))_?$')
 
 
 def tag_fail(msg, code, **extra):
@@ -1516,10 +1651,12 @@ def do_tag(args):
     m = TAG_SPEC_RE.match(spec.strip())
     if not m:
         return tag_fail(f'bad tag {spec!r}: want after:<plan>[:<phase>], conflicts:<plan>[:<phase>] '
-                        f'or lane:<name> with values in [a-z0-9:/.-]', 'bad_grammar')
-    key, value = m.group(1), m.group(2)
+                        f'lane:<name> with values in [a-z0-9:/.-], or the valueless bug', 'bad_grammar')
+    key, value = (m.group(1), m.group(2)) if m.group(1) else ('bug', None)
     base_dir = os.path.dirname(os.path.abspath(args.file)) or os.getcwd()
-    if key == 'lane':
+    if key == 'bug':
+        pass
+    elif key == 'lane':
         if not LANE_RE.fullmatch(f'_lane: {value}_'):
             return tag_fail(f'bad lane {value!r}: values are [a-z0-9.-]', 'bad_grammar')
     elif args.add:
@@ -1565,8 +1702,12 @@ def do_tag(args):
         if bad:
             return tag_fail(bad, 'bad_evidence', line=i + 1)
     tr = trailer(line)
-    token = f'_{key}: {value}_'
-    existing = {'after': AFTER_RE, 'conflicts': CONFLICTS_RE, 'lane': LANE_RE}[key].findall(tr)
+    if key == 'bug':
+        value, token = True, '_bug_'
+        existing = [True] if BUG_RE.search(tr) else []
+    else:
+        token = f'_{key}: {value}_'
+        existing = {'after': AFTER_RE, 'conflicts': CONFLICTS_RE, 'lane': LANE_RE}[key].findall(tr)
     changed = False
     if args.add:
         if key == 'lane' and existing and existing != [value]:
@@ -1839,6 +1980,7 @@ def main(argv):
     a.add = ''
     a.evidence = None
     a.remove = ''
+    a.tag = ''
     it = iter(argv[1:])
     for tok in it:
         if tok == '--file':
@@ -1875,7 +2017,12 @@ def main(argv):
             a.evidence = next(it)
         elif tok == '--remove':
             a.remove = next(it)
+        elif tok == '--tag':
+            a.tag = next(it)
 
+    if a.tag and a.tag not in ROW_TAG_FILTERS:
+        print(json.dumps({"error": f"bad --tag {a.tag!r}: want one of {', '.join(ROW_TAG_FILTERS)}"}))
+        return 2
     if sub == 'rows':
         return do_rows(a)
     elif sub == 'close':
@@ -1902,6 +2049,7 @@ case "$SUBCMD" in
   rows)
     ARGS+=("--plan" "$PLAN")
     [ -n "$PLAN_FILE" ] && ARGS+=("--plan-file" "$PLAN_FILE")
+    [ -n "$TAG" ] && ARGS+=("--tag" "$TAG")
     ;;
   close)
     ARGS+=("--scope" "$SCOPE")
@@ -1918,6 +2066,7 @@ case "$SUBCMD" in
   board)
     ARGS+=("--pipeline-dir" "$PIPELINE_DIR")
     [ -n "$REPO_NAME" ] && ARGS+=("--repo-name" "$REPO_NAME")
+    [ -n "$TAG" ] && ARGS+=("--tag" "$TAG")
     ;;
   waves)
     [ -n "$WRITE" ] && ARGS+=("--write" "$WRITE")

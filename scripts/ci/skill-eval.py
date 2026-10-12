@@ -467,9 +467,12 @@ def assert_output_contains(target: Path, params: dict, ctx: dict) -> AssertionRe
 
 
 def assert_tree_unchanged(target: Path, params: dict, ctx: dict) -> AssertionResult:
+    # Optional `paths` (list of pathspecs) scopes the check, for a skill that
+    # legitimately writes elsewhere (a report, TASKS.md) but must leave code alone.
+    scope = ["--", *params["paths"]] if params.get("paths") else []
     try:
         r = subprocess.run(
-            ["git", "status", "--porcelain"],
+            ["git", "status", "--porcelain", *scope],
             cwd=str(target),
             capture_output=True,
             text=True,

@@ -8,7 +8,7 @@ description: >
   how the codebase is laid out, or when /onboard, /discovery, /codelearn, or
   /init-toolkit is invoked.
 metadata:
-   brainstorm-toolkit-applies-to: claude copilot codex
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Repo Onboarding / Discovery
@@ -78,6 +78,11 @@ In the main context window (no subagents), survey the repo structure:
 
 ### Step 2 — Propose the config
 
+If `.claude/project.json` already exists, first run `bash scripts/migrate-project-json.sh check`
+(toolkit path: repo-local `scripts/`; else the plugin root, this skill's base directory two levels
+up, `<base>/../..`; else `~/.claude/brainstorm-toolkit/`) and offer `apply` for any dead keys it
+lists. Headless: apply (a `.bak` is written) and list the moves in the report.
+
 Build a draft `project.json` from what you found. Fill in:
 
 - `test.unit` — from detected test framework
@@ -100,6 +105,10 @@ Build a draft `project.json` from what you found. Fill in:
   — ask (Step 3).** Default `false`. Do not infer it from existing history: a repo whose
   log already shows the trailer may have been committed by a different tool or by a
   contributor who wants it, and neither implies consent for this checkout.
+- `discipline.data_globs` — the default `**/migrations/**` misses alembic: when a
+  `**/alembic/versions` tree exists, propose adding `**/alembic/**`.
+- `discipline.frontend_globs` — when the frontend root is not `frontend/` (e.g. `portal/` holding
+  a `package.json` plus `.ts`/`.tsx` files), propose globs rooted there (`portal/**/*.tsx`, ...).
 - `modules` — inferred from top-level code directories (`src/`, `api/`, `web/`, `packages/*`, etc.)
 - `models.implement`, `models.code_review`, `models.cap` — **choices, not detection** (Step 3).
   `models.cap` is a ceiling that only lowers; absent = no ceiling. **Recommend omitting it**;
@@ -115,7 +124,7 @@ gracefully — that's better than a wrong command.
 **Interactive sessions only.** When there is nobody to answer — a headless `claude -p`
 run, a CI job, any non-interactive invocation — **do not ask and do not stop.** Take each
 row's documented default (`models.implement: "sonnet"`, review off, no `models.cap`, `coauthor_trailer: false`,
-`stack.*` as detected or omitted, the full default `.gitignore` set with no extra paths), then go straight to Steps 4–5 so the repo is actually
+`stack.*` as detected or omitted, the full default `.gitignore` set with no extra paths, no `autoCompactWindow`), then go straight to Steps 4–5 so the repo is actually
 onboarded, naming every assumed value in the Step 6 report so it is one edit to correct.
 
 First print the proposed `project.json` with a one-line rationale per detected key
@@ -166,6 +175,7 @@ first so "just accept" is one keystroke, and state the cost (or policy) directio
 | **How do you bring this app up for manual verification?** Confirm or correct what was detected. | `stack.up` / `stack.rebuild` / `stack.url` | the detected compose/dev commands · corrected by the user · omit (skills then say which key is missing instead of guessing) |
 | **What should git ignore?** Not a config key — it decides what Step 5 appends to `.gitignore`. Multi-select over the toolkit files that are a genuine team choice (the machine-state entries in Step 5 are always ignored and never asked). State the trade per option: ignored = personal, no merge conflicts; tracked = shared with the team, survives a `git reset --hard`. For `.claude/project.json` also say that tracking it makes the opt-in stop gate stand down — it never runs a test command from a committed config unless `BRAINSTORM_TRUST_STOP_GATE=1`. Then ask for **any other paths** this repo wants ignored (local env files, scratch or output dirs the scan saw untracked) — and never propose a path that is already tracked without saying ignoring it won't untrack it. | `.gitignore` | all three checked (default): `.claude/project.json`, `TASKS.md`, `plans/` · uncheck any the team shares · plus free-text extra paths |
 | **Should commit messages this toolkit writes or suggests credit Claude as a co-author?** Not a cost lever — a disclosure choice, so it is off unless the user says yes. Mention that it also lands in any PR body a future step authors, and that some DCO / commit-lint setups reject unrecognized trailers. | `coauthor_trailer` | `false` (default — no trailer) · `true` (append `Co-Authored-By: Claude <noreply@anthropic.com>`) |
+| **When should Claude Code auto-compact the conversation?** Claude only — not a `project.json` key; it goes in `.claude/settings.json`, shared by everyone on the repo. A larger window keeps more working context before a compaction but every turn past the default costs more; on a 1M-context model `600000` suits long `/sdlc` runs. Mention that each person can still override it for themselves with `/autocompact <tokens>` (user settings). | `autoCompactWindow` (`.claude/settings.json`) | omit (default — Claude Code decides) · `600000` (1M-context models; fewer compactions mid-run) · a custom token count |
 
 Explain the interaction once, because it surprises people: **`models.cap` is a ceiling, not a
 target** — it can only *lower* a role's tier, never raise it, so a cap of `sonnet` silently
@@ -219,6 +229,10 @@ writing nothing is a failed onboarding, not a cautious one:
    **Keep tracked:** `.claude/project.json.example` (the bootstrap template),
    `.claude/settings.json` (hook wiring the team does share), `AGENTS.md`,
    `GOTCHAS.md`, and any committed agent/skill definitions.
+
+   **Auto-compact window** (Step 3, Claude only): when the user chose a value, merge
+   `"autoCompactWindow": <tokens>` into `.claude/settings.json` (create it if missing; keep every
+   existing key, never overwrite the file). Omitted → leave the file untouched.
 
 ### Step 5.5 — Offer secret-blocking PreToolUse hook (Claude only)
 

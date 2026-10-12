@@ -5,9 +5,9 @@ description: >
   gotchas-currency in parallel, rolling findings into a single scored report. Use when the user
   says /repo-health, asks for a "hygiene check", "weekly sweep", "is this repo healthy", "what
   should I clean up", or before a release. Never modifies code — produces a report and a
-  `.next-action` suggestion. Run after merges land, not mid-implementation. For a deep dead-code
-  investigation use /dead-code-review; for PR-scoped review use /sdlc's Stage 5.
-argument-hint: "[--no-dead-code] [--no-tests] [--no-deps] [--no-secrets] [--no-gotchas] [--no-migrations] [--no-pipeline-state] [--no-memory]"
+  `.next-action` suggestion. Run after merges land, not mid-implementation. `--hunt [<area>]` runs a
+  bug hunt that files evidence-backed `_bug_` rows.
+argument-hint: "[--no-dead-code] [--no-tests] [--no-deps] [--no-secrets] [--no-gotchas] [--no-migrations] [--no-pipeline-state] [--no-memory] [--hunt [<area>]]"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
 ---
@@ -18,17 +18,26 @@ metadata:
 
 Composes existing checks into one weekly-sweep workflow. Read-only: produces
 a scored report and drops a `.claude/.next-action` with the highest-impact
-next command. Never modifies code, never opens a PR.
+next command. Never modifies code, never opens a PR. For a deep dead-code investigation use
+`/dead-code-review`; for PR-scoped review use `/sdlc`'s Stage 5.
 
 ## Arguments
 
 - `--no-dead-code` / `--no-tests` / `--no-deps` / `--no-secrets` / `--no-gotchas`
   / `--no-migrations` / `--no-pipeline-state` / `--no-memory`:
-  opt out of any individual check. Default: run all eight. Each check
+  opt out of any individual check. Default: run all of them. Each check
   self-skips silently when its surface is absent (no migrations dir, no
   pipeline envelopes, no memory pointer), so a repo without that surface
   never sees the check — these are **project-agnostic by construction**.
   Skipped checks appear in the report as `skip` with the reason.
+- `--hunt [<area>]`: bug-hunt mode (below). `<area>` is a path or glob; default whole repo.
+
+## Hunt mode (`--hunt`)
+
+Only when `--hunt` is passed: **read `skills/repo-health/references/hunt.md` now** and follow it
+instead of the Procedure below. Hunt **replaces** the normal sweep for that run (no checks, no
+score) and files `_bug_` rows in `TASKS.md`; it never edits code. A run without `--hunt` never
+opens that file.
 
 ## Procedure
 
@@ -222,9 +231,18 @@ Run `bash scripts/close-tasks.sh reconcile --file TASKS.md` — read-only, never
 the write). Report `drift_count` and up to 10 findings, each with its line and type.
 The fix command is `/sdlc-status --reconcile`.
 
+### Check 12 — Open bugs (procedural, cheap)
+
+Skip silently when `TASKS.md` is absent, and with reason `no close-tasks.sh` when the script
+did not install. Run `bash scripts/close-tasks.sh rows --tag bug --file TASKS.md` — read-only.
+Keep rows whose `state` is `open` or `in_progress`; take each row's `priority` field (`P0`–`P3`;
+null counts as P3) and its `title`. Report the open
+count per priority and list the top 5 by priority, highest first (ties: file order), each as
+`(Pn) title (line N)`. Count only: never fix, close or re-prioritise a row here.
+
 ## Roll-up
 
-Compute a score: `100 - min(60, 10*high_findings + 5*high_deps + 4*unapplied_migrations + 3*stale_gotchas + 3*rules_drift_fixes + 3*backlog_drift + 2*test_failures + 2*stale_pipeline_runs + 1*orphan_files + 1*skipped_tests + 1*stale_memory + 5*config_inert)`. Floor at 40 — a single bad metric shouldn't drive the score to zero.
+Compute a score: `100 - min(60, 10*high_findings + 5*high_deps + 4*unapplied_migrations + 3*stale_gotchas + 3*rules_drift_fixes + 3*backlog_drift + 2*test_failures + 2*stale_pipeline_runs + 1*orphan_files + 1*skipped_tests + 1*stale_memory + 5*config_inert + 5*open_bugs_p0p1 + 1*open_bugs_p2p3)`. Floor at 40 — a single bad metric shouldn't drive the score to zero.
 
 Print the report:
 
@@ -243,6 +261,7 @@ Score: 87 / 100  (▼ 5 from last sweep if .claude/pipeline/last-health.json exi
   ✓ Memory:        no repo-local index (skipped)
   ✓ Config:        project.json present, matches project.json.example
   ⚠ Rules:         1 fix ("AGENTS.md still says Stage 6 opens a PR")
+  ⚠ Open bugs:     1 P0, 2 P2 — (P0) login 500 on empty body (line 14); (P2) ...
 
 Suggested next: apply pending migration 232 (the highest-blast finding)
                 /sdlc to fix the dep vuln

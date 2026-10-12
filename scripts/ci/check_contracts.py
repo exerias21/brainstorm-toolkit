@@ -1086,6 +1086,89 @@ def check_shell_install_parity(root: Path) -> list[Finding]:
     return findings
 
 
+# ── renames-table (scripts/project-json-renames.json) ───────────────────────
+#
+# The rename table is the single data source for dead project.json keys. The
+# docs migration table and the dead-key denylist rows must both stay covered
+# by it, and every replacement key must exist in the shipped example config.
+
+RENAMES_TABLE_PATH = "scripts/project-json-renames.json"
+_MIGRATION_ROW_RE = re.compile(r"^\|\s*`([A-Za-z_][\w.]*)`\s*\|\s*`([A-Za-z_][\w.]*)`\s*\|")
+_DEAD_KEY_REGEX_RE = re.compile(r"[A-Za-z_]\\.[A-Za-z_]")
+
+
+def load_renames_table(root: Path) -> tuple[list[dict], str | None]:
+    """Return (entries, error). `error` is set when the table is missing or malformed."""
+    path = root / RENAMES_TABLE_PATH
+    if not path.is_file():
+        return [], f"{RENAMES_TABLE_PATH} is missing"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return [], f"{RENAMES_TABLE_PATH} is not valid JSON: {exc}"
+    entries = data.get("renames") if isinstance(data, dict) else data
+    if not isinstance(entries, list) or not entries:
+        return [], f"{RENAMES_TABLE_PATH} has no `renames` array"
+    for entry in entries:
+        if not (
+            isinstance(entry, dict)
+            and isinstance(entry.get("old"), str) and entry["old"]
+            and isinstance(entry.get("new"), str) and entry["new"]
+        ):
+            return [], f"{RENAMES_TABLE_PATH} entry {entry!r} needs string `old` and `new`"
+    return entries, None
+
+
+def check_renames_table(root: Path, phrases_file: Path) -> list[Finding]:
+    entries, error = load_renames_table(root)
+    if error:
+        return [Finding(RENAMES_TABLE_PATH, 1, error, "renames-table")]
+    findings: list[Finding] = []
+    pairs = {(e["old"], e["new"]) for e in entries}
+    olds = [e["old"] for e in entries]
+
+    axes = root / "docs" / "MODEL-AXES.md"
+    if axes.is_file():
+        for lineno, line in enumerate(axes.read_text(encoding="utf-8").splitlines(), 1):
+            m = _MIGRATION_ROW_RE.match(line.strip())
+            if m and (m.group(1), m.group(2)) not in pairs:
+                findings.append(Finding(
+                    "docs/MODEL-AXES.md", lineno,
+                    f"migration row `{m.group(1)}` -> `{m.group(2)}` has no matching entry "
+                    f"in {RENAMES_TABLE_PATH}", "renames-table",
+                ))
+
+    if phrases_file.is_file():
+        for lineno, raw in enumerate(phrases_file.read_text(encoding="utf-8").splitlines(), 1):
+            if not raw.strip() or raw.lstrip().startswith("#"):
+                continue
+            regex = raw.split("\t")[0]
+            if "--" in regex or r"\.md" in regex or not _DEAD_KEY_REGEX_RE.search(regex):
+                continue
+            try:
+                pattern = re.compile(regex)
+            except re.error:
+                continue
+            if not any(pattern.search(old) for old in olds):
+                findings.append(Finding(
+                    relposix(root, phrases_file), lineno,
+                    f"dead-key row `{regex}` matches no `old` key in {RENAMES_TABLE_PATH}",
+                    "renames-table",
+                ))
+
+    example = root / "templates" / "project.json.example"
+    if example.is_file():
+        registry = load_registry(root)
+        for entry in entries:
+            if entry["new"] not in registry:
+                findings.append(Finding(
+                    RENAMES_TABLE_PATH, 1,
+                    f"replacement key `{entry['new']}` (for `{entry['old']}`) is not in "
+                    "templates/project.json.example", "renames-table",
+                ))
+    return findings
+
+
 # ── description-budget (skills/*/SKILL.md) ──────────────────────────────────
 #
 # Frontmatter `description` is resident on every session, every turn, on all
@@ -1462,6 +1545,7 @@ def run_all(root: Path, phrases_file: Path) -> dict[str, list[Finding]]:
         "portable-invocation": check_bare_python3(files, root) + check_hooks_json_interpreter(root),
         "description-budget": check_description_budget(root),
         "shell-install-parity": check_shell_install_parity(root),
+        "renames-table": check_renames_table(root, phrases_file),
     }
 
 
@@ -1921,6 +2005,41 @@ def self_test_shell_install_parity() -> bool:
     return ok
 
 
+def self_test_renames_table() -> bool:
+    """Self-test for renames-table: a missing table, then a table with one
+    uncovered docs row, one unmatched dead-key row and one unknown new key."""
+    with tempfile.TemporaryDirectory(prefix="check_contracts_selftest_renames_") as tmp:
+        root = Path(tmp)
+        (root / "templates").mkdir(parents=True)
+        (root / "docs").mkdir(parents=True)
+        (root / "scripts").mkdir(parents=True)
+        (root / "templates" / "project.json.example").write_text(
+            json.dumps({"models": {"sanity": "sonnet"}}), encoding="utf-8")
+        (root / "docs" / "MODEL-AXES.md").write_text(
+            "| Old | New |\n|---|---|\n| `a.old` | `models.sanity` |\n"
+            "| `b.old` | `models.sanity` |\n| `--flag` | `models.<role>` |\n",
+            encoding="utf-8")
+        phrases = root / "forbidden-phrases.txt"
+        phrases.write_text(
+            "a\\.old\tcovered\nc\\.old\tuncovered dead key\nfoo\\.md\tfilename, skipped\n",
+            encoding="utf-8")
+        missing = check_renames_table(root, phrases)
+        (root / RENAMES_TABLE_PATH).write_text(json.dumps({"renames": [
+            {"old": "a.old", "new": "models.sanity", "note": "x"},
+            {"old": "z.old", "new": "models.nope", "note": "x"},
+        ]}), encoding="utf-8")
+        found = check_renames_table(root, phrases)
+    ok = len(missing) == 1 and len(found) == 3
+    print(
+        f"[{'OK' if ok else 'FAIL'}] renames-table: expected 1 violation for a missing table "
+        f"and 3 for a table with an uncovered docs row, an unmatched dead-key row and an "
+        f"unknown new key, caught {len(missing)} and {len(found)}"
+    )
+    for f in missing + found:
+        print(f"    {f.path}:{f.line}: {f.message}")
+    return ok
+
+
 def self_test() -> int:
     with tempfile.TemporaryDirectory(prefix="check_contracts_selftest_") as tmp:
         root = Path(tmp)
@@ -1947,6 +2066,7 @@ def self_test() -> int:
         "collapsed-pairs": 1,
         "portable-frontmatter": 1,
     }
+    results.pop("renames-table", None)  # exercised by self_test_renames_table
     for check, expected in expectations.items():
         found = results[check]
         status = "OK" if len(found) == expected else "FAIL"
@@ -1971,6 +2091,8 @@ def self_test() -> int:
     if not self_test_portable_invocation():
         ok = False
     if not self_test_shell_install_parity():
+        ok = False
+    if not self_test_renames_table():
         ok = False
     if not self_test_description_budget_per_skill():
         ok = False

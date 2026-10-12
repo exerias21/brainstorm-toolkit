@@ -5,8 +5,7 @@ description: >
   context, generates multiple approaches, evaluates tradeoffs, and writes an action plan to
   `plans/`. Use whenever the user says /brainstorm, mentions "brainstorm", "let's think through",
   "I have an idea", "what if we", "how should we approach", "let's explore", or wants to ideate
-  on a feature or change before jumping into code. This is the conversational planning companion
-  — for heavy autonomous multi-agent product research, use /brainstorm-team instead.
+  on a feature or change before jumping into code.
 metadata:
   brainstorm-toolkit-applies-to: copilot
 ---
@@ -15,7 +14,8 @@ metadata:
 
 An interactive ideation skill that walks through a structured brainstorming process *with* the
 user. This is conversational — think out loud, ask questions, and iterate on ideas together with
-the user before producing an implementation plan.
+the user before producing an implementation plan. For heavy autonomous product research, use
+`/brainstorm-team` instead.
 
 ## How It Works
 

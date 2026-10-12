@@ -1789,6 +1789,82 @@ assert [c['source'] for c in d['conflicts']] == ['explicit'], d['conflicts']
 PYEOF
 ok
 
+# Rows for plans p/q/r (phase 1, one lane each) that all name $3 in their phase-1 file list.
+wv_hub_fixture() {
+  local d="$1" f="$2" n
+  printf '## Active / Pending\n' > "$d/TASKS.md"
+  for n in "${@:3}"; do
+    wv_plan "$d/plans/$n.md" "$f" "src/$n-2.py"
+    printf -- '- [ ] (P1) %s one \xe2\x80\x94 plans/%s.md _plan: %s_ \xc2\xb7 _phase: 1_ \xc2\xb7 _lane: l-%s_\n' "$n" "$n" "$n" "$n" >> "$d/TASKS.md"
+  done
+}
+
+CASE="close-tasks waves: a file named by three plans is a hub -- no inferred conflict, listed in hub_files"
+d="$(ct_dir w-hub1)"
+wv_hub_fixture "$d" .claude-plugin/plugin.json r p q
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert d['conflicts'] == [], d['conflicts']
+assert d['hub_files'] == [{'file': '.claude-plugin/plugin.json', 'plans': ['p', 'q', 'r']}], d['hub_files']
+assert d['summary']['hub_files'] == 1 and d['summary']['conflicts'] == 0, d['summary']
+assert sorted(d['now']) == ['l-p', 'l-q', 'l-r'], d['now']
+PYEOF
+ok
+
+CASE="close-tasks waves: a file named by only two plans still conflicts and is not a hub"
+d="$(ct_dir w-hub2)"
+wv_hub_fixture "$d" .claude-plugin/plugin.json p q
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert [(c['source'], c['files']) for c in d['conflicts']] == [('inferred', ['.claude-plugin/plugin.json'])], d['conflicts']
+assert d['hub_files'] == [] and d['summary']['hub_files'] == 0, d['hub_files']
+PYEOF
+ok
+
+CASE="close-tasks waves: hub_threshold from project.json is honoured; an invalid value falls back to 3"
+d="$(ct_dir w-hub3)"
+wv_hub_fixture "$d" src/shared.py p q
+mkdir -p "$d/.claude"
+printf '{"pipeline":{"action_items":{"hub_threshold":2}}}' > "$d/.claude/project.json"
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert d['conflicts'] == [] and [h['file'] for h in d['hub_files']] == ['src/shared.py'], (d['conflicts'], d['hub_files'])
+PYEOF
+printf '{"pipeline":{"action_items":{"hub_threshold":1}}}' > "$d/.claude/project.json"
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert len(d['conflicts']) == 1 and d['hub_files'] == [], (d['conflicts'], d['hub_files'])
+PYEOF
+ok
+
+CASE="close-tasks waves: ignore_conflict_files globs drop a file from inferred conflicts without reporting a hub"
+d="$(ct_dir w-hub4)"
+wv_hub_fixture "$d" docs/CHANGELOG.md p q
+mkdir -p "$d/.claude"
+printf '{"pipeline":{"action_items":{"ignore_conflict_files":["docs/*.md"]}}}' > "$d/.claude/project.json"
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert d['conflicts'] == [] and d['hub_files'] == [], (d['conflicts'], d['hub_files'])
+PYEOF
+ok
+
+CASE="close-tasks waves: an explicit _conflicts: still conflicts on a hub file"
+d="$(ct_dir w-hub5)"
+wv_hub_fixture "$d" .claude-plugin/plugin.json p q r
+perl -pi -e 's/_lane: l-p_/_lane: l-p_ \xc2\xb7 _conflicts: q:1_/' "$d/TASKS.md"  # not sed -i: BSD sed takes the next arg as a backup suffix
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert [c['source'] for c in d['conflicts']] == ['explicit'], d['conflicts']
+assert [h['file'] for h in d['hub_files']] == ['.claude-plugin/plugin.json'], d['hub_files']
+PYEOF
+ok
+
 CASE="close-tasks waves: one row per lane (priority, then [~], decides); --write renders ACTION_ITEMS.md"
 d="$(ct_dir w06)"
 wv_plan "$d/plans/p.md" src/a.py src/x.py
@@ -1923,6 +1999,26 @@ assert t[1]['after'] == [] and t[1]['lane'] is None, t[1]
 PYEOF
 ok
 
+CASE="close-tasks board/waves: a title documenting tag syntax keeps its text; trailer tags are still stripped"
+d="$(ct_dir w11)"
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [ ] (P2) Row tags `_after:/_conflicts:/_lane:` parsed in close-tasks.sh \xe2\x80\x94 docs/plans/x.md _plan: x_ \xc2\xb7 _phase: 1_\n' >> "$d/TASKS.md"
+printf -- '- [ ] (P2) Plain title \xe2\x80\x94 docs/plans/y.md _plan: y_ \xc2\xb7 _phase: 1_\n' >> "$d/TASKS.md"
+run_ct "$d" board --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+t = d['tasks']
+assert t[0]['title'] == 'Row tags `_after:/_conflicts:/_lane:` parsed in close-tasks.sh', t[0]
+assert t[1]['title'] == 'Plain title', t[1]
+PYEOF
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+titles = [r['title'] for lane in d['now'].values() for r in [lane]] + [r['title'] for r in d['unknown_files']]
+assert any('_after:/_conflicts:/_lane:' in t for t in titles), titles
+PYEOF
+ok
+
 # ── close-tasks.sh tag: the only writer of _after:/_conflicts:/_lane: ────────
 
 tag_fixture() {
@@ -2019,7 +2115,7 @@ assert_rc "$CT_RC" 0
 h1="$(printf '%s' "$CT_OUT" | bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys; print(json.load(sys.stdin)["open_hash"])')"
 waves_check <<'PYEOF'
 s = d['summary']
-assert set(s) == {'now', 'lanes', 'next', 'later', 'needs_you', 'unknown_files', 'conflicts'}, s
+assert set(s) == {'now', 'lanes', 'next', 'later', 'needs_you', 'unknown_files', 'conflicts', 'hub_files', 'bugs', 'bugs_hidden'}, s
 assert s['now'] == len(d['now']) and s['next'] == sum(len(v) for v in d['next'].values()), (s, d)
 assert s['needs_you'] == 0 and isinstance(d['open_hash'], str) and d['open_hash'], d
 PYEOF
@@ -2342,6 +2438,318 @@ printf '# plan\n' > "$d/plans/team-brainstorm-real-thing.md"
 printf 'x = "brainstorm-toolkit"\n# team-brainstorm-real-thing\n# brainstorm-no-such-plan\n' >> "$d/src/a.py"
 pr_scan "$d"
 pr_check 1 'd["hits"][0]["line"]==3 and d["hits"][0]["pattern"]=="brainstorm-name"'
+ok
+
+# ── migrate-project-json.sh: dead-key renames, value-preserving ──────────
+MIGRATE="$PLUGIN_ROOT/scripts/migrate-project-json.sh"
+
+# mj_run <dir> <check|apply> -> MJ_OUT (stdout JSON), MJ_RC
+mj_run() {
+  local proj="$1" sub="$2"
+  set +e
+  MJ_OUT="$(cd "$proj" && bash "$MIGRATE" "$sub" 2>"$ROOT_TMP/mj.err")"
+  MJ_RC=$?
+  set -e
+  MJ_OUT="$(printf '%s' "$MJ_OUT" | tr -d '\r')"
+}
+# mj_py <dir> <python body over d (stdout JSON) and p (file path)>
+mj_py() {
+  printf '%s' "$MJ_OUT" > "$ROOT_TMP/mj.json"
+  bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys
+d=json.load(open(sys.argv[1],encoding="utf-8"))
+p=sys.argv[2]+"/.claude/project.json"
+assert eval(sys.argv[3]),d' "$ROOT_TMP/mj.json" "$1" "$2" || fail "migrate assertion failed: $MJ_OUT"
+}
+mj_dir() { mkdir -p "$ROOT_TMP/mj-$1/.claude"; printf '%s' "$ROOT_TMP/mj-$1"; }
+mj_baks() { ls "$1/.claude" | grep -c 'project.json.bak-' || true; }
+
+CASE="migrate-project-json: pipeline.* and models.focuses keys move to models.*/agents.*, other keys and order kept"
+d="$(mj_dir 01)"
+cat > "$d/.claude/project.json" <<'EOT2'
+{
+  "_comment": "keep me",
+  "test": {"unit": "pytest"},
+  "pipeline": {
+    "sanity_check": {"model": "haiku", "focuses": ["a"]},
+    "review_fix": {"enabled": true, "lenses": ["correctness"]},
+    "decompose_min_tasks": 5
+  },
+  "models": {"implement": "sonnet", "focuses": ["a"]}
+}
+EOT2
+mj_run "$d" apply
+assert_rc "$MJ_RC" 0
+printf '%s' "$MJ_OUT" > "$ROOT_TMP/mj.json"
+bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys
+d=json.load(open(sys.argv[1],encoding="utf-8"))
+j=json.load(open(sys.argv[2]+"/.claude/project.json",encoding="utf-8"))
+assert len(d["applied"])==5 and d["conflicts"]==[],d
+assert j["models"]["sanity"]=="haiku" and j["agents"]["code_review_lenses"]==["correctness"] and j["agents"]["decompose_min_tasks"]==5,j
+assert j["agents"]["sanity_focuses"]==["a"] and "focuses" not in j["models"],j
+assert j["_comment"]=="keep me" and j["test"]=={"unit":"pytest"} and j["pipeline"]=={"review_fix":{"enabled":True}},j
+assert list(j)[:3]==["_comment","test","pipeline"],list(j)' "$ROOT_TMP/mj.json" "$d" || fail "migrate result wrong: $MJ_OUT"
+grep -q 'moved pipeline.sanity_check.model -> models.sanity' "$ROOT_TMP/mj.err" || fail "no stderr move line"
+ok
+
+CASE="migrate-project-json: a target holding a different value is a conflict -- both keys left, reported, no backup"
+d="$(mj_dir 02)"
+printf '{"pipeline":{"decompose_min_tasks":3},"agents":{"decompose_min_tasks":9}}\n' > "$d/.claude/project.json"
+cp "$d/.claude/project.json" "$ROOT_TMP/mj02.orig"
+mj_run "$d" apply
+assert_rc "$MJ_RC" 0
+mj_py "$d" 'len(d["conflicts"])==1 and d["applied"]==[] and "backup" not in d'
+cmp -s "$d/.claude/project.json" "$ROOT_TMP/mj02.orig" || fail "conflict file was modified"
+[ "$(mj_baks "$d")" = "0" ] || fail "backup written for a no-op"
+grep -q 'conflict: pipeline.decompose_min_tasks and agents.decompose_min_tasks' "$ROOT_TMP/mj.err" || fail "no stderr conflict line"
+ok
+
+CASE="migrate-project-json: a target path through a non-object value is a conflict -- the user's value is never replaced"
+d="$(mj_dir 02b)"
+printf '{"agents":null,"pipeline":{"decompose_min_tasks":3}}\n' > "$d/.claude/project.json"
+cp "$d/.claude/project.json" "$ROOT_TMP/mj02b.orig"
+mj_run "$d" apply
+assert_rc "$MJ_RC" 0
+mj_py "$d" 'd["applied"]==[] and [c["blocked_by"] for c in d["conflicts"]]==["agents"]'
+cmp -s "$d/.claude/project.json" "$ROOT_TMP/mj02b.orig" || fail "blocked file was modified"
+ok
+
+CASE="migrate-project-json: two old keys for one new key -- the second conflict names the key that filled it"
+d="$(mj_dir 02c)"
+printf '{"pipeline":{"sanity_check":{"focuses":["a"]}},"models":{"focuses":["b"]}}\n' > "$d/.claude/project.json"
+mj_run "$d" apply
+assert_rc "$MJ_RC" 0
+mj_py "$d" 'len(d["applied"])==1 and d["conflicts"][0]["new_set_by"]=="pipeline.sanity_check.focuses"'
+ok
+
+CASE="migrate-project-json: second apply is a no-op -- no new backup, file byte-identical"
+d="$(mj_dir 03)"
+printf '{"models":{"focuses":["x"]}}\n' > "$d/.claude/project.json"
+mj_run "$d" apply
+assert_rc "$MJ_RC" 0
+[ "$(mj_baks "$d")" = "1" ] || fail "first apply should leave one backup"
+cp "$d/.claude/project.json" "$ROOT_TMP/mj03.after"
+mj_run "$d" apply
+assert_rc "$MJ_RC" 0
+mj_py "$d" 'd["applied"]==[] and d["moves"]==[]'
+cmp -s "$d/.claude/project.json" "$ROOT_TMP/mj03.after" || fail "second apply changed the file"
+[ "$(mj_baks "$d")" = "1" ] || fail "second apply wrote another backup"
+ok
+
+CASE="migrate-project-json: an old key whose target already holds an equal value is dropped; check is read-only"
+d="$(mj_dir 04)"
+printf '{"pipeline":{"decompose_min_tasks":4},"agents":{"decompose_min_tasks":4}}\n' > "$d/.claude/project.json"
+cp "$d/.claude/project.json" "$ROOT_TMP/mj04.orig"
+mj_run "$d" check
+assert_rc "$MJ_RC" 0
+mj_py "$d" 'len(d["moves"])==1 and d["conflicts"]==[]'
+cmp -s "$d/.claude/project.json" "$ROOT_TMP/mj04.orig" || fail "check modified the file"
+mj_run "$d" apply
+mj_py "$d" 'json.load(open(p,encoding="utf-8"))=={"agents":{"decompose_min_tasks":4}}'
+ok
+
+CASE="migrate-project-json: CRLF line endings, 4-space indent and missing trailing newline survive"
+d="$(mj_dir 05)"
+printf '{\r\n    "pipeline": {\r\n        "decompose_min_tasks": 5\r\n    },\r\n    "x": "\xc3\xa9"\r\n}' > "$d/.claude/project.json"
+mj_run "$d" apply
+assert_rc "$MJ_RC" 0
+bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import sys
+b=open(sys.argv[1]+"/.claude/project.json","rb").read()
+assert b.count(b"\r\n")==b.count(b"\n")>=4,b
+assert b"\n    \"x\"" in b.replace(b"\r\n",b"\n") and not b.endswith(b"\n"),b
+assert "é".encode("utf-8") in b,b' "$d" || fail "format not preserved"
+ok
+
+CASE="migrate-project-json: unknown keys are listed, comment keys skipped"
+d="$(mj_dir 06)"
+printf '{"_note":1,"//":"c","bogus":1,"models":{"implement":"sonnet","nope":2}}\n' > "$d/.claude/project.json"
+mj_run "$d" check
+assert_rc "$MJ_RC" 0
+mj_py "$d" 'sorted(d["unknown"])==["bogus","models.nope"] and d["moves"]==[]'
+ok
+
+CASE="migrate-project-json: the toolkit template wins over a stale repo-local project.json.example"
+d="$(mj_dir 09)"
+printf '{"models":{"implement":"sonnet"}}
+' > "$d/.claude/project.json"
+printf '{"test":{}}
+' > "$d/.claude/project.json.example"
+mj_run "$d" check
+assert_rc "$MJ_RC" 0
+mj_py "$d" 'd["unknown"]==[] and d["example"].replace("\\","/").endswith("templates/project.json.example")'
+ok
+
+CASE="migrate-project-json: missing file is a no-op for check and apply"
+d="$(mj_dir 07)"
+mj_run "$d" apply
+assert_rc "$MJ_RC" 0
+mj_py "$d" 'd["exists"] is False and d["moves"]==[] and d["applied"]==[]'
+[ ! -e "$d/.claude/project.json" ] || fail "missing file was created"
+ok
+
+CASE="migrate-project-json: malformed JSON exits 1 and leaves the file unchanged"
+d="$(mj_dir 08)"
+printf '{"pipeline": {oops' > "$d/.claude/project.json"
+cp "$d/.claude/project.json" "$ROOT_TMP/mj08.orig"
+mj_run "$d" apply
+assert_rc "$MJ_RC" 1
+cmp -s "$d/.claude/project.json" "$ROOT_TMP/mj08.orig" || fail "malformed file was modified"
+[ "$(mj_baks "$d")" = "0" ] || fail "backup written for malformed file"
+ok
+
+CASE="migrate-project-json: bad usage exits 2"
+set +e; bash "$MIGRATE" bogus >/dev/null 2>&1; rc=$?; set -e
+assert_rc "$rc" 2
+ok
+
+# --- `_bug_` row flag ---------------------------------------------------------
+bug_fixture() {
+  printf '## Active / Pending\n' > "$1/TASKS.md"
+  printf -- '- [ ] (P1) Plain one \xe2\x80\x94 plans/p.md _plan: p_\n' >> "$1/TASKS.md"
+  printf -- '- [ ] (P2) Crash on save _bug_ \xe2\x80\x94 plans/p.md _plan: p_ \xc2\xb7 _bug_\n' >> "$1/TASKS.md"
+  printf -- '- [ ] (P3) Mentions _bug_ in prose only \xe2\x80\x94 plans/p.md _plan: q_\n' >> "$1/TASKS.md"
+}
+
+CASE="close-tasks rows/board --tag bug: only trailer-tagged bug rows; bug field set; title stripped of _bug_"
+d="$(ct_dir bug1)"
+bug_fixture "$d"
+run_ct "$d" rows --plan p --file TASKS.md --tag bug
+assert_rc "$CT_RC" 0
+printf '%s' "$CT_OUT" | bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys; d=json.load(sys.stdin); assert [m["line"] for m in d["matched"]]==[3] and d["matched"][0]["bug"] is True, d' || fail "rows --tag bug: $CT_OUT"
+run_ct "$d" rows --file TASKS.md --tag bug
+assert_rc "$CT_RC" 0
+printf '%s' "$CT_OUT" | bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys; d=json.load(sys.stdin); assert [m["line"] for m in d["matched"]]==[3], d' || fail "rows --tag bug without --plan: $CT_OUT"
+run_ct "$d" board --file TASKS.md --tag bug
+assert_rc "$CT_RC" 0
+printf '%s' "$CT_OUT" | bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys; d=json.load(sys.stdin); t=d["tasks"]; assert [x["line"] for x in t]==[3] and t[0]["bug"] is True, t; assert t[0]["title"]=="Crash on save _bug_", t' || fail "board --tag bug: $CT_OUT"
+run_ct "$d" board --file TASKS.md
+printf '%s' "$CT_OUT" | bash "$PLUGIN_ROOT/scripts/py.sh" -c 'import json,sys; d=json.load(sys.stdin); t=d["tasks"]; assert [x["bug"] for x in t]==[False,True,False], t' || fail "board bug field: $CT_OUT"
+ok
+
+CASE="close-tasks --tag: an unknown value is a usage error (exit 2)"
+d="$(ct_dir bug2)"
+bug_fixture "$d"
+run_ct "$d" rows --plan p --file TASKS.md --tag nonsense
+assert_rc "$CT_RC" 2
+run_ct "$d" board --file TASKS.md --tag nonsense
+assert_rc "$CT_RC" 2
+ok
+
+CASE="close-tasks tag: --add bug / --remove bug round trip restores the bytes; idempotent"
+d="$(ct_dir bug3)"
+printf '## Active / Pending\n- [ ] (P2) Alpha thing \xe2\x80\x94 plans/p.md _plan: p_\n- [ ] (P2) Beta thing\n' > "$d/TASKS.md"
+cp "$d/TASKS.md" "$d/TASKS.orig"
+run_ct "$d" tag --file TASKS.md --row Alpha --add bug
+assert_rc "$CT_RC" 0
+assert_match "$CT_OUT" '"changed": true'
+grep -q 'Alpha thing — plans/p.md _plan: p_ · _bug_$' "$d/TASKS.md" || fail "bug tag not appended to the trailer: $(cat "$d/TASKS.md")"
+run_ct "$d" tag --file TASKS.md --row Alpha --add bug
+assert_match "$CT_OUT" '"changed": false'
+run_ct "$d" tag --file TASKS.md --row Beta --add bug
+assert_rc "$CT_RC" 0
+grep -q 'Beta thing — _bug_$' "$d/TASKS.md" || fail "bug tag not added to a row with no trailer"
+run_ct "$d" tag --file TASKS.md --row Beta --remove bug
+run_ct "$d" tag --file TASKS.md --row Alpha --remove bug
+assert_rc "$CT_RC" 0
+cmp -s "$d/TASKS.md" "$d/TASKS.orig" || fail "tag bug round trip did not restore the original bytes"
+ok
+
+CASE="close-tasks waves: bug rows sort first in a lane, summary.bugs counts them, the per-lane cap hides the rest"
+d="$(ct_dir bug4)"
+printf '## Active / Pending\n- [ ] (P1) Urgent plain\n' > "$d/TASKS.md"
+for n in 1 2 3 4 5 6; do printf -- '- [ ] (P1) Bug %s \xe2\x80\x94 _bug_\n' "$n" >> "$d/TASKS.md"; done
+run_ct "$d" waves --file TASKS.md --write "$d/AI.md"
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+name = lambda r: r['title'].rstrip(' —')
+assert [name(r) for r in d['now'].values()] == ['Bug 1'], d['now']
+assert [name(r) for r in d['next']['general']] == ['Bug 2', 'Bug 3', 'Bug 4', 'Bug 5', 'Urgent plain'], d['next']
+assert d['summary']['bugs'] == 6 and d['summary']['bugs_hidden'] == 1, d['summary']
+assert d['bugs_hidden'] == {'general': 1}, d['bugs_hidden']
+assert all(r['bug'] for r in d['now'].values()), d['now']
+PYEOF
+grep -q 'Bug 5' "$d/AI.md" || fail "Bug 5 should render"
+grep -q 'Bug 6' "$d/AI.md" && fail "Bug 6 should be hidden from the rendered file"
+grep -q '1 more bug row' "$d/AI.md" || fail "hidden count note missing from the rendered file"
+mkdir -p "$d/.claude"
+printf '{"pipeline":{"action_items":{"max_bugs_per_lane":2}}}' > "$d/.claude/project.json"
+run_ct "$d" waves --file TASKS.md
+waves_check <<'PYEOF'
+assert d['summary']['bugs_hidden'] == 4 and d['summary']['bugs'] == 6, d['summary']
+PYEOF
+printf '{"pipeline":{"action_items":{"max_bugs_per_lane":"lots"}}}' > "$d/.claude/project.json"
+run_ct "$d" waves --file TASKS.md
+waves_check <<'PYEOF'
+assert d['summary']['bugs_hidden'] == 1, d['summary']
+PYEOF
+ok
+
+CASE="close-tasks waves: the hub rule still works with a bug row present"
+d="$(ct_dir bug5)"
+wv_hub_fixture "$d" .claude-plugin/plugin.json r p q
+printf -- '- [ ] (P1) Loose bug \xe2\x80\x94 _bug_\n' >> "$d/TASKS.md"
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert d['conflicts'] == [] and d['summary']['hub_files'] == 1, d['summary']
+assert d['summary']['bugs'] == 1, d['summary']
+assert sorted(d['now']) == ['general', 'l-p', 'l-q', 'l-r'], d['now']
+PYEOF
+ok
+
+CASE="close-tasks waves: a (P0) row parses priority P0 and sorts ahead of P1"
+d="$(ct_dir p0)"
+printf '## Active / Pending
+- [ ] (P1) Later one
+- [ ] (P0) Sev zero
+' > "$d/TASKS.md"
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+r = list(d['now'].values())[0]
+assert r['priority'] == 'P0' and r['title'] == 'Sev zero', d['now']
+assert [x['priority'] for x in d['next']['general']] == ['P1'], d['next']
+PYEOF
+ok
+
+CASE="close-tasks rows --tag bug: priority + title fields, no dangling separator"
+d="$(ct_dir rowsprio)"
+printf -- '## Active / Pending
+- [ ] (P0) Crash on save — _bug_
+- [ ] (P2) Not a bug
+' > "$d/TASKS.md"
+run_ct "$d" rows --tag bug --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+m = d['matched']
+assert len(m) == 1 and m[0]['priority'] == 'P0' and m[0]['title'] == 'Crash on save', m
+PYEOF
+ok
+
+CASE="close-tasks board: a row with no separator still sheds a trailing tag run (close-out's _completed_at:)"
+d="$(ct_dir notrailer)"
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [ ] (P2) Do X _plan: foo_ \xc2\xb7 _phase: 2_\n\n## Done\n' >> "$d/TASKS.md"
+printf -- '- [x] (P2) Hand row closed _completed_at: 2026-10-12_\n' >> "$d/TASKS.md"
+run_ct "$d" board --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert [t['title'] for t in d['tasks']] == ['Do X', 'Hand row closed'], d['tasks']
+PYEOF
+ok
+
+CASE="close-tasks waves: a bug row's bug-hunts report is not its plan; its (path:line) gives its files and lane"
+d="$(ct_dir bugfiles)"
+mkdir -p "$d/plans/bug-hunts"
+printf '# report\n\n- src/a.py\n- src/b.py\n' > "$d/plans/bug-hunts/2026-10-12-repo.md"
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [ ] (P1) Off by one (src/a.py:7) \xe2\x80\x94 plans/bug-hunts/2026-10-12-repo.md _bug_\n' >> "$d/TASKS.md"
+printf -- '- [ ] (P2) Bad default (src/b.py:3) \xe2\x80\x94 plans/bug-hunts/2026-10-12-repo.md _bug_\n' >> "$d/TASKS.md"
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert d['unknown_files'] == [], d['unknown_files']
+assert d['conflicts'] == [], d['conflicts']
+PYEOF
 ok
 
 echo

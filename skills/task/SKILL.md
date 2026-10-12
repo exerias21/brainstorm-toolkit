@@ -3,8 +3,7 @@ name: task
 description: >
   Create a bounded, single-purpose task and execute it with TDD. Appends a row to
   TASKS.md, writes a task file at plans/tasks/task-N-<slug>.md, and runs a write-test
-  → implement → verify loop. Use for small to medium items that are too concrete for
-  /brainstorm and too small to justify the full /sdlc pipeline. Invoke via /task or
+  → implement → verify loop. Use for small to medium items. Invoke via /task or
   when the user asks to "just do X", "quick fix", "small change", or names one concrete,
   bounded ask with no plan behind it.
 argument-hint: "<description>"
@@ -90,6 +89,9 @@ Don't manufacture a hollow test, and don't punt the task to another skill.
    rewrite. **Always pass `--slug`** with the same `task-<N>-<slug>` this run's own envelope
    (Section 1 step 5) was written under — unaddressed, a second run open at the same time can
    get armed/verified instead.
+   For a bug fix, that test must be shown red against the unfixed code (this is TDD's red). If
+   the test was written after the fix, apply the "Red-check a regression guard" procedure in
+   `skills/sdlc/templates/fix-loop.md` before trusting it.
 2. **Mark the TASKS.md row in-progress** (`[ ]` → `[~]`) and, on Claude, `TaskUpdate status:
    in_progress`.
 3. **Implement the change**, following existing patterns, until the test passes without

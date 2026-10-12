@@ -6,15 +6,14 @@ description: >
   product strategy document: competitive research, codebase mapping, UX critique, ranked
   feature list, and detailed implementation blueprints. Use when the user wants heavy
   autonomous product research or says "brainstorm team", "what should we build next",
-  "competitive analysis", "product review", or invokes /brainstorm-team. For
-  conversational ideation with the user in-session, use /brainstorm instead.
+  "competitive analysis", "product review", or invokes /brainstorm-team.
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Brainstorm Team
 
-Use this skill when the user wants to run a product brainstorm, feature planning session, competitive analysis, or strategic review of the current project. Invoke with `/brainstorm-team` or when the user says things like "what should we build next", "competitive analysis", "feature planning", "product review".
+Use this skill when the user wants to run a product brainstorm, feature planning session, competitive analysis, or strategic review of the current project. Invoke with `/brainstorm-team` or when the user says things like "what should we build next", "competitive analysis", "feature planning", "product review". For conversational ideation with the user in-session, use `/brainstorm` instead.
 
 ## Prerequisites
 

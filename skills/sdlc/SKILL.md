@@ -6,8 +6,7 @@ description: >
   flowsim, then hand off the validated changes in your working tree for you to
   commit. Never commits, branches, pushes, or opens a PR — no git writes at all.
   Use when you want full SDLC discipline on work you will review and commit
-  yourself, e.g. onto an open PR's branch. Use /task instead for a single small
-  TDD fix with no plan.
+  yourself, e.g. onto an open PR's branch.
 argument-hint: "plan-file | task-id | task-range | description  [--resume] [--queue N] [--no-scope-gate]"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
@@ -24,6 +23,8 @@ metadata:
 | `/task <description>` | ad-hoc ask | TDD red→green only | commit only if you ask |
 | `/sdlc <plan \| task-id \| range \| desc>` | plan, task(s), or ask | **full** (sanity→implement→evals→validate→flowsim) | **validated changes left in your working tree — you commit** |
 
+For a single small fix with no plan behind it, prefer `/task`: the full pipeline costs more than it buys there.
+
 Stage bodies live in `skills/sdlc/templates/` (a shared template tree, not a skill);
 each stage below names the one it loads.
 
@@ -37,6 +38,10 @@ each stage below names the one it loads.
   **But** if `project.json` is absent while `project.json.example` is present,
   warn once at Stage 0 — every gated setting (`models.cap`, `pipeline.*`, test
   commands) is silently inert and the run will report `cap: none`.
+  Then, if `.claude/project.json` exists, run `bash scripts/migrate-project-json.sh check`
+  and print one warning line per move: `<old> is ignored — rename to <new>; run bash
+  scripts/migrate-project-json.sh apply`, and per conflict a line saying both keys are set and
+  `<new>` wins. Never apply from `/sdlc`; continue either way.
 
 ## Output verbosity (default: quiet)
 
@@ -78,12 +83,10 @@ Detect the argument shape:
    below (basename minus extension, minus a leading `brainstorm-` /
    `team-brainstorm-` / `pbi-NNN-` / `task-NNN-` prefix) **before** this call, not
    the raw basename: `/brainstorm` tags rows with the *stripped* slug
-   (`_plan: add-orders_`, never `_plan: brainstorm-add-orders_`), so passing the
-   raw basename used to match zero rows even when correctly-tagged rows were
-   open — never `reconcile | grep <slug>`: `reconcile` only reports drift against
+   (`_plan: add-orders_`, never `_plan: brainstorm-add-orders_`), so pass the
+   stripped slug, never the raw basename — never `reconcile | grep <slug>`: `reconcile` only reports drift against
    *existing* pipeline envelopes, so on a first run for this plan it always
-   returns zero rows even though correctly-tagged rows are sitting open (a
-   live miss on 2026-09-20). `rows` reads TASKS.md alone, matching the
+   returns zero rows even though correctly-tagged rows are sitting open. `rows` reads TASKS.md alone, matching the
    `_plan: <slug>_` marker `/brainstorm` appends, with a legacy path-substring
    fallback for untagged rows. **Do not mark any row `[~]` yet** — the
    **Scope gate** below (after `parse.json`) decides which of these rows are
@@ -127,7 +130,7 @@ array from the existing envelope rather than re-deriving anything from session m
 
 5. **Queue mode** — arg is `--queue [N]`. Select the work set from `TASKS.md` **by
    state + priority** (not a hand-typed range): the `Active / Pending` rows, top
-   `N` (or `pipeline.loop.max_items`, default 5) by priority `P1 > P2 > P3`, an
+   `N` (or `pipeline.loop.max_items`, default 5) by priority `P0 > P1 > P2 > P3`, an
    `[~]` in-progress row first. Then loop the pipeline over them with a re-scan and
    stop conditions — see **Queue mode** below (that re-scan is what makes it a loop,
    not a one-shot range).
@@ -175,6 +178,8 @@ execution (`taken` = every open row).
 plan's own phase boundaries, handles a plan with zero rows and `_manual_`-only phases, runs a
 warn-only reconcile check before taking, records `run.json.data.scope_gate` (accumulating
 `taken_phases` across re-runs), and prints the verdict line.
+
+**Bug rows.** If any taken or resolved row carries `_bug_` in its trailer (the `bug` field from `close-tasks.sh rows`; for a task-id, range or queue item, the row itself), **read `skills/sdlc/templates/bug-triage.md` now**; otherwise never open it.
 
 **Native task mirror (Claude only; skip silently elsewhere).** Once the stage list for this run
 is known, call `TaskCreate` once per stage that will actually run — the gates above have already

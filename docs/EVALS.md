@@ -109,7 +109,7 @@ Implemented assertion types (`scripts/ci/skill-eval.py`'s `ASSERTION_FUNCS`): `t
 `glob_exists`, `pytest_green`, `git_head_unchanged`, `json_path`, `output_max_lines`,
 `output_contains`, `tree_unchanged`, `file_matches`, `file_not_matches`, `json_keys_subset`,
 `file_exists`, `count_occurrences`, `agent_models_within_cap`. Each is a small, independent
-function — read the docstring-free but short bodies in the script rather than a separate
+function (`tree_unchanged` takes an optional `paths` list of pathspecs to scope it to the code a read-only skill must not touch) — read the docstring-free but short bodies in the script rather than a separate
 reference; there is no template layer to keep in sync here.
 
 ### Reading the summary

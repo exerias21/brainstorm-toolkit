@@ -39,6 +39,7 @@ ceilings).
   "dead_code_review": null,
   "repo_health": null,
   "docstring_sync": "sonnet",
+  "hunt": "sonnet",
   "planner": "opus",
   "code_review": "opus",
   "code_review_second_pass": "sonnet"
@@ -49,6 +50,7 @@ ceilings).
   "code_review_max_lenses": 4,
   "code_review_passes": 1,
   "code_review_max_fix_loops": 3,
+  "hunt_lenses": ["correctness", "error-handling", "data-contracts"],
   "decompose_min_tasks": 6,
   "decompose_min_files": 12
 }
@@ -69,7 +71,7 @@ This is the one rule a future edit must not break.
 |---|---|---|
 | Keys | `models.cap` plus every per-role key (`sanity`, `implement`, `fix`, ...) | `models.code_review`, `models.code_review_second_pass` |
 | Values | `haiku` \| `sonnet` \| `opus` | `haiku` \| `sonnet` \| `opus` \| `fable` |
-| Stages | 1.5, 2, and every other fan-out | 5.7 / 5.8 only |
+| Stages | 1.5, 2, and every other fan-out | 5.7 / 5.8 only, plus the `/repo-health --hunt` consolidator (`review:hunt-consolidate`) |
 
 Never route an Axis 2 value through the Axis 1 cap, and never let a dispatch omit `model`: a
 dispatch with no `model` inherits the session tier and bypasses the cap with zero error and
@@ -117,6 +119,7 @@ skill. See *Session nudge*.
 | `models.dead_code_review` | `/dead-code-review` lenses — string or map (`server`, `client`, `data`, `docs`, `scripts`) | `{server: sonnet, client: sonnet, data: sonnet, docs: haiku, scripts: haiku}` |
 | `models.repo_health` | `/repo-health` checks — string or per-check map | each check's own tier |
 | `models.docstring_sync` | `/docstring-sync` triage + rewrite agents | `sonnet` |
+| `models.hunt` | `/repo-health --hunt` lenses (the consolidator is Axis 2: `models.code_review`) | `sonnet` |
 
 A string value applies to every sub-agent of the role; a map overrides per focus/lens/check and
 a name missing from the map keeps its built-in default. Every resolved value **then still passes
@@ -226,6 +229,7 @@ one reviewer call.
 | `agents.code_review_lenses` | all 4 | Which Stage 5.7 reviewer lenses fan out. `correctness` is the highest-yield single lens; add `security` for auth/endpoints/user input |
 | `agents.code_review_max_lenses` | `4` | Caps HOW MANY lenses dispatch (the row above picks WHICH). Applied AFTER circuit-breaker demotion, truncating in list order — so `1` keeps `correctness`. Set it to cut review cost without having to know the lens names, and without re-editing the list if the defaults change. Any non-integer or non-positive value falls through to `4`; never let it resolve to `0`, which silently disables the stage instead of failing it |
 | `agents.code_review_passes` | `1` | `2` adds one completeness-critic call at `code_review_second_pass` |
+| `agents.hunt_lenses` | `["correctness", "error-handling", "data-contracts"]` | Which `/repo-health --hunt` lenses fan out, one agent each on `models.hunt` |
 | `agents.code_review_max_fix_loops` | `3` | Stage 5.8's own budget, separate from Stage 5's shared budget |
 | `agents.decompose_min_tasks` | `6` | Stage 2 decompose gate threshold |
 | `agents.decompose_min_files` | `12` | Stage 2 decompose gate's OR partner — decompose when `task_count` OR `len(files_to_change)` clears its threshold, catching a small step count that spans a large file count |

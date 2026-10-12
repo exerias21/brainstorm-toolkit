@@ -5,8 +5,7 @@ description: >
   or an ad-hoc description: sanity-check -> implement -> evals -> fix ->
   validate -> flowsim, then hand off the validated changes for you to commit.
   No commit, no branch, no push, no PR. Copilot overlay of the canonical skill --
-  every stage runs inline (no parallel sub-agents, no Plan mode). Use /task instead for a
-  single small TDD fix with no plan.
+  every stage runs inline (no parallel sub-agents, no Plan mode).
 metadata:
   brainstorm-toolkit-applies-to: copilot
 ---
@@ -34,6 +33,8 @@ never paste raw tool or runner output into your context.
 |---|---|---|
 | `/task <description>` | ad-hoc ask | TDD red-green → commit only if you ask |
 | `/sdlc <plan \| task-id \| range \| desc>` | plan, task(s), or ask | full pipeline → validated changes left for you to commit |
+
+For a single small fix with no plan behind it, prefer `/task`: the full pipeline costs more than it buys there.
 
 Stage bodies live once in the shared `skills/sdlc/templates/` tree; this overlay
 adds no new templates and no new schema beyond `run.json.pipeline = "sdlc"`
@@ -68,12 +69,17 @@ regardless of verbosity — the per-dispatch `model:` line, gate verdicts, PAUSE
   appends, falling back to a legacy path-substring match for untagged rows. **Do not mark
   them `[~]` yet** — the **Scope gate** below (after `parse.json`) decides which rows are in
   scope this run and marks only those. Stage 6's close-out flips taken rows via
-  `scripts/close-tasks.sh`. Without this lookup the close-out has nothing to resolve, which
-  is why a finished plan used to close nothing on this runtime. A `rows` call returning no
+  `scripts/close-tasks.sh`. Without this lookup the close-out has nothing to resolve and
+  closes nothing. A `rows` call returning no
   `matched[]` updates no `TASKS.md` — expected, not a miss.
 **If `.claude/project.json` is absent while `project.json.example` is present, warn once
 here** — every gated setting (`models.cap`, `pipeline.*`, test commands) is silently inert
 and the run reports `cap: none`.
+
+Then, if `.claude/project.json` exists, run `bash scripts/migrate-project-json.sh check` (path
+resolution as for the other toolkit scripts) and print one warning line per move: `<old> is
+ignored — rename to <new>; run bash scripts/migrate-project-json.sh apply`, and per conflict a
+line saying both keys are set and `<new>` wins. Never apply from `/sdlc`; continue either way.
 
 - **Task id** (`task-NNN` or a row number) → read that row + linked task file;
   its `parent_plan:` becomes the Stage 5 plan target.
@@ -140,6 +146,8 @@ much of this plan to take this run — skip for task-id / range / ad-hoc / `--qu
 plan's own phase boundaries, handles a plan with zero rows and `_manual_`-only phases, runs a
 warn-only reconcile check before taking, records `run.json.data.scope_gate` (accumulating
 `taken_phases` across re-runs), and prints the verdict line.
+
+**Bug rows.** If any taken or resolved row carries `_bug_` in its trailer (the `bug` field from `close-tasks.sh rows`; for a task-id, range or queue item, the row itself), **read `skills/sdlc/templates/bug-triage.md` now**; otherwise never open it.
 
 **Skill-repo detection** (automatic): if `.claude-plugin/marketplace.json` exists at repo root,
 switch to **Skill-repo mode** below for the rest of the run. **Vendored-skill guard:** if it is

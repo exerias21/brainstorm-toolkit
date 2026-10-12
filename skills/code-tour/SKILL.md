@@ -5,13 +5,15 @@ description: >
   docstrings, and generate a guided reading path (TOUR.md). Use whenever someone wants a
   codebase documented for humans, not an API reference — onboarding a new hire, "explain this
   codebase", "add docstrings", "help someone learn this repo", or when docs say WHAT but not
-  WHY. Triggers on /code-tour, /docstrings, /codetour, /onboarding-docs. Unlike /repo-onboarding
-  (contract files) and /repo-health (read-only sweep), this writes documentation into the source.
+  WHY. Triggers on /code-tour, /docstrings, /codetour, /onboarding-docs.
 metadata:
-   brainstorm-toolkit-applies-to: claude copilot codex
+  brainstorm-toolkit-applies-to: claude copilot codex
 ---
 
 # Code Tour — documentation as teaching material
+
+Unlike `/repo-onboarding` (contract files) and `/repo-health` (read-only sweep), this skill
+writes documentation into the source.
 
 Most generated documentation restates the code. `get_user(user_id)` gets a user
 by id — the reader already knew that, and the docstring cost them a line of
