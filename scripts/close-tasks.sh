@@ -267,7 +267,11 @@ PHASE_RE = re.compile(r'_phase:\s*(\d+)_')
 BLOCKED_REASON_RE = re.compile(r'_blocked_reason:\s*([^_]+?)_')
 COMPLETED_AT_RE = re.compile(r'_completed_at:\s*([^_]+?)_')
 PRIORITY_RE = re.compile(r'^\(P([0-3])\)')
-PLAN_PATH_RE = re.compile(r'[\w./-]*plans/[\w./-]+\.md')
+# A bug-hunt report lives under plans/bug-hunts/ but is not a plan: it has no phases, and
+# reading it as one would give every row of a hunt the same plan id.
+PLAN_PATH_RE = re.compile(r'[\w./-]*plans/(?!bug-hunts/)[\w./-]+\.md')
+# The `(path:line)` a `_bug_` row cites in its title -- that row's file set for `waves`.
+BUG_FILE_RE = re.compile(r'\(([\w./-]+\.\w+):\d+\)')
 # A row DELIBERATELY left open after its plan completed -- a follow-up the run
 # surfaced and chose not to do. Without this marker `reconcile` cannot tell a
 # deferred follow-up from a forgotten close-out, so it reports every such row as
@@ -291,6 +295,9 @@ LANE_RE = re.compile(r'_lane:\s*([a-z0-9.-]+)_')
 # Strips one or more chained `_key: value_` markers (joined by ` \xb7 `) off a
 # row's tail so `title` reads as prose, not "prose _plan: x_ \xb7 _phase: 1_".
 TAG_STRIP_RE = re.compile(r'\s*(?:\xb7\s*)?_[a-z_]+:\s*[^_]+?_')
+# The same markers as a run at the very end of a row with no separator -- e.g. the
+# `_completed_at:` that close-out appends to a hand-written row.
+TRAILING_TAGS_RE = re.compile(r'(?:\s*(?:\xb7\s*)?_[a-z_]+:\s*[^_]+?_)+\s*$')
 # Valueless flags need their own pattern: TAG_STRIP_RE requires `key: value`,
 # and widening it to make the colon optional would swallow ordinary `_italics_`
 # out of every title. Enumerate the bare flags instead.
@@ -344,7 +351,9 @@ def strip_keyed_tags(text):
     keeps its text instead of being eaten from one underscore to the next."""
     idx = text.rfind(' — ')
     if idx == -1:
-        return text
+        # No trailer: strip only a run of tags that ends the row, so prose earlier in
+        # the title that documents tag syntax survives.
+        return TRAILING_TAGS_RE.sub('', text)
     return text[:idx + 3] + TAG_STRIP_RE.sub('', text[idx + 3:])
 
 
@@ -1374,6 +1383,8 @@ def do_waves(args):
                 except Exception:
                     plan_cache[pf] = []
             files = section_files(phase_section(plan_cache[pf], r['phase']), base_dir)
+        if not files and r['bug']:
+            files = sorted(set(BUG_FILE_RE.findall(r['title'])))
         r['files'] = files
         r['plan_id'] = r['pkey'] or (os.path.splitext(os.path.basename(pf))[0] if pf else None)
         r['wlane'] = r['lane'] or (lane_of(files, surfaces) if files else 'general')

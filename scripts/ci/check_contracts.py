@@ -1093,7 +1093,7 @@ def check_shell_install_parity(root: Path) -> list[Finding]:
 # by it, and every replacement key must exist in the shipped example config.
 
 RENAMES_TABLE_PATH = "scripts/project-json-renames.json"
-_MIGRATION_ROW_RE = re.compile(r"^\|\s*`([A-Za-z_][\w.]*)`\s*\|\s*`([A-Za-z_][\w.]*)`\s*\|\s*$")
+_MIGRATION_ROW_RE = re.compile(r"^\|\s*`([A-Za-z_][\w.]*)`\s*\|\s*`([A-Za-z_][\w.]*)`\s*\|")
 _DEAD_KEY_REGEX_RE = re.compile(r"[A-Za-z_]\\.[A-Za-z_]")
 
 

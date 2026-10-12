@@ -472,7 +472,10 @@ printing it, so the loop self-advances. It never chains a `confirm: true` action
 changelog every plan touches): it is excluded from inferred conflicts and reported in the waves
 JSON as `hub_files`. `pipeline.action_items.ignore_conflict_files` (default `[]`) is a list of
 fnmatch-style globs matched against the repo-relative path; matching files are excluded from
-inferred conflicts too and are not reported as hubs. Neither affects an explicit `_conflicts:` tag
+inferred conflicts too and are not reported as hubs. In fnmatch `*` also matches `/`, so `*.json`
+ignores every JSON file at any depth; anchor with a directory (`config/*.json`) to narrow it.
+Hub status is recomputed on every run from the open rows, so a pair that conflicts today can run
+in parallel once a third plan naming the file is opened, and the reverse when one closes. Neither affects an explicit `_conflicts:` tag
 or the other-worktree overlap warning.
 
 `pipeline.action_items.max_bugs_per_lane` (default `5`; a positive integer, anything else falls back to

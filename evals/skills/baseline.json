@@ -1,5 +1,5 @@
 {
-  "_comment": "Measured 2026-09-05, Claude Code 2.1.261, models.cap sonnet, review stage off. Every figure comes from a run in which EVERY assertion for that case was green -- an unverified cost is not a baseline. A case fails when it exceeds 2x these. Refresh with: python scripts/ci/skill-eval.py --all --update-baseline",
+  "_comment": "Measured 2026-09-05, Claude Code 2.1.261, models.cap sonnet, review stage off (repo-health-hunt: measured 2026-10-12, its consolidator runs on models.code_review). Every figure comes from a run in which EVERY assertion for that case was green -- an unverified cost is not a baseline. A case fails when it exceeds 2x these. Refresh with: python scripts/ci/skill-eval.py --all --update-baseline",
   "_runs": {
     "gotcha-dedup": "2026-09-05-baa9df88",
     "plan-html-render": "2026-09-05-def06dea",

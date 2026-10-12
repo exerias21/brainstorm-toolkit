@@ -356,16 +356,12 @@ echo "[4/7] Project config example (skip-on-exist unless --force)"
 copy_if_new "$PLUGIN_ROOT/templates/project.json.example" "$TARGET/.claude/project.json.example"
 if [[ -f "$TARGET/.claude/project.json" ]]; then
   # Only dead-key renames are applied; the script writes a .bak first and never aborts setup.
-  mig_json="$(mktemp)"
-  if mig_out="$(bash "$PLUGIN_ROOT/scripts/migrate-project-json.sh" apply --file "$TARGET/.claude/project.json" 2>&1 >"$mig_json")"; then
+  if mig_out="$(bash "$PLUGIN_ROOT/scripts/migrate-project-json.sh" apply --file "$TARGET/.claude/project.json" 2>&1 >/dev/null)"; then
+    # Moves and conflicts are echoed to stderr one per line, so no JSON parse is needed here.
     [[ -n "$mig_out" ]] && sed 's/^/  /' <<<"$mig_out"
-    if ! grep -q '"conflicts": \[\]' "$mig_json"; then
-      echo "  warning: a dead key and its replacement are both set in .claude/project.json; left untouched, the new key wins"
-    fi
   else
     echo "  warning: could not migrate dead keys in .claude/project.json (left unchanged)"
   fi
-  rm -f "$mig_json"
   echo "  note: .claude/project.json present — review .claude/project.json.example for new optional fields"
 else
   echo "  note: .claude/project.json not present — copy from .claude/project.json.example to start"

@@ -18,6 +18,10 @@ Print `model: hunt=<tier> (cap: <cap|none>)` before the first lens dispatch, and
 `model: code_review=<tier> (axis 2)` before the consolidator. A dispatch with no `model` bypasses
 the cap with zero log line, so pass `model` explicitly on every one.
 
+Then record the before-state: `git status --porcelain` plus `git diff | git hash-object --stdin`.
+Step 6 compares against it, which is the only way to tell a lens's edit from work already
+uncommitted in the tree.
+
 ## 2. Lens fan-out
 
 Dispatch one `general-purpose` agent per lens in a single message, each with `model` set to the
@@ -51,12 +55,16 @@ reason) or `unverified`. It may overrule a lens, and merges findings that share 
 Overrule, never file, a finding about input outside the code's documented contract (wrong type,
 `None`, a value the docstring excludes) when the code fails loudly on it — a raised exception
 there is correct behavior, not a bug. Only *silent* wrong output on such input is a finding.
+Output the docstring promises is never silent: a slugifier documented as ASCII-only returning `""`
+for a non-ASCII title is by contract. Where nothing documents the contract, judge it by the call
+sites: input no caller can produce is out of contract.
 
 ## 4. Dedupe
 
-Run `bash scripts/close-tasks.sh rows --tag bug --file TASKS.md`. A confirmed finding whose
-`file:line` already appears in an open or in-progress `_bug_` row is dropped from filing and noted
-as `already tracked (line N)` in the report. Skip silently when `TASKS.md` or the script is absent
+Run `bash scripts/close-tasks.sh rows --tag bug --file TASKS.md`. A confirmed finding is already
+tracked when an open or in-progress `_bug_` row's title cites the same file (its `(path:line)`) and
+describes the same defect; lines drift, so a different line number alone does not make it new.
+Drop it from filing and note it as `already tracked (line N)` in the report. Skip silently when `TASKS.md` or the script is absent
 (the report is still written; no rows are filed).
 
 ## 5. Report and rows
@@ -69,14 +77,18 @@ Sections: Confirmed (each with severity, `file:line`, quoted evidence), Already 
 Then append one row per confirmed, untracked finding to `TASKS.md` under `Active / Pending`,
 highest severity first:
 
-`- [ ] (Pn) <title> — <report path> _bug_`
+`- [ ] (Pn) <title> (<file>:<line>) — <report path> _bug_`
+
+The `(<file>:<line>)` is required: it is the dedupe key for the next hunt, and `waves` reads the
+row's file set from it.
 
 File at most 10 rows; any beyond stay in the report only, and the report says so. Do not fix code.
 
 ## 6. Verify and hand off
 
-Run `git status --short`; only the report and `TASKS.md` may have changed. If anything else did,
-say so plainly and stop. Print the confirmed count by severity, the rows filed, and the report
+Re-run the step 1 snapshot. Only the report and `TASKS.md` may differ from the before-state. If
+anything else does, name each file plainly, do not revert it (it may be the user's work), and
+stop. Print the confirmed count by severity, the rows filed, and the report
 path. When at least one row was filed, append the structured `.next-action` line using the same
 guard and dedupe as the normal sweep, with `cmd` `/sdlc <TASKS.md line number of the top bug row>` (a bare row number — a title would be
 read as a new ad-hoc task and file a duplicate row) and

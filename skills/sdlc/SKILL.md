@@ -23,6 +23,8 @@ metadata:
 | `/task <description>` | ad-hoc ask | TDD red→green only | commit only if you ask |
 | `/sdlc <plan \| task-id \| range \| desc>` | plan, task(s), or ask | **full** (sanity→implement→evals→validate→flowsim) | **validated changes left in your working tree — you commit** |
 
+For a single small fix with no plan behind it, prefer `/task`: the full pipeline costs more than it buys there.
+
 Stage bodies live in `skills/sdlc/templates/` (a shared template tree, not a skill);
 each stage below names the one it loads.
 

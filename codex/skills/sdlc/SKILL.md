@@ -33,6 +33,8 @@ never paste raw tool or runner output into your context.
 | `/task <description>` | ad-hoc ask | TDD red-green → commit only if you ask |
 | `/sdlc <plan \| task-id \| range \| desc>` | plan, task(s), or ask | full pipeline → validated changes left for you to commit |
 
+For a single small fix with no plan behind it, prefer `/task`: the full pipeline costs more than it buys there.
+
 Stage bodies live once in the shared `skills/sdlc/templates/` tree; this overlay
 adds no new templates and no new schema beyond `run.json.pipeline = "sdlc"`
 and a `handoff.json` sidecar at Stage 6.

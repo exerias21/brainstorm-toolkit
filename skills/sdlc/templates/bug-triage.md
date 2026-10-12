@@ -29,7 +29,10 @@ When the root cause is NEEDS-A-HUMAN but the symptom can be contained safely (a 
 validation, or log line), ship the containment and file the root cause as a `_manual_` row per
 section 2. Record it in the hand-off as `MITIGATED: <symptom contained by ...>; root cause
 filed as <row title>`. Never report MITIGATED as fixed, and never close the original `_bug_`
-row for it: the filed root-cause row is what keeps the bug open.
+row for it: the filed root-cause row is what keeps the bug open. Stage 6 closes rows mechanically,
+so before it runs: set the original row back from `[~]` to `[ ]` (plan close-out only closes
+`[~]` rows), and remove its entry from `run.json.data.tasks.resolved[]` (a task-id or range
+close-out closes every row listed there, whatever its state).
 
 ## 4. Verify by effect
 

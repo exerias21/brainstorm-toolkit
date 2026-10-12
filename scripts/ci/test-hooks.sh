@@ -1856,7 +1856,7 @@ ok
 CASE="close-tasks waves: an explicit _conflicts: still conflicts on a hub file"
 d="$(ct_dir w-hub5)"
 wv_hub_fixture "$d" .claude-plugin/plugin.json p q r
-sed -i 's/_lane: l-p_/_lane: l-p_ \xc2\xb7 _conflicts: q:1_/' "$d/TASKS.md"
+perl -pi -e 's/_lane: l-p_/_lane: l-p_ \xc2\xb7 _conflicts: q:1_/' "$d/TASKS.md"  # not sed -i: BSD sed takes the next arg as a backup suffix
 run_ct "$d" waves --file TASKS.md
 assert_rc "$CT_RC" 0
 waves_check <<'PYEOF'
@@ -2500,6 +2500,25 @@ assert_rc "$MJ_RC" 0
 mj_py "$d" 'len(d["conflicts"])==1 and d["applied"]==[] and "backup" not in d'
 cmp -s "$d/.claude/project.json" "$ROOT_TMP/mj02.orig" || fail "conflict file was modified"
 [ "$(mj_baks "$d")" = "0" ] || fail "backup written for a no-op"
+grep -q 'conflict: pipeline.decompose_min_tasks and agents.decompose_min_tasks' "$ROOT_TMP/mj.err" || fail "no stderr conflict line"
+ok
+
+CASE="migrate-project-json: a target path through a non-object value is a conflict -- the user's value is never replaced"
+d="$(mj_dir 02b)"
+printf '{"agents":null,"pipeline":{"decompose_min_tasks":3}}\n' > "$d/.claude/project.json"
+cp "$d/.claude/project.json" "$ROOT_TMP/mj02b.orig"
+mj_run "$d" apply
+assert_rc "$MJ_RC" 0
+mj_py "$d" 'd["applied"]==[] and [c["blocked_by"] for c in d["conflicts"]]==["agents"]'
+cmp -s "$d/.claude/project.json" "$ROOT_TMP/mj02b.orig" || fail "blocked file was modified"
+ok
+
+CASE="migrate-project-json: two old keys for one new key -- the second conflict names the key that filled it"
+d="$(mj_dir 02c)"
+printf '{"pipeline":{"sanity_check":{"focuses":["a"]}},"models":{"focuses":["b"]}}\n' > "$d/.claude/project.json"
+mj_run "$d" apply
+assert_rc "$MJ_RC" 0
+mj_py "$d" 'len(d["applied"])==1 and d["conflicts"][0]["new_set_by"]=="pipeline.sanity_check.focuses"'
 ok
 
 CASE="migrate-project-json: second apply is a no-op -- no new backup, file byte-identical"
@@ -2703,6 +2722,33 @@ assert_rc "$CT_RC" 0
 waves_check <<'PYEOF'
 m = d['matched']
 assert len(m) == 1 and m[0]['priority'] == 'P0' and m[0]['title'] == 'Crash on save', m
+PYEOF
+ok
+
+CASE="close-tasks board: a row with no separator still sheds a trailing tag run (close-out's _completed_at:)"
+d="$(ct_dir notrailer)"
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [ ] (P2) Do X _plan: foo_ \xc2\xb7 _phase: 2_\n\n## Done\n' >> "$d/TASKS.md"
+printf -- '- [x] (P2) Hand row closed _completed_at: 2026-10-12_\n' >> "$d/TASKS.md"
+run_ct "$d" board --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert [t['title'] for t in d['tasks']] == ['Do X', 'Hand row closed'], d['tasks']
+PYEOF
+ok
+
+CASE="close-tasks waves: a bug row's bug-hunts report is not its plan; its (path:line) gives its files and lane"
+d="$(ct_dir bugfiles)"
+mkdir -p "$d/plans/bug-hunts"
+printf '# report\n\n- src/a.py\n- src/b.py\n' > "$d/plans/bug-hunts/2026-10-12-repo.md"
+printf '## Active / Pending\n' > "$d/TASKS.md"
+printf -- '- [ ] (P1) Off by one (src/a.py:7) \xe2\x80\x94 plans/bug-hunts/2026-10-12-repo.md _bug_\n' >> "$d/TASKS.md"
+printf -- '- [ ] (P2) Bad default (src/b.py:3) \xe2\x80\x94 plans/bug-hunts/2026-10-12-repo.md _bug_\n' >> "$d/TASKS.md"
+run_ct "$d" waves --file TASKS.md
+assert_rc "$CT_RC" 0
+waves_check <<'PYEOF'
+assert d['unknown_files'] == [], d['unknown_files']
+assert d['conflicts'] == [], d['conflicts']
 PYEOF
 ok
 
