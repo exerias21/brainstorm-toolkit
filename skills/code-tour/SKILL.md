@@ -129,9 +129,11 @@ part — a two-line pure function needs one sentence:
 2. **How, when the mechanism is non-obvious.** Skip when the body is three
    obvious lines.
 3. **Why this way** — the load-bearing part. What was the alternative, and what
-   does this choice buy or cost? Write the reason itself, in the docstring — never as a pointer
-   to a plan, ticket, or design file; those don't ship with the code and won't be there for the
-   next reader to follow.
+   does this choice buy or cost? Write the reason itself, in the docstring.
+   **Never reference a plan, in any form:** no `plans/` paths, task IDs (`task-N`,
+   `TASKS.md:N`), phase or step numbers, brainstorm names, tickets or design files. They
+   don't ship with the code and won't be there for the next reader to follow; if the reason
+   lives only in a plan, copy the reason in and drop the reference.
 4. **What breaks if you change it.** Invariants, ordering constraints, the test
    that will fail.
 5. **Args/Returns/Raises** only where they add information the signature does not
