@@ -16,7 +16,7 @@ contract, including the contracts of the lanes it depends on) before dispatch.
 
 ---
 
-## Agent: implement-{lane} ({model from decompose.json})
+## Agent: implement-{lane} ({models.implement tier, capped})
 
 **description**: Implement the {lane} lane of {feature_name}
 
