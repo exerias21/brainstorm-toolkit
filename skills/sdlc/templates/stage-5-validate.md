@@ -25,8 +25,10 @@ as failures; `preexisting[]` is noted separately and does not gate.
 
 **A layer with `status: "deferred"` is not a result.** The command hit the runner's foreground timeout, so
 it has not run to completion. Run that command yourself once with `run_in_background` as
-`<cmd> > .claude/pipeline/<slug>/agent-reports/<layer>.log 2>&1; echo $? > .claude/pipeline/<slug>/agent-reports/<layer>.exit`
-(a killed run leaves no exit code and must not read as a pass), wait for its completion notice (never poll or sleep),
+`R=.claude/pipeline/<slug>/agent-reports; rm -f $R/<layer>.exit; ( <cmd> ) > $R/<layer>.log 2>&1; echo $? > $R/<layer>.exit.tmp && mv $R/<layer>.exit.tmp $R/<layer>.exit`
+(the `rm -f` keeps an earlier round's exit code from passing for this one, the subshell makes `$?`
+the command's own status, and the rename means a killed run leaves no `.exit` at all — never a
+partial one that reads as a pass), wait for its completion notice (never poll or sleep),
 then dispatch `test-runner` again to read that log and `.exit` only and classify them into the same structure.
 
 - Log audit (if `logs.command` configured)

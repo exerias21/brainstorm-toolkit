@@ -13,6 +13,8 @@
 #                                {"approvals": {"<hash>": <epoch written_at>}}: sessions sharing a
 #                                worktree must not erase each other's approvals. Entries older than
 #                                45 minutes are pruned; the legacy {written_at, hashes[]} file is read.
+#                                An unreadable or unknown-shaped file is refused (exit 1), never
+#                                overwritten; writers serialise on an OS lock (flock / msvcrt).
 #   question-advice.sh check     stdin: a PreToolUse payload. Prints `allow`, or `deny: <reason>`
 #                                unless every question hash has an entry under 45 minutes old.
 #
@@ -61,36 +63,92 @@ def texts(items):
     return out
 
 
-def read_ledger():
-    """{hash: epoch}; accepts the legacy {written_at, hashes[]} shape."""
+class LedgerError(Exception):
+    pass
+
+
+def _ts(v):
     try:
-        with open(path, encoding="utf-8") as fh:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def read_ledger():
+    """{hash: epoch}; accepts the legacy {written_at, hashes[]} shape.
+
+    Only a missing file reads as empty. An unreadable file or an unknown shape raises
+    LedgerError, so approve refuses rather than overwriting another writer's ledger. A
+    single bad entry is skipped, not allowed to discard the rest."""
+    try:
+        with open(path, encoding="utf-8-sig") as fh:
             ap = json.load(fh)
-        if isinstance(ap.get("approvals"), dict):
-            return {str(h): float(t) for h, t in ap["approvals"].items()}
-        w = float(ap["written_at"])
-        return {str(h): w for h in (ap.get("hashes") or [])}
-    except Exception:
+    except FileNotFoundError:
         return {}
+    except (OSError, ValueError) as e:
+        raise LedgerError("unreadable %s: %s" % (path, e))
+    if isinstance(ap, dict) and isinstance(ap.get("approvals"), dict):
+        out = {}
+        for h, t in ap["approvals"].items():
+            t = _ts(t)
+            if t is not None:
+                out[str(h)] = t
+        return out
+    if isinstance(ap, dict) and "written_at" in ap and isinstance(ap.get("hashes", []), list):
+        w = _ts(ap["written_at"])
+        if w is None:
+            raise LedgerError("legacy ledger has a non-numeric written_at")
+        return {str(h): w for h in ap.get("hashes") or [] if isinstance(h, str)}
+    raise LedgerError("unknown ledger shape in %s" % path)
 
 
-def lock():
-    lp = path + ".lock"
-    end = time.time() + 3
+def acquire(timeout=10.0):
+    """OS-level exclusive lock on a sidecar file. The OS drops it when the holder exits, so
+    there is no stale-lock break, and the lock file is never deleted: deleting it is what let
+    one writer remove a lock another writer still held."""
+    fh = open(path + ".lock", "a+")
+    end = time.time() + timeout
     while True:
         try:
-            os.close(os.open(lp, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-            return lp
-        except FileExistsError:
-            try:
-                if time.time() - os.path.getmtime(lp) > 3:
-                    os.unlink(lp)
-                    continue
-            except OSError:
-                pass
-        if time.time() > end:
-            return None  # not ours: proceed unlocked, never delete another writer's lock
-        time.sleep(0.05)
+            if os.name == "nt":
+                import msvcrt
+                fh.seek(0)
+                msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fh
+        except OSError:
+            if time.time() > end:
+                fh.close()
+                return None
+            time.sleep(0.05)
+
+
+def release(fh):
+    try:
+        if os.name == "nt":
+            import msvcrt
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        pass
+    fh.close()
+
+
+def replace_retry(src, dst):
+    # Windows refuses os.replace while a reader holds dst open; that window is milliseconds.
+    for i in range(20):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if i == 19:
+                raise
+            time.sleep(0.05)
 
 
 try:
@@ -109,22 +167,26 @@ if sub == "approve":
         sys.exit(1)
     new = {norm_hash(t) for t in texts(data)}
     os.makedirs(adv_dir, exist_ok=True)
-    lp = lock()
+    lk = acquire()
+    if lk is None:
+        print('{"error":"approval ledger is locked by another writer; retry"}', file=sys.stderr)
+        sys.exit(1)
     try:
+        try:
+            led = read_ledger()
+        except LedgerError as e:
+            print(json.dumps({"error": str(e) + "; left untouched"}), file=sys.stderr)
+            sys.exit(1)
         now = time.time()
-        led = {h: t for h, t in read_ledger().items() if now - t <= MAX_AGE}
+        led = {h: t for h, t in led.items() if now - t <= MAX_AGE}
         for h in new:
             led[h] = int(now)
-        tmp = "%s.%d.tmp" % (path, os.getpid())
+        tmp = "%s.%d.%s.tmp" % (path, os.getpid(), os.urandom(4).hex())
         with open(tmp, "w", encoding="utf-8") as fh:
             json.dump({"approvals": led}, fh)
-        os.replace(tmp, path)
+        replace_retry(tmp, path)
     finally:
-        if lp:
-            try:
-                os.unlink(lp)
-            except OSError:
-                pass
+        release(lk)
     print(json.dumps({"approved": len(new), "path": path}))
     sys.exit(0)
 
@@ -136,7 +198,11 @@ except Exception:
 if not qs:
     print("allow")
     sys.exit(0)
-led = read_ledger()
+try:
+    led = read_ledger()
+except LedgerError as e:
+    print("deny: " + str(e))
+    sys.exit(0)
 if not led:
     print("deny: no approved question list found")
     sys.exit(0)

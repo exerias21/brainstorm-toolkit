@@ -19,9 +19,11 @@ with no refactor, and given these four blocks verbatim in its prompt:
 > {must_follow_extra}
 > - Never edit TASKS.md; report any row to add or close in the hand-back.
 
-> Hand-back: write full detail to `.claude/pipeline/{slug}/agent-reports/fix-{iteration}.md`, reply with at most 40 lines plus that path, and list every path you edited.
+> Hand-back: write full detail to `.claude/pipeline/{slug}/agent-reports/{gate}-fix-{iteration}.md`, reply with at most 40 lines plus that path, and list every path you edited.
 
-Before each dispatch substitute `{slug}`, `{iteration}` (1-based fix round) and `{must_follow_extra}`
+Before each dispatch substitute `{slug}`, `{gate}` (`validate` for Stage 5, `review` for Stage 5.8 —
+the two loops count rounds separately, so without it their reports overwrite each other),
+`{iteration}` (1-based fix round) and `{must_follow_extra}`
 (each `pipeline.implement.must_follow` entry from `.claude/project.json` as its own `- ` line, word
 for word; empty when unset).
 

@@ -778,6 +778,10 @@ echo '{"cmd":"/gotcha next-action fallback test","source":"test","confirm":false
 fakebin="$ROOT_TMP/na-fakebin-01"
 mkdir -p "$fakebin"
 make_broken_stub "$fakebin/python3"
+# The fallback target must exist on every runner: a Linux/macOS box often has only python3, so
+# without this wrapper the probe finds nothing past the stub and the case fails there.
+printf '#!/bin/sh\nexec "%s" "$@"\n' "$REAL_PY_ABS" > "$fakebin/python"
+chmod +x "$fakebin/python"
 out="$(run_na "$d" "$fakebin")"
 assert_match "$out" 'Next: /gotcha next-action fallback test'
 [ -f "$d/.claude/.next-action" ] && fail ".next-action should be consumed once the python fallback renders it"
@@ -2950,6 +2954,47 @@ out="$(hide_from_command_v "python3 python py" env -u BRAINSTORM_PYTHON CLAUDE_P
       bash "$ASK_HOOK" <<<"$(ask_payload 'Which one?')")"
 assert_match "$out" '"systemMessage"'
 assert_match "$out" 'gate is true but no working Python'
+
+CASE="ask-gate: no-interpreter fallback sees gate after a nested object"
+d="$ROOT_TMP/ask-nopy-nested"; mkdir -p "$d/.claude"
+printf '%s' '{"pipeline": {"question_advisor": {"limits": {"max": 4}, "gate": true}}}' > "$d/.claude/project.json"
+out="$(hide_from_command_v "python3 python py" env -u BRAINSTORM_PYTHON CLAUDE_PROJECT_DIR="$d" \
+      bash "$ASK_HOOK" <<<"$(ask_payload 'Which one?')")"
+assert_match "$out" 'gate is true but no working Python'
+
+CASE="question-advice: a corrupt ledger is refused and left untouched"
+d="$(ask_dir corrupt)"
+mkdir -p "$d/.claude/pipeline/_advice"
+printf '%s' '{"approvals": {' > "$d/.claude/pipeline/_advice/approved.json"
+if CLAUDE_PROJECT_DIR="$d" bash "$ADVICE" approve <<<'["Alpha?"]' >/dev/null 2>&1; then
+  fail "approve must exit non-zero on a corrupt ledger"
+fi
+[ "$(cat "$d/.claude/pipeline/_advice/approved.json")" = '{"approvals": {' ] || fail "the corrupt ledger was rewritten"
+out="$(CLAUDE_PROJECT_DIR="$d" bash "$ADVICE" check <<<"$(ask_payload 'Alpha?')")"
+assert_match "$out" '^deny: unreadable'
+
+CASE="question-advice: an unknown ledger shape is refused and left untouched"
+d="$(ask_dir unknown)"
+mkdir -p "$d/.claude/pipeline/_advice"
+printf '%s' '{"theirs": ["not ours"]}' > "$d/.claude/pipeline/_advice/approved.json"
+if CLAUDE_PROJECT_DIR="$d" bash "$ADVICE" approve <<<'["Alpha?"]' >/dev/null 2>&1; then
+  fail "approve must exit non-zero on an unknown ledger shape"
+fi
+assert_match "$(cat "$d/.claude/pipeline/_advice/approved.json")" 'not ours'
+
+CASE="question-advice: one bad entry is skipped, the rest of the ledger survives"
+d="$(ask_dir badentry)"
+approve "$d" '["Alpha?"]'
+"$REAL_PY_ABS" - "$d/.claude/pipeline/_advice/approved.json" <<'PYEOF'
+import json, sys
+p = sys.argv[1]
+a = json.load(open(p))
+a["approvals"]["junk"] = "not-a-time"
+json.dump(a, open(p, "w"))
+PYEOF
+approve "$d" '["Beta?"]'
+out="$(CLAUDE_PROJECT_DIR="$d" bash "$ADVICE" check <<<"$(ask_payload 'Alpha?' 'Beta?')")"
+assert_match "$out" '^allow'
 
 echo
 echo "test-hooks.sh: all cases ok"

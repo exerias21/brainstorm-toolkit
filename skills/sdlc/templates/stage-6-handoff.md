@@ -19,7 +19,11 @@ order is the difference between "usually closes" and "closes."
    `git diff --stat` — the stat also counts another session's uncommitted files. Show per-file
    `git diff --stat -- <those paths>`, the list, and a **suggested** commit message. Print each
    `shared: true` path apart as `shared (stage by hunk): <path>` and leave it out of the `git add` line;
-   record them in `handoff.json` `data.shared`. Leave the working tree exactly as the pipeline produced it.
+   record them in `handoff.json` `data.shared`. Print each `unreported: true` path as
+   `⚠ unreported change: <path> — an agent edit it did not list, or another session's; check before staging`,
+   leave it out of the `git add` line (staging another session's file is the failure this list
+   exists to prevent), and record them in `data.unreported`. Leave the working tree exactly
+   as the pipeline produced it.
    ```
    Suggested commit (run yourself when ready):
      git add <files>

@@ -22,7 +22,12 @@ PY="$(hooks_resolve_python "$PROJ")" || PY=""
 if [ -z "$PY" ]; then
   if [ -f "$PROJ/.claude/project.json" ] && [ ! -e "$PROJ/.claude/pipeline/_advice/off" ] \
      && tr -d '\r\n' < "$PROJ/.claude/project.json" 2>/dev/null \
-        | sed -n 's/.*"question_advisor"[^{]*{\([^}]*\)}.*/\1/p' \
+        | awk '{ i = index($0, "\"question_advisor\""); if (!i) exit; s = substr($0, i)
+               j = index(s, "{"); if (!j) exit; d = 0; out = ""
+               for (k = j; k <= length(s); k++) { c = substr(s, k, 1)
+                 if (c == "{") { d++; continue } if (c == "}") { if (--d == 0) break; continue }
+                 if (d == 1) out = out c }
+               print out }' \
         | grep -Eq '"gate"[[:space:]]*:[[:space:]]*true'; then
     printf '%s' "$input" | grep -q '"tool_name"[[:space:]]*:[[:space:]]*"AskUserQuestion"' 2>/dev/null && \
     echo '{"systemMessage":"ask-gate hook: pipeline.question_advisor.gate is true but no working Python interpreter was found -- operator questions are NOT being checked this call."}'
