@@ -84,5 +84,5 @@ last non-empty line, truncated to 200 characters. Never more.
 - **Timeout or hang** → report the layer as `{"ran": false, "status": "deferred", "command": "<the command>"}` and
   leave `green` false. A foreground timeout is not a result, and you cannot wait on a background job across
   turns; the orchestrator runs that command in the background and dispatches you again to read its log.
-  Do not retry silently. Given a log path instead of a command to run, read the log only and classify it.
+  Do not retry silently. Given a log path instead of a command to run, read the log and its sibling `.exit` file only and classify them; a missing or non-zero `.exit` is a failed layer (`exit_code` from the file, or null with a note when absent), whatever the log shows.
 - **Zero tests collected** → `green: false` with a note. An empty run is not a pass.

@@ -6,13 +6,17 @@
 # question that was not recorded. One script owns the normalisation and hash so both sides
 # agree byte for byte.
 #
-#   question-advice.sh approve   stdin: JSON list of question strings, or objects with a
-#                                "question" key, or {"questions": [...]} (an AskUserQuestion input).
-#                                Writes .claude/pipeline/_advice/approved.json = {written_at, hashes[]}.
+#   question-advice.sh approve   stdin: the advisor's JSON object ({dropped, ask}), a JSON list of
+#                                question strings, a list of objects with a "question" key, or
+#                                {"questions": [...]} (an AskUserQuestion input).
+#                                MERGES into .claude/pipeline/_advice/approved.json =
+#                                {"approvals": {"<hash>": <epoch written_at>}}: sessions sharing a
+#                                worktree must not erase each other's approvals. Entries older than
+#                                45 minutes are pruned; the legacy {written_at, hashes[]} file is read.
 #   question-advice.sh check     stdin: a PreToolUse payload. Prints `allow`, or `deny: <reason>`
-#                                when a question hash is missing or the approval is over 45 minutes old.
+#                                unless every question hash has an entry under 45 minutes old.
 #
-# Normalisation: strip BOM, collapse all whitespace, trim, lowercase, then sha256 of UTF-8.
+# Normalisation: strip BOM, NFKC, collapse all whitespace, trim, casefold, then sha256 of UTF-8.
 # Fails open on unreadable input: `check` prints `allow` for a payload it cannot parse.
 set -u
 SUB="${1:-}"
@@ -33,7 +37,7 @@ if [ -z "$PY" ]; then
 fi
 
 HOOK_INPUT="$input" "$PY" - "$SUB" "$PROJ" <<'PY'
-import hashlib, json, os, re, sys, time
+import hashlib, json, os, re, sys, time, unicodedata
 
 sub, proj = sys.argv[1], sys.argv[2]
 MAX_AGE = 45 * 60
@@ -42,8 +46,8 @@ path = os.path.join(adv_dir, "approved.json")
 
 
 def norm_hash(text):
-    t = str(text).lstrip("﻿")
-    t = re.sub(r"\s+", " ", t, flags=re.UNICODE).strip().lower()
+    t = unicodedata.normalize("NFKC", str(text).lstrip("﻿"))
+    t = re.sub(r"\s+", " ", t, flags=re.UNICODE).strip().casefold()
     return hashlib.sha256(t.encode("utf-8")).hexdigest()
 
 
@@ -57,24 +61,71 @@ def texts(items):
     return out
 
 
+def read_ledger():
+    """{hash: epoch}; accepts the legacy {written_at, hashes[]} shape."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            ap = json.load(fh)
+        if isinstance(ap.get("approvals"), dict):
+            return {str(h): float(t) for h, t in ap["approvals"].items()}
+        w = float(ap["written_at"])
+        return {str(h): w for h in (ap.get("hashes") or [])}
+    except Exception:
+        return {}
+
+
+def lock():
+    lp = path + ".lock"
+    end = time.time() + 3
+    while True:
+        try:
+            os.close(os.open(lp, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            return lp
+        except FileExistsError:
+            try:
+                if time.time() - os.path.getmtime(lp) > 3:
+                    os.unlink(lp)
+                    continue
+            except OSError:
+                pass
+        if time.time() > end:
+            return None  # not ours: proceed unlocked, never delete another writer's lock
+        time.sleep(0.05)
+
+
 try:
     data = json.loads(os.environ.get("HOOK_INPUT", ""))
 except Exception:
     data = None
 
 if sub == "approve":
-    if isinstance(data, dict) and isinstance(data.get("questions"), list):
-        data = data["questions"]
+    if isinstance(data, dict):
+        for k in ("ask", "questions"):
+            if isinstance(data.get(k), list):
+                data = data[k]
+                break
     if not isinstance(data, list):
-        print('{"error":"expected a JSON list of questions"}', file=sys.stderr)
+        print('{"error":"expected the advisor object, or a JSON list of questions"}', file=sys.stderr)
         sys.exit(1)
-    hashes = sorted({norm_hash(t) for t in texts(data)})
+    new = {norm_hash(t) for t in texts(data)}
     os.makedirs(adv_dir, exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump({"written_at": int(time.time()), "hashes": hashes}, fh)
-    os.replace(tmp, path)
-    print(json.dumps({"approved": len(hashes), "path": path}))
+    lp = lock()
+    try:
+        now = time.time()
+        led = {h: t for h, t in read_ledger().items() if now - t <= MAX_AGE}
+        for h in new:
+            led[h] = int(now)
+        tmp = "%s.%d.tmp" % (path, os.getpid())
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"approvals": led}, fh)
+        os.replace(tmp, path)
+    finally:
+        if lp:
+            try:
+                os.unlink(lp)
+            except OSError:
+                pass
+    print(json.dumps({"approved": len(new), "path": path}))
     sys.exit(0)
 
 # check
@@ -85,21 +136,18 @@ except Exception:
 if not qs:
     print("allow")
     sys.exit(0)
-try:
-    with open(path, encoding="utf-8") as fh:
-        ap = json.load(fh)
-    written = float(ap["written_at"])
-    have = set(ap.get("hashes") or [])
-except Exception:
+led = read_ledger()
+if not led:
     print("deny: no approved question list found")
     sys.exit(0)
-age = time.time() - written
-if age > MAX_AGE or age < -300:
-    print("deny: the approved question list is stale")
-    sys.exit(0)
-missing = [q for q in qs if norm_hash(q) not in have]
-if missing:
-    print("deny: question not approved by the advisor: " + missing[0][:80])
-    sys.exit(0)
+now = time.time()
+for q in qs:
+    t = led.get(norm_hash(q))
+    if t is None:
+        print("deny: question not approved by the advisor: " + q[:80])
+        sys.exit(0)
+    if now - t > MAX_AGE or now - t < -300:
+        print("deny: the approved question list is stale")
+        sys.exit(0)
 print("allow")
 PY

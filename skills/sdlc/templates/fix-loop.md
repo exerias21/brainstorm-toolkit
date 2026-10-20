@@ -16,10 +16,14 @@ with no refactor, and given these four blocks verbatim in its prompt:
 > MUST FOLLOW:
 > - Start a long test run once in the background and wait for its completion notice; never poll with sleep/until loops. Iterate on changed test files only; run the full suite once at the end.
 > - Format with the repo's own formatter, on files you changed only; never reformat whole files or untouched files.
-> - Plus each `pipeline.implement.must_follow` entry from `.claude/project.json`, as its own `- ` line, word for word.
+> {must_follow_extra}
+> - Never edit TASKS.md; report any row to add or close in the hand-back.
 
-> Hand-back: write full detail to `.claude/pipeline/{slug}/agent-reports/fix.md` and reply with at most 40 lines plus that path.
-> (The orchestrator substitutes the run's slug for `{slug}` before dispatch.)
+> Hand-back: write full detail to `.claude/pipeline/{slug}/agent-reports/fix-{iteration}.md`, reply with at most 40 lines plus that path, and list every path you edited.
+
+Before each dispatch substitute `{slug}`, `{iteration}` (1-based fix round) and `{must_follow_extra}`
+(each `pipeline.implement.must_follow` entry from `.claude/project.json` as its own `- ` line, word
+for word; empty when unset).
 
 Then re-run the gate. Repeat to a maximum of **3 iterations, shared across Stage
 5's gates** (Stage 5.7/5.8 has its own separate budget).

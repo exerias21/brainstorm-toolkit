@@ -47,6 +47,7 @@ MUST FOLLOW:
 - Start a long test run once in the background and wait for its completion notice; never poll with sleep/until loops. Iterate on changed test files only; run the full suite once at the end.
 - Format with the repo's own formatter, on files you changed only; never reformat whole files or untouched files.
 {must_follow_extra}
+- Never edit TASKS.md; report any row to add or close in the hand-back.
 - After implementation, run: git diff --stat to summarize changes.
-- Hand-back: write full detail to .claude/pipeline/{slug}/agent-reports/implement.md and reply with at most 40 lines plus that path.
+- Hand-back: write full detail to .claude/pipeline/{slug}/agent-reports/implement.md and reply with at most 40 lines plus that path. List every path you edited.
 ```

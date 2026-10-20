@@ -24,6 +24,7 @@ the user before producing an implementation plan. For heavy autonomous product r
 **Operator questions (opt-in).** When `pipeline.question_advisor.enabled` is `true`, **read
 `skills/sdlc/templates/operator-gate.md` now** and run it before asking the operator anything
 in any step; the advisor pass runs inline here (no sub-agent seam, no hook). Otherwise never open it.
+**Inline advisor (no sub-agent here):** do its job yourself. Check each draft against `DECISIONS.md`, ticked `TASKS.md` rows and any `measure_first` result; drop the answered ones, rewrite the rest in plain words with your recommendation first, at most 4. Then pipe the final list (JSON) to `bash scripts/question-advice.sh approve` and ask only those, unchanged.
 
 **Planner nudge (once per session).** Read `models.planner` from `.claude/project.json`
 (`haiku|sonnet|opus|fable`; default `"opus"` when the file, key, or value is missing or

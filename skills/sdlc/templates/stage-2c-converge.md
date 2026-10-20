@@ -8,10 +8,8 @@ out when lanes are genuinely disjoint.
 
 Substitute `{feature_name}`, `{lanes}` (the lane names + their contracts from
 `decompose.json`), and `{merged_files}` (the union of all lanes'
-`files_changed[].path`) before running. **After** converge returns, apply the dirty-at-start filter once
-to the `merged_files` you record in `converge.json` (`state-schema.md` `implement`): drop each
-`run.json.data.dirty_at_start` path whose current `git hash-object` still equals the recorded value; keep a
-changed one with `shared: true`. When you write `converge.json`, add `data.dispatch`: one
+`files_changed[].path`) before running. **After** converge returns, apply the `files_changed` rule in `state-schema.md` (`implement`) once
+to the `merged_files` you record in `converge.json`. When you write `converge.json`, add `data.dispatch`: one
 `{lane, agent_id, model}` per lane from 2b's dispatch results (Claude only).
 
 ---

@@ -12,8 +12,9 @@ operator: they return draft questions to the orchestrator, which runs this proto
    `brainstorm-toolkit:question-advisor` (bare `question-advisor` when vendored) with an
    explicit `model`. Pass the drafts, the `measure_first` output and the paths of `DECISIONS.md`
    and `TASKS.md`. It returns `{dropped, ask}`.
-4. **Record.** Pipe the `ask` list to `bash scripts/question-advice.sh approve`. It stores a
-   hash of each question; the ask-gate hook compares against it.
+4. **Record.** Pipe the advisor's JSON straight into `bash scripts/question-advice.sh approve`
+   (it reads `ask`; a bare list of questions also works). It merges a timestamped hash of each
+   question into the ledger the ask-gate hook compares against, keeping other sessions' entries.
 5. **Ask exactly the `ask` texts**, unchanged. A reworded question is a new question and the
    hook denies it: re-run steps 3–4.
 6. **Report** each dropped question and its answer in one line.

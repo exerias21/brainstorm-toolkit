@@ -24,9 +24,10 @@ You get back `{layers, failures[], preexisting[], green, totals}`. Report only *
 as failures; `preexisting[]` is noted separately and does not gate.
 
 **A layer with `status: "deferred"` is not a result.** The command hit the runner's foreground timeout, so
-it has not run to completion. Run that command yourself once with `run_in_background`, output to
-`.claude/pipeline/<slug>/agent-reports/<layer>.log`, wait for its completion notice (never poll or sleep),
-then dispatch `test-runner` again to read that log only and classify it into the same structure.
+it has not run to completion. Run that command yourself once with `run_in_background` as
+`<cmd> > .claude/pipeline/<slug>/agent-reports/<layer>.log 2>&1; echo $? > .claude/pipeline/<slug>/agent-reports/<layer>.exit`
+(a killed run leaves no exit code and must not read as a pass), wait for its completion notice (never poll or sleep),
+then dispatch `test-runner` again to read that log and `.exit` only and classify them into the same structure.
 
 - Log audit (if `logs.command` configured)
 - Frontend unit tests (if `test.frontend` configured **and** the frontend surface was touched)

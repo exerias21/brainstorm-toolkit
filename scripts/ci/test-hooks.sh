@@ -2789,12 +2789,12 @@ PYEOF
 }
 run_ask() { CLAUDE_PROJECT_DIR="$1" bash "$ASK_HOOK" <<<"$2"; }
 approve() { CLAUDE_PROJECT_DIR="$1" bash "$ADVICE" approve <<<"$2" >/dev/null; }
-age_approval() { # $1=dir $2=seconds to subtract from written_at
+age_approval() { # $1=dir $2=seconds to subtract from every approval timestamp
   "$REAL_PY_ABS" - "$1/.claude/pipeline/_advice/approved.json" "$2" <<'PYEOF'
 import json, sys
 p = sys.argv[1]
 a = json.load(open(p))
-a["written_at"] -= int(sys.argv[2])
+a["approvals"] = {h: t - int(sys.argv[2]) for h, t in a["approvals"].items()}
 json.dump(a, open(p, "w"))
 PYEOF
 }
@@ -2892,6 +2892,57 @@ CASE="question-advice: check prints deny with a reason"
 d="$(ask_dir chk)"
 out="$(CLAUDE_PROJECT_DIR="$d" bash "$ADVICE" check <<<"$(ask_payload 'Nope?')")"
 assert_match "$out" '^deny: '
+
+CASE="question-advice: two approves in sequence both stay approved (merge)"
+d="$(ask_dir merge)"
+approve "$d" '["Alpha?"]'
+approve "$d" '["Beta?"]'
+out="$(CLAUDE_PROJECT_DIR="$d" bash "$ADVICE" check <<<"$(ask_payload 'Alpha?' 'Beta?')")"
+assert_match "$out" '^allow'
+
+CASE="question-advice: a legacy-shape file still checks"
+d="$(ask_dir legacy)"
+mkdir -p "$d/.claude/pipeline/_advice"
+"$REAL_PY_ABS" - "$d/.claude/pipeline/_advice/approved.json" "$ADVICE" "$d" <<'PYEOF'
+import hashlib, json, re, sys, time
+t = re.sub(r"\s+", " ", "Legacy?").strip().casefold()
+json.dump({"written_at": int(time.time()), "hashes": [hashlib.sha256(t.encode()).hexdigest()]}, open(sys.argv[1], "w"))
+PYEOF
+out="$(CLAUDE_PROJECT_DIR="$d" bash "$ADVICE" check <<<"$(ask_payload 'Legacy?')")"
+assert_match "$out" '^allow'
+
+CASE="question-advice: approve accepts the advisor's {dropped, ask} object"
+d="$(ask_dir advisor)"
+approve "$d" '{"dropped":[{"question":"Gone?","why":"answered"}],"ask":[{"question":"Kept?"}]}'
+out="$(CLAUDE_PROJECT_DIR="$d" bash "$ADVICE" check <<<"$(ask_payload 'Kept?')")"
+assert_match "$out" '^allow'
+out="$(CLAUDE_PROJECT_DIR="$d" bash "$ADVICE" check <<<"$(ask_payload 'Gone?')")"
+assert_match "$out" '^deny: '
+
+CASE="question-advice: an NFKC and casefold variant matches"
+d="$(ask_dir nfkc)"
+approve "$d" '["Café STRASSE Ａ?"]'
+out="$(CLAUDE_PROJECT_DIR="$d" bash "$ADVICE" check <<<"$(ask_payload $'Café strasse A?')")"
+assert_match "$out" '^allow'
+
+CASE="question-advice: a stale entry is pruned, a fresh one survives"
+d="$(ask_dir prune)"
+approve "$d" '["Old?"]'
+age_approval "$d" 2760
+approve "$d" '["New?"]'
+out="$(CLAUDE_PROJECT_DIR="$d" bash "$ADVICE" check <<<"$(ask_payload 'New?')")"
+assert_match "$out" '^allow'
+"$REAL_PY_ABS" - "$d/.claude/pipeline/_advice/approved.json" <<'PYEOF'
+import json, sys
+n = len(json.load(open(sys.argv[1]))["approvals"])
+assert n == 1, n
+PYEOF
+
+CASE="ask-gate: no-interpreter fallback ignores a gate key outside question_advisor"
+d="$ROOT_TMP/ask-nopy-other"; mkdir -p "$d/.claude"
+printf '%s' '{"other": {"gate": true}, "pipeline": {"question_advisor": {"enabled": true}}}' > "$d/.claude/project.json"
+out="$(hide_from_command_v "python3 python py" env -u BRAINSTORM_PYTHON CLAUDE_PROJECT_DIR="$d"       bash "$ASK_HOOK" <<<"$(ask_payload 'Which one?')")"
+assert_empty "$out"
 
 CASE="ask-gate: gate on with no interpreter -> visible systemMessage, never silent"
 d="$(ask_dir nopy)"

@@ -59,6 +59,7 @@ regardless of verbosity — the per-dispatch `model:` line, gate verdicts, PAUSE
 When `pipeline.question_advisor.enabled` is `true`, **read `skills/sdlc/templates/operator-gate.md`
 now** and run it before asking the operator anything; the advisor pass runs inline here (no
 sub-agent seam, no hook), so this protocol is the whole control. Otherwise never open it.
+**Inline advisor (no sub-agent here):** do its job yourself. Check each draft against `DECISIONS.md`, ticked `TASKS.md` rows and any `measure_first` result; drop the answered ones, rewrite the rest in plain words with your recommendation first, at most 4. Then pipe the final list (JSON) to `bash scripts/question-advice.sh approve` and ask only those, unchanged.
 
 ## Stage 0 — Resolve input
 
@@ -218,8 +219,8 @@ regardless of plan size.
 now** — it computes `surfaces_touched` via `skills/sdlc/templates/changed-files-gate.md` and
 records the decision for `implement.json`'s summary even though the route it can pick on this
 runtime is always single-agent), preceded by **live-code grounding**.
-**State write:** after implementing, write `stage-outputs/implement.json` yourself (dropping each `data.dirty_at_start` path whose current
-`git hash-object` still equals the recorded value; a changed one stays, flagged `shared: true`) and append
+**State write:** after implementing, write `stage-outputs/implement.json` yourself (applying the `files_changed` rule in
+`state-schema.md` `implement`, to the paths you edited) and append
 `implement` to `run.json.stages_completed`.
 
 **Live-code grounding** — **read `skills/sdlc/templates/convention-grounding.md` now** and follow it before writing any file. Scope the recon to the feature's target area, never the whole repo.

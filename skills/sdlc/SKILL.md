@@ -148,7 +148,7 @@ outside `[a-z0-9-]` replaced with `-`, runs collapsed, ends trimmed; it must mat
 `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$` or the run stops with a clear error (maintainer record:
 `docs/CONVENTIONS.md`). Capture `base_commit` = `git rev-parse HEAD` and
 initialize the state envelope at `.claude/pipeline/<slug>/` with
-`pipeline: "sdlc"`, `base_commit`, `status: "in_progress"`.
+`pipeline: "sdlc"`, `base_commit`, `status: "in_progress"`, `args.toolkit_version` (the plugin's `plugin.json` `version`).
 
 **Dirty-at-start snapshot (envelope creation only, never on `--resume`).** Right after `base_commit`, record
 `run.json.data.dirty_at_start` and `data.live_envelopes` (`skills/sdlc/templates/state-schema.md`). Another session's
@@ -285,7 +285,7 @@ decides single-agent vs. decompose.
   default, per `skills/sdlc/templates/models.md`) on Claude,
   inline on Copilot/Codex. **State write (orchestrator, not the agent):** the
   agent's prompt writes no state or sidecar files — when it returns `git diff --numstat`, **you**
-  write `stage-outputs/implement.json` from that summary (after the dirty-at-start filter in
+  write `stage-outputs/implement.json` from that summary (applying the `files_changed` rule in
   `state-schema.md` `implement`), **plus `data.dispatch`
   = `{agent_id, model}` from the dispatch result** (the only proof an agent ran), append
   `implement` to `run.json.stages_completed`, and refresh `updated_at`. No decompose/converge sidecars.
@@ -295,7 +295,7 @@ decides single-agent vs. decompose.
   per lane, sequential by `depends_on` → `implement-<lane>.json`), then
   `skills/sdlc/templates/stage-2c-converge.md` (orchestrator reconcile prompt — it
   also writes nothing itself). **State write (orchestrator):** after 2c's reconcile
-  returns, **you** write `stage-outputs/converge.json` (dirty-at-start filter applied, per 2c), set
+  returns, **you** write `stage-outputs/converge.json` (`files_changed` rule applied, per 2c), set
   `run.json.data.stage2_decomposed = true` and `run.json.data.lanes` (`converge.json` carries
   each lane's `data.dispatch`, per 2c), and append a single
   `implement` (never per-lane) to `run.json.stages_completed` — the canonical stage name
@@ -359,7 +359,7 @@ the terminal state write.
 
 ## Stage 7 — Report
 
-**Degrade check (Claude only).** If `implement` is in `stages_completed` and the Stage 2 sidecar
+**Degrade check (Claude only).** Skip it, printing `degrade check: skipped (run predates it)`, when `run.json.args.toolkit_version` is absent. Otherwise, if `implement` is in `stages_completed` and the Stage 2 sidecar
 for the path taken — `implement.json` (single-agent) or `converge.json` (decomposed,
 `run.json.data.stage2_decomposed: true`) — is missing or lacks `data.dispatch`, the orchestrator
 did the work itself: after Stage 6's terminal write, write `run.json.data.degraded = {reason, missing}` and print `DEGRADED: <reason> — missing
