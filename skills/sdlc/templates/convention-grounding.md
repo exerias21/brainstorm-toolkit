@@ -31,7 +31,8 @@ feature's target area — do not survey the whole repo.
      does <Y>` row to `TASKS.md` alongside the plan, so the stale doc gets fixed
      on its own track;
    - in `/sdlc`, surface the drift in the Stage 6 hand-off / PR
-     body and nudge `/gotcha` if it's a genuine trap.
+     body and nudge `/gotcha` if it's a genuine trap; when the drift gets a `TASKS.md` row under
+     `pipeline.tasks.writer: "orchestrator"`, it goes to `tasks_report.add`, not the file.
    This is the loop that keeps `AGENTS.md` / `CLAUDE.md` honest over time —
    grounding consumes them as hints *and* repairs them when they lie.
 4. **Decide reuse vs. new.** Prefer extending an existing module / helper / type

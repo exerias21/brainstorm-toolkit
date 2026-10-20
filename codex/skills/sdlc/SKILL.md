@@ -53,6 +53,12 @@ one line per stage, one summary table at the end, no intermediate narration. Alw
 regardless of verbosity — the per-dispatch `model:` line, gate verdicts, PAUSE blocks, the
 `Next:` seam line, and warnings.
 
+## Operator questions (opt-in)
+
+When `pipeline.question_advisor.enabled` is `true`, **read `skills/sdlc/templates/operator-gate.md`
+now** and run it before asking the operator anything; the advisor pass runs inline here (no
+sub-agent seam, no hook), so this protocol is the whole control. Otherwise never open it.
+
 ## Stage 0 — Resolve input
 
 - **Plan file** (path ending `.md` that exists) → use as the plan, like `/sdlc`.
@@ -110,7 +116,7 @@ close-out failure the plan-file scan above exists to prevent.
   sentinel). Codex's `PostCompact` reseed hook (`.codex/hooks.json`) keeps
   auto-compaction lossless for a long loop; escalations in `docs/LOOP-HYGIENE.md` (plugin repo).
 
-Mark resolved rows `[~]` — task id / range / ad-hoc / `--queue` mark immediately; a plan-file
+Mark resolved rows `[~]` (never under `writer: "orchestrator"`) — task id / range / ad-hoc / `--queue` mark immediately; a plan-file
 run marks only the rows the **Scope gate** below takes, once `parse.json` exists to size them.
 Derive `slug`: the plan filename minus its extension, minus a leading
 `brainstorm-` / `team-brainstorm-` / `pbi-NNN-` / `task-NNN-` prefix, lowercased, every character
@@ -124,6 +130,19 @@ computed required fields that get dropped otherwise (DQ6):**
 `plan_hash: "sha256:$( (sha256sum <plan> 2>/dev/null || shasum -a 256 <plan>) | cut -d' ' -f1)"`, `started_at` = `updated_at`
 = `"$(date -u +%Y-%m-%dT%H:%M:%SZ)"`. Omitting them breaks `--resume` + staleness detection.
 
+**Dirty-at-start snapshot (envelope creation only, never on `--resume`).** Right after `base_commit`, record
+`run.json.data.dirty_at_start` and `data.live_envelopes` (`skills/sdlc/templates/state-schema.md`): the output of
+`git status --porcelain -z --untracked-files=all` minus `.claude/pipeline/` (a rename's new path, old path too) as
+`{path: <git hash-object of the file, or "deleted">}`, so another session's uncommitted files stay out of this run's
+hand-off and review scope. `live_envelopes` is informational only; nothing gates on it.
+
+**Report-rows mode (`pipeline.tasks.writer`, default `"self"`).** Record it in `run.json.data.tasks.writer`. Under
+`"orchestrator"` this run never edits `TASKS.md`: mark no row `[~]` in any case, have the scope gate record the taken
+rows' unique substrings in `data.tasks.resolved[]` instead, create no row for an ad-hoc description (its would-be row
+goes to `tasks_report.add`), and stop `--queue` with one line (`--queue needs TASKS.md writes; set
+pipeline.tasks.writer to "self"`). Stage 6 reports the rows instead
+(`skills/sdlc/templates/stage-6-handoff.md`).
+
 **Independence pre-check (before any spend).** If the review stage resolves ON
 (`pipeline.review_fix.enabled: true`; `--no-review` always wins OFF), compute whether `models.code_review` collides with the implementer's effective tier per
 `skills/sdlc/templates/models.md` "Independence" — **do not open
@@ -134,13 +153,16 @@ now, before Stage 1.5 spends a token, rather than only surfacing it once Stage 5
 **Then parse the plan.** Read the resolved plan/task file(s) fully and extract the feature
 name, the implementation steps (numbered lists with file paths, or checkbox rows), the files to
 create or modify, the acceptance criteria ("expected"/"should"/"must"/"verify" language) and
-cross-module touchpoints. **Write `stage-outputs/parse.json`** with `data.feature_name`,
-`data.files_to_change`, `data.implementation_step_count`, `data.acceptance_criteria_count` and
-append `parse` to `run.json.stages_completed` — Stage 2's gate reads it and cannot run without it.
+cross-module touchpoints; when present, the `### Premises`, `### Baseline & exit measurement`
+and `### Pins and forward behaviour` sections. **Write `stage-outputs/parse.json`** with
+`data.feature_name`, `data.files_to_change`, `data.implementation_step_count`,
+`data.acceptance_criteria_count`, `data.premises[]`, `data.baseline` (string or null) and
+`data.pins[]` (`{kind: "pin"|"forward", text}`; empty/null when absent), and append `parse` to `run.json.stages_completed` — Stage 2's gate reads it and cannot run without it.
 
 **Scope gate (plan-file runs only).** Immediately after `parse.json` is written, decide how
 much of this plan to take this run — skip for task-id / range / ad-hoc / `--queue` inputs
-(already bounded) and for `--no-scope-gate` (whole-plan execution). **Read
+(already bounded) and for `--no-scope-gate` (whole-plan execution; under `pipeline.tasks.writer: "orchestrator"` record every open
+row's unique substring from the `close-tasks.sh rows` result in `data.tasks.resolved[]` yourself, since the gate never runs). **Read
 `skills/sdlc/templates/scope-gate.md` now** and follow it: it sizes the plan, prefers the
 plan's own phase boundaries, handles a plan with zero rows and `_manual_`-only phases, runs a
 warn-only reconcile check before taking, records `run.json.data.scope_gate` (accumulating
@@ -198,7 +220,8 @@ regardless of plan size.
 now** — it computes `surfaces_touched` via `skills/sdlc/templates/changed-files-gate.md` and
 records the decision for `implement.json`'s summary even though the route it can pick on this
 runtime is always single-agent), preceded by **live-code grounding**.
-**State write:** after implementing, write `stage-outputs/implement.json` yourself and append
+**State write:** after implementing, write `stage-outputs/implement.json` yourself (dropping each `data.dirty_at_start` path whose current
+`git hash-object` still equals the recorded value; a changed one stays, flagged `shared: true`) and append
 `implement` to `run.json.stages_completed`.
 
 **Live-code grounding** — **read `skills/sdlc/templates/convention-grounding.md` now** and follow it before writing any file. Scope the recon to the feature's target area, never the whole repo.
@@ -206,7 +229,8 @@ runtime is always single-agent), preceded by **live-code grounding**.
 ## Stage 3 — Generate evals
 
 **Skip silently if no `eval.runner` is configured** — record
-`data.skipped_reason: "no eval.runner"` and move on. Otherwise **read
+`data.skipped_reason: "no eval.runner"`, append `generate-evals` to `run.json.stages_skipped`
+(`data.skip_reasons.generate-evals: "no eval.runner"`) and move on. Otherwise **read
 `skills/sdlc/templates/stage-3-evals.md` now** and run it inline.
 
 ## Shared fix loop
@@ -229,6 +253,9 @@ is no `test-runner` sub-agent here, so run the configured suites yourself and re
 structured `{name, file, expected, actual}` per failure — never paste raw runner output into
 your context; and the plan check runs as one inline pass rather than a dispatch.
 
+**Long suites.** Run a suite that may exceed the tool's time limit to completion (a background run if the tool offers one);
+never report a tool timeout as a result. A `deferred` layer in `stage-5-validate.md` does not occur here.
+
 Everything else is identical, including the rule that matters most here: **the flow axis gates
 only when witnessed.** With no test evidence from step 1, flow findings are advisory — they
 cannot fail the stage or open the fix loop. The requirements axis gates either way.
@@ -240,7 +267,7 @@ cannot fail the stage or open the fix loop. The requirements axis gates either w
 absent or `enabled: false` block means OFF.
 
 Resolve that gate **before** opening anything. When it is OFF, append `review` to
-`run.json.stages_skipped` and go to Stage 6 — do not load the template. When it is ON, **read
+`run.json.stages_skipped` (reason in `data.skip_reasons.review`) and go to Stage 6 — do not load the template. When it is ON, **read
 `skills/sdlc/templates/stage-5.7-review-fix.md` now** and run it with each lens as a sequential
 inline pass instead of a parallel dispatch. Everything else — lens selection, the reviewer-model
 axis, the verify pass, the circuit breaker, the `auto_fixable` rubric, the fix-loop modes and
@@ -250,7 +277,7 @@ budget, the oscillation guard — is the same, including the sidecar shapes at t
 
 **Opt-in, OFF by default** (`pipeline.cleanup.enabled: true` / `--cleanup`; `--no-cleanup` wins
 OFF; auto-off if Stage 5 isn't green, `implement` skipped, or no code surface touched — append
-`cleanup` to `stages_skipped`). Else **read `skills/sdlc/templates/stage-5.9-cleanup.md` now**.
+`cleanup` to `stages_skipped`, reason in `data.skip_reasons.cleanup`). Else **read `skills/sdlc/templates/stage-5.9-cleanup.md` now**.
 
 ## Stage 6 — Hand off (no commit, no git writes)
 
@@ -267,6 +294,8 @@ The action-items reassess step, when it fires, also runs inline — no sub-agent
 
 ## Stage 7 — Report
 
+**Stage table.** Print one table: each stage as `ran` (in `stages_completed`) or `skipped: <reason>` (from `data.skip_reasons`). No degrade check on this runtime — it implements inline by design.
+
 Summarize: branch the changes sit on (uncommitted), files changed, suggested
 commit message, eval pass/fail, test-check summary, the Stage 5 plan check —
 requirements verdict plus the flowsim flow trace and whether it was witnessed or
@@ -274,7 +303,7 @@ advisory (or "skipped — no plan target") — and anything left open. **Always 
 `tasks: N closed, M moved (K matched)`** from Stage 6's `handoff.json` `data.tasks`,
 including `tasks: 0 closed (0 matched)` when nothing matched — that line is what turns a
 silent close-out miss into a visible one; when `unmatched` is non-empty add
-`(U unmatched — see /sdlc-status --reconcile)`. When `review.json.data.independence ==
+`(U unmatched — see /sdlc-status --reconcile)`. Under `writer: "orchestrator"` print `tasks: reported to orchestrator (N close, M add) — /sdlc-status --reconcile shows these rows open until applied` instead. List `data.shared` paths apart as `shared (stage by hunk)`. When `review.json.data.independence ==
 "degraded"`, add the line `independence: degraded — findings surfaced only, never auto-fixed`
 (wording: `skills/sdlc/templates/stage-5.7-review-fix.md` "Independence enforcement"). When Stage 6
 wrote `data.waves`, add `waves: now N across L lane(s), next M` from its `summary` (`now`, `lanes`,
@@ -291,7 +320,7 @@ surface, so three stages change; every other stage runs unmodified.
 
 | Stage | Skill-repo behavior |
 |---|---|
-| Stage 3 — Generate evals | **skip** — append `generate-evals` to `run.json.stages_skipped` |
+| Stage 3 — Generate evals | **skip** — append `generate-evals` to `run.json.stages_skipped`, `data.skip_reasons.generate-evals: "skill repo, no test surface"` |
 | Stage 5 — Validate | **substitute the test half only** with `skills/sdlc/templates/stage-5-skill-repo.md` (validator, marketplace registration, template-reference resolution, setup.sh dry install; soft: line ceilings, README drift, overlay parity) — **the plan-vs-diff check stays on** whenever there is a plan target: requirements gate as normal, flow is advisory-only (no test evidence to witness it). Writes `validate.json` with `data.mode = "skill-repo"` |
 | Stage 5.7 — Adversarial review | **adapt when enabled, never self-skip** — still opt-in/OFF-by-default per Stages 5.7/5.8 above; when it's ON, a docs-only diff is the code surface here |
 

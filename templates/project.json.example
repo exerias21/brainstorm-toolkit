@@ -84,6 +84,8 @@
     "_docstring_sync_comment": "Optional, default \"sonnet\". Controls the /docstring-sync triage and rewrite agents.",
     "hunt": "sonnet",
     "_hunt_comment": "Optional, default \"sonnet\". Controls the /repo-health --hunt lenses (Axis 1, bounded by models.cap). The hunt consolidator is Axis 2 and runs on models.code_review.",
+    "question_advisor": "sonnet",
+    "_question_advisor_comment": "Optional, default \"sonnet\" (Axis 1, bounded by models.cap). Controls the question-advisor agent that reviews draft operator questions when pipeline.question_advisor.enabled is true.",
     "planner": "opus",
     "_planner_comment": "Optional, default \"opus\". One of haiku|sonnet|opus|fable. ADVISORY ONLY -- a session-model RECOMMENDATION for /brainstorm and /brainstorm-team's planning conversation, which runs on your host session model rather than a sub-agent. On NEITHER model axis: models.cap never lowers it, and it never governs a dispatch. Printed once per session, verbatim: 'Planning runs on your session model. Recommended: <planner> -- switch before the clarifying rounds if you aren't on it.' Never detects the host model. An unrecognized value falls through to the default. See skills/sdlc/templates/models.md 'A third kind'.",
     "code_review": "opus",
@@ -168,6 +170,19 @@
       "_escalate_last_comment": "When true, ONLY the final iteration of Stage 5's shared fix-loop budget dispatches its fix agent at min(stage_tier + 1, effective_cap) on the haiku < sonnet < opus ladder, printing 'model: <tier> (cap: <cap>, escalated)' in place of the ordinary dispatch line. With models.cap: \"sonnet\", min(sonnet + 1, sonnet) is a no-op -- nothing changes. With no cap (or \"opus\") iterations 1-2 dispatch at models.fix (default Sonnet) and the last iteration dispatches one rung up, at Opus. Without this key, every retry stays on the same tier by design -- a fix loop is not a place to guess your way up the ladder silently. Copilot/Codex (no sub-agent seam): when true, the PAUSED block adds 'Escalate: set models.fix to opus in .claude/project.json, then --resume' instead of escalating inline. scripts/hooks/enforce-model-cap.sh needs no change for this -- an escalation that stays within the cap is never rewritten."
     },
 
+    "implement": {
+      "_comment": "Optional. Extra rules quoted word for word into every implement, lane and fix agent brief (stage-2-implement.md, stage-2b-dispatch.md, fix-loop.md), after two always-on built-ins: one background test run and never a polling loop; the repo's formatter on changed files only. The briefs already carry a git-write guard; the entry below only shows the syntax for a repo-specific rule, here for repos that share one worktree between sessions.",
+      "must_follow": ["Never run git checkout, restore, stash or reset in a shared tree."]
+    },
+
+    "question_advisor": {
+      "_comment": "Optional, OFF by default. When enabled is true, /sdlc and /brainstorm run the advisor pass in skills/sdlc/templates/operator-gate.md before asking you anything: an advisor (models.question_advisor) drops questions the decision log, a ticked TASKS.md row or the code already answers, and rewrites the rest in plain words, at most 4. With gate also true, the Claude-only PreToolUse(AskUserQuestion) hook scripts/hooks/ask-gate.sh denies a question the advisor did not approve; it covers the question tool only, not plain-text questions, and the file .claude/pipeline/_advice/off lets everything through. Copilot/Codex have no hook: the protocol is the whole control.",
+      "enabled": false,
+      "gate": false,
+      "measure_first": [],
+      "_measure_first_comment": "Sources checked before asking. An entry is a file the advisor reads, or a command the orchestrator runs before dispatch and passes in as output (the advisor has no Bash), e.g. [\"docs/baseline.json\", \"bash scripts/py.sh scripts/cost.py\"]."
+    },
+
     "review_fix": {
       "_comment": "Optional, OFF by default. Adversarial Review->Fix stage (Stage 5.7 review / Stage 5.8 fix loop) for /sdlc -- an N-lens adversarial review + fix loop that runs after Stage 5, before the Stage 6 hand-off. Default reviewer model 'opus' (see skills/sdlc/templates/models.md; the reviewer model itself lives at models.code_review). Omit this whole block to accept the defaults below (stage stays OFF). OPT-IN, PERMANENTLY: there is no default-on flip, planned or shipped. An explicit enabled:true here is required to activate the stage; omitted, absent, or enabled:false all mean OFF.",
       "enabled": false,
@@ -213,7 +228,9 @@
     "tasks": {
       "_comment": "Optional. How /sdlc Stage 6 closes TASKS.md rows.",
       "close_in_place": false,
-      "_close_in_place_comment": "Default false: a closed row moves to ## Done. true: scripts/close-tasks.sh close --in-place flips it to [x] (with its completion stamp) where it stands, so TASKS.md:N line citations stay valid; moved[] is empty."
+      "_close_in_place_comment": "Default false: a closed row moves to ## Done. true: scripts/close-tasks.sh close --in-place flips it to [x] (with its completion stamp) where it stands, so TASKS.md:N line citations stay valid; moved[] is empty.",
+      "writer": "self",
+      "_writer_comment": "Default \"self\": /sdlc edits TASKS.md itself. \"orchestrator\": a delegated run never edits TASKS.md; Stage 6 lists the rows it would close and add in handoff.json data.tasks_report and the report, for the orchestrator to apply. Not usable with --queue."
     }
   }
 }

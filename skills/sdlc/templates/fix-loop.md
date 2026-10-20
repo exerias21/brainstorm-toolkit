@@ -7,11 +7,19 @@ Stage 5 and Stage 5.7/5.8 fix the same way, so the loop and its pause are specif
 **The loop.** On a gate failure: parse the structured results; for each failure extract test
 name, expected-vs-actual, file path, function; dispatch **one fix agent** — tier `models.fix`
 (Sonnet default, capped), per `skills/sdlc/templates/models.md` — told to fix *only* those failures
-with no refactor, and given these two lines verbatim in its prompt:
+with no refactor, and given these four blocks verbatim in its prompt:
 
 > GIT: never run a git command that writes — no stash, commit, checkout, switch, reset, restore, rebase, merge, clean, or branch creation. The working tree holds the user's uncommitted work; git that only reads (status, diff, log, show) is fine. If you need a clean baseline, report it as a blocker instead.
 
 > never write plan or task references (plans/ paths, task IDs, brainstorm names) into code — this covers comments, docstrings, string literals and data (e.g. `TASKS.md:N`, `task-N`, `plans/<file>.md`, phase/step numbers, a plan slug). Write the reason itself: the plan is deleted once delivered and TASKS.md rows move, so the reference rots.
+
+> MUST FOLLOW:
+> - Start a long test run once in the background and wait for its completion notice; never poll with sleep/until loops. Iterate on changed test files only; run the full suite once at the end.
+> - Format with the repo's own formatter, on files you changed only; never reformat whole files or untouched files.
+> - Plus each `pipeline.implement.must_follow` entry from `.claude/project.json`, as its own `- ` line, word for word.
+
+> Hand-back: write full detail to `.claude/pipeline/{slug}/agent-reports/fix.md` and reply with at most 40 lines plus that path.
+> (The orchestrator substitutes the run's slug for `{slug}` before dispatch.)
 
 Then re-run the gate. Repeat to a maximum of **3 iterations, shared across Stage
 5's gates** (Stage 5.7/5.8 has its own separate budget).

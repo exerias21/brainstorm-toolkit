@@ -9,7 +9,8 @@ plan-validator gating — and by Stage 2's decompose gate.
 Read the changed-file set from the run's `stage-outputs/implement.json`
 `data.files_changed[].path` (already recorded). Fall back to
 `git diff --name-only <base_commit>..HEAD` (or `--staged` for an uncommitted
-working tree) only if the sidecar is absent.
+working tree) only if the sidecar is absent, minus the paths in `run.json.data.dirty_at_start`
+(another session's files).
 
 ## Canonical surface globs
 
@@ -76,5 +77,6 @@ regex-level false positive is how gates get disabled.
 **never** block waiting for an answer that can't come — that's a deadlock, not a
 gate. With no interactive channel, **proceed-and-document** instead of asking:
 take the safe path, state the soft-stop reason in the run's report, and add a
-`TASKS.md` debt row so the skipped check is visible and owned. When in doubt in a
+`TASKS.md` debt row so the skipped check is visible and owned (under
+`pipeline.tasks.writer: "orchestrator"` the row goes to `tasks_report.add` instead). When in doubt in a
 background/CI context, proceed-and-document rather than stall.

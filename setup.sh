@@ -521,11 +521,16 @@ install_stop_hook_claude() {
   fi
 }
 
-# Install the PreToolUse(Agent) model-cap hook into the consumer's Claude settings. The
-# script is inert until project.json sets pipeline.enforce_cap: true, so wiring it is safe by
-# default. Same idempotent jq merge as the Stop hook, keyed on the exact command string.
+# Install a PreToolUse hook into the consumer's Claude settings. Each script is inert until its
+# project.json key opts in, so wiring it is safe by default. Same idempotent jq merge as the Stop
+# hook, keyed on the exact command string.
+# $1 = hook script basename (default enforce-model-cap.sh), $2 = matcher (default Agent),
+# $3 = label for the log lines (default model-cap), $4 = the opt-in key named in the log line.
 install_pretooluse_hook_claude() {
-  local script="enforce-model-cap.sh"
+  local script="${1:-enforce-model-cap.sh}"
+  local matcher="${2:-Agent}"
+  local label="${3:-model-cap}"
+  local optin="${4:-pipeline.enforce_cap: true}"
   local settings="$TARGET/.claude/settings.json"
   local cmd
   if [[ "$COPY_SCRIPTS" -eq 1 ]]; then
@@ -536,30 +541,25 @@ install_pretooluse_hook_claude() {
     cmd="bash $hook_path_escaped"
   fi
   if ! command -v jq >/dev/null 2>&1; then
-    hook_merge_py "$settings" "PreToolUse" "$cmd" "Claude PreToolUse model-cap hook" --matcher Agent || return 1
-    return
-  fi
-  if false; then
-    echo "  skip: jq not installed — add this manually to $settings if you want cap enforcement:"
-    echo "        {\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Agent\",\"hooks\":[{\"type\":\"command\",\"command\":\"$cmd\"}]}]}}"
+    hook_merge_py "$settings" "PreToolUse" "$cmd" "Claude PreToolUse $label hook" --matcher "$matcher" --timeout 10 || return 1
     return
   fi
   mkdir -p "$(dirname "$settings")"
   [[ -f "$settings" ]] || echo '{}' > "$settings"
   if jq -e --arg cmd "$cmd" 'any(.hooks.PreToolUse[]?.hooks[]?; .command == $cmd)' "$settings" >/dev/null 2>&1; then
-    echo "  skip: Claude PreToolUse model-cap hook already wired ($cmd)"
+    echo "  skip: Claude PreToolUse $label hook already wired ($cmd)"
     return
   fi
   local tmp; tmp="$(mktemp)"
-  if jq --arg cmd "$cmd" '
+  if jq --arg cmd "$cmd" --arg matcher "$matcher" '
     .hooks //= {} |
     .hooks.PreToolUse //= [] |
-    .hooks.PreToolUse += [{ "matcher": "Agent", "hooks": [{ "type": "command", "command": $cmd }] }]
+    .hooks.PreToolUse += [{ "matcher": $matcher, "hooks": [{ "type": "command", "command": $cmd, "timeout": 10 }] }]
   ' "$settings" > "$tmp" && mv "$tmp" "$settings"; then
-    echo "  wrote: $settings (added PreToolUse model-cap hook; inert until pipeline.enforce_cap: true)"
+    echo "  wrote: $settings (added PreToolUse $label hook; inert until $optin)"
   else
     rm -f "$tmp"
-    echo "  error: failed to update $settings with the PreToolUse hook" >&2
+    echo "  error: failed to update $settings with the PreToolUse $label hook" >&2
     return 1
   fi
 }
@@ -837,6 +837,8 @@ if [[ "$INSTALL_HOOKS" -eq 1 ]]; then
     install_stop_hook_claude stop-gate.sh stop-gate 310
     echo "[hooks] Claude PreToolUse model-cap hook"
     install_pretooluse_hook_claude
+    echo "[hooks] Claude PreToolUse ask-gate hook"
+    install_pretooluse_hook_claude ask-gate.sh AskUserQuestion ask-gate "pipeline.question_advisor.gate: true"
   fi
   if [[ "$want_copilot" -eq 1 ]]; then
     echo "[hooks] Copilot Stop hook"

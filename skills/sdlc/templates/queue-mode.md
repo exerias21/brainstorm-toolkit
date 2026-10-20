@@ -6,6 +6,9 @@ single-input run under its scope-gate threshold never opens this file. The loop 
 normal pipeline once per item and adds selection, a re-scan, stop conditions and the park
 protocol on top.
 
+A `--queue` invocation under `pipeline.tasks.writer: "orchestrator"` stops with the one line `--queue needs TASKS.md writes; set
+pipeline.tasks.writer to "self"`: the re-scan reads rows this mode never marks or closes.
+
 `--queue` runs the pipeline over the pending backlog and **re-scans between items**,
 so work appended *during* the run (a `/sdlc-status`-drafted fix, a brainstorm follow-up)
 joins the loop — that re-scan is what makes it a loop rather than a fixed batch.

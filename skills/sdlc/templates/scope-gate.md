@@ -66,7 +66,8 @@ Append whichever of these apply, in order, after the base line above:
 Record `run.json.data.scope_gate = {plan_total_steps, plan_phases, taken, taken_phases, parked,
 deferred, why, resume}` — full field-by-field contract in
 `skills/sdlc/templates/state-schema.md`. **Mark `[~]` only on the `TASKS.md` rows actually
-taken** — parked rows, and every `_manual_` row, stay `Active / Pending`, untouched, so a plain
+taken** (under `pipeline.tasks.writer: "orchestrator"` mark nothing: record each taken row's unique substring in
+`run.json.data.tasks.resolved[]` instead, so Stage 6 can report it) — parked rows, and every `_manual_` row, stay `Active / Pending`, untouched, so a plain
 re-run of `/sdlc <plan>` (the `resume` value) picks up the next phase.
 
 **Accumulate `taken_phases`.** A re-run of `/sdlc <plan>` reuses the plan's slug, so it

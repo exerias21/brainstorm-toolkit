@@ -10,9 +10,12 @@ Every lane dispatches at `models.implement` (Sonnet default, capped) — ignore 
 `model` field in `decompose.json`. Print `model: implement=<tier> (cap: <cap|none>)` and pass
 `model` explicitly. See `skills/sdlc/templates/models.md`.
 
-Substitute `{feature_name}`, `{lane}`, `{lane_files}` (the lane's `files[]`),
-`{lane_steps}` (the lane's `steps[]`), and `{contract}` (the lane's interface
-contract, including the contracts of the lanes it depends on) before dispatch.
+Substitute `{feature_name}`, `{slug}` (the run's slug), `{lane}`, `{lane_files}` (the lane's `files[]`),
+`{lane_steps}` (the lane's `steps[]`), `{contract}` (the lane's interface
+contract, including the contracts of the lanes it depends on) and `{must_follow_extra}` (each
+`pipeline.implement.must_follow` entry from `.claude/project.json` as its own `- ` line, word for
+word; empty when unset) before dispatch. After each lane returns, note its agent id and model tier
+from the dispatch result; stage 2c's `converge.json` carries them as `data.dispatch`.
 
 ---
 
@@ -50,6 +53,11 @@ CRITICAL RULES:
 - Do NOT add features beyond your lane's steps.
 - GIT: never run a git command that writes — no stash, commit, checkout, switch, reset, restore, rebase, merge, clean, or branch creation. The working tree holds the user's uncommitted work; git that only reads (status, diff, log, show) is fine. If you need a clean baseline, report it as a blocker instead.
 - never write plan or task references (plans/ paths, task IDs, brainstorm names) into code — this covers comments, docstrings, string literals and data (e.g. `TASKS.md:N`, `task-N`, `plans/<file>.md`, phase/step numbers, a plan slug). Write the reason itself: the plan is deleted once delivered and TASKS.md rows move, so the reference rots.
+MUST FOLLOW:
+- Start a long test run once in the background and wait for its completion notice; never poll with sleep/until loops. Iterate on changed test files only; run the full suite once at the end.
+- Format with the repo's own formatter, on files you changed only; never reformat whole files or untouched files.
+{must_follow_extra}
+- Hand-back: write full detail to .claude/pipeline/{slug}/agent-reports/implement-{lane}.md; reply with the JSON below plus at most 40 lines and that path.
 - After implementing, run: git diff --stat -- {lane_files}  to summarize only
   your lane's changes.
 

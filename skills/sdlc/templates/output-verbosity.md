@@ -28,3 +28,10 @@ restate file contents, echo sub-agent output, or recap what a stage is about to 
 Set `pipeline.output.verbosity: "normal"` in `.claude/project.json` to restore full narration.
 Read with graceful-skip — a missing `project.json` means `quiet`, which is the point: the savings
 must not depend on a config file that the audited repo never had.
+
+## Agent return
+
+A dispatched agent's reply lands in your context and is re-read by every later turn, so an
+unbounded hand-back compounds. Prose-returning dispatches (implement, 2b lane, fix) write full
+detail to `.claude/pipeline/<slug>/agent-reports/<role>.md` and hand back at most 40 lines plus
+that path. JSON-only returns (sanity focuses, 2a decompose) are unchanged.

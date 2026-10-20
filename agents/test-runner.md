@@ -81,6 +81,8 @@ last non-empty line, truncated to 200 characters. Never more.
 
 - **Command not found / dependency missing** → that layer's `ran: false` with
   `skipped_reason` naming the missing thing. This is a `config-missing` signal, not a test failure.
-- **Timeout or hang** → report the layer as failed with `note: "timed out after <n>s"`. Do not
-  retry silently.
+- **Timeout or hang** → report the layer as `{"ran": false, "status": "deferred", "command": "<the command>"}` and
+  leave `green` false. A foreground timeout is not a result, and you cannot wait on a background job across
+  turns; the orchestrator runs that command in the background and dispatches you again to read its log.
+  Do not retry silently. Given a log path instead of a command to run, read the log only and classify it.
 - **Zero tests collected** → `green: false` with a note. An empty run is not a pass.

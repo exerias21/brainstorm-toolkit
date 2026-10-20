@@ -2,7 +2,9 @@
 
 One implement agent — tier is `models.implement` (Sonnet default), per
 `skills/sdlc/templates/models.md`; print `model: implement=<tier> (cap: <cap|none>)` first. Substitute
-`{feature_name}` and `{plan_content}` before dispatch.
+`{feature_name}`, `{plan_content}` and `{slug}` (the run's slug) before dispatch, and `{must_follow_extra}` with each
+`pipeline.implement.must_follow` entry from `.claude/project.json` as its own `- ` line, word for
+word (empty when unset).
 
 ---
 
@@ -27,8 +29,9 @@ GROUND IN THE LIVE CODE FIRST (before writing any code):
   naming, error handling, the data-access seam, shared utilities already
   available, and test style. Reuse them — do NOT introduce a parallel pattern
   when one already exists.
-- If the plan has a `## Conventions & reuse` block, honor it AND re-verify it
-  against the live code (the code may have moved since the plan was written).
+- If the plan has a `### Conventions & reuse` block, honor it AND re-verify it
+  against the live code (the code may have moved since the plan was written). Keep every
+  `Pin:` line true and deliver every `Forward:` line.
 
 - Follow patterns from referenced existing files; prefer extending existing
   modules over creating new ones.
@@ -40,5 +43,10 @@ GROUND IN THE LIVE CODE FIRST (before writing any code):
   this instruction is the only thing preventing it.
 GIT: never run a git command that writes — no stash, commit, checkout, switch, reset, restore, rebase, merge, clean, or branch creation. The working tree holds the user's uncommitted work; git that only reads (status, diff, log, show) is fine. If you need a clean baseline, report it as a blocker instead.
 never write plan or task references (plans/ paths, task IDs, brainstorm names) into code — this covers comments, docstrings, string literals and data (e.g. `TASKS.md:N`, `task-N`, `plans/<file>.md`, phase/step numbers, a plan slug). Write the reason itself: the plan is deleted once delivered and TASKS.md rows move, so the reference rots.
+MUST FOLLOW:
+- Start a long test run once in the background and wait for its completion notice; never poll with sleep/until loops. Iterate on changed test files only; run the full suite once at the end.
+- Format with the repo's own formatter, on files you changed only; never reformat whole files or untouched files.
+{must_follow_extra}
 - After implementation, run: git diff --stat to summarize changes.
+- Hand-back: write full detail to .claude/pipeline/{slug}/agent-reports/implement.md and reply with at most 40 lines plus that path.
 ```

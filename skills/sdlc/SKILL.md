@@ -47,6 +47,11 @@ each stage below names the one it loads.
 
 **Read `skills/sdlc/templates/output-verbosity.md` now** — default `quiet`, one line per stage.
 
+## Operator questions (opt-in)
+
+When `pipeline.question_advisor.enabled` is `true`, **read `skills/sdlc/templates/operator-gate.md`
+now** and run it before asking the operator anything. Otherwise never open it.
+
 ## State envelope
 
 Writes to `.claude/pipeline/<slug>/` — the canonical envelope
@@ -97,12 +102,12 @@ Detect the argument shape:
 2. **Task id** — arg matches `task-NNN` or a bare row number. Read that
    `TASKS.md` row and its linked `plans/tasks/task-N-<slug>.md`. The task
    file's `parent_plan:` frontmatter (if present) becomes the flowsim / Stage 5
-   plan target. Mark the row `[~]`.
+   plan target. Mark the row `[~]` (not under `writer: "orchestrator"`).
 
 3. **Task range** — arg is `N-M`, `task-N..task-M`, or `tasks N-M`. Resolve
    every `Active / Pending` row in that inclusive range to its task file.
    Execute them as a batch (see Stage 6 range semantics). Record the resolved
-   ids in `run.json.data.task_range`. Mark each resolved row `[~]`, **except a
+   ids in `run.json.data.task_range`. Mark each resolved row `[~]` (not under `writer: "orchestrator"`), **except a
    `_manual_` row** — leave it `Active / Pending` and report it, never execute it.
 
 4. **Ad-hoc description** — anything else. Create a new `TASKS.md` row + task
@@ -135,7 +140,7 @@ array from the existing envelope rather than re-deriving anything from session m
    stop conditions — see **Queue mode** below (that re-scan is what makes it a loop,
    not a one-shot range).
 
-Mark resolved rows `[~]` (in-progress) — cases 2–5 mark immediately; case 1 (plan file) marks
+Mark resolved rows `[~]` (in-progress; never under `writer: "orchestrator"`) — cases 2–5 mark immediately; case 1 (plan file) marks
 only the rows the **Scope gate** below takes, once `parse.json` exists to size them. Derive
 `slug`: the plan filename minus its extension, minus a leading
 `brainstorm-` / `team-brainstorm-` / `pbi-NNN-` / `task-NNN-` prefix, lowercased, every character
@@ -144,6 +149,21 @@ outside `[a-z0-9-]` replaced with `-`, runs collapsed, ends trimmed; it must mat
 `docs/CONVENTIONS.md`). Capture `base_commit` = `git rev-parse HEAD` and
 initialize the state envelope at `.claude/pipeline/<slug>/` with
 `pipeline: "sdlc"`, `base_commit`, `status: "in_progress"`.
+
+**Dirty-at-start snapshot (envelope creation only, never on `--resume`).** Right after `base_commit`, record
+`run.json.data.dirty_at_start` and `data.live_envelopes` (`skills/sdlc/templates/state-schema.md`). Another session's
+uncommitted files in a shared worktree otherwise land in this run's hand-off and review scope. Run
+`git status --porcelain -z --untracked-files=all`, drop `.claude/pipeline/`, take a rename's new path (the old path is
+dirty too), and store `{path: <git hash-object of the file, or "deleted">}`. `live_envelopes` is informational only (a
+crashed run stays `in_progress`); nothing gates on it.
+
+**Report-rows mode (`pipeline.tasks.writer`, default `"self"`).** Record the resolved value in `run.json.data.tasks.writer`.
+Under `"orchestrator"` a delegated run never edits `TASKS.md` — the orchestrator owns those writes, and two writers race:
+cases 2–5 mark no row `[~]`; the scope gate records the taken rows' unique substrings in `data.tasks.resolved[]` instead of
+marking them; an ad-hoc description creates no row and no task file (skip `/task`'s procedure, derive the slug as for a plan,
+and carry the would-be row to `tasks_report.add`); `--queue` stops with one line (`--queue needs TASKS.md writes; set
+pipeline.tasks.writer to "self"`). Stage 6 reports the rows instead of editing them
+(`skills/sdlc/templates/stage-6-handoff.md`).
 
 **Independence pre-check (before any spend).** If the review stage resolves ON
 (`pipeline.review_fix.enabled: true`; `--no-review` always wins OFF), compute whether `models.code_review` collides with the implementer's effective tier per
@@ -156,13 +176,16 @@ now, before Stage 1.5 spends a token, rather than only surfacing it once Stage 5
 feature name/slug; implementation steps (numbered lists with file paths, or
 checkbox rows); files to create or modify (file paths, a table of files, or each
 linked task file's `files:` frontmatter); acceptance criteria ("expected",
-"should", "must", "verify" language); cross-module touchpoints. A `TASKS.md`-style
+"should", "must", "verify" language); cross-module touchpoints; when present, the `### Premises`, `### Baseline & exit measurement`
+and `### Pins and forward behaviour` sections. A `TASKS.md`-style
 checkbox list counts every `[ ]`/`[~]` row in `Active / Pending` as an
 implementation step.
 
 **Write `stage-outputs/parse.json`** with `data.feature_name`,
 `data.files_to_change`, `data.implementation_step_count`,
-`data.acceptance_criteria_count`, and append `parse` to
+`data.acceptance_criteria_count`, `data.premises[]`, `data.baseline` (string or null) and
+`data.pins[]` (`{kind: "pin"|"forward", text}`; empty/null when the plan has no such
+section), and append `parse` to
 `run.json.stages_completed`. This is not bookkeeping: Stage 2's decompose gate
 reads `data.files_to_change` and `data.implementation_step_count` and cannot run
 without them.
@@ -172,7 +195,9 @@ without them.
 Immediately after `parse.json` is written, decide how much of this plan to take **this run**.
 Skip this gate entirely for task-id / range / ad-hoc / `--queue` inputs — each is already
 bounded to one row or an explicit range — and for `--no-scope-gate`, which forces whole-plan
-execution (`taken` = every open row).
+execution (`taken` = every open row). Under `pipeline.tasks.writer: "orchestrator"` the scope gate never runs, so
+record every open row's unique substring (from the `close-tasks.sh rows` result) in `data.tasks.resolved[]` yourself,
+or the Stage 6 close preview is empty.
 
 **Read `skills/sdlc/templates/scope-gate.md` now** and follow it: it sizes the plan, prefers the
 plan's own phase boundaries, handles a plan with zero rows and `_manual_`-only phases, runs a
@@ -219,7 +244,8 @@ pipeline). One prompt at most, or none.
 ## Queue mode (`--queue`) — attended backlog loop
 
 Only when the argument is `--queue [N]`. **Resolve that first** — on any other input, skip this
-section entirely and go to Stage 1.5 without opening the template.
+section entirely and go to Stage 1.5 without opening the template. Under
+`pipeline.tasks.writer: "orchestrator"` stop with the one line above instead.
 
 When it *is* `--queue`, **read `skills/sdlc/templates/queue-mode.md` now** and run it. It carries
 the selection rule (highest-priority `Active / Pending` row, `[~]` first), the per-item envelope
@@ -255,20 +281,23 @@ Then apply the **live-code grounding** — follow `skills/sdlc/templates/convent
 decides single-agent vs. decompose.
 
 - **Single-agent (default):** dispatch one agent with `skills/sdlc/templates/stage-2-implement.md`,
-  substitute `{feature_name}` and `{plan_content}`; **`models.implement`** (Sonnet
+  substitute `{feature_name}`, `{plan_content}` and `{slug}`; **`models.implement`** (Sonnet
   default, per `skills/sdlc/templates/models.md`) on Claude,
   inline on Copilot/Codex. **State write (orchestrator, not the agent):** the
-  agent's prompt writes nothing to disk — when it returns `git diff --numstat`, **you**
-  write `stage-outputs/implement.json` from that summary, append `implement` to
-  `run.json.stages_completed`, and refresh `updated_at`. No decompose/converge sidecars.
+  agent's prompt writes no state or sidecar files — when it returns `git diff --numstat`, **you**
+  write `stage-outputs/implement.json` from that summary (after the dirty-at-start filter in
+  `state-schema.md` `implement`), **plus `data.dispatch`
+  = `{agent_id, model}` from the dispatch result** (the only proof an agent ran), append
+  `implement` to `run.json.stages_completed`, and refresh `updated_at`. No decompose/converge sidecars.
 - **Decompose (large multi-surface plan):** run 2a/2b/2c —
   `skills/sdlc/templates/stage-2a-decompose.md` (decomposer at `models.implement` →
   `decompose.json`), `skills/sdlc/templates/stage-2b-dispatch.md` (one subagent
   per lane, sequential by `depends_on` → `implement-<lane>.json`), then
   `skills/sdlc/templates/stage-2c-converge.md` (orchestrator reconcile prompt — it
   also writes nothing itself). **State write (orchestrator):** after 2c's reconcile
-  returns, **you** write `stage-outputs/converge.json`, set
-  `run.json.data.stage2_decomposed = true` and `run.json.data.lanes`, and append a single
+  returns, **you** write `stage-outputs/converge.json` (dirty-at-start filter applied, per 2c), set
+  `run.json.data.stage2_decomposed = true` and `run.json.data.lanes` (`converge.json` carries
+  each lane's `data.dispatch`, per 2c), and append a single
   `implement` (never per-lane) to `run.json.stages_completed` — the canonical stage name
   either path completes under, per `skills/sdlc/templates/state-schema.md`.
 
@@ -279,7 +308,8 @@ touched. Stop and report on any blocker.
 ## Stage 3 — Generate evals
 
 **Read `skills/sdlc/templates/stage-3-evals.md` now** and run it. **Skip silently if no `eval.runner` is
-configured** — record `data.skipped_reason: "no eval.runner"`. Pure-docs work
+configured** — record `data.skipped_reason: "no eval.runner"`, append `generate-evals` to
+`run.json.stages_skipped` and set `data.skip_reasons.generate-evals: "no eval.runner"`. Pure-docs work
 degenerates cleanly into edit + commit.
 
 ## Stage 5 — Validate
@@ -297,8 +327,8 @@ first failure; 3-iteration budget). Writes one `validate.json`.
 ## Stage 5.7 — Adversarial review
 
 **Opt-in, permanently OFF by default — resolve the gate before loading anything.** ON only on an
-`pipeline.review_fix.enabled: true`; `--no-review` always wins OFF. When OFF, do not load the template — append `review` to `run.json.stages_skipped` and go
-to Stage 6. When ON, **read `skills/sdlc/templates/stage-5.7-review-fix.md` now** and run it: it
+`pipeline.review_fix.enabled: true`; `--no-review` always wins OFF. When OFF, do not load the template — append `review` to `run.json.stages_skipped` (reason in
+`data.skip_reasons.review`) and go to Stage 6. When ON, **read `skills/sdlc/templates/stage-5.7-review-fix.md` now** and run it: it
 carries the lens fan-out and its cost knobs, the reviewer-model axis and its cap caveat, the verify
 pass and the circuit breaker. Runs after Stage 5, before Stage 6; writes `stage-outputs/review.json`.
 
@@ -312,7 +342,7 @@ HIGH-finding posture and the post-fix re-validation rule live there.
 **Opt-in, permanently OFF by default.** ON only via `pipeline.cleanup.enabled: true` or
 `--cleanup`; `--no-cleanup` always wins OFF. Auto-off when Stage 5 isn't green, `implement` was
 skipped, or the diff touched no code surface. When OFF, append `cleanup` to
-`run.json.stages_skipped` and skip to Stage 6 — do not load the template. When ON, **read
+`run.json.stages_skipped` (reason in `data.skip_reasons.cleanup`) and skip to Stage 6 — do not load the template. When ON, **read
 `skills/sdlc/templates/stage-5.9-cleanup.md` now** (two-lens fan-out, `safe_to_apply` rubric).
 
 ## Stage 6 — Hand off (no commit, no git writes)
@@ -324,9 +354,20 @@ as the pipeline produced it.
 
 **Read `skills/sdlc/templates/stage-6-handoff.md` now** and run it. It carries the secret
 scan, the diff report and suggested commit message, gotcha capture and the seam sentinel,
-the `TASKS.md` close-out and re-entry rows, and the terminal state write.
+the `TASKS.md` close-out and re-entry rows (reported, not written, under `pipeline.tasks.writer: "orchestrator"`), and
+the terminal state write.
 
 ## Stage 7 — Report
+
+**Degrade check (Claude only).** If `implement` is in `stages_completed` and the Stage 2 sidecar
+for the path taken — `implement.json` (single-agent) or `converge.json` (decomposed,
+`run.json.data.stage2_decomposed: true`) — is missing or lacks `data.dispatch`, the orchestrator
+did the work itself: after Stage 6's terminal write, write `run.json.data.degraded = {reason, missing}` and print `DEGRADED: <reason> — missing
+<what>` as the first line of the report. Leave `status` alone. Never load
+`stage-5.7-review-fix.md` for this.
+
+**Stage table.** Print one table: each stage as `ran` (in `stages_completed`) or `skipped:
+<reason>` (from `data.skip_reasons`).
 
 Summarize: branch the changes are sitting on (uncommitted), files changed,
 suggested commit message, eval pass/fail (or "skipped — no test surface"),
@@ -336,6 +377,8 @@ flow trace and whether it was witnessed or advisory (or "skipped — no plan tar
 Stage 6's `handoff.json` `data.tasks` — including `tasks: 0 closed (0 matched)` when
 nothing matched — this is the line that turns a silent close-out miss into a visible one;
 when `unmatched` is non-empty, add `(U unmatched — see /sdlc-status --reconcile)`.
+Under `writer: "orchestrator"` print `tasks: reported to orchestrator (N close, M add) — /sdlc-status --reconcile shows these rows open until applied` instead.
+List `data.shared` paths apart from the files changed, as `shared (stage by hunk)`.
 When `review.json.data.independence == "degraded"`, add the line `independence: degraded —
 findings surfaced only, never auto-fixed` (wording: `skills/sdlc/templates/stage-5.7-review-fix.md`
 "Independence enforcement").
@@ -357,7 +400,7 @@ every other stage runs unmodified.
 
 | Stage | Skill-repo behavior |
 |---|---|
-| Stage 3 — Generate evals | **skip** (no test surface) — append `generate-evals` to `run.json.stages_skipped` |
+| Stage 3 — Generate evals | **skip** (no test surface) — append `generate-evals` to `run.json.stages_skipped`, `data.skip_reasons.generate-evals: "skill repo, no test surface"` |
 | Stage 5 — Validate | **substitute the test half only** with `skills/sdlc/templates/stage-5-skill-repo.md` (HARD: validator, marketplace registration, template-reference resolution, setup.sh dry install; SOFT: line-count ceiling, README skills-table drift, overlay parity) — **the plan-vs-diff check stays on** whenever there is a plan target: requirements gate as normal, flow is advisory-only (no test evidence to witness it). Writes `validate.json` with `data.mode = "skill-repo"` |
 | Stage 5.7 — Adversarial review | **adapt when enabled, never self-skip** — still opt-in/OFF-by-default per Stage 5.7 above; when it's ON, a docs-only diff is the code surface here. Correctness and plan-alignment apply equally to prose; `security` applies its skill-repo shell-injection check; `config-env-docs` repoints to the frontmatter / marketplace / template-reference checks in `stage-5-skill-repo.md` |
 

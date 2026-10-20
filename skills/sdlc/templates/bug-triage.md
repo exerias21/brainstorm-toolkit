@@ -16,7 +16,7 @@ verdict per bug into `run.json.data.bug_triage[]` (`row`, `verdict`, `filed`).
 ## 2. Split, never block
 
 A bug is often both. Fix the fixable half in this run and file the human half as its own row
-rather than stalling the run or silently dropping it. Append the row to `TASKS.md` under
+rather than stalling the run or silently dropping it. Append the row to `TASKS.md` (under `pipeline.tasks.writer: "orchestrator"`, to `tasks_report.add` instead) under
 `Active / Pending` with the same priority, a title naming the decision or input needed, and
 ` — _manual_` in the trailer (the em-dash separator the row parser reads) (add `_followup: <why>_` when the fixable half is staying open
 too). The scope gate never takes a `_manual_` row, so it surfaces as "needs you" instead of
@@ -31,7 +31,7 @@ section 2. Record it in the hand-off as `MITIGATED: <symptom contained by ...>; 
 filed as <row title>`. Never report MITIGATED as fixed, and never close the original `_bug_`
 row for it: the filed root-cause row is what keeps the bug open. Stage 6 closes rows mechanically,
 so before it runs: set the original row back from `[~]` to `[ ]` (plan close-out only closes
-`[~]` rows), and remove its entry from `run.json.data.tasks.resolved[]` (a task-id or range
+`[~]` rows; skip this under `writer: "orchestrator"`, which marks none), and remove its entry from `run.json.data.tasks.resolved[]` (a task-id or range
 close-out closes every row listed there, whatever its state).
 
 ## 4. Verify by effect

@@ -34,12 +34,12 @@ can reach this stage on a different sidecar set than the run that first evaluate
 - **The diff is docs-only / touches no code surface** — per
   `skills/sdlc/templates/changed-files-gate.md`, none of `frontend`/`backend`/`data` is touched.
 
-Any of the three ⇒ append `cleanup` to `run.json.stages_skipped` (this file was already opened,
+Any of the three ⇒ append `cleanup` to `run.json.stages_skipped` with `data.skip_reasons.cleanup` set (this file was already opened,
 so also write `stage-outputs/cleanup.json` with `status: "skip"` and `data.skipped_reason` set)
 and go to Stage 6.
 
 **Scope is exactly `implement.json` `data.files_changed[].path`** (fall back to
-`changed-files-gate.md`'s `git diff` fallback only if that sidecar is absent) — **never** a
+`changed-files-gate.md`'s `git diff` fallback only if that sidecar is absent; it subtracts `data.dirty_at_start`) — **never** a
 repo-wide sweep. That is what `/dead-code-review` and `/repo-health` are for. Neither lens below
 may return, and the apply step must never act on, a finding whose `file` is outside this set.
 

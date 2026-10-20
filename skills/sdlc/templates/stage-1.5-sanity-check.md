@@ -120,6 +120,15 @@ Infer the project's patterns from its README, CLAUDE.md, and existing
 code before flagging. A check only fails if the project would actually
 need that step.
 
+Plan-section checks — skip each when its section is absent:
+7. `### Premises`: a premise about existing code whose cited `path:line` or symbol is absent,
+   or whose command result the code contradicts, is a `fail` (critical when the Direction
+   rests on it). A premise about code this plan creates is never failed as absent.
+8. `### Baseline & exit measurement`: fail unless it contains a backticked command.
+9. `### Pins and forward behaviour`: fail any `Pin:` line with no test name, path or literal
+   value, and any `Forward:` line sharing no file path or key with some implementation step.
+The exit number and `Forward:` behaviour describe the future; never fail them as not yet true.
+
 Report: [{check: "description", status: "pass/fail", detail: "..."}]
 ```
 

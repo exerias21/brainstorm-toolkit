@@ -21,6 +21,10 @@ the user before producing an implementation plan. For heavy autonomous product r
 
 ### Step 1: Understand the Seed
 
+**Operator questions (opt-in).** When `pipeline.question_advisor.enabled` is `true`, **read
+`skills/sdlc/templates/operator-gate.md` now** and run it before asking the operator anything
+in any step; the advisor pass runs inline here (no sub-agent seam, no hook). Otherwise never open it.
+
 **Planner nudge (once per session).** Read `models.planner` from `.claude/project.json`
 (`haiku|sonnet|opus|fable`; default `"opus"` when the file, key, or value is missing or
 invalid — never detect the host model). Print once: `Planning runs on your session model.
@@ -165,7 +169,8 @@ approach, help them stress-test it: "The one thing I'd want to think through is.
 Once the user has converged on a direction, produce a concrete plan:
 
 **Write the plan using `skills/brainstorm/templates/plan.md.template`** — read it now. It
-carries the full section set (Direction, Conventions & reuse, Implementation Steps,
+carries the full section set (Direction, Conventions & reuse, optional Premises, Baseline &
+exit measurement and Pins and forward behaviour, Implementation Steps,
 Cross-Module Touchpoints, Open Questions, Appendix: Alternatives Considered). Keep the headings
 verbatim: `/sdlc`'s Stage 0 parser finds implementation steps and files-to-change by those names.
 

@@ -3,7 +3,7 @@
 Loaded from Stage 6 step 3 only when `pipeline.action_items.reassess` is true **and** the
 `open_hash` from the last `waves` run differs from the bare file
 `.claude/pipeline/.action-items-hash`. The gate lives in `stage-6-handoff.md`; if you are here, it
-passed. This step **never fails Stage 6**: any error below ends the step, not the run.
+passed (it never passes under `pipeline.tasks.writer: "orchestrator"`: `tag` writes `TASKS.md`). This step **never fails Stage 6**: any error below ends the step, not the run.
 
 The deterministic rules in `close-tasks.sh waves` cannot see a dependency or conflict that no
 `Files:` line names. One agent proposes `_after:` / `_lane:` / `_conflicts:` tags for those;

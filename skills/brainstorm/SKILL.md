@@ -43,6 +43,10 @@ Recommended: <planner> — switch before the clarifying rounds if you aren't on 
 
 ### Step 1: Understand the Seed
 
+**Operator questions (opt-in).** When `pipeline.question_advisor.enabled` is `true`, **read
+`skills/sdlc/templates/operator-gate.md` now** and run it before asking the operator anything
+in any step. Otherwise never open it.
+
 Start by understanding what the user wants to explore. If they gave a topic with `/brainstorm`,
 use that as the seed. Otherwise, ask.
 
@@ -190,7 +194,8 @@ approach, help them stress-test it: "The one thing I'd want to think through is.
 Once the user has converged on a direction, produce a concrete plan. Structure it as:
 
 **Write the plan using `skills/brainstorm/templates/plan.md.template`** — read it now. It
-carries the full section set (Direction, Conventions & reuse, Implementation Steps,
+carries the full section set (Direction, Conventions & reuse, optional Premises, Baseline &
+exit measurement and Pins and forward behaviour, Implementation Steps,
 Cross-Module Touchpoints, Open Questions, Appendix: Alternatives Considered) and the notes on
 what belongs in each. Keep the headings verbatim: `/sdlc`'s Stage 0 parser finds
 implementation steps and files-to-change by those names.

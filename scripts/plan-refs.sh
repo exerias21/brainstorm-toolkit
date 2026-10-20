@@ -6,26 +6,38 @@
 # writes the reference into a string literal instead -- is exactly the case prose cannot catch.
 # This scan reads only the added lines, so references already in the repo never block a run.
 #
-#   plan-refs.sh scan --base <commit> [--slug <plan-slug>] [--file TASKS.md]
+#   plan-refs.sh scan --base <commit> [--slug <plan-slug>] [--file TASKS.md] [--exclude-file FILE]
 #     Scans ADDED lines (`git diff -U0 <base>` plus untracked files in full) in code files only
 #     (not *.md/*.mdx/*.txt/*.rst, plans/, docs/plans/, TASKS.md, GOTCHAS.md, DECISIONS.md,
-#     ACTION_ITEMS.md, CHANGELOG*, .claude/). Prints {hits:[{file,line,text,pattern}],
+#     ACTION_ITEMS.md, CHANGELOG*, .claude/). --exclude-file names a file of repo-relative paths (one per
+#     line) to leave out: in a shared worktree they are another session's uncommitted edits.
+#     Prints {hits:[{file,line,text,pattern}],
 #     scanned_files:N} on stdout. Read-only. Exits 0 always -- the caller decides what a hit means.
 set -u
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 SUBCMD="${1:-}"
 [ "$#" -gt 0 ] && shift
-BASE=""; SLUG=""; TFILE="TASKS.md"
+BASE=""; SLUG=""; TFILE="TASKS.md"; XFILE=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --base) BASE="${2:-}"; shift 2 ;;
-    --slug) SLUG="${2:-}"; shift 2 ;;
-    --file) TFILE="${2:-}"; shift 2 ;;
+    --base|--slug|--file|--exclude-file)
+      if [ "$#" -lt 2 ]; then
+        echo "plan-refs.sh: $1 needs a value" >&2
+        echo "usage: plan-refs.sh scan --base <commit> [--slug <plan-slug>] [--file TASKS.md] [--exclude-file FILE]" >&2
+        exit 2
+      fi
+      case "$1" in
+        --base) BASE="$2" ;;
+        --slug) SLUG="$2" ;;
+        --file) TFILE="$2" ;;
+        --exclude-file) XFILE="$2" ;;
+      esac
+      shift 2 ;;
     *) echo "plan-refs.sh: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
 if [ "$SUBCMD" != "scan" ] || [ -z "$BASE" ]; then
-  echo "usage: plan-refs.sh scan --base <commit> [--slug <plan-slug>] [--file TASKS.md]" >&2
+  echo "usage: plan-refs.sh scan --base <commit> [--slug <plan-slug>] [--file TASKS.md] [--exclude-file FILE]" >&2
   exit 2
 fi
 PYCORE="$(mktemp)"
@@ -33,7 +45,7 @@ trap 'rm -f "$PYCORE"' EXIT
 cat > "$PYCORE" <<'PYEOF'
 import json, os, re, shutil, subprocess, sys
 
-base, slug, tfile = sys.argv[1], sys.argv[2], sys.argv[3]
+base, slug, tfile, xfile = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 GIT = shutil.which("git") or "git"
 
 def git(*args):
@@ -45,8 +57,23 @@ SKIP_NAMES = {"tasks.md", "gotchas.md", "decisions.md", "action_items.md"}
 SKIP_PREFIX = ("plans/", "docs/plans/", ".claude/")
 tbase = os.path.basename(tfile).lower()
 
+excluded = set()
+if xfile:
+    try:
+        with open(xfile, encoding="utf-8-sig") as fh:
+            for l in fh:
+                l = l.strip().replace("\\", "/")
+                if l.startswith("./"):
+                    l = l[2:]
+                if l:
+                    excluded.add(l)
+    except (OSError, UnicodeDecodeError):
+        print("plan-refs.sh: cannot read exclude file: " + xfile, file=sys.stderr)
+
 def skipped(path):
     p = path.replace("\\", "/")
+    if p in excluded:
+        return True
     name = os.path.basename(p).lower()
     if os.path.splitext(name)[1] in SKIP_EXT:
         return True
@@ -126,5 +153,5 @@ for path in sorted(added):
                 hits.append({"file": path, "line": lineno, "text": text.strip()[:200], "pattern": name})
 print(json.dumps({"hits": hits, "scanned_files": scanned}, ensure_ascii=False))
 PYEOF
-bash "$SELF_DIR/py.sh" "$PYCORE" "$BASE" "$SLUG" "$TFILE"
+bash "$SELF_DIR/py.sh" "$PYCORE" "$BASE" "$SLUG" "$TFILE" "$XFILE"
 exit 0

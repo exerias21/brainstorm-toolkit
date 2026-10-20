@@ -97,14 +97,15 @@ across the last 20 runs in `.claude/pipeline/_review-stats.json`. A lens under 4
 is auto-demoted from the default fan-out (logged in `review.json.data.demoted_lenses`); re-promoted
 after 5 consecutive runs at ≥60%.
 
-**Diff size is not bounded here.** Each lens reviews the whole diff. The levers that actually
+**Diff size is not bounded here.** Each lens reviews this run's whole diff, scoped to the filtered `files_changed[].path` list (`implement.json`, or `converge.json` when decomposed) that you pass into every lens prompt — never the whole tree, or another session's uncommitted files become findings. The levers that actually
 exist are the fan-out ones above — `agents.code_review_lenses` and `agents.code_review_max_lenses`
 — plus keeping the plan small enough that one run's diff is reviewable.
 
 **Writes** `stage-outputs/review.json`. `review` is appended to `run.json.stages_completed`
 whenever this stage actually ran (even with zero findings). A self-skip (never opted in, opted out
 via `--no-review`/`enabled: false`, or the docs-only/no-surface auto-off gate in a
-**non**-skill-repo run) is recorded in `run.json.stages_skipped` instead.
+**non**-skill-repo run) is recorded in `run.json.stages_skipped` instead, with
+`data.skip_reasons.review` set.
 
 ## Stage 5.8 — Fix loop
 
@@ -254,7 +255,7 @@ value -- not a separately-computed number. `deferred_debt` entries are out-of-sc
 incidentally during review (each with a `debt_hash` dedup key, auto-appended once each to
 `TASKS.md`). **If `confirmed` is empty, OR `pipeline.review_fix.mode` is `"off"`, Stage 5.8 is
 skipped entirely** -- no `review-fix.json` is written. On the prose/overlay paths, `review-fix` is
-recorded in `run.json.stages_skipped` for this self-skip.
+recorded in `run.json.stages_skipped` for this self-skip, with `data.skip_reasons.review-fix` set.
 
 #### `review-fix` (Stage 5.8 -- single cumulative sidecar; only when `review.json.confirmed` is non-empty)
 ```json

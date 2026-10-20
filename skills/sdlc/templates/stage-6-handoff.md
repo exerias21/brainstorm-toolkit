@@ -14,9 +14,12 @@ order is the difference between "usually closes" and "closes."
    get a `⚠ HIGH:` prefix and a note that GitHub Push Protection on public
    remotes may reject a later push — worth scrubbing before you commit.
 
-2. **Report the diff, don't commit it.** Show `git diff --stat`, the list of
-   files changed, and a **suggested** commit message. Leave the working tree
-   exactly as the pipeline produced it.
+2. **Report the diff, don't commit it.** Build the file list and the suggested `git add` from the
+   sidecar's filtered `files_changed` (`implement.json`, or `converge.json` when decomposed), never from
+   `git diff --stat` — the stat also counts another session's uncommitted files. Show per-file
+   `git diff --stat -- <those paths>`, the list, and a **suggested** commit message. Print each
+   `shared: true` path apart as `shared (stage by hunk): <path>` and leave it out of the `git add` line;
+   record them in `handoff.json` `data.shared`. Leave the working tree exactly as the pipeline produced it.
    ```
    Suggested commit (run yourself when ready):
      git add <files>
@@ -32,7 +35,10 @@ order is the difference between "usually closes" and "closes."
    or one bundle). Sanity-check (1.5) ran once up front; Stage 5's plan check and
    flowsim trace ran once at the end over the shared parent plan.
 
-3. **Close out — via the script, not by hand.** A procedural script does the flip so the
+3. **Close out — via the script, not by hand.** Under `run.json.data.tasks.writer: "orchestrator"` this
+   step only **reports**: skip every `TASKS.md` write below and go to **Report-rows mode** at the end of
+   this step.
+ A procedural script does the flip so the
    close-out can't be forgotten or drift between runtimes: run
    `bash scripts/close-tasks.sh close --file TASKS.md --scope <plan|resolved> ...` and read
    its JSON result back — never edit `TASKS.md` checkbox state directly here. (`setup.sh`
@@ -77,7 +83,8 @@ order is the difference between "usually closes" and "closes."
    genuinely matched zero rows, that's an empty `matched`/`closed`/`unmatched` — expected, not
    a miss; say so in the report rather than treating it as an error.
 
-   **Regenerate the action items — right after close-out, before step 4.** Run
+   **Regenerate the action items — right after close-out, before step 4** (skipped under `writer:
+   "orchestrator"`: `waves --write` and the reassess tags write `TASKS.md`-derived files and rows). Run
    `bash scripts/close-tasks.sh waves --file TASKS.md --gate` and read its `{enabled, file, reason}`:
    the rule is off if `pipeline.action_items.enabled` is `false` (a veto, whatever files exist), on
    if `true`, and when absent on only if the file named by `pipeline.action_items.file` (default
@@ -105,7 +112,7 @@ order is the difference between "usually closes" and "closes."
    and print `Next: /sdlc-status --reconcile` inline as the same graceful-degrade fallback
    every other seam write uses.
 
-   **Also leave re-entry rows** so the queue keeps the follow-up (`/sdlc`
+   **Also leave re-entry rows** (under `writer: "orchestrator"` they go to `tasks_report.add` instead) so the queue keeps the follow-up (`/sdlc`
    opens no PR, so these are conditioned on delivery, not a PR number): when the
    changed-files gate flagged the **deploy-delta** surface, append
    `- [ ] (P1) rebuild <env> for <slug> (dependency change — rebuild, not restart) — plans/<slug>.md`;
@@ -125,6 +132,17 @@ order is the difference between "usually closes" and "closes."
    Open:   http://localhost:3000                            # stack.url
    ```
 
+   **Report-rows mode (`writer: "orchestrator"` only).** Write the resolved needles from
+   `run.json.data.tasks.resolved[]` (the scope gate wrote them for a plan-file run) one per line to a temp
+   file and run `bash scripts/close-tasks.sh close --file TASKS.md --scope resolved --ids-file <file> --dry-run`
+   (works for every input shape; read-only, `[ ]` and `[~]` rows both match). Build
+   `tasks_report = {close: <its closed[]>, add: [...]}` where `add` holds the full text of every row the run
+   would have appended — the re-entry rows above, the unattached `_manual_` row (`bug-triage.md`), the
+   soft-stop debt row (`changed-files-gate.md`), the doc-drift row (`convention-grounding.md`) and an
+   ad-hoc description's own row. Print both lists. Write `tasks_report` **before** `handoff.json`, as its
+   `data.tasks_report` (omit `data.tasks`). Say in the hand-off line that `/sdlc-status --reconcile` reports
+   these rows open until the orchestrator applies the report.
+
    **State write — right here, before step 4.** `stage-outputs/handoff.json` =
    `{branch, files_changed[], committed: false, suggested_commit_msg, data: {tasks: {match_key,
    matched[], closed[], moved[], unmatched[]}, waves: {summary, overlaps[], rejected[]}}}`
@@ -140,7 +158,7 @@ order is the difference between "usually closes" and "closes."
    `unmatched` was non-empty) — so `/sdlc-status` recovers the handoff after the fire-once
    sentinel; omit when there's none. This holds for **retro / validation-only runs** too
    (Stage 2 skipped because the code already landed): advance `run.json.stage`/`stages_completed`
-   as each validation sidecar is written, add `implement` to `stages_skipped`, and close on a
+   as each validation sidecar is written, add `implement` to `stages_skipped` (`data.skip_reasons.implement`: why), and close on a
    terminal `status` — never leave a `parse`-stage envelope `in_progress` with sidecars already
    on disk.
 

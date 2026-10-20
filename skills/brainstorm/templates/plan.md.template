@@ -1,6 +1,7 @@
 <!-- The plan file /brainstorm writes at Step 6, and the shape /sdlc parses at Stage 0.
      Loaded by skills/brainstorm/SKILL.md Step 6. Keep the section headings stable: the
-     pipeline's plan parser looks for Direction, Conventions & reuse, Implementation Steps,
+     pipeline's plan parser looks for Direction, Conventions & reuse, Premises, Baseline & exit
+     measurement, Pins and forward behaviour (the last three optional), Implementation Steps,
      Cross-Module Touchpoints and Open Questions by name. -->
 
 ## Brainstorm Result: [Feature Name]
@@ -16,6 +17,20 @@ implementation follows the repo instead of reinventing it:
 - Reuse: <existing module/helper/type> for <purpose> — `path`
 - New (justified): <thing>, because <no existing pattern fits>
 - Doc drift: <AGENTS.md/CLAUDE.md says X but the code does Y>   (omit if none)
+
+### Premises
+The facts this plan rests on, one bullet each, with `path:line` or a command and its result.
+Omit when empty.
+- <fact> — `path:line`, or `<command>` → <result>
+
+### Baseline & exit measurement
+What is measured before work starts and what says it is done: the backticked command, today's
+number, then the exit number. Omit when empty.
+
+### Pins and forward behaviour
+Omit when empty.
+- Pin: <behaviour that must not change> — guarded by <test name, path or literal value>
+- Forward: <behaviour that changes for every later run> — <file path or key it touches>
 
 ### Implementation Steps
 Numbered list of concrete steps, each with:

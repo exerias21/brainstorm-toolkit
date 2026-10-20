@@ -90,13 +90,18 @@ Updated whenever the pipeline transitions stages. Always reflects the *current* 
 | `status` | enum | yes | One of `in_progress`, `complete`, `failed`, `paused`. `paused` means the pipeline stopped and `--resume` would pick it up. |
 | `stages_completed` | string array | yes | In execution order. Each name appears once. A stage is "completed" when its sidecar's status is `pass` — **except `secret-scan`, which writes no sidecar by design** (`secret-scan.md`) and is appended here by name alone. Don't treat "has a passing sidecar" and "is in `stages_completed`" as interchangeable. |
 | `stages_skipped` | string array | yes | Stages explicitly skipped (e.g., stages skipped because their config was absent, or skill-repo-mode skips). Distinct from "not yet run." |
+| `data.skip_reasons` | object | optional | Additive. `{"<stage>": "<reason>"}`, one entry for every name in `stages_skipped`, written at the same moment as the append. `stages_skipped` stays a string array. Stage 7 prints each stage as `ran` (in `stages_completed`) or `skipped: <reason>`. A name with no entry prints `skipped: (no reason recorded)`. |
+| `data.degraded` | object | optional | Additive, Claude only. `{"reason": "...", "missing": "..."}`, written by Stage 7 after Stage 6's terminal write, when `implement` is in `stages_completed` and the Stage 2 sidecar for the path taken (`implement.json` single-agent, or `converge.json` when `data.stage2_decomposed: true`) is missing or lacks `data.dispatch`. `status` is unchanged — consumers branch on it. Absent on a healthy run and on Copilot/Codex, which implement inline. |
 | `next_action` | object | optional | Additive. `{"cmd": "...", "confirm": bool}`, mirroring a `.next-action` sentinel line, recording the next step this run proposed when it finished/paused. Lets `/sdlc-status` recover the proposed handoff from the envelope even after the fire-once sentinel was consumed. **This is a `/sdlc-status` *fallback*, read on demand — it is NOT what the Stop hook auto-surfaces.** The `.next-action` **sentinel** is the only thing the hook reads; a park must write the sentinel too, never rely on this field alone. Absent when the run proposed no next action. |
 | `data.stage2_decomposed` | bool | optional | Set at Stage 2a. `true` when the gate fanned Stage 2 into per-lane subagents; `false` (or absent) for the single-agent path. Absent on runs written before this field existed. |
 | `data.lanes` | string array | optional | Lane names from Stage 2a (e.g. `["data", "backend", "frontend"]`), in dependency dispatch order. `[]` when not decomposed. |
 | `data.cost` | object | optional | Written once by `scripts/hooks/run-cost-report.sh` when a run reaches a terminal state (fire-once, same run as the `.cost-reported` marker). `{turns:int, avg_context_tokens:int, peak_context_tokens:int, cache_read_tokens:int, estimated_usd:float, reported_at:"<ISO 8601 UTC, second precision>"}`. Additive; the hook reads the whole file and rewrites only this key, so it never touches `plan_hash` or any other field `--resume` validates. Absent on runs from before this field existed, or when the transcript/parser was unavailable. |
 | `data.protected_tests` | object | optional | Written by `scripts/protect-tests.sh arm`, keyed by repo-relative test file path, each value `"sha256:<hex>"` — same string form as `plan_hash`. `verify` recomputes and compares; `disarm` clears the key. Detector only: proves a protected test file's bytes changed since arming, does not prevent a rewrite. Absent when `/task` never armed a test for this run. |
 | `data.adopted_from` | string | optional | Set to `"task"` when `/sdlc` adopted a `/task`-written envelope (Stage 0 case 4) instead of initializing its own. Additive; absent on every run that initialized its own envelope. |
-| `data.tasks.resolved` | string array | optional | Written at Stage 0 for a task-id / task-range / ad-hoc-description run, or at envelope creation for a `--queue` item (`skills/sdlc/templates/queue-mode.md`) — one entry per resolved row, each a substring unique to that row (its linked `plans/tasks/task-N-<slug>.md` path is the natural choice; otherwise a unique substring of the row text). Absent for a plan-file run, which closes by `_plan:` key instead. Stage 6 reads this array verbatim and closes **exactly** these rows via `close-tasks.sh close --scope resolved --ids-file`, never a fuzzy match — a queue item's row must never share this scope with its siblings even when they share one `_plan:` key. Not to be confused with `stage-outputs/handoff.json`'s `data.tasks` (the close script's *output* object, `{match_key, matched[], closed[], moved[], unmatched[]}`) — this is the run.json *input* array Stage 6 feeds to it. |
+| `data.tasks.resolved` | string array | optional | Written at Stage 0 for a task-id / task-range / ad-hoc-description run, or at envelope creation for a `--queue` item (`skills/sdlc/templates/queue-mode.md`) — one entry per resolved row, each a substring unique to that row (its linked `plans/tasks/task-N-<slug>.md` path is the natural choice; otherwise a unique substring of the row text). Absent for a plan-file run, which closes by `_plan:` key instead — except under `data.tasks.writer: "orchestrator"`, where the scope gate records the taken rows here instead of marking them `[~]`. Stage 6 reads this array verbatim and closes **exactly** these rows via `close-tasks.sh close --scope resolved --ids-file`, never a fuzzy match — a queue item's row must never share this scope with its siblings even when they share one `_plan:` key. Not to be confused with `stage-outputs/handoff.json`'s `data.tasks` (the close script's *output* object, `{match_key, matched[], closed[], moved[], unmatched[]}`) — this is the run.json *input* array Stage 6 feeds to it. |
+| `data.dirty_at_start` | object | optional | Written once at envelope creation, never on `--resume`: `{"<repo-relative path>": "<git hash-object of the file, or \"deleted\">"}` for every path `git status --porcelain -z --untracked-files=all` listed (a rename lists its new path and its old one), excluding `.claude/pipeline/`. It is the other session's uncommitted work: the single filter after Stage 2 drops each path whose current hash still equals the recorded one from `files_changed`, and `plan-refs.sh` skips the same paths. Absent on runs from before this field existed. |
+| `data.live_envelopes` | string array | optional | Written with `data.dirty_at_start`: slugs of the other `.claude/pipeline/*/run.json` with `status: "in_progress"`. Informational only — a crashed run stays `in_progress` — nothing gates on it. |
+| `data.tasks.writer` | string | optional | `"self"` or `"orchestrator"`, the resolved `pipeline.tasks.writer`, recorded at Stage 0. Under `"orchestrator"` the run never edits `TASKS.md`; Stage 6 writes `handoff.json` `data.tasks_report` instead. Absent ⇒ `"self"`. |
 | `data.bug_triage` | object array | optional | Written at Stage 0 only when a taken or resolved row carries `_bug_` (`skills/sdlc/templates/bug-triage.md`). One entry per bug row: `{row, verdict: "fixable"\|"needs-a-human"\|"mitigated"\|"unverified", filed: "<title of any _manual_ row filed for the human half, or null>"}`. Absent on runs with no bug rows. |
 | `data.scope_gate` | object | optional | Written by the Stage 0 scope gate (`skills/sdlc/templates/scope-gate.md`) for plan-file runs only; absent for task-id/range/ad-hoc/`--queue` runs and for `--no-scope-gate`. `{plan_total_steps:int, plan_phases:int, taken:"<free text, e.g. \"phase 3 (steps 11-14 — 5 rows)\">", taken_phases:[int], parked:[...], deferred:[...], why:"...", resume:"<cmd>"}`. `taken_phases` is the machine-readable counterpart to the free-text `taken` — the integer phase number(s) actually taken this run, and it is what `close-tasks.sh reconcile`'s phase-aware check reads to tell a legitimately-parked later phase from one that should already be closed. **Accumulate, never overwrite:** a re-run of `/sdlc <plan>` reuses the plan's slug and so overwrites this same envelope file — before writing, union this run's newly-taken phase(s) into the prior envelope's `taken_phases` (when that file still exists and already has one), or a second-phase run forgets the first phase was taken. Envelopes written before this field existed have no `taken_phases` at all; `reconcile` keeps its pre-existing (unrefined) behavior for those. |
 
@@ -170,9 +175,14 @@ Below is the shape each stage's `data` field is expected to take. These are the 
   "feature_name": "Add Orders Endpoint",
   "files_to_change": ["api/routes/orders.py", "..."],
   "implementation_step_count": 6,
-  "acceptance_criteria_count": 4
+  "acceptance_criteria_count": 4,
+  "premises": ["Router registers in api/app.py:12"],
+  "baseline": "`pytest -q` -> 41 passed; exit: 44 passed",
+  "pins": [{"kind": "pin", "text": "..."}, {"kind": "forward", "text": "..."}]
 }
 ```
+`premises`, `baseline` and `pins` are additive: absent on older runs, and `[]` / `null` / `[]`
+when the plan has no such section.
 
 #### `sanity-check`
 ```json
@@ -197,16 +207,21 @@ Below is the shape each stage's `data` field is expected to take. These are the 
   ],
   "total_added": 60,
   "total_removed": 0,
-  "blockers_reported": []
+  "blockers_reported": [],
+  "dispatch": { "agent_id": "<id from the dispatch result>", "model": "sonnet" }
 }
 ```
+
+`files_changed` is filtered once (after the single-agent write, or after 2c converge): a `data.dirty_at_start` path whose current hash still equals the recorded one is dropped; one whose hash changed stays with `"shared": true`, because this run edited a file that already held another session's changes.
+
+`data.dispatch` is Claude only: the implement agent's id and tier from the dispatch result, written by the orchestrator. The file's existence proves nothing (the orchestrator writes it); `dispatch` is the evidence an agent ran. Absent on Copilot/Codex.
 
 #### `decompose` / `implement-<lane>` / `converge` (decomposed path only)
 Shapes are the agent output contracts in `stage-2a-decompose.md`, `stage-2b-dispatch.md` and
 `stage-2c-converge.md`. Two rules live here: on the `single-agent` path no `decompose.json` is
 written — the gate inputs are summarized in `implement.json`'s `summary`; and the canonical
 stage name in `run.json.stages_completed` is `implement`, recorded once after 2c, never per
-lane.
+lane. On Claude, `converge.json` also carries `data.dispatch`: `[{lane, agent_id, model}]`, one per lane.
 
 #### `generate-evals`
 ```json
@@ -292,7 +307,9 @@ still gates. Both arrays are absent, same as standard mode, when there was no pl
   "committed": false,
   "suggested_commit_msg": "feat: add orders endpoint",
   "data": {
+    "shared": [],
     "tasks": {},
+    "tasks_report": {"close": [], "add": []},
     "waves": {
       "summary": {"now": 1, "lanes": 2, "next": 3, "needs_you": 0, "unknown_files": 1, "conflicts": 0},
       "overlaps": [],
@@ -305,6 +322,8 @@ still gates. Both arrays are absent, same as standard mode, when there was no pl
 the tree for the user. `committed` is always `false`.
 
 `data.tasks` is the close script's output object — shape in the `data.tasks.resolved` row above.
+`data.shared` lists the `files_changed` paths flagged `shared`; they stay in `files_changed` and are printed apart, to be staged by hunk.
+`data.tasks_report` is present only under `data.tasks.writer: "orchestrator"` (and then `data.tasks` is omitted): `close` holds the row texts `close-tasks.sh close --scope resolved --dry-run` reported, `add` the full text of each row the run would have appended.
 `data.waves` is optional and absent when action items are off or `scripts/close-tasks.sh` is
 missing: `summary` and `overlaps[]` are copied from `close-tasks.sh waves` (never its full JSON —
 `docs/BOARD-JSON.md`), and `rejected[]` holds reassess proposals that failed verification as

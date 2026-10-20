@@ -103,12 +103,15 @@ implements, Opus reviews, plus the gotchas file and the module list:
 | `pipeline.scope` | How is an oversized plan cut? | `max_steps_per_run` is the fallback cut for a plan with no phase headings. |
 | `pipeline.loop` | How does `--queue` and the auto-continue loop behave? | `max_items`, `batch_size`, `max_hops`, `auto_continue` (off by default). |
 | `pipeline.fix_loop` | Should the last fix attempt escalate a tier? | `escalate_last`, off by default. |
+| `pipeline.implement` | Which extra rules bind every implement, lane and fix agent? | `must_follow`: a string list quoted word for word into the briefs. Two built-ins are always on (one background test run, never a polling loop; the repo's formatter on changed files only). |
 | `pipeline.cleanup` | Is the cleanup pass on? | `enabled` and `mode`, off by default. |
 | `pipeline.output` | How chatty is the run? | `verbosity`: `quiet` (default) or `normal`. |
 | `pipeline.stop_gate` | Should a red `test.unit` block the Stop event mid-run? | `"off"` (default) or `"tests"`; `stop_gate_timeout` is in seconds. Claude and Codex only. |
+| `pipeline.question_advisor` | Should an advisor vet questions before the operator is asked? | `enabled` (off by default), `gate` (Claude only: a hook denies questions the advisor did not approve), `measure_first` (sources checked before asking). Covers the question tool only, not plain-text questions. |
 | `pipeline.enforce_cap` | Should `models.cap` be enforced by a hook? | Claude only. Rewrites an over-cap dispatch to the cap; the reviewer is exempt. |
 | `pipeline.action_items` | Do you want the generated `ACTION_ITEMS.md` waves? | `enabled`, `file`, `reassess`, `hub_threshold`, `ignore_conflict_files`, `max_bugs_per_lane`. See the reference below. |
 | `pipeline.tasks.close_in_place` | Should closed rows stay on their lines? | `true` flips a closed row to `[x]` where it stands, so `TASKS.md:N` citations stay valid. |
+| `pipeline.tasks.writer` | Who edits `TASKS.md` during a run? | `"self"` (default) or `"orchestrator"`: a delegated run only reports the rows to close and add. |
 | `discipline` globs | Which paths count as frontend, backend, data, docs, deploy-delta? | Override only for a non-standard layout; see below. |
 | `migrations` | Where are migrations, and how do I tell what is applied? | `/repo-health` only. `dir` and `applied_check`. |
 | `gotchas_file` | Where do pitfalls live? | Default `GOTCHAS.md`. |
@@ -327,6 +330,7 @@ map-valued keys such as `models.sanity` as `null`, so the check does not look in
     "enforce_cap": false,
     "stop_gate": "off",
     "stop_gate_timeout": 300,
+    "question_advisor": { "enabled": false, "gate": false, "measure_first": [] },
     "scope": {
       "max_steps_per_run": 8
     },
@@ -359,7 +363,8 @@ map-valued keys such as `models.sanity` as `null`, so the check does not look in
       "reassess": false
     },
     "tasks": {
-      "close_in_place": false
+      "close_in_place": false,
+      "writer": "self"
     }
   }
 }
@@ -415,6 +420,7 @@ different reviewer catches what it missed and keeps the review independent.
 | `repo_health` | `/repo-health` checks (string or per-check map) | each check's built-in tier |
 | `docstring_sync` | `/docstring-sync` triage + rewrite | `sonnet` |
 | `hunt` | `/repo-health --hunt` lenses (consolidator runs on `code_review`, Axis 2) | `sonnet` |
+| `question_advisor` | `question-advisor` dispatch before operator questions (`pipeline.question_advisor.enabled`) | `sonnet` |
 | `code_review`, `code_review_second_pass` | Axis 2: Stage 5.7 reviewers (never capped) | `opus`, `sonnet` |
 | `planner` | advisory session-model nudge | `opus` |
 
@@ -505,6 +511,11 @@ found verbatim in the plan, through `close-tasks.sh tag`. Model tier follows
 stands instead of moving to `## Done`, so `TASKS.md:N` line citations stay valid. `moved[]` is empty in
 that mode.
 
+`pipeline.tasks.writer` (default `"self"`) is read at Stage 0 and Stage 6. `"orchestrator"` is for a run an
+orchestrator delegates: the run marks no row `[~]` and writes no row, and Stage 6 lists the rows to close and add in
+`handoff.json` `data.tasks_report` for the orchestrator to apply. `/sdlc-status --reconcile` reports those rows as
+open until it does, and `--queue` refuses this mode.
+
 ### Which skill reads which key
 
 | Skill | Reads |
@@ -522,6 +533,7 @@ that mode.
 | `/sdlc`, `/brainstorm`, `/brainstorm-team`, `/dead-code-review`, `/repo-health`, `/docstring-sync` | `models.cap` (sub-agent tier ceiling; absent = none) |
 | `/sdlc` | `models.sanity` + `agents.sanity_focuses` (Stage 1.5 pre-flight, per focus; never gated, so it runs every time) |
 | `/sdlc` Stage 5 fix loop | `pipeline.fix_loop.escalate_last` (final-iteration escalation; excluded from Stage 5.7/5.8) |
+| `/sdlc` Stage 0, Stage 6 | `pipeline.tasks.writer` |
 | `/sdlc` Stage 6 | `pipeline.tasks.close_in_place` |
 | `/sdlc` Stage 6, `--queue` | `pipeline.action_items.enabled`, `.file`, `.reassess` (regenerate `ACTION_ITEMS.md`; queue selects from the now wave; `reassess` opt-in) |
 | `/sdlc` | `models.code_review`, `models.code_review_second_pass`, `agents.code_review_*` (axis 2; never capped) |
@@ -535,6 +547,7 @@ that mode.
 | `/sdlc-status` | `pipeline.action_items.enabled`, `.file` (the waves line); otherwise reads TASKS.md and `.claude/pipeline/` directly |
 | `scripts/py.sh` (every shipped Python invocation) | `python` |
 | `scripts/hooks/enforce-model-cap.sh` (Claude `PreToolUse(Agent)`) | `pipeline.enforce_cap`, `models.cap` |
+| `scripts/hooks/ask-gate.sh` (Claude `PreToolUse(AskUserQuestion)`) | `pipeline.question_advisor.gate` |
 | `scripts/hooks/stop-gate.sh` (Claude/Codex `Stop`) | `pipeline.stop_gate`, `pipeline.stop_gate_timeout`, `test.unit`, `pipeline.loop.max_hops` |
 | `scripts/hooks/run-cost-report.sh` (Claude/Codex `Stop`) | `pipeline.context.cost_report` |
 | `/sdlc` Stage 5.9 | `pipeline.cleanup.*`, `agents.cleanup_lenses`, `agents.cleanup_max_lenses` |

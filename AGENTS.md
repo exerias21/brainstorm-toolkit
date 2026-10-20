@@ -236,7 +236,7 @@ Each stage's body lives in **one** template there — `output-verbosity`, `resum
 `stage-1.5-sanity-check`, `stage-2-gate`, `stage-2-implement`, `stage-2a/2b/2c`,
 `stage-3-evals`, `fix-loop`, `stage-5-validate`, `stage-5.7-review-fix`, `stage-5.9-cleanup`,
 `stage-6-handoff`, `secret-scan`, `stage-5-skill-repo`, `changed-files-gate`, `scope-gate`,
-`convention-grounding`, `envelope-staleness`, `models`, `state-schema` — and
+`convention-grounding`, `envelope-staleness`, `models`, `state-schema`, `operator-gate` — and
 `skills/sdlc/SKILL.md` stays thin per stage: a short
 framing paragraph, the gate/skip rule that decides *whether* to run, and a
 `**Read skills/sdlc/templates/<x>.md now**` pointer.
@@ -271,9 +271,9 @@ exercises the full install/re-run/uninstall round trip against a scratch `HOME`.
 ### When a rule earns a hook, not just prose
 
 A skill is an advisory control — it can only ask the model to follow it. The hooks in
-`scripts/hooks/` exist because sometimes that isn't enough — three are policy controls
-(`enforce-model-cap.sh`, `stop-gate.sh`, `next-action.sh`) and two are context/observability
-(`reseed-context.sh`, `run-cost-report.sh`), which is the distinction this section cares
+`scripts/hooks/` exist because sometimes that isn't enough — the policy controls are
+`enforce-model-cap.sh`, `ask-gate.sh`, `stop-gate.sh` and `next-action.sh`, and the context/observability hooks are
+`reseed-context.sh` and `run-cost-report.sh`, which is the distinction this section cares
 about: **a skill is an advisory control while a hook is the deterministic layer behind it.**
 The failure that motivates
 this is measured, not hypothetical: an audited `/sdlc` run said `**Read
@@ -313,8 +313,8 @@ magnitude under the Workflow's 1,398. Worked examples: `docs/ENFORCEMENT.md`.
 Sub-agent definitions are a **different artifact from skills**, with their own failure mode.
 An earlier four-agent set went almost entirely undispatched: every dispatch site named
 `subagent_type: general-purpose` and pasted the role prompt in from a template, so the agent
-files sat there costing maintenance and buying nothing. The three that survive
-(`test-runner`, `e2e-test-runner`, `plan-conformance-validator`) are each named at a real
+files sat there costing maintenance and buying nothing. The ones that survive
+(`test-runner`, `e2e-test-runner`, `plan-conformance-validator`, `question-advisor`) are each named at a real
 site — check that before adding a fourth.
 
 **The rule:**

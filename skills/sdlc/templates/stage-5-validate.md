@@ -23,6 +23,11 @@ do not need 400 lines of pytest.
 You get back `{layers, failures[], preexisting[], green, totals}`. Report only **new** failures
 as failures; `preexisting[]` is noted separately and does not gate.
 
+**A layer with `status: "deferred"` is not a result.** The command hit the runner's foreground timeout, so
+it has not run to completion. Run that command yourself once with `run_in_background`, output to
+`.claude/pipeline/<slug>/agent-reports/<layer>.log`, wait for its completion notice (never poll or sleep),
+then dispatch `test-runner` again to read that log only and classify it into the same structure.
+
 - Log audit (if `logs.command` configured)
 - Frontend unit tests (if `test.frontend` configured **and** the frontend surface was touched)
 - Backend unit tests (if `test.unit` configured **and** the backend surface was touched)
@@ -44,8 +49,10 @@ as failures; `preexisting[]` is noted separately and does not gate.
 
 Prose asked the implementers not to write plan or task references into code and it still failed
 on a live run, so check the added lines directly. Run
-`bash scripts/plan-refs.sh scan --base <run.json base_commit> --slug <feature_slug>` (plugin-root
-fallback per the skill's **Toolkit paths** note). It reads only added lines in code files and
+`bash scripts/plan-refs.sh scan --base <run.json base_commit> --slug <feature_slug> --exclude-file <file>` (plugin-root
+fallback per the skill's **Toolkit paths** note), where `<file>` lists, one per line, the `run.json.data.dirty_at_start`
+paths whose current `git hash-object` still equals the recorded value (omit the option when there are none) — the scan
+reads every untracked file, so another session's files would otherwise become this run's fix-loop failures. It reads only added lines in code files and
 prints `{hits[], scanned_files}`; it never fails by itself. **Every hit is a new failure**:
 route it into the shared fix loop, whose agent rewrites the reference into the reason it
 stands for (the fix-loop prompt carries the rule). Record the hits in `data.plan_refs[]`.

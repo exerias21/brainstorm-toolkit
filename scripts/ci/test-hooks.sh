@@ -2440,6 +2440,25 @@ pr_scan "$d"
 pr_check 1 'd["hits"][0]["line"]==3 and d["hits"][0]["pattern"]=="brainstorm-name"'
 ok
 
+CASE="plan-refs: --exclude-file leaves out another session's modified and untracked files"
+d="$(pr_repo 10)"
+printf '# see plans''/mine.md\n' >> "$d/src/a.py"
+printf '# see plans''/theirs.md\n' >> "$d/src/old.py"
+printf '# see plans''/theirs.md\n' > "$d/src/theirs_new.py"
+printf 'src/old.py\nsrc/theirs_new.py\n' > "$d/excl.txt"
+pr_scan "$d" --exclude-file excl.txt
+pr_check 1 'd["hits"][0]["file"]=="src/a.py" and d["scanned_files"]==1'
+ok
+
+CASE="plan-refs: --exclude-file with a UTF-8 BOM and CRLF still excludes its first path"
+d="$(pr_repo 11)"
+printf '# see plans''/mine.md\n' >> "$d/src/a.py"
+printf '# see plans''/theirs.md\n' >> "$d/src/old.py"
+printf '\xef\xbb\xbfsrc/old.py\r\n' > "$d/excl.txt"
+pr_scan "$d" --exclude-file excl.txt
+pr_check 1 'd["hits"][0]["file"]=="src/a.py" and d["scanned_files"]==1'
+ok
+
 # ── migrate-project-json.sh: dead-key renames, value-preserving ──────────
 MIGRATE="$PLUGIN_ROOT/scripts/migrate-project-json.sh"
 
@@ -2751,6 +2770,135 @@ assert d['unknown_files'] == [], d['unknown_files']
 assert d['conflicts'] == [], d['conflicts']
 PYEOF
 ok
+
+# ── ask-gate.sh + question-advice.sh: approval ledger and the AskUserQuestion gate ──
+
+ASK_HOOK="$PLUGIN_ROOT/scripts/hooks/ask-gate.sh"
+ADVICE="$PLUGIN_ROOT/scripts/question-advice.sh"
+ask_dir() {
+  local d="$ROOT_TMP/ask-$1"; mkdir -p "$d/.claude"
+  printf '%s' '{"pipeline": {"question_advisor": {"enabled": true, "gate": true}}}' > "$d/.claude/project.json"
+  printf '%s' "$d"
+}
+ask_payload() { # $@ = question texts
+  "$REAL_PY_ABS" - "$@" <<'PYEOF'
+import json, sys
+print(json.dumps({"tool_name": "AskUserQuestion", "tool_input": {"questions": [
+    {"question": q, "header": "h", "options": [{"label": "a"}, {"label": "b"}]} for q in sys.argv[1:]]}}))
+PYEOF
+}
+run_ask() { CLAUDE_PROJECT_DIR="$1" bash "$ASK_HOOK" <<<"$2"; }
+approve() { CLAUDE_PROJECT_DIR="$1" bash "$ADVICE" approve <<<"$2" >/dev/null; }
+age_approval() { # $1=dir $2=seconds to subtract from written_at
+  "$REAL_PY_ABS" - "$1/.claude/pipeline/_advice/approved.json" "$2" <<'PYEOF'
+import json, sys
+p = sys.argv[1]
+a = json.load(open(p))
+a["written_at"] -= int(sys.argv[2])
+json.dump(a, open(p, "w"))
+PYEOF
+}
+
+CASE="ask-gate: inert without the gate opted in"
+d="$ROOT_TMP/ask-inert"; mkdir -p "$d/.claude"
+printf '%s' '{"pipeline": {"question_advisor": {"enabled": true}}}' > "$d/.claude/project.json"
+out="$(run_ask "$d" "$(ask_payload 'Which one?')")"
+assert_empty "$out"
+
+CASE="ask-gate: inert with no project.json"
+d="$ROOT_TMP/ask-nocfg"; mkdir -p "$d"
+out="$(run_ask "$d" "$(ask_payload 'Which one?')")"
+assert_empty "$out"
+
+CASE="ask-gate: allows a freshly approved question"
+d="$(ask_dir allow)"
+approve "$d" '["Which one?"]'
+out="$(run_ask "$d" "$(ask_payload 'Which one?')")"
+assert_empty "$out"
+
+CASE="ask-gate: denies an unapproved question (missing _advice dir)"
+d="$(ask_dir nodir)"
+out="$(run_ask "$d" "$(ask_payload 'Which one?')")"
+assert_match "$out" '"permissionDecision": "deny"'
+assert_match "$out" 'operator-gate.md'
+
+CASE="ask-gate: denies a question not in the approved list"
+d="$(ask_dir other)"
+approve "$d" '["Which one?"]'
+out="$(run_ask "$d" "$(ask_payload 'Something else?')")"
+assert_match "$out" '"permissionDecision": "deny"'
+
+CASE="ask-gate: multi-question payload with one unapproved is denied"
+d="$(ask_dir multi)"
+approve "$d" '["First?","Second?"]'
+out="$(run_ask "$d" "$(ask_payload 'First?' 'Second?' 'Third?')")"
+assert_match "$out" '"permissionDecision": "deny"'
+
+CASE="ask-gate: empty hashes deny"
+d="$(ask_dir empty)"
+approve "$d" '[]'
+out="$(run_ask "$d" "$(ask_payload 'Which one?')")"
+assert_match "$out" '"permissionDecision": "deny"'
+
+CASE="ask-gate: stale approval (over 45 minutes) is denied"
+d="$(ask_dir stale)"
+approve "$d" '["Which one?"]'
+age_approval "$d" 2760
+out="$(run_ask "$d" "$(ask_payload 'Which one?')")"
+assert_match "$out" '"permissionDecision": "deny"'
+
+CASE="ask-gate: a future written_at is denied"
+d="$(ask_dir future)"
+approve "$d" '["Which one?"]'
+age_approval "$d" -3600
+out="$(run_ask "$d" "$(ask_payload 'Which one?')")"
+assert_match "$out" '"permissionDecision": "deny"'
+
+CASE="ask-gate: the off flag file allows"
+d="$(ask_dir off)"
+mkdir -p "$d/.claude/pipeline/_advice"; : > "$d/.claude/pipeline/_advice/off"
+out="$(run_ask "$d" "$(ask_payload 'Never approved?')")"
+assert_empty "$out"
+
+CASE="ask-gate: malformed stdin allows"
+d="$(ask_dir bad)"
+out="$(run_ask "$d" 'not json {')"
+assert_empty "$out"
+
+CASE="ask-gate: another tool is untouched"
+d="$(ask_dir tool)"
+out="$(run_ask "$d" '{"tool_name":"Bash","tool_input":{"command":"ls"}}')"
+assert_empty "$out"
+
+CASE="ask-gate: approve then check round-trips across whitespace and case"
+d="$(ask_dir norm)"
+approve "$d" '["  Which   ONE\nshould we keep? "]'
+out="$(run_ask "$d" "$(ask_payload 'which one should we keep?')")"
+assert_empty "$out"
+
+CASE="ask-gate: CRLF and trailing carriage return hash the same"
+d="$(ask_dir crlf)"
+approve "$d" '["Line one\r\nLine two\r"]'
+out="$(run_ask "$d" "$(ask_payload $'Line one\nLine two')")"
+assert_empty "$out"
+
+CASE="question-advice: approve accepts an AskUserQuestion questions array"
+d="$(ask_dir arr)"
+approve "$d" '{"questions":[{"question":"Alpha?"},{"question":"Beta?"}]}'
+out="$(CLAUDE_PROJECT_DIR="$d" bash "$ADVICE" check <<<"$(ask_payload 'Beta?' 'Alpha?')")"
+assert_match "$out" '^allow'
+
+CASE="question-advice: check prints deny with a reason"
+d="$(ask_dir chk)"
+out="$(CLAUDE_PROJECT_DIR="$d" bash "$ADVICE" check <<<"$(ask_payload 'Nope?')")"
+assert_match "$out" '^deny: '
+
+CASE="ask-gate: gate on with no interpreter -> visible systemMessage, never silent"
+d="$(ask_dir nopy)"
+out="$(hide_from_command_v "python3 python py" env -u BRAINSTORM_PYTHON CLAUDE_PROJECT_DIR="$d" \
+      bash "$ASK_HOOK" <<<"$(ask_payload 'Which one?')")"
+assert_match "$out" '"systemMessage"'
+assert_match "$out" 'gate is true but no working Python'
 
 echo
 echo "test-hooks.sh: all cases ok"

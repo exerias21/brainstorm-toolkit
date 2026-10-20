@@ -40,6 +40,7 @@ ceilings).
   "repo_health": null,
   "docstring_sync": "sonnet",
   "hunt": "sonnet",
+  "question_advisor": "sonnet",
   "planner": "opus",
   "code_review": "opus",
   "code_review_second_pass": "sonnet"
@@ -120,6 +121,7 @@ skill. See *Session nudge*.
 | `models.repo_health` | `/repo-health` checks — string or per-check map | each check's own tier |
 | `models.docstring_sync` | `/docstring-sync` triage + rewrite agents | `sonnet` |
 | `models.hunt` | `/repo-health --hunt` lenses (the consolidator is Axis 2: `models.code_review`) | `sonnet` |
+| `models.question_advisor` | `question-advisor` dispatch (`operator-gate.md`), when `pipeline.question_advisor.enabled` | `sonnet` |
 
 A string value applies to every sub-agent of the role; a map overrides per focus/lens/check and
 a name missing from the map keeps its built-in default. Every resolved value **then still passes
