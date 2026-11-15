@@ -14,7 +14,8 @@
 # interpreter resolution -- this script's FIRST CI coverage), and
 # scripts/close-tasks.sh (trailer-only `_manual_`/`_followup_` matching, the
 # phase-aware `reconcile` refinement, `board`'s `manual` field, and `rows`'
-# first-run row lookup).
+# first-run row lookup), and -- through scripts/ci/test-parallel.sh, called at
+# the end -- scripts/lease.sh, lanes.sh, merge-queue.sh and runner.sh.
 #
 # Builds fresh scratch project dirs under /tmp, feeds each hook sample stdin JSON
 # against a `.claude/project.json`, and asserts on stdout with `grep -q`. Mirrors
@@ -2995,6 +2996,10 @@ PYEOF
 approve "$d" '["Beta?"]'
 out="$(CLAUDE_PROJECT_DIR="$d" bash "$ADVICE" check <<<"$(ask_payload 'Alpha?' 'Beta?')")"
 assert_match "$out" '^allow'
+
+# ── parallel orchestration CLIs (lease.sh, lanes.sh, merge-queue.sh,
+#    runner.sh): their own harness, run here so CI covers them too ─────────
+bash "$PLUGIN_ROOT/scripts/ci/test-parallel.sh"
 
 echo
 echo "test-hooks.sh: all cases ok"

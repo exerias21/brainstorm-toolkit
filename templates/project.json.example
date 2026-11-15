@@ -85,6 +85,8 @@
     "hunt": "sonnet",
     "_hunt_comment": "Optional, default \"sonnet\". Controls the /repo-health --hunt lenses (Axis 1, bounded by models.cap). The hunt consolidator is Axis 2 and runs on models.code_review.",
     "question_advisor": "sonnet",
+    "runner": "sonnet",
+    "_runner_comment": "Optional, default \"sonnet\" (Axis 1, bounded by models.cap). The model of each fresh claude -p session scripts/runner.sh starts for /orchestrate-parallel-agents. Recorded next to the session_id in .claude/parallel/runners/<name>/status.json; a resumed session keeps its recorded model, a rotation re-reads this key. runner.sh start/resume --model M overrides it for that call. An unrecognised value falls through to the default.",
     "_question_advisor_comment": "Optional, default \"sonnet\" (Axis 1, bounded by models.cap). Controls the question-advisor agent that reviews draft operator questions when pipeline.question_advisor.enabled is true.",
     "planner": "opus",
     "_planner_comment": "Optional, default \"opus\". One of haiku|sonnet|opus|fable. ADVISORY ONLY -- a session-model RECOMMENDATION for /brainstorm and /brainstorm-team's planning conversation, which runs on your host session model rather than a sub-agent. On NEITHER model axis: models.cap never lowers it, and it never governs a dispatch. Printed once per session, verbatim: 'Planning runs on your session model. Recommended: <planner> -- switch before the clarifying rounds if you aren't on it.' Never detects the host model. An unrecognized value falls through to the default. See skills/sdlc/templates/models.md 'A third kind'.",
@@ -173,6 +175,18 @@
     "implement": {
       "_comment": "Optional. Extra rules quoted word for word into every implement, lane and fix agent brief (stage-2-implement.md, stage-2b-dispatch.md, fix-loop.md), after two always-on built-ins: one background test run and never a polling loop; the repo's formatter on changed files only. The briefs already carry a git-write guard; the entry below only shows the syntax for a repo-specific rule, here for repos that share one worktree between sessions.",
       "must_follow": ["Never run git checkout, restore, stash or reset in a shared tree."]
+    },
+
+    "parallel": {
+      "_comment": "Optional. Read by /orchestrate-parallel-agents and scripts/merge-queue.sh. Every key is optional.",
+      "max_writers": 2,
+      "_max_writers_comment": "How many agents may write code at once, each in its own worktree. Read-only agents (research, review, measurement) are not counted. Default 2; raise after you have measured the review queue.",
+      "gate_command": null,
+      "_gate_command_comment": "The full test command scripts/merge-queue.sh runs in a clean checkout before it lands a lane. Unset falls back to test.unit; with neither set the queue refuses to land. Only the queue runs it, so it may take longer than an agent's 10-minute Bash limit.",
+      "fast_test_command": null,
+      "_fast_test_command_comment": "What a lane runs as its own check: targeted or sampled tests that finish well under 10 minutes, as ONE command (no cd, &&, ; or pipes, so a runner's Bash(<prefix>:*) allowlist can match it), e.g. \"uv run --directory engine pytest -q -m 'not slow'\". The orchestrator writes it into every lane brief. Unset: the brief names targeted tests per lane.",
+      "lane_setup": null,
+      "_lane_setup_comment": "A command run with bash -c in each new lane's root (scripts/lanes.sh create, after the .worktreeinclude copies) and in the merge queue's clean checkout, to build what a fresh worktree lacks. Build dependency folders here rather than copying them, e.g. \"uv sync --locked --directory engine --link-mode=copy && npm --prefix portal ci\" (on a /mnt Windows drive under WSL add --reinstall to uv sync: a first sync there was measured to leave a broken venv). A failure keeps the lane and exits 3 (lanes.sh) or refuses to land with exit 4 (merge-queue.sh)."
     },
 
     "question_advisor": {

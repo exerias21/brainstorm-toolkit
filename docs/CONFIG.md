@@ -108,6 +108,7 @@ implements, Opus reviews, plus the gotchas file and the module list:
 | `pipeline.output` | How chatty is the run? | `verbosity`: `quiet` (default) or `normal`. |
 | `pipeline.stop_gate` | Should a red `test.unit` block the Stop event mid-run? | `"off"` (default) or `"tests"`; `stop_gate_timeout` is in seconds. Claude and Codex only. |
 | `pipeline.question_advisor` | Should an advisor vet questions before the operator is asked? | `enabled` (off by default), `gate` (Claude only: a hook denies questions the advisor did not approve), `measure_first` (sources checked before asking). Covers the question tool only, not plain-text questions. |
+| `pipeline.parallel` | How many agents may write at once, what does a lane test, how is a new lane built, and what must pass before a lane lands? | `max_writers` (default 2); `fast_test_command` (the lane's own check, one command, well under 10 minutes; written into each brief); `gate_command` (the merge queue's full suite, may be slow; falls back to `test.unit`, and with neither set the queue refuses); `lane_setup` (run with `bash -c` in each new lane and in the queue's clean checkout, e.g. `uv sync --locked --directory engine --link-mode=copy`; build dependency folders here instead of copying them). Read by `/orchestrate-parallel-agents`, `scripts/lanes.sh` and `scripts/merge-queue.sh`. |
 | `pipeline.enforce_cap` | Should `models.cap` be enforced by a hook? | Claude only. Rewrites an over-cap dispatch to the cap; the reviewer is exempt. |
 | `pipeline.action_items` | Do you want the generated `ACTION_ITEMS.md` waves? | `enabled`, `file`, `reassess`, `hub_threshold`, `ignore_conflict_files`, `max_bugs_per_lane`. See the reference below. |
 | `pipeline.tasks.close_in_place` | Should closed rows stay on their lines? | `true` flips a closed row to `[x]` where it stands, so `TASKS.md:N` citations stay valid. |
@@ -331,6 +332,7 @@ map-valued keys such as `models.sanity` as `null`, so the check does not look in
     "stop_gate": "off",
     "stop_gate_timeout": 300,
     "question_advisor": { "enabled": false, "gate": false, "measure_first": [] },
+    "parallel": { "max_writers": 2, "fast_test_command": null, "gate_command": null, "lane_setup": null },
     "scope": {
       "max_steps_per_run": 8
     },
@@ -421,6 +423,7 @@ different reviewer catches what it missed and keeps the review independent.
 | `docstring_sync` | `/docstring-sync` triage + rewrite | `sonnet` |
 | `hunt` | `/repo-health --hunt` lenses (consolidator runs on `code_review`, Axis 2) | `sonnet` |
 | `question_advisor` | `question-advisor` dispatch before operator questions (`pipeline.question_advisor.enabled`) | `sonnet` |
+| `runner` | each fresh headless session `scripts/runner.sh` starts; kept on resume, re-read at rotation; `--model M` overrides per call | `sonnet` |
 | `code_review`, `code_review_second_pass` | Axis 2: Stage 5.7 reviewers (never capped) | `opus`, `sonnet` |
 | `planner` | advisory session-model nudge | `opus` |
 
@@ -545,6 +548,10 @@ open until it does, and `--queue` refuses this mode.
 | `/sdlc` Stage 6 | `coauthor_trailer`: whether the *suggested* commit message carries the trailer (`/sdlc` prints it; it never commits) |
 | `/task` | `coauthor_trailer` (only when you ask it to commit); otherwise reads TASKS.md directly |
 | `/sdlc-status` | `pipeline.action_items.enabled`, `.file` (the waves line); otherwise reads TASKS.md and `.claude/pipeline/` directly |
+| `/orchestrate-parallel-agents` | `pipeline.parallel.max_writers`, `.fast_test_command`, `.gate_command`, `models.*` |
+| `scripts/lanes.sh` | `pipeline.parallel.lane_setup` |
+| `scripts/runner.sh` | `models.runner`, `models.cap` |
+| `scripts/merge-queue.sh` | `pipeline.parallel.gate_command`, then `test.unit`; `pipeline.parallel.lane_setup` |
 | `scripts/py.sh` (every shipped Python invocation) | `python` |
 | `scripts/hooks/enforce-model-cap.sh` (Claude `PreToolUse(Agent)`) | `pipeline.enforce_cap`, `models.cap` |
 | `scripts/hooks/ask-gate.sh` (Claude `PreToolUse(AskUserQuestion)`) | `pipeline.question_advisor.gate` |

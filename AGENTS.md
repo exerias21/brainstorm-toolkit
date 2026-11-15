@@ -301,6 +301,24 @@ expression drifted with no automated guard. Pay the cost only when the second ex
 small, mechanical, and testable — the shipped hooks run a few hundred lines each, an order of
 magnitude under the Workflow's 1,398. Worked examples: `docs/ENFORCEMENT.md`.
 
+## Parallel orchestration: the one script that writes git refs
+
+`skills/orchestrate-parallel-agents/` drives four plain-shell CLIs: `scripts/lanes.sh`
+(worktree per writer), `scripts/lease.sh` (expiring leases), `scripts/runner.sh` (managed
+headless `claude -p` runners) and `scripts/merge-queue.sh`. **`merge-queue.sh` is the only
+script in this toolkit that writes git refs**, by operator ruling (DECISIONS.md 2026-11-15,
+reversing the 2026-10-20 "no git-writing path" for this one opt-in script). Keep its limits
+when editing it: it moves the target only by `git update-ref <ref> <new> <old>`, never
+pushes or force-pushes, refuses on conflict and never resolves one, and refuses to land with
+no test command. A dirty target folder blocks a landing only on the lane's own paths, and
+after the swap only those paths move forward there (`read-tree -m -u <old> <new>`); keep both
+halves of that, since dropping the overlap check would let a landing overwrite uncommitted
+work. `/sdlc` keeps its no-git-writes contract; do not route any pipeline stage
+through the queue. All four scripts are covered by `scripts/ci/test-parallel.sh` (throwaway
+repos, a fake `claude`), which `scripts/ci/test-hooks.sh` calls at its end. The skill stays
+generic: project rules (databases, ports, protected paths) belong in each consumer's
+`CLAUDE.md`, never in the skill.
+
 ## When adding a new skill
 
 - Copy the shape of a similar existing skill; don't invent new conventions.
@@ -392,7 +410,8 @@ pytest evals, and `scripts/ci/skill-eval.py`'s headless outcome evals on a fixtu
    controls** that back policy instead of prose — the two wired hooks
    (`scripts/hooks/enforce-model-cap.sh`, `scripts/hooks/stop-gate.sh`) and the
    `scripts/protect-tests.sh` detector CLI: scratch project dirs, sample stdin JSON,
-   assertions on stdout. Exits 1 on the first failing case.
+   assertions on stdout. Exits 1 on the first failing case. It ends by running
+   `scripts/ci/test-parallel.sh` (lanes, leases, merge queue, runners).
 4. Running `bash setup.sh --target /tmp/test-repo --tools both` against a scratch repo.
 5. Invoking the changed skill in both Claude Code and Copilot when the skill targets both tools.
 6. Confirming the skill runs without referencing removed files or broken paths.
