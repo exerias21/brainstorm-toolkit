@@ -50,6 +50,8 @@
 #   runner.sh start  <name> (--prompt TEXT | --prompt-file F) --allowed-tools T
 #                    [--cwd DIR] [--model M] [--permission-mode M] [--max-turns N]
 #                    [--max-budget-usd X] [--rotate-at TOKENS] [--task ID]
+#                    (--max-turns defaults to 200: portal runners under the
+#                    one-command rule used 111-113 of a 120 cap)
 #   runner.sh resume <name> (--prompt TEXT | --prompt-file F) [same overrides]
 #   runner.sh rotate <name>      write the hand-off now; next resume starts fresh
 #   runner.sh status [<name>]    print status.json (or one line per runner)
@@ -64,7 +66,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_BIN="${RUNNER_CLAUDE_BIN:-claude}"
-usage() { sed -n '49,62p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '49,64p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 [ $# -ge 1 ] || usage
 SUB="$1"; shift
@@ -217,7 +219,7 @@ import json, os, sys
 path, name, pairs = sys.argv[1], sys.argv[2], sys.argv[3:]
 s = json.load(open(path)) if os.path.exists(path) else {
     "name": name, "session_id": None, "cwd": os.getcwd(), "permission_mode": "dontAsk",
-    "rotate_at": 350000, "context_tokens": 0, "calls": 0, "cost_usd": 0.0,
+    "rotate_at": 350000, "max_turns": 200, "context_tokens": 0, "calls": 0, "cost_usd": 0.0,
     "sessions": [], "pending_handoff": None}
 for p in pairs:
     k, v = p.split("=", 1)

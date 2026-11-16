@@ -56,20 +56,26 @@
 #     Rebase the lane on the target now ("rebase early"): small conflicts found
 #     today are cheaper than large ones at landing. On conflict it aborts the
 #     rebase, prints the files, exits 2 -- it never resolves anything.
+#   lanes.sh verify <name> --owned <glob>... [--base REF] [--target BRANCH]
+#     Scope check: exit 1, naming the files, when the lane's diff against its
+#     base (REF, else the merge-base with the target) touches a path matching
+#     none of the globs. `*` matches across `/`, so `engine/*` is a subtree.
 #   lanes.sh remove <name> [--force] [--target BRANCH]
 #     Remove the worktree and branch. Refuses (exit 1) while the lane has
-#     commits whose changes are not on the target (git cherry, so a lane landed
-#     by rebase counts as landed) or uncommitted edits, unless --force.
+#     commits whose changes are not on the target or uncommitted edits, unless
+#     --force. "On the target" means git cherry (a lane landed by rebase counts)
+#     OR every path the lane changed already equals the lane's version on the
+#     target (a lane landed combined with other work). Lost content still refuses.
 #
 # --target defaults to the branch checked out in the main worktree.
 set -euo pipefail
 
-usage() { sed -n '38,64p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '38,70p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 [ $# -ge 1 ] || usage
 SUB="$1"; shift
 
-NAME=""; BASE=""; DIR=""; TARGET=""; FORCE=0; SETUP=1
+NAME=""; BASE=""; DIR=""; TARGET=""; FORCE=0; SETUP=1; OWNED=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --base)   BASE="${2:-}"; shift 2 ;;
@@ -77,6 +83,9 @@ while [ $# -gt 0 ]; do
     --target) TARGET="${2:-}"; shift 2 ;;
     --force)  FORCE=1; shift ;;
     --no-setup) SETUP=0; shift ;;
+    --owned)  shift
+              while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do OWNED+=("$1"); shift; done
+              [ "${#OWNED[@]}" -gt 0 ] || { echo "lanes.sh: --owned needs at least one glob" >&2; exit 2; } ;;
     -h|--help) usage ;;
     --*) echo "lanes.sh: unknown flag $1" >&2; usage ;;
     *) [ -z "$NAME" ] || { echo "lanes.sh: unexpected argument $1" >&2; usage; }; NAME="$1"; shift ;;
@@ -147,6 +156,24 @@ unlanded() {  # commits on lane/<name> whose patch is not on TARGET
   git -C "$MAIN" cherry "$TARGET" "lane/$1" 2>/dev/null | grep -c '^+' || true
 }
 
+# Paths the lane changed against its base: --base REF, else the merge-base
+# with the target.
+lane_changed() {
+  local base="$BASE"
+  [ -n "$base" ] || base="$(git -C "$MAIN" merge-base "$TARGET" "lane/$1")"
+  git -C "$MAIN" diff --name-only --no-renames "$base" "lane/$1"
+}
+
+# True when every path the lane changed already has the lane's content on the
+# TARGET -- the lane landed combined with other changes or rebased, so git cherry
+# still lists its commits. Content that would be lost makes this false.
+content_landed() {
+  local paths path; paths="$(lane_changed "$1")" || return 1
+  [ -n "$paths" ] || return 0
+  local args=(); while IFS= read -r path; do args+=("$path"); done <<<"$paths"
+  git -C "$MAIN" diff --quiet "$TARGET" "lane/$1" -- "${args[@]}"
+}
+
 need_target() { [ -n "$TARGET" ] || { echo "lanes.sh: no --target and the main worktree is on a detached HEAD" >&2; exit 2; }; }
 
 case "$SUB" in
@@ -206,13 +233,41 @@ case "$SUB" in
       exit 2
     fi
     ;;
+  verify)
+    valid_name "$NAME"
+    [ "${#OWNED[@]}" -gt 0 ] || { echo "lanes.sh verify: --owned <glob>... is required" >&2; exit 2; }
+    [ -n "$BASE" ] || need_target
+    git -C "$MAIN" show-ref --verify --quiet "refs/heads/lane/$NAME" || { echo "lanes.sh: no lane named $NAME" >&2; exit 1; }
+    stray=""
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      ok=0
+      for g in "${OWNED[@]}"; do
+        # shellcheck disable=SC2254  # the glob is the point; `*` also crosses `/`
+        case "$f" in $g) ok=1; break ;; esac
+      done
+      [ "$ok" -eq 1 ] || stray="$stray$f"$'\n'
+    done < <(lane_changed "$NAME")
+    if [ -n "$stray" ]; then
+      echo "OUT OF SCOPE: lane/$NAME changed paths outside its owned globs (${OWNED[*]}):"
+      printf '%s' "$stray" | sed 's/^/  /'
+      exit 1
+    fi
+    echo "in scope: lane/$NAME touches only its owned paths"
+    ;;
   remove)
     valid_name "$NAME"
     p="$(lane_path "$NAME")"
     if [ "$FORCE" -ne 1 ]; then
       need_target
       n="$(unlanded "$NAME")"
-      [ "$n" -eq 0 ] || { echo "lanes.sh: lane/$NAME has $n commit(s) not on $TARGET; land them or pass --force" >&2; exit 1; }
+      if [ "$n" -ne 0 ]; then
+        if BASE="" content_landed "$NAME"; then
+          echo "lanes.sh: lane/$NAME's commits differ from $TARGET's, but every path it changed already matches $TARGET (landed combined or rebased); treating as landed"
+        else
+          echo "lanes.sh: lane/$NAME has $n commit(s) not on $TARGET; land them or pass --force" >&2; exit 1
+        fi
+      fi
       if [ -n "$p" ] && [ -n "$(git -C "$p" status --porcelain)" ]; then
         echo "lanes.sh: lane $NAME has uncommitted or untracked files; pass --force to discard them" >&2; exit 1
       fi
@@ -220,8 +275,8 @@ case "$SUB" in
     if [ -n "$p" ]; then
       if [ "$FORCE" -eq 1 ]; then git -C "$MAIN" worktree remove --force "$p"; else git -C "$MAIN" worktree remove "$p"; fi
     fi
-    git -C "$MAIN" branch -q -D "lane/$NAME" 2>/dev/null || true
     git -C "$MAIN" worktree prune
+    git -C "$MAIN" branch -q -D "lane/$NAME" 2>/dev/null || true
     echo "removed: lane/$NAME"
     ;;
   -h|--help) usage ;;

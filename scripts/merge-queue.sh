@@ -22,13 +22,19 @@
 # /sdlc keeps its no-git-writes rule; this script is outside the pipeline.
 #
 # Usage:
-#   merge-queue.sh land <lane-branch> [--target BRANCH] [--test-cmd CMD]
+#   merge-queue.sh land <lane-branch>... [--target BRANCH] [--test-cmd CMD]
 #                       [--verify-tests SLUG] [--pipeline-dir DIR] [--dry-run]
 #   merge-queue.sh log [N]          last N verdicts (default 10)
 #
+#   several branches  are rebased in the order given onto the target in one
+#                   clean checkout, the gate runs ONCE on the combined result,
+#                   and the target moves once (all or none). Use it for lanes
+#                   that only pass together (a shared pinned test string).
 #   --target        default: the branch checked out in the main worktree.
 #   --test-cmd      default: .claude/project.json pipeline.parallel.gate_command,
 #                   then test.unit. Run with `bash -c` in the clean checkout.
+#                   Passing it while a gate is configured prints a WARNING and
+#                   logs test_cmd_override:true; every verdict logs test_cmd.
 #   --verify-tests  also run scripts/protect-tests.sh verify --slug SLUG in the
 #                   clean checkout (armed test files must be byte-identical).
 #   --dry-run       rebase and test, but do not move the target.
@@ -62,7 +68,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-usage() { sed -n '24,38p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
+usage() { sed -n '24,44p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
 
 [ $# -ge 1 ] || usage
 SUB="$1"; shift
@@ -79,7 +85,7 @@ if [ "$SUB" = "log" ]; then
 fi
 [ "$SUB" = "land" ] || usage
 
-BRANCH=""; TARGET=""; TEST_CMD=""; SLUG=""; PIPE_DIR=""; DRY=0
+BRANCHES=(); TARGET=""; TEST_CMD=""; SLUG=""; PIPE_DIR=""; DRY=0; OVERRIDE=false
 while [ $# -gt 0 ]; do
   case "$1" in
     --target)       TARGET="${2:-}"; shift 2 ;;
@@ -89,21 +95,29 @@ while [ $# -gt 0 ]; do
     --dry-run)      DRY=1; shift ;;
     -h|--help) usage ;;
     --*) echo "merge-queue.sh: unknown flag $1" >&2; usage ;;
-    *) [ -z "$BRANCH" ] || usage; BRANCH="$1"; shift ;;
+    *) BRANCHES+=("$1"); shift ;;
   esac
 done
-[ -n "$BRANCH" ] || usage
+[ "${#BRANCHES[@]}" -ge 1 ] || usage
 [ -n "$TARGET" ] || TARGET="$(git -C "$MAIN" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
 [ -n "$TARGET" ] || { echo "merge-queue.sh: no --target and the main worktree is on a detached HEAD" >&2; exit 1; }
-[ "$BRANCH" != "$TARGET" ] || { echo "merge-queue.sh: lane branch and target are the same" >&2; exit 1; }
-git -C "$MAIN" show-ref --verify --quiet "refs/heads/$BRANCH" || { echo "merge-queue.sh: no branch $BRANCH" >&2; exit 1; }
 git -C "$MAIN" show-ref --verify --quiet "refs/heads/$TARGET" || { echo "merge-queue.sh: no branch $TARGET" >&2; exit 1; }
+for b in "${BRANCHES[@]}"; do
+  [ "$b" != "$TARGET" ] || { echo "merge-queue.sh: lane branch and target are the same" >&2; exit 1; }
+  git -C "$MAIN" show-ref --verify --quiet "refs/heads/$b" || { echo "merge-queue.sh: no branch $b" >&2; exit 1; }
+done
+# Display / log name: one branch as-is, several space-joined.
+BRANCH="${BRANCHES[*]}"
 [ -z "$PIPE_DIR" ] && PIPE_DIR="$MAIN/.claude/pipeline"
 
-# Test command: flag > pipeline.parallel.gate_command > test.unit.
-if [ -z "$TEST_CMD" ] && [ -f "$MAIN/.claude/project.json" ]; then
+# Test command: flag > pipeline.parallel.gate_command > test.unit. The
+# configured one is looked up even when the flag is given, so an override of a
+# configured gate can be warned about and logged (a narrow ad hoc --test-cmd on
+# every landing meant the project's full gate never ran, 2026-11-15).
+CONFIGURED=""
+if [ -f "$MAIN/.claude/project.json" ]; then
   if PY="$(bash "$HERE/py.sh" --print 2>/dev/null)" && [ -n "$PY" ]; then
-    TEST_CMD="$("$PY" - "$MAIN/.claude/project.json" <<'PYEOF' 2>/dev/null || true
+    CONFIGURED="$("$PY" - "$MAIN/.claude/project.json" <<'PYEOF' 2>/dev/null || true
 import json, sys
 try:
     d = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -116,13 +130,20 @@ PYEOF
 )"
   fi
 fi
+if [ -z "$TEST_CMD" ]; then
+  TEST_CMD="$CONFIGURED"
+elif [ -n "$CONFIGURED" ]; then
+  OVERRIDE=true
+  echo "WARNING: --test-cmd overrides the configured gate ($CONFIGURED). A narrower command than the gate lets a red suite land; the project's full gate will NOT run."
+fi
 
 HOLDER="merge-queue-$$"
 TMP=""
 verdict() {  # result detail -- one JSON line per run
   local result="$1" detail="${2:-}"
-  printf '{"ts":"%s","branch":"%s","target":"%s","result":"%s","old":"%s","new":"%s","detail":"%s"}\n' \
+  printf '{"ts":"%s","branch":"%s","target":"%s","result":"%s","old":"%s","new":"%s","test_cmd":"%s","test_cmd_override":%s,"detail":"%s"}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$BRANCH" "$TARGET" "$result" "${OLD:-}" "${NEW:-}" \
+    "$(printf '%s' "$TEST_CMD" | tr '\n"\\' ' __')" "$OVERRIDE" \
     "$(printf '%s' "$detail" | tr '\n"\\' ' __')" >> "$LOG"
 }
 cleanup() {
@@ -175,14 +196,16 @@ refuse_overlap() {  # $1 = the overlapping paths
   verdict refused-target-dirty "$1"; exit 6
 }
 if [ -n "$TARGET_WT" ]; then
-  hits="$(git -C "$MAIN" diff --name-only --no-renames "refs/heads/$TARGET...refs/heads/$BRANCH" | overlap "refs/heads/$TARGET")"
+  hits="$(for b in "${BRANCHES[@]}"; do git -C "$MAIN" diff --name-only --no-renames "refs/heads/$TARGET...refs/heads/$b"; done | sort -u | overlap "refs/heads/$TARGET")"
   [ -z "$hits" ] || refuse_overlap "$hits"
 fi
 
-LANE_WT="$(git -C "$MAIN" worktree list --porcelain | awk -v b="refs/heads/$BRANCH" '/^worktree /{p=substr($0,10)} $0=="branch " b {print p; exit}')"
-if [ -n "$LANE_WT" ] && [ -n "$(git -C "$LANE_WT" status --porcelain --untracked-files=no)" ]; then
-  echo "WARNING: $BRANCH has uncommitted changes at $LANE_WT; only its commits will land."
-fi
+for b in "${BRANCHES[@]}"; do
+  LANE_WT="$(git -C "$MAIN" worktree list --porcelain | awk -v b="refs/heads/$b" '/^worktree /{p=substr($0,10)} $0=="branch " b {print p; exit}')"
+  if [ -n "$LANE_WT" ] && [ -n "$(git -C "$LANE_WT" status --porcelain --untracked-files=no)" ]; then
+    echo "WARNING: $b has uncommitted changes at $LANE_WT; only its commits will land."
+  fi
+done
 
 OLD="$(git -C "$MAIN" rev-parse "refs/heads/$TARGET")"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/merge-queue.XXXXXX")"
@@ -191,21 +214,30 @@ rmdir "$TMP"
 # hook that regenerates tracked files (seen 2026-11-15: a progress page) would
 # leave the "clean" copy dirty, and git then refuses the rebase.
 NOHOOKS=(-c core.hooksPath=/dev/null)
-git "${NOHOOKS[@]}" -C "$MAIN" worktree add -q --detach "$TMP" "$BRANCH"
+git "${NOHOOKS[@]}" -C "$MAIN" worktree add -q --detach "$TMP" "${BRANCHES[0]}"
 
-if ! rb_err="$(git "${NOHOOKS[@]}" -C "$TMP" rebase -q "$OLD" 2>&1 >/dev/null)"; then
-  files="$(git -C "$TMP" diff --name-only --diff-filter=U)"
-  if [ -z "$files" ]; then
-    echo "REBASE FAILED (not a conflict): $BRANCH could not be rebased onto $TARGET. Nothing was changed."
-    printf '%s\n' "$rb_err" | sed '/^$/d; s/^/  git: /'
-    verdict rebase-failed "$rb_err"; exit 1
+# Several branches: each is rebased in turn onto the tip the previous one
+# produced, so the gate below runs once on the combined result and the target
+# moves once. A branch already contained in the previous ones rebases to nothing.
+tip="$OLD"; first=1
+for b in "${BRANCHES[@]}"; do
+  if [ "$first" -eq 1 ]; then first=0
+  else git "${NOHOOKS[@]}" -C "$TMP" checkout -q --detach "$b"; fi
+  if ! rb_err="$(git "${NOHOOKS[@]}" -C "$TMP" rebase -q "$tip" 2>&1 >/dev/null)"; then
+    files="$(git -C "$TMP" diff --name-only --diff-filter=U)"
+    if [ -z "$files" ]; then
+      echo "REBASE FAILED (not a conflict): $b could not be rebased onto $TARGET. Nothing was changed."
+      printf '%s\n' "$rb_err" | sed '/^$/d; s/^/  git: /'
+      verdict rebase-failed "$rb_err"; exit 1
+    fi
+    echo "CONFLICT: $b does not rebase cleanly onto $TARGET (combined with any branch listed before it). Nothing was changed."
+    printf '%s\n' "$files" | sed '/^$/d; s/^/  conflict: /'
+    echo "Next: hand these files back to the lane that owns them (lanes.sh sync), or to the orchestrator. Do not auto-resolve."
+    verdict conflict "$files"; exit 2
   fi
-  echo "CONFLICT: $BRANCH does not rebase cleanly onto $TARGET. Nothing was changed."
-  printf '%s\n' "$files" | sed '/^$/d; s/^/  conflict: /'
-  echo "Next: hand these files back to the lane that owns them (lanes.sh sync), or to the orchestrator. Do not auto-resolve."
-  verdict conflict "$files"; exit 2
-fi
-NEW="$(git -C "$TMP" rev-parse HEAD)"
+  tip="$(git -C "$TMP" rev-parse HEAD)"
+done
+NEW="$tip"
 if [ "$NEW" = "$OLD" ]; then
   echo "NOTHING TO LAND: $BRANCH has no changes that are not already on $TARGET."
   verdict nothing; exit 0

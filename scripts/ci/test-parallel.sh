@@ -329,6 +329,124 @@ run bash "$MQ" log 20
 printf '%s' "$OUT" | grep -q '"result":"conflict"' || fail "conflict verdict missing"
 assert_match "$OUT" '"result":"target-moved"'
 
+# ── merge-queue.sh: gate logging, override warning, multi-branch land ────────
+export PARALLEL_STATE_DIR="$ROOT_TMP/state-mq2"
+N="$(new_repo mq2)"
+printf 'old\n' > "$N/x.txt"; printf 'old\n' > "$N/y.txt"
+printf '#!/bin/sh\ntest "$(cat x.txt)" = "$(cat y.txt)"\n' > "$N/pin.sh"
+git -C "$N" add -A; git -C "$N" commit -q -m "pinned pair"
+mkdir -p "$N/.claude"
+printf '{"pipeline": {"parallel": {"gate_command": "sh pin.sh"}}}\n' > "$N/.claude/project.json"
+LX="$(cd "$N" && bash "$LANES" create x | sed -n 's/.*path=//p')"
+LY="$(cd "$N" && bash "$LANES" create y | sed -n 's/.*path=//p')"
+lane_commit "$LX" x.txt new
+lane_commit "$LY" y.txt new
+
+CASE="merge-queue: a configured gate is logged as test_cmd, override false"
+run bash -c "cd '$N' && bash '$MQ' land lane/x --dry-run"
+[ "$RC" -eq 4 ] || fail "x alone should fail the pinned gate (exit 4), got $RC: $OUT"
+tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl" | grep -q '"test_cmd":"sh pin.sh"' || fail "test_cmd not logged: $(tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl")"
+tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl" | grep -q '"test_cmd_override":false' || fail "override flag wrong"
+printf '%s' "$OUT" | grep -q WARNING && fail "warned without an override"
+ok
+
+CASE="merge-queue: --test-cmd over a configured gate warns and logs test_cmd_override:true"
+run bash -c "cd '$N' && bash '$MQ' land lane/x --dry-run --test-cmd true"
+expect_rc "$RC" 0 "$OUT"
+printf '%s' "$OUT" | grep -q 'WARNING: --test-cmd overrides the configured gate (sh pin.sh)' || fail "no override warning: $OUT"
+tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl" | grep -q '"test_cmd":"true"' || fail "overriding command not logged"
+tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl" | grep -q '"test_cmd_override":true' || fail "override not recorded"
+ok
+
+CASE="merge-queue: --test-cmd with no configured gate does not warn"
+NG="$(new_repo mq3)"
+LG="$(cd "$NG" && bash "$LANES" create g | sed -n 's/.*path=//p')"
+lane_commit "$LG" g.txt g
+run bash -c "cd '$NG' && bash '$MQ' land lane/g --dry-run --test-cmd true"
+expect_rc "$RC" 0 "$OUT"
+printf '%s' "$OUT" | grep -q WARNING && fail "warned although no gate is configured: $OUT"
+tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl" | grep -q '"test_cmd_override":false' || fail "override flagged without a configured gate"
+ok
+
+CASE="merge-queue: two interdependent lanes each fail the gate alone, and land together in one call"
+run bash -c "cd '$N' && bash '$MQ' land lane/y --dry-run"
+[ "$RC" -eq 4 ] || fail "y alone should fail (exit 4), got $RC: $OUT"
+before="$(git -C "$N" rev-parse main)"
+run bash -c "cd '$N' && bash '$MQ' land lane/x lane/y"
+expect_rc "$RC" 0 "$OUT"
+printf '%s' "$OUT" | grep -q 'LANDED: lane/x lane/y -> main' || fail "no combined LANDED line: $OUT"
+[ "$(git -C "$N" rev-list --count "$before..main")" -eq 2 ] || fail "expected both lane commits on main"
+[ "$(cat "$N/x.txt")" = new ] && [ "$(cat "$N/y.txt")" = new ] || fail "main worktree not moved forward"
+[ "$(grep -c '"result":"landed"' "$PARALLEL_STATE_DIR/merge-queue.jsonl")" -eq 1 ] || fail "expected exactly one landed verdict"
+tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl" | grep -q '"branch":"lane/x lane/y"' || fail "verdict does not name both branches"
+ok
+
+CASE="merge-queue: a multi-branch land is all or none -- a failing gate moves nothing"
+LP1="$(cd "$N" && bash "$LANES" create p1 | sed -n 's/.*path=//p')"
+LP2="$(cd "$N" && bash "$LANES" create p2 | sed -n 's/.*path=//p')"
+lane_commit "$LP1" p1.txt one
+lane_commit "$LP2" y.txt broken
+before="$(git -C "$N" rev-parse main)"
+run bash -c "cd '$N' && bash '$MQ' land lane/p1 lane/p2"
+[ "$RC" -eq 4 ] || fail "expected exit 4, got $RC: $OUT"
+[ "$(git -C "$N" rev-parse main)" = "$before" ] || fail "main moved although the combined gate failed"
+[ ! -f "$N/p1.txt" ] || fail "the first lane landed alone"
+ok
+
+CASE="merge-queue: a multi-branch land that conflicts between lanes exits 2 and moves nothing"
+lane_commit "$LP1" y.txt "p1 version"
+run bash -c "cd '$N' && bash '$MQ' land lane/p1 lane/p2 --test-cmd true"
+[ "$RC" -eq 2 ] || fail "expected exit 2, got $RC: $OUT"
+printf '%s' "$OUT" | grep -q 'conflict: y.txt' || fail "conflict file not named: $OUT"
+[ "$(git -C "$N" rev-parse main)" = "$before" ] || fail "main moved on a conflict"
+[ "$(git -C "$N" worktree list | wc -l)" -eq 5 ] || fail "temp worktree left behind: $(git -C "$N" worktree list)"
+ok
+
+CASE="merge-queue: a single branch still lands as before (exit 0, one branch in the verdict)"
+run bash -c "cd '$N' && bash '$MQ' land lane/p1 --test-cmd true"
+expect_rc "$RC" 0 "$OUT"
+tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl" | grep -q '"branch":"lane/p1"' || fail "single-branch verdict changed"
+ok
+
+# ── lanes.sh remove: content landed combined; verify: scope check ────────────
+export PARALLEL_STATE_DIR="$ROOT_TMP/state-lanes2"
+CASE="lanes: remove accepts a lane whose content landed combined with other changes"
+LS="$(cd "$N" && bash "$LANES" create s | sed -n 's/.*path=//p')"
+lane_commit "$LS" s.txt s
+printf 's\n' > "$N/s.txt"; printf 'other\n' > "$N/t.txt"; git -C "$N" add s.txt t.txt; git -C "$N" commit -q -m "s and t together"
+[ "$(git -C "$N" cherry main lane/s | grep -c '^+')" -eq 1 ] || fail "setup: cherry should still list the lane commit"
+run bash -c "cd '$N' && bash '$LANES' remove s"
+expect_rc "$RC" 0 "$OUT"
+git -C "$N" show-ref --verify --quiet refs/heads/lane/s && fail "branch still present (output: $OUT; branches: $(git -C "$N" branch --list 'lane/*' | tr '\n' ' '))"
+ok
+
+CASE="lanes: remove still refuses when the lane's content is not on the target"
+LU="$(cd "$N" && bash "$LANES" create u | sed -n 's/.*path=//p')"
+lane_commit "$LU" u.txt mine
+printf 'theirs\n' > "$N/u.txt"; git -C "$N" add u.txt; git -C "$N" commit -q -m "u differently"
+run bash -c "cd '$N' && bash '$LANES' remove u"
+[ "$RC" -eq 1 ] || fail "expected refusal (exit 1), got $RC: $OUT"
+assert_match "$OUT" 'not on main'
+
+CASE="lanes: verify passes when the lane stays inside its owned globs"
+LV="$(cd "$N" && bash "$LANES" create v | sed -n 's/.*path=//p')"
+mkdir -p "$LV/src/deep" "$LV/docs"
+printf 'a\n' > "$LV/src/deep/a.txt"; printf 'b\n' > "$LV/docs/b.txt"
+git -C "$LV" add -A; git -C "$LV" commit -q -m "v work"
+run bash -c "cd '$N' && bash '$LANES' verify v --owned 'src/*' 'docs/*'"
+assert_rc "$RC" 0 "$OUT"
+
+CASE="lanes: verify fails naming the files outside the owned globs"
+run bash -c "cd '$N' && bash '$LANES' verify v --owned 'src/*'"
+[ "$RC" -eq 1 ] || fail "expected exit 1, got $RC: $OUT"
+printf '%s' "$OUT" | grep -q 'docs/b.txt' || fail "out-of-scope file not named: $OUT"
+printf '%s' "$OUT" | grep -q 'src/deep/a.txt' && fail "an owned file was reported"
+ok
+
+CASE="lanes: verify without --owned is a usage error"
+run bash -c "cd '$N' && bash '$LANES' verify v"
+assert_rc "$RC" 2 "$OUT"
+
 # ── runner.sh (fake claude) ─────────────────────────────────────────────────
 export PARALLEL_STATE_DIR="$ROOT_TMP/state-runner"
 FAKE="$ROOT_TMP/fakeclaude"
@@ -406,6 +524,12 @@ tail -1 "$FAKE_LOG" | grep -q -- '--permission-prompts none' || fail "--permissi
 tail -1 "$FAKE_LOG" | grep -q -- '--allowed-tools Read,Edit' || fail "allowlist not passed"
 tail -1 "$FAKE_LOG" | grep -q -- '--max-turns 30' || fail "max-turns not passed"
 [ "$(wc -l < "$PARALLEL_STATE_DIR/runners/w1/events.jsonl")" -eq 1 ] || fail "events.jsonl should have one line"
+ok
+
+CASE="runner: --max-turns defaults to 200 when not given"
+run bash "$RUNNER" start wturns --prompt "t" --cwd "$W" --allowed-tools Read
+expect_rc "$RC" 0 "$OUT"
+tail -1 "$FAKE_LOG" | grep -q -- '--max-turns 200' || fail "default max-turns is not 200: $(tail -1 "$FAKE_LOG")"
 ok
 
 CASE="runner: resume below the threshold passes --resume <id>"
