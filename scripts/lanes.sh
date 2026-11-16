@@ -60,6 +60,7 @@
 #     Scope check: exit 1, naming the files, when the lane's diff against its
 #     base (REF, else the merge-base with the target) touches a path matching
 #     none of the globs. `*` matches across `/`, so `engine/*` is a subtree.
+#     Exit 2 (not "in scope") when the diff itself fails, e.g. a bad --base.
 #   lanes.sh remove <name> [--force] [--target BRANCH]
 #     Remove the worktree and branch. Refuses (exit 1) while the lane has
 #     commits whose changes are not on the target or uncommitted edits, unless
@@ -70,7 +71,7 @@
 # --target defaults to the branch checked out in the main worktree.
 set -euo pipefail
 
-usage() { sed -n '38,70p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '38,71p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 [ $# -ge 1 ] || usage
 SUB="$1"; shift
@@ -160,7 +161,7 @@ unlanded() {  # commits on lane/<name> whose patch is not on TARGET
 # with the target.
 lane_changed() {
   local base="$BASE"
-  [ -n "$base" ] || base="$(git -C "$MAIN" merge-base "$TARGET" "lane/$1")"
+  [ -n "$base" ] || base="$(git -C "$MAIN" merge-base "$TARGET" "lane/$1")" || return 1
   git -C "$MAIN" diff --name-only --no-renames "$base" "lane/$1"
 }
 
@@ -238,6 +239,9 @@ case "$SUB" in
     [ "${#OWNED[@]}" -gt 0 ] || { echo "lanes.sh verify: --owned <glob>... is required" >&2; exit 2; }
     [ -n "$BASE" ] || need_target
     git -C "$MAIN" show-ref --verify --quiet "refs/heads/lane/$NAME" || { echo "lanes.sh: no lane named $NAME" >&2; exit 1; }
+    # Capture first: a process substitution would swallow a git failure (bad
+    # --base, no common ancestor) and report "in scope" -- failing open.
+    files="$(lane_changed "$NAME")" || { echo "lanes.sh verify: cannot diff lane/$NAME against its base; nothing was verified" >&2; exit 2; }
     stray=""
     while IFS= read -r f; do
       [ -n "$f" ] || continue
@@ -247,7 +251,7 @@ case "$SUB" in
         case "$f" in $g) ok=1; break ;; esac
       done
       [ "$ok" -eq 1 ] || stray="$stray$f"$'\n'
-    done < <(lane_changed "$NAME")
+    done <<<"$files"
     if [ -n "$stray" ]; then
       echo "OUT OF SCOPE: lane/$NAME changed paths outside its owned globs (${OWNED[*]}):"
       printf '%s' "$stray" | sed 's/^/  /'

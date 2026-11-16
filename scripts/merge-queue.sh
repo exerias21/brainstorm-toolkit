@@ -132,7 +132,7 @@ PYEOF
 fi
 if [ -z "$TEST_CMD" ]; then
   TEST_CMD="$CONFIGURED"
-elif [ -n "$CONFIGURED" ]; then
+elif [ -n "$CONFIGURED" ] && [ "$TEST_CMD" != "$CONFIGURED" ]; then
   OVERRIDE=true
   echo "WARNING: --test-cmd overrides the configured gate ($CONFIGURED). A narrower command than the gate lets a red suite land; the project's full gate will NOT run."
 fi
@@ -140,7 +140,18 @@ fi
 HOLDER="merge-queue-$$"
 TMP=""
 verdict() {  # result detail -- one JSON line per run
-  local result="$1" detail="${2:-}"
+  local result="$1" detail="${2:-}" jpy
+  # json.dumps so the logged command is exactly what ran (quotes, backslashes,
+  # tabs and newlines included); the printf below is only the no-python fallback.
+  if jpy="$(bash "$HERE/py.sh" --print 2>/dev/null)" && [ -n "$jpy" ]; then
+    "$jpy" -c '
+import json, sys
+a = sys.argv[1:]
+print(json.dumps({"ts": a[0], "branch": a[1], "target": a[2], "result": a[3], "old": a[4], "new": a[5],
+                  "test_cmd": a[6], "test_cmd_override": a[7] == "true", "detail": a[8]}, separators=(",", ":")))
+' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$BRANCH" "$TARGET" "$result" "${OLD:-}" "${NEW:-}" "$TEST_CMD" "$OVERRIDE" "$detail" >> "$LOG"
+    return 0
+  fi
   printf '{"ts":"%s","branch":"%s","target":"%s","result":"%s","old":"%s","new":"%s","test_cmd":"%s","test_cmd_override":%s,"detail":"%s"}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$BRANCH" "$TARGET" "$result" "${OLD:-}" "${NEW:-}" \
     "$(printf '%s' "$TEST_CMD" | tr '\n"\\' ' __')" "$OVERRIDE" \

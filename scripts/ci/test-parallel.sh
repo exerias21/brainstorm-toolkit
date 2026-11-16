@@ -408,6 +408,23 @@ expect_rc "$RC" 0 "$OUT"
 tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl" | grep -q '"branch":"lane/p1"' || fail "single-branch verdict changed"
 ok
 
+CASE="merge-queue: --test-cmd identical to the configured gate does not warn or flag an override"
+run bash -c "cd '$N' && bash '$MQ' land lane/p1 --dry-run --test-cmd 'sh pin.sh'"
+expect_rc "$RC" 0 "$OUT"
+printf '%s' "$OUT" | grep -q WARNING && fail "warned although the command equals the gate: $OUT"
+tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl" | grep -q '"test_cmd_override":false' || fail "override flagged for an identical command"
+ok
+
+CASE="merge-queue: a test_cmd with quote, backslash, tab and newline is logged as valid JSON and round-trips exactly"
+PYB="$(bash "$PLUGIN_ROOT/scripts/py.sh" --print)"
+WEIRD=$'true # q"uote back\\slash\ttab\nexit 0'
+run bash -c 'cd "$1" && shift && bash "$@"' _ "$NG" "$MQ" land lane/g --dry-run --test-cmd "$WEIRD"
+expect_rc "$RC" 0 "$OUT"
+LASTLINE="$(tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl")"
+GOT="$(printf '%s' "$LASTLINE" | "$PYB" -c 'import json,sys; sys.stdout.write(json.loads(sys.stdin.read())["test_cmd"])')" || fail "log line is not valid JSON: $LASTLINE"
+[ "$GOT" = "$WEIRD" ] || fail "test_cmd did not round-trip: got [$GOT]"
+ok
+
 # ── lanes.sh remove: content landed combined; verify: scope check ────────────
 export PARALLEL_STATE_DIR="$ROOT_TMP/state-lanes2"
 CASE="lanes: remove accepts a lane whose content landed combined with other changes"
@@ -441,6 +458,12 @@ run bash -c "cd '$N' && bash '$LANES' verify v --owned 'src/*'"
 [ "$RC" -eq 1 ] || fail "expected exit 1, got $RC: $OUT"
 printf '%s' "$OUT" | grep -q 'docs/b.txt' || fail "out-of-scope file not named: $OUT"
 printf '%s' "$OUT" | grep -q 'src/deep/a.txt' && fail "an owned file was reported"
+ok
+
+CASE="lanes: verify fails closed (exit 2, never 'in scope') when the diff itself fails"
+run bash -c "cd '$N' && bash '$LANES' verify v --owned 'src/*' 'docs/*' --base doesnotexist"
+[ "$RC" -eq 2 ] || fail "expected exit 2 for a bad --base, got $RC: $OUT"
+printf '%s' "$OUT" | grep -q 'in scope' && fail "a failed diff was reported in scope: $OUT"
 ok
 
 CASE="lanes: verify without --owned is a usage error"
