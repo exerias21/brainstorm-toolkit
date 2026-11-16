@@ -17,7 +17,7 @@ flat files under `.claude/parallel/runners/<name>/` (gitignore `.claude/parallel
 ```bash
 bash scripts/runner.sh start api --cwd <lane path> --prompt-file .claude/parallel/briefs/api.md \
   --allowed-tools "Read,Edit,Write,Glob,Grep,Bash(npm --prefix api test:*),Bash(git add:*),Bash(git commit:*)" \
-  --task T-12 --model M --max-turns 60 [--max-budget-usd 5] [--rotate-at 350000]
+  --task T-12 --model M [--max-turns 200] [--max-budget-usd 5] [--rotate-at 350000]
 bash scripts/runner.sh resume api --prompt "Review feedback: ..."   # same session, same task
 bash scripts/runner.sh resume api --prompt-file next.md --task T-13 # new work item
 bash scripts/runner.sh rotate api      # write a hand-off now; next call starts fresh
@@ -48,6 +48,21 @@ first trial's exit 3 was masked exactly this way.
 `--help`), `--max-budget-usd`, and `--permission-prompts none` when the installed `claude`
 lists it. A session is stored per working folder, so the runner always runs in its recorded
 `cwd`.
+
+**`--max-turns` defaults to 200.** Under the one-command-per-Bash-call rule every step is its
+own turn: portal runners used 111-113 of a 120 cap. A lower number cuts a lane off mid-task;
+bound cost with `--max-budget-usd` instead. The runner does not probe whether the lane managed
+to commit; check `git log` in the lane when the call returns.
+
+## Project commit hooks see the lane as the project root
+
+A project hook keyed on `CLAUDE_PROJECT_DIR` (a `PreToolUse` commit gate, a script that
+`cd`s there) runs with the **lane's folder as the project root**, because the runner's `cwd` is
+the lane. A hook that assumed the main checkout (a path relative to it, a lookup of files only
+the main folder has) then breaks or gates the wrong tree; one such bug was fixed in the bdt
+repo (commit e121ccc). Before dispatching a wave, **make one test commit in one lane** and see
+the hook pass, then reset that commit in the lane (`git reset` is yours, never a writer's). Do
+it once per project per hook change, not per lane.
 
 ## Context measurement and rotation
 

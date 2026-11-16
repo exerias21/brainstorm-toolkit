@@ -72,7 +72,11 @@ sets `models.*`; the defaults above apply when it does not.
 2. For each lane write down **owned paths** (the only files it may change) and **forbidden
    paths** (everything another lane owns, plus shared files only you edit: `TASKS.md`,
    lock files, migrations, changelogs, version numbers). Overlap between two lanes' owned
-   paths means they are one lane.
+   paths means they are one lane. **Before splitting by directory, grep the tests for the
+   strings the lanes change** (labels, messages, fixture names). A pinned string or shared
+   fixture makes two lanes one lane, or two lanes that must land together
+   (`merge-queue.sh land lane/a lane/b`). List the tests that pin a lane's files as that
+   lane's owned paths in its brief, or the writer cannot update them.
 3. **Confirm each item is still open before you brief it.** A task list goes stale: in the
    first trial a lane was briefed on a row whose work had already landed, and the runner spent
    its whole budget rediscovering that. Spend one or two reads checking the code (does the
@@ -198,15 +202,20 @@ resources exist.
 
 When a lane reports `ready-for-review`, the verifier for its group reads `git diff
 <target>...lane/<name>`, runs the lane's fast test command in the lane folder, and checks the
-diff touches owned paths only. Problems go back **to the writer that owns those files**, as a
+diff touches owned paths only: `bash scripts/lanes.sh verify <name> --owned 'src/*' 'tests/x.py'`
+exits 1 and names every changed file outside the globs (`*` crosses `/`). Problems go back **to the writer that owns those files**, as a
 new turn on its session (`runner.sh resume`, or a re-dispatched subagent), never fixed by the
 verifier or by you. A lane that fails review twice escalates (section 13).
 
 ## 10. Land through the merge queue
 
 ```bash
-bash scripts/merge-queue.sh land lane/<name> [--target main] [--verify-tests <slug>]
+bash scripts/merge-queue.sh land lane/<name> [lane/<name2> ...] [--target main] [--verify-tests <slug>]
 ```
+
+**Do not pass `--test-cmd` narrower than the configured gate.** Leave it off; the queue uses
+the project's gate. An override prints a WARNING and is logged (`test_cmd_override`). Several
+branches in one call are rebased in order, gated once and landed all-or-none.
 
 One landing at a time. It rebases the lane in a clean throwaway checkout, seeds it like a lane
 (`.worktreeinclude`, then `lane_setup`), runs the full test command
@@ -223,7 +232,9 @@ it stops and names the files; you hand them back to the owning lane (`lanes.sh s
 then re-land) or decide yourself; nothing is ever auto-resolved.
 
 Tell lanes to **rebase early** (`bash scripts/lanes.sh sync <name>`) after each landing in
-their wave, so conflicts surface small. After a landing: `bash scripts/lanes.sh remove <name>`.
+their wave, so conflicts surface small. After a landing: `bash scripts/lanes.sh remove <name>`
+(it also accepts a lane that landed combined with other changes, when every path the lane
+changed already matches the target; a lane whose content is missing is still refused).
 
 ## 11. Interaction with project commit hooks
 
@@ -239,6 +250,8 @@ pays the full suite, often against the main folder rather than the lane, and a r
   commit. Exempting lane worktrees (for example branches `lane/*`, or any worktree other than
   the main one) is the project's decision. Do not edit, disable or bypass a project hook from
   this skill, and never brief a lane to use `--no-verify`.
+- A hook keyed on `CLAUDE_PROJECT_DIR` sees the lane as the project root. Test one lane
+  commit before dispatching a wave (`references/runners.md`).
 - Until the project decides, keep lane commits few (one per finished step) and say in the
   brief that a commit may take as long as the hook does.
 

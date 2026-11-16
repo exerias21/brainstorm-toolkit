@@ -27,6 +27,7 @@ the evidence.
 ## You own (the only paths you may change)
 - <path or glob>
 - <path or glob>
+- <the tests that pin these files' strings or fixtures: grep for them before you split>
 
 ## You must not touch
 - <paths other lanes own>

@@ -3,10 +3,25 @@
 The one door every lane lands through. Opt-in: nothing runs it but you.
 
 ```bash
-bash scripts/merge-queue.sh land lane/<name> [--target main] [--test-cmd "<cmd>"] \
-  [--verify-tests <slug> [--pipeline-dir .claude/pipeline]] [--dry-run]
+bash scripts/merge-queue.sh land lane/<name> [lane/<name2> ...] [--target main] \
+  [--verify-tests <slug> [--pipeline-dir .claude/pipeline]] [--dry-run]   # no --test-cmd, see below
 bash scripts/merge-queue.sh log 10     # recent verdicts (.claude/parallel/merge-queue.jsonl)
 ```
+
+**Several branches, one landing.** `land lane/a lane/b` rebases them in the order given onto the
+target in one clean checkout, runs the gate once on the combined result, and moves the target
+once (one compare-and-swap): all land or none. Use it for lanes that only pass together, for
+example two lanes that each change a string a shared test pins. A conflict between them is
+exit 2 with the files named, as for one lane. Single-branch behaviour and exit codes are
+unchanged.
+
+**Never pass `--test-cmd` narrower than the configured gate.** It exists for projects with no
+configured gate. When `pipeline.parallel.gate_command` or `test.unit` is set, `--test-cmd`
+prints `WARNING: --test-cmd overrides the configured gate` and the verdict records
+`test_cmd_override: true`; every verdict records the command it ran as `test_cmd`. Check
+`bash scripts/merge-queue.sh log` for `"test_cmd_override":true` before you trust a run of
+landings: in the first trial ad hoc narrow commands were passed on every landing and the
+project's full gate never ran.
 
 What it does, in order:
 
