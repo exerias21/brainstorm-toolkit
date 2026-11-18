@@ -181,7 +181,7 @@ fi
 # its worktree's back would leave that folder showing the landing reversed, so
 # the lane's paths are moved forward there too -- which is only safe when none
 # of them holds uncommitted work. Unrelated dirt is left alone.
-TARGET_WT="$(git -C "$MAIN" worktree list --porcelain | awk -v b="refs/heads/$TARGET" '/^worktree /{p=substr($0,10)} $0=="branch " b {print p; exit}')"
+TARGET_WT="$(git -C "$MAIN" worktree list --porcelain | awk -v b="refs/heads/$TARGET" '/^worktree /{p=substr($0,10)} $0=="branch " b && !f {print p; f=1}')"
 
 # Paths in the target worktree that a landing of these lane paths would
 # clobber: modified, staged or untracked (not ignored) files that are lane
@@ -212,7 +212,7 @@ if [ -n "$TARGET_WT" ]; then
 fi
 
 for b in "${BRANCHES[@]}"; do
-  LANE_WT="$(git -C "$MAIN" worktree list --porcelain | awk -v b="refs/heads/$b" '/^worktree /{p=substr($0,10)} $0=="branch " b {print p; exit}')"
+  LANE_WT="$(git -C "$MAIN" worktree list --porcelain | awk -v b="refs/heads/$b" '/^worktree /{p=substr($0,10)} $0=="branch " b && !f {print p; f=1}')"
   if [ -n "$LANE_WT" ] && [ -n "$(git -C "$LANE_WT" status --porcelain --untracked-files=no)" ]; then
     echo "WARNING: $b has uncommitted changes at $LANE_WT; only its commits will land."
   fi
