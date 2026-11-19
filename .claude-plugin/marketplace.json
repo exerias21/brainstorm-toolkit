@@ -33,6 +33,7 @@
         "./skills/repo-onboarding",
         "./skills/sdlc",
         "./skills/sdlc-status",
+        "./skills/session-handoff",
         "./skills/task",
         "./skills/test-check"
       ]

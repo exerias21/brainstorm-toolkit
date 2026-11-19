@@ -20,6 +20,7 @@ Most AI-agent task systems bolt on heavyweight task databases, multi-agent orche
 | `/task` | Claude + Copilot + Codex | Create one bounded task and execute it with TDD on the current branch. No flags, always TDD |
 | `/sdlc` | Claude + Copilot + Codex † | The full pipeline, ending in a validated working tree you commit yourself. [Details below.](#the-pipeline-sdlc) |
 | `/sdlc-status` | Claude + Copilot + Codex | Readout **and** recommendation: task counts, the active task, any stalled pipeline run, then one recommended next command. Read-only. |
+| `/session-handoff` | Claude + Copilot + Codex | Hand-off for a session about to be cleared: every claim re-measured from git, TASKS.md, lanes, runners and leases; `--review` adds a measured look at how the work was driven. |
 | `/repo-onboarding` | Claude + Copilot + Codex | Generate AGENTS.md + TASKS.md + project.json + GOTCHAS.md |
 | `/code-tour` | Claude + Copilot + Codex | Turn a codebase into teaching material: why-focused docstrings plus a guided reading path (`TOUR.md`) with exercises. |
 | `/docstring-sync` | Claude + Copilot + Codex | Repair docstrings and comments that drifted from their code: stale claims, param/return mismatches, placeholder stubs, and rotted pointers to plan files or tickets. Deterministic checks find everything; you review the diff. Never commits. |
