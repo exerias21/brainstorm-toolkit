@@ -1,14 +1,12 @@
 ---
 name: session-handoff
 description: >
-  Write a hand-off for a whole working session (usually an orchestrator) that is about to be
-  cleared, so a fresh session can pick up without the transcript: what landed, what is in
-  flight, what waits on the human, how work is being driven, and what to do first. Every claim
-  is re-measured from durable state (git, TASKS.md, lanes, runners, leases, pipeline envelopes,
-  background jobs), not recalled. Use when the user says "write a handoff", "I'm clearing this
-  session", "hand this off", "/session-handoff", "wrap up for the next session", or before a
-  long session ends. For rotating one runner, runner.sh already writes a lane note
-  (orchestrate-parallel-agents references/handoff-note.md).
+  Write a hand-off for a working session (usually an orchestrator) about to be cleared, so a
+  fresh session can pick up without the transcript: what landed, what is in flight, what waits
+  on the human, what to do first. Every claim is re-measured from durable state (git, TASKS.md,
+  lanes, runners, leases, envelopes), not recalled. Use when the user says "write a handoff",
+  "I'm clearing this session", "hand this off", "/session-handoff", "wrap up for the next
+  session", or before a long session ends.
 argument-hint: "[--review] [--out <path>]"
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
