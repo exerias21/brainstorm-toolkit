@@ -27,8 +27,20 @@ the two loops count rounds separately, so without it their reports overwrite eac
 (each `pipeline.implement.must_follow` entry from `.claude/project.json` as its own `- ` line, word
 for word; empty when unset).
 
-Then re-run the gate. Repeat to a maximum of **3 iterations, shared across Stage
-5's gates** (Stage 5.7/5.8 has its own separate budget).
+**Carry history.** From round 2 on, add a fifth block to the dispatch: the paths of every earlier
+round's report (`agent-reports/{gate}-fix-{i}.md`, `i < N`) with each round's failure signatures, then
+"Do not repeat an approach listed there; say what you will do differently." A fix agent that sees only
+the current failure will retry the approach that just failed.
+
+**Failure set.** A round's failure set is the set of (test id + first assertion/error line) for every
+failure the gate reports after that round's fix. Compute it yourself from the gate's structured
+results; do not ask the fix agent.
+
+Then re-run the gate. **Stop on no progress:** if round N's failure set equals round N-1's, the loop is
+stuck — do not spend the remaining budget. Skip to the pause below at once, and record
+`no-progress` in the failing stage's sidecar (`data.no_progress`: `{"round": N, "previous": [...],
+"current": [...]}`, both failure sets) with `data.fix_rounds` = N. Otherwise repeat to a maximum of
+**3 iterations, shared across Stage 5's gates** (Stage 5.7/5.8 has its own separate budget).
 
 **Red-check a regression guard.** When the fix loop (or its fix agent) adds or accepts a test as
 the guard for a fix, that test only counts if it **fails with the fix reverted** — a guard that
@@ -56,7 +68,8 @@ from Stage 5.7/5.8: that stage has its own separate budget and Axis 2 (`models.c
 not on this ladder, so there is nothing to escalate. `scripts/hooks/enforce-model-cap.sh` needs
 no change for this — an escalation that stays within the cap is never rewritten.
 
-**The pause.** On budget exhaustion, emit this block, inferring the class from *the failing
+**The pause.** On budget exhaustion or `no-progress`, emit this block (say "no progress after {N} fix
+attempts" in place of "persist" for a no-progress stop), inferring the class from *the failing
 stage's own* sidecar (`validate.json`, `review.json`):
 
 ```markdown

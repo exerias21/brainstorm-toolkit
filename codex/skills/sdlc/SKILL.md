@@ -238,7 +238,9 @@ runtime is always single-agent), preceded by **live-code grounding**.
 
 At the first gate failure, **read `skills/sdlc/templates/fix-loop.md` now**: fix only the named
 failures (no refactor), re-run the gate, 3 iterations max, then emit its PAUSE block and set
-`run.json.status = "paused"`. Stage 5.7/5.8 has its own separate budget.
+`run.json.status = "paused"`. From round 2, hand the fix agent the earlier rounds' report paths and
+failure signatures ("do not repeat an approach listed there"); if a round's failure set (test id + first
+error line) equals the previous round's, stop at once, record `no-progress`, and pause. Stage 5.7/5.8 has its own separate budget.
 
 **`pipeline.fix_loop.escalate_last` on this runtime.** There is no sub-agent seam to escalate —
 every fix attempt already runs inline in your session model, so a `true` value does not raise

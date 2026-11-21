@@ -1,0 +1,55 @@
+{
+  "name": "sdlc-stuck-test",
+  "fixture": "mini-fastapi-stuck",
+  "prompt": "/sdlc plans/stuck-test.md",
+  "max_budget_usd": 3.5,
+  "assertions": [
+    {
+      "type": "json_path",
+      "file": ".claude/pipeline/stuck-test/run.json",
+      "path": "status",
+      "equals": "paused"
+    },
+    {
+      "type": "json_path",
+      "file": ".claude/pipeline/stuck-test/stage-outputs/validate.json",
+      "path": "data.fix_rounds",
+      "equals": 2
+    },
+    {
+      "type": "json_path",
+      "file": ".claude/pipeline/stuck-test/stage-outputs/validate.json",
+      "path": "data.no_progress.round",
+      "equals": 2
+    },
+    {
+      "type": "json_path",
+      "file": ".claude/pipeline/stuck-test/stage-outputs/validate.json",
+      "path": "data.no_progress.previous",
+      "min_length": 1
+    },
+    {
+      "type": "json_path",
+      "file": ".claude/pipeline/stuck-test/stage-outputs/validate.json",
+      "path": "data.no_progress.current",
+      "min_length": 1
+    },
+    {
+      "type": "file_matches",
+      "glob": ".claude/pipeline/stuck-test/agent-reports/validate-fix-1.md",
+      "pattern": "(?s).+"
+    },
+    {
+      "type": "file_matches",
+      "glob": ".claude/pipeline/stuck-test/agent-reports/validate-fix-2.md",
+      "pattern": "validate-fix-1\\.md"
+    },
+    {
+      "type": "git_head_unchanged"
+    },
+    {
+      "type": "agent_models_within_cap",
+      "cap": "sonnet"
+    }
+  ]
+}
