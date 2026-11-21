@@ -192,6 +192,15 @@ order is the difference between "usually closes" and "closes."
    `skills/gotcha/SKILL.md`. Auto-draft a gotcha **only** on an objective
    trigger — a test/eval/flowsim fix-loop that **failed-then-recovered**, or the
    user voicing surprise — route it through gotcha's dedup, and one-tap confirm.
+   **Second trigger — a recurring review catch.** Read this run's
+   `run.json.data.review_findings[]` (absent ⇒ skip). For a `fixed` entry whose `category`
+   (never `uncategorized`) is also `fixed` in `data.review_findings[]` of **≥ 2 other**
+   `.claude/pipeline/*/run.json`, draft one gotcha — or a proposed `pipeline.implement.must_follow`
+   line when the trap is a rule to follow rather than a pitfall — and send it through the same
+   dedup-and-confirm; never write `GOTCHAS.md` or `project.json` silently. Noise budget: **at most
+   one drafted line per run** (pick the category with the most earlier matches), and none when only
+   one earlier envelope matches. Cost is a glob and a read of small JSON files; do it only when
+   this run's own `review_findings` has a `fixed` entry.
    A clean run stays silent (no vibe-gating). If capture is **declined/deferred**,
    drop the seam sentinel instead — append ONE structured line, deduped by `cmd`
    (multi-slot: it now coexists with the pipeline handoff instead of racing it;

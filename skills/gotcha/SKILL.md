@@ -65,7 +65,9 @@ run. Goal: turn a hard-won trap into a durable entry **without capture fatigue**
 
 **Objective trigger — auto-draft ONLY on hard evidence of a trap:**
 - a test / eval / flowsim fix-loop actually ran and **failed-then-recovered**, or
-- the user explicitly voiced surprise ("huh", "that's a gotcha", "didn't expect").
+- the user explicitly voiced surprise ("huh", "that's a gotcha", "didn't expect"), or
+- `/sdlc`'s review stage fixed a finding whose `category` was already fixed in ≥ 2 earlier
+  runs (its Stage 6 step 4 defines the check; at most one draft per run).
 
 A clean run (no fix-loop, no surprise) produces **no prompt** — skip silently.
 Do not gate on a vibe like "was anything non-obvious?"; that fires every run.

@@ -75,7 +75,11 @@ otherwise just hides the cost. Lower `models.code_review` or cut the fan-out ins
 
 Each lens returns structured findings (`REVIEW_FINDING_SCHEMA`, defined in
 `docs/REVIEW-FIX-STAGE.md` §6.2; `skills/sdlc/templates/state-schema.md` documents the resulting `review.json`
-sidecar shape, not the schema itself): `{severity, file, line, defect, failure_scenario, fix}`.
+sidecar shape, not the schema itself): `{severity, category, file, line, defect, failure_scenario, fix}`.
+`category` is a kebab-case slug (≤40 chars) naming the *kind* of defect, not the instance
+(`double-decode`, `missing-authz`, `stale-env-name`); tell each lens to reuse one slug for the same
+kind of defect, since Stage 6 matches it across runs. A finding that returns none gets `uncategorized`,
+which Stage 6 never matches.
 `auto_fixable` is set later by the fix-planner (Stage 5.8) and merged in at that point — the lens
 itself never returns or claims it.
 
@@ -181,6 +185,13 @@ not stale.
 `loops[]` array carrying one entry per iteration. `review-fix` is recorded once in
 `run.json.stages_completed` regardless of loop count.
 
+**Persist the catches into `run.json` — this is what Stage 6's recurrence check reads.** Once the
+fix loop ends, write `run.json.data.review_findings[]` with one entry per **confirmed** finding:
+`{category, file, summary, outcome}` — `summary` ≤ 80 chars, `outcome` `"fixed"` when a fix agent's
+change for it stuck, otherwise `"skipped"` (surfaced-only, declined, unresolved, or the oscillation
+pause). Do this on a stage that ran the 5.7 review but skipped 5.8 too (every confirmed finding then
+`"skipped"`). Skipping this write silently blinds the recurrence check on every later run.
+
 **Posture on a surviving HIGH finding (unresolved after budget, or a HIGH design decision):**
 it does **not** block — `/sdlc` does no git writes, so there is nothing to gate. List it first in
 the Stage 7 report and leave `run.json.status` as the run's own verdict; the human decides before
@@ -220,6 +231,7 @@ that only exist when this stage runs.
     {
       "finding_id": "f0-1",
       "lens": "correctness",
+      "category": "double-decode",
       "severity": "high",
       "file": "api/scrapers/ddg.py",
       "line": 42,
