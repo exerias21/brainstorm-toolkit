@@ -194,13 +194,24 @@ order is the difference between "usually closes" and "closes."
    user voicing surprise — route it through gotcha's dedup, and one-tap confirm.
    **Second trigger — a recurring review catch.** Read this run's
    `run.json.data.review_findings[]` (absent ⇒ skip). For a `fixed` entry whose `category`
-   (never `uncategorized`) is also `fixed` in `data.review_findings[]` of **≥ 2 other**
-   `.claude/pipeline/*/run.json`, draft one gotcha — or a proposed `pipeline.implement.must_follow`
-   line when the trap is a rule to follow rather than a pitfall — and send it through the same
-   dedup-and-confirm; never write `GOTCHAS.md` or `project.json` silently. Noise budget: **at most
-   one drafted line per run** (pick the category with the most earlier matches), and none when only
-   one earlier envelope matches. Cost is a glob and a read of small JSON files; do it only when
-   this run's own `review_findings` has a `fixed` entry.
+   (never `uncategorized`) is also `fixed` in **≥ 2 other envelopes**, draft one gotcha — or a
+   proposed `pipeline.implement.must_follow` line when the trap is a rule to follow rather than a
+   pitfall — and send it through the same dedup-and-confirm; never write `GOTCHAS.md` or
+   `project.json` silently. How to count:
+   - **Slug match:** compare categories lowercased, with `_` and spaces mapped to `-`, trimmed.
+   - **Find the others:** glob `.claude/pipeline/*/run.json`, skip this run's own directory (its
+     `feature_slug`), read only `data.review_findings`.
+   - **Count envelopes, not entries:** an envelope counts once if it has ≥ 1 `fixed` entry in the
+     category. Any `status` counts except `abandoned`.
+   - **The drafted line** names the category slug, the number of earlier runs, and one example
+     file + summary from them. A `must_follow` line is a proposal shown to the user, never written
+     to `project.json`.
+
+   Noise budget: **at most one drafted line per run** (pick the category with the most earlier
+   matches), and none when only one earlier envelope matches. The cap covers both triggers: if the
+   fix-loop trigger or a user surprise already drafted a gotcha this run, skip the recurrence
+   draft (or fold it into that one). Cost is a glob and a read of small JSON files; do it only
+   when this run's own `review_findings` has a `fixed` entry.
    A clean run stays silent (no vibe-gating). If capture is **declined/deferred**,
    drop the seam sentinel instead — append ONE structured line, deduped by `cmd`
    (multi-slot: it now coexists with the pipeline handoff instead of racing it;

@@ -14,8 +14,8 @@
     {
       "type": "file_not_matches",
       "glob": ".claude/**/*",
-      "pattern": "/gotcha ",
-      "_why": "only one earlier envelope matches the category, so the recurrence trigger must stay silent. Globs every file under .claude/ (the seeded envelopes never contain this string) so the check also passes when no .next-action file is written."
+      "pattern": "/gotcha [^\\n]*unvalidated-limit",
+      "_why": "only one earlier envelope matches the category, so the recurrence trigger must stay silent. Globs every file under .claude/ so the check also passes when no .next-action file is written. Installed skills live under .claude/ too and mention `/gotcha <drafted text>`, so the pattern requires the category slug on the same line."
     },
     {
       "type": "git_head_unchanged"
