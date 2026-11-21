@@ -1363,6 +1363,60 @@ def check_description_budget(root: Path) -> list[Finding]:
     return findings
 
 
+# ── body-budget (skills/*/SKILL.md) ─────────────────────────────────────────
+#
+# After auto-compaction Claude Code re-attaches only the first ~5,000 tokens of
+# each invoked skill, so anything past ~18,000 bytes of body is silently lost
+# mid-run. Long tails belong in templates/ or references/ behind a pointer.
+
+BODY_BUDGET_BYTES = 18000
+# Explicit per-skill override: {"skills/<name>/SKILL.md": byte_limit}. Empty by default.
+BODY_BUDGET_OVERRIDES: dict[str, int] = {}
+# Critical rules that must sit inside the re-attached window: {skill path: needles}.
+BODY_CRITICAL_NEEDLES: dict[str, tuple[str, ...]] = {
+    "skills/sdlc/SKILL.md": ("no git writes", "never edits `TASKS.md`"),
+}
+
+
+def check_body_budget(
+    root: Path,
+    overrides: dict[str, int] | None = None,
+    needles: dict[str, tuple[str, ...]] | None = None,
+) -> list[Finding]:
+    overrides = BODY_BUDGET_OVERRIDES if overrides is None else overrides
+    needles = BODY_CRITICAL_NEEDLES if needles is None else needles
+    findings: list[Finding] = []
+    skills_dir = root / "skills"
+    if not skills_dir.is_dir():
+        return findings
+    for skill_md in sorted(skills_dir.glob("*/SKILL.md")):
+        rel = relposix(root, skill_md)
+        data = skill_md.read_bytes()
+        m = FRONTMATTER_BLOCK_RE.match(data.decode("utf-8", errors="replace"))
+        body = data[len(m.group(0).encode("utf-8")):] if m else data
+        limit = overrides.get(rel, BODY_BUDGET_BYTES)
+        if len(body) > limit:
+            findings.append(Finding(
+                rel, 1,
+                f"body is {len(body)} bytes, over the {limit}-byte budget "
+                f"(compaction re-attaches only the first ~5k tokens of a skill); "
+                f"move the tail into templates/ or references/",
+                "body-budget",
+            ))
+        for needle in needles.get(rel, ()):
+            idx = body.find(needle.encode("utf-8"))
+            if idx < 0:
+                findings.append(Finding(rel, 1, f"critical rule {needle!r} not found in body", "body-budget"))
+            elif idx >= limit:
+                findings.append(Finding(
+                    rel, 1,
+                    f"critical rule {needle!r} sits at byte {idx}, past the {limit}-byte "
+                    f"window that survives compaction; lift it nearer the top",
+                    "body-budget",
+                ))
+    return findings
+
+
 def description_budget_warnings(root: Path) -> list[str]:
     """Permanent WARN, never a failure: a per-skill description over 550
     chars but at or under the 600-char fail threshold. Same posture as
@@ -1544,6 +1598,7 @@ def run_all(root: Path, phrases_file: Path) -> dict[str, list[Finding]]:
         "header-list-count": check_header_list_counts(header_list_scope_files(root), root),
         "portable-invocation": check_bare_python3(files, root) + check_hooks_json_interpreter(root),
         "description-budget": check_description_budget(root),
+        "body-budget": check_body_budget(root),
         "shell-install-parity": check_shell_install_parity(root),
         "renames-table": check_renames_table(root, phrases_file),
     }
@@ -1974,6 +2029,34 @@ def self_test_description_budget_warning() -> bool:
     return ok
 
 
+def self_test_body_budget() -> bool:
+    """An oversize body is caught; an override for that skill clears it; a
+    critical needle placed past the window is caught, one inside is not."""
+    with tempfile.TemporaryDirectory(prefix="check_contracts_selftest_body_") as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        (skills_dir / "big").mkdir(parents=True)
+        (skills_dir / "big" / "SKILL.md").write_text(
+            "---\nname: big\ndescription: x\n---\n\n" + ("filler line\n" * 2000),
+            encoding="utf-8")
+        (skills_dir / "late").mkdir(parents=True)
+        (skills_dir / "late" / "SKILL.md").write_text(
+            "---\nname: late\ndescription: x\n---\n\n" + ("filler line\n" * 1600) + "SAFE RULE\n",
+            encoding="utf-8")
+        over = check_body_budget(root, {}, {})
+        cleared = check_body_budget(root, {"skills/big/SKILL.md": 30000}, {})
+        late = check_body_budget(
+            root, {}, {"skills/late/SKILL.md": ("SAFE RULE",), "skills/big/SKILL.md": ("filler",)})
+    ok = len(over) == 2 and len(cleared) == 1 and len(late) == 3
+    print(
+        f"[{'OK' if ok else 'FAIL'}] body-budget: expected 2 oversize, 1 after an override, "
+        f"and 3 with a past-window needle added; caught {len(over)}, {len(cleared)}, {len(late)}"
+    )
+    for f in over + cleared + late:
+        print(f"    {f.path}:{f.line}: {f.message}")
+    return ok
+
+
 def self_test_shell_install_parity() -> bool:
     """Self-test for shell-install-parity: a sync-global.sh that hard-codes one
     hooks.json script name, plus a hooks.json command missing the placeholder."""
@@ -2099,6 +2182,8 @@ def self_test() -> int:
     if not self_test_description_budget_total():
         ok = False
     if not self_test_description_budget_warning():
+        ok = False
+    if not self_test_body_budget():
         ok = False
 
     if not ok:

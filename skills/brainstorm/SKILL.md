@@ -259,30 +259,8 @@ Share the validation feedback with the user. If there are issues, revise the pla
 
 ### Step 7.5: Size the plan against one execution session
 
-A plan is usually executed in a **fresh session** (`/sdlc <plan>`), so the plan itself
-decides how big that session gets. Say so at authoring time, when splitting is cheap — not
-during execution, where it isn't.
-
-Estimate from the plan's own shape and state it in one line:
-
-- **files touched** and **implementation steps** (both already parsed above),
-- **surfaces** crossed (backend / frontend / data / docs),
-- whether the steps are **sequentially dependent** (they must share a session) or
-  **independent** (they need not).
-
-Then print, once:
-
-```
-plan size: <n> steps across <m> files, <k> surface(s) — <one execution session | splittable>
-```
-
-**"Splittable" is information, not an instruction.** Recommend a split only when the steps
-are **independent**, because then a second session costs nothing but re-reading the plan,
-and each slice starts clean. Never split a sequentially-dependent chain to hit a number;
-that trades real working context for a metric.
-
-If the user shares the last run's cost report, prefer its measured number over this
-estimate.
+The plan decides how big its fresh `/sdlc` session gets. **Read `skills/brainstorm/templates/step-7.5-size.md`
+now** and print its one-line `plan size:` estimate; recommend a split only for independent steps.
 
 ### Step 8: Continue the flow
 
@@ -311,49 +289,11 @@ proceeds normally below.)
 **Otherwise the next command is `/sdlc`** — it runs the full pipeline and hands back
 validated changes with **no git writes**, so it is safe to take without asking.
 
-Drop a **next-action sentinel** naming that command so the Stop hook surfaces it.
-
-```
-# Append ONE structured line (multi-slot seam — coexists with a gotcha entry;
-# see docs/SEAM.md). /sdlc does no git writes, so confirm stays false; set
-# "confirm":true only if you substitute a command that is hard to reverse.
-# Dedup by cmd, not the whole line (docs/SEAM.md) -- -F/-e as there, so a cmd
-# containing regex metacharacters (a plan path's `.md`) is never misread as a pattern.
-cmd='/sdlc plans/brainstorm-<topic-slug>.md'   # or docs/plans/<topic-slug>.md in a skill repo
-grep -qF -e "\"cmd\":\"$cmd\"" -e "\"cmd\": \"$cmd\"" .claude/.next-action 2>/dev/null \
-  || echo "{\"cmd\":\"$cmd\",\"source\":\"brainstorm\",\"confirm\":false}" >> .claude/.next-action
-```
-
-The Stop hook — **shipped by the plugin** (auto-wired when the plugin is enabled,
-SEAM1) or installed by `setup.sh` (`.claude/settings.json` / `.github/hooks/next-action.json`
-/ `.codex/hooks.json`) — reads the file once, prints `Next: <command>`, and deletes it.
-Codex **does** have a Stop hook shipped the same way; until the Codex hook is wired and
-`.codex/` is trusted (`/hooks`), also print `Next:` inline right after writing the
-sentinel, so the handoff degrades gracefully instead of vanishing. **No-hook nudge
-(SEAM2):** if no hook is wired at all, the sentinel is inert — after writing it, check for
-one: `grep -rlqs 'next-action' .claude/settings.json ~/.claude/settings.json
-.github/hooks/ ~/.claude/plugins/ 2>/dev/null` — and if that finds nothing, tell the user
-to enable the plugin or run `setup.sh`/`/repo-onboarding` (else the `Next:` hint silently
-never appears). Skip the sentinel only if the user explicitly chose "save for later" with
-no intent to ship.
-
-Continue:
-
-1. **Show what's being built** (optional, cheap) — offer
-   `/plan-html plans/brainstorm-<topic-slug>.md` (or `/plan-html docs/plans/<topic-slug>.md`
-   in a skill repo) to render the plan as a single-file HTML view the user or a stakeholder
-   can scroll, for a shape-of-the-work read before delivery starts.
-2. **Continue into delivery** — `/sdlc plans/brainstorm-<topic-slug>.md` (or
-   `/sdlc docs/plans/<topic-slug>.md` in a skill repo).
-3. **Save for later** — if the user signals they're done for now, leave the
-   plan file and skip the sentinel.
-
-If the plan has clear implementation steps with file paths and acceptance
-criteria, proceed with delivery (option 2). If it's exploratory or has
-ambiguous tradeoffs, pause for the user to review (offer option 1's HTML view
-first).
-
-Transition conversationally.
+**Read `skills/brainstorm/templates/step-8-handoff.md` now** and run it: it carries the
+`.claude/.next-action` sentinel for `/sdlc <plan>` (dedup'd by cmd, skipped only on "save for
+later"), the Stop-hook and no-hook fallbacks, and the three continue options (offer
+`/plan-html`, continue into `/sdlc`, or save for later). Proceed to delivery when the plan has
+clear steps and acceptance criteria; pause for review when it is exploratory.
 
 ## Tone and Style
 

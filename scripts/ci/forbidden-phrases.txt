@@ -15,7 +15,7 @@
 # the pin raised); a count BELOW the pin is a finding that the pin is stale
 # (lower it). Counts below were computed with
 # `grep -o '<phrase>' <file> | wc -l` against HEAD, not guessed.
-PR body	/sdlc opens no PR; only correct when hedging about a hypothetical future PR-authoring step (the coauthor_trailer wording), never a claim that /sdlc itself writes one	templates/project.json.example:1,skills/repo-onboarding/SKILL.md:1
+PR body	/sdlc opens no PR; only correct when hedging about a hypothetical future PR-authoring step (the coauthor_trailer wording), never a claim that /sdlc itself writes one	templates/project.json.example:1,skills/repo-onboarding/references/step-3-choices.md:1
 opens a PR	no skill in this repo opens a PR; correct only in the negated form ("never opens a PR" / "it never opens a PR")	skills/sdlc/SKILL.md:1,skills/repo-health/SKILL.md:2,skills/sdlc/templates/queue-mode.md:1,AGENTS.md:1,docs/CONVENTIONS.md:1,docs/FLOW.md:1
 gh pr create	/sdlc does no git writes; correct only inside the Stage 6 DO-NOT list naming the removed capability	skills/sdlc/SKILL.md:1,copilot/skills/sdlc/SKILL.md:1,codex/skills/sdlc/SKILL.md:1
 commit_sha	only /task records a commit_sha -- it is the one skill that runs git commit	skills/task/SKILL.md:1
