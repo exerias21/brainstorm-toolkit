@@ -32,11 +32,15 @@ round's report (`agent-reports/{gate}-fix-{i}.md`, `i < N`) with each round's fa
 "Do not repeat an approach listed there; say what you will do differently." A fix agent that sees only
 the current failure will retry the approach that just failed.
 
-**Failure set.** A round's failure set is the set of (test id + first assertion/error line) for every
-failure the gate reports after that round's fix. Compute it yourself from the gate's structured
-results; do not ask the fix agent.
+**Failure set.** Round 0 is the gate's failure before any fix; round N is the gate's result after
+fix N. A round's failure set is an unordered set of signatures, one per failure: the test id
+(`file::name`) plus its first assertion/error line, with line numbers, addresses, timings and tmp
+paths stripped. A changed assertion line or message counts as progress, by design. The set is per
+gate (the budget is shared across Stage 5's gates, the sets are not). Compute it yourself from the
+gate's structured results; do not ask the fix agent.
 
-Then re-run the gate. **Stop on no progress:** if round N's failure set equals round N-1's, the loop is
+Then re-run the gate. **Stop on no progress:** if round N's failure set equals round N-1's (round 0
+included, so a first fix that changes nothing stops after one round), the loop is
 stuck — do not spend the remaining budget. Skip to the pause below at once, and record
 `no-progress` in the failing stage's sidecar (`data.no_progress`: `{"round": N, "previous": [...],
 "current": [...]}`, both failure sets) with `data.fix_rounds` = N. Otherwise repeat to a maximum of
