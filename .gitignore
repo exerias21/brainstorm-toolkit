@@ -28,6 +28,8 @@ CHEATSHEET.md
 .claude/project.json
 .claude/pipeline/
 .claude/.next-action
+# lanes, runners and the merge queue keep their state here
+.claude/parallel/
 .claude/scheduled_tasks.lock
 
 # evals/skills/fixtures/mini-fastapi/ is a COMMITTED mock consumer repo (the
