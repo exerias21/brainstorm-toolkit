@@ -1,0 +1,24 @@
+{
+  "name": "sdlc-recurring-catch-once",
+  "fixture": "recur-review",
+  "prompt": "/sdlc plans/current.md --resume",
+  "max_budget_usd": 1.5,
+  "pre_setup_remove": [".claude/pipeline/earlier-b"],
+  "assertions": [
+    {
+      "type": "json_path",
+      "file": ".claude/pipeline/current/run.json",
+      "path": "status",
+      "equals": "complete"
+    },
+    {
+      "type": "file_not_matches",
+      "glob": ".claude/**/*",
+      "pattern": "/gotcha ",
+      "_why": "only one earlier envelope matches the category, so the recurrence trigger must stay silent. Globs every file under .claude/ (the seeded envelopes never contain this string) so the check also passes when no .next-action file is written."
+    },
+    {
+      "type": "git_head_unchanged"
+    }
+  ]
+}

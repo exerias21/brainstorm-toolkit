@@ -1,0 +1,31 @@
+{
+  "name": "sdlc-recurring-catch",
+  "fixture": "recur-review",
+  "prompt": "/sdlc plans/current.md --resume",
+  "max_budget_usd": 1.5,
+  "assertions": [
+    {
+      "type": "json_path",
+      "file": ".claude/pipeline/current/run.json",
+      "path": "status",
+      "equals": "complete"
+    },
+    {
+      "type": "file_matches",
+      "glob": ".claude/.next-action",
+      "pattern": "\"cmd\":\\s*\"/gotcha [^\"]*unvalidated-limit",
+      "_why": "two earlier envelopes fixed this category and the resumed run fixed it again, so Stage 6 step 4 drafts one gotcha. Headless runs cannot confirm, so the capture is deferred to the .next-action sentinel."
+    },
+    {
+      "type": "count_occurrences",
+      "file": ".claude/.next-action",
+      "text": "(?m)\"cmd\":\\s*\"/gotcha ",
+      "equals": 1,
+      "mode": "regex",
+      "_why": "noise budget: at most one drafted line per run"
+    },
+    {
+      "type": "git_head_unchanged"
+    }
+  ]
+}
