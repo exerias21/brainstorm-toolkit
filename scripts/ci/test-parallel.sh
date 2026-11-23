@@ -168,6 +168,49 @@ bash -c "cd '$R' && bash '$LANES' remove setup3 --force" >/dev/null
 rm -f "$R/.claude/project.json"
 ok
 
+CASE="lanes: a half-finished npm install fails setup (after the retry) and check reports it"
+printf '{}\n' > "$R/package-lock.json"; git -C "$R" add package-lock.json; git -C "$R" commit -q -m lock
+printf '{"pipeline": {"parallel": {"lane_setup": "mkdir -p node_modules"}}}\n' > "$R/.claude/project.json"
+run bash -c "cd '$R' && bash '$LANES' create npm1"
+expect_rc "$RC" 3 "$OUT"
+printf '%s' "$OUT" | grep -q 'npm install incomplete' || fail "half install not named: $OUT"
+printf '%s' "$OUT" | grep -q 'attempt 2 of 2' || fail "no retry: $OUT"
+SP="$(printf '%s' "$OUT" | sed -n 's/.*path=//p')"
+run bash -c "cd '$R' && bash '$LANES' check '$SP'"
+expect_rc "$RC" 3 "$OUT"
+assert_match "$OUT" 'setup incomplete'
+
+CASE="lanes: a complete npm install passes setup and check"
+printf '{"pipeline": {"parallel": {"lane_setup": "mkdir -p node_modules && touch node_modules/.package-lock.json"}}}\n' > "$R/.claude/project.json"
+run bash -c "cd '$R' && bash '$LANES' setup '$SP'"
+expect_rc "$RC" 0 "$OUT"
+run bash -c "cd '$R' && bash '$LANES' check '$SP'"
+assert_rc "$RC" 0 "$OUT"
+bash -c "cd '$R' && bash '$LANES' remove npm1 --force" >/dev/null
+
+CASE="lanes: a setup that fails once is retried and the lane comes up complete"
+CNT="$ROOT_TMP/setup-count"; rm -f "$CNT"
+printf '{"pipeline": {"parallel": {"lane_setup": "echo x >> %s; test $(wc -l < %s) -ge 2"}}}\n' "$CNT" "$CNT" > "$R/.claude/project.json"
+run bash -c "cd '$R' && bash '$LANES' create retry1"
+expect_rc "$RC" 0 "$OUT"
+SP="$(printf '%s' "$OUT" | sed -n 's/.*path=//p')"
+run bash -c "cd '$R' && bash '$LANES' check '$SP'"
+expect_rc "$RC" 0 "$OUT"
+bash -c "cd '$R' && bash '$LANES' remove retry1 --force" >/dev/null
+
+CASE="lanes: an interrupted setup (no completion marker) is caught by check"
+printf '{"pipeline": {"parallel": {"lane_setup": "true"}}}\n' > "$R/.claude/project.json"
+run bash -c "cd '$R' && bash '$LANES' create killed1 --no-setup"
+expect_rc "$RC" 0 "$OUT"
+SP="$(printf '%s' "$OUT" | sed -n 's/.*path=//p')"
+run bash -c "cd '$R' && bash '$LANES' check '$SP'"
+expect_rc "$RC" 3 "$OUT"
+printf '%s' "$OUT" | grep -q 'never finished' || fail "missing marker not reported: $OUT"
+bash -c "cd '$R' && bash '$LANES' remove killed1 --force" >/dev/null
+git -C "$R" rm -q package-lock.json && git -C "$R" commit -q -m "drop lock"
+rm -f "$R/.claude/project.json"
+ok
+
 # ── merge-queue.sh ──────────────────────────────────────────────────────────
 export PARALLEL_STATE_DIR="$ROOT_TMP/state-mq"
 M="$(new_repo mq)"
@@ -329,6 +372,22 @@ run bash "$MQ" log 20
 printf '%s' "$OUT" | grep -q '"result":"conflict"' || fail "conflict verdict missing"
 assert_match "$OUT" '"result":"target-moved"'
 
+CASE="merge-queue: a piped refusal still leaves its exit code in the verdict file"
+run bash -c "cd '$M' && bash '$MQ' land lane/two --test-cmd 'sh test.sh' | tail -1"
+expect_rc "$RC" 0 "$OUT"   # the pipe hides the 4 ...
+grep -q '"exit": 4' "$PARALLEL_STATE_DIR/merge-queue.verdict.json" || fail "verdict file lacks exit 4: $(cat "$PARALLEL_STATE_DIR/merge-queue.verdict.json" 2>/dev/null)"
+grep -q '"result": "tests-failed"' "$PARALLEL_STATE_DIR/merge-queue.verdict.json" || fail "verdict file lacks the result"
+ok
+
+CASE="merge-queue: --verdict-file writes there; a busy queue records busy/3"
+PARALLEL_STATE_DIR="$PARALLEL_STATE_DIR" bash "$LEASE" acquire merge-queue --holder other --ttl 60 >/dev/null
+run bash -c "cd '$M' && bash '$MQ' land lane/two --test-cmd true --verdict-file '$ROOT_TMP/vf.json'"
+bash "$LEASE" release merge-queue --holder other >/dev/null
+expect_rc "$RC" 3 "$OUT"
+grep -q '"exit": 3' "$ROOT_TMP/vf.json" || fail "verdict file lacks exit 3: $(cat "$ROOT_TMP/vf.json" 2>/dev/null)"
+grep -q '"result": "busy"' "$ROOT_TMP/vf.json" || fail "verdict file lacks result busy"
+ok
+
 # ── merge-queue.sh: gate logging, override warning, multi-branch land ────────
 export PARALLEL_STATE_DIR="$ROOT_TMP/state-mq2"
 N="$(new_repo mq2)"
@@ -421,7 +480,7 @@ WEIRD=$'true # q"uote back\\slash\ttab\nexit 0'
 run bash -c 'cd "$1" && shift && bash "$@"' _ "$NG" "$MQ" land lane/g --dry-run --test-cmd "$WEIRD"
 expect_rc "$RC" 0 "$OUT"
 LASTLINE="$(tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl")"
-GOT="$(printf '%s' "$LASTLINE" | "$PYB" -c 'import json,sys; sys.stdout.write(json.loads(sys.stdin.read())["test_cmd"])')" || fail "log line is not valid JSON: $LASTLINE"
+GOT="$(printf '%s' "$LASTLINE" | "$PYB" -c 'import json,sys; sys.stdout.buffer.write(json.loads(sys.stdin.read())["test_cmd"].encode())')" || fail "log line is not valid JSON: $LASTLINE"
 [ "$GOT" = "$WEIRD" ] || fail "test_cmd did not round-trip: got [$GOT]"
 ok
 
@@ -476,8 +535,9 @@ FAKE="$ROOT_TMP/fakeclaude"
 cat > "$FAKE" <<'EOF'
 #!/usr/bin/env bash
 # Fake `claude -p --output-format json`: logs argv, answers in the measured shape.
-[ "${1:-}" = "--help" ] && { echo "  --permission-prompts <target>"; exit 0; }
-printf '%s' "$*" | tr '\n' ' ' >> "$FAKE_LOG"; echo >> "$FAKE_LOG"   # one line per call
+[ "${1:-}" = "--help" ] && { printf '  --permission-prompts <target>\n  --strict-mcp-config\n  --exclude-dynamic-system-prompt-sections\n  --tools <tools...>\n'; exit 0; }
+stdin="$(cat)"   # the runner sends the prompt on stdin, never as an argument
+printf '%s PROMPT: %s' "$*" "$stdin" | tr '\n' ' ' >> "$FAKE_LOG"; echo >> "$FAKE_LOG"   # one line per call
 sid="new-$(date +%s%N)"
 prev=""
 while [ $# -gt 0 ]; do [ "$1" = "--resume" ] && { sid="$2"; prev=1; }; shift; done
@@ -556,10 +616,10 @@ tail -1 "$FAKE_LOG" | grep -q -- '--max-turns 200' || fail "default max-turns is
 ok
 
 CASE="runner: resume below the threshold passes --resume <id>"
-run env FAKE_CTX=200000 bash "$RUNNER" resume w1 --prompt "task two"
+run env FAKE_CTX=100000 bash "$RUNNER" resume w1 --prompt "task two"
 expect_rc "$RC" 0 "$OUT"
 tail -1 "$FAKE_LOG" | grep -q -- "--resume $S1" || fail "did not resume $S1: $(tail -1 "$FAKE_LOG")"
-grep -q '"context_tokens": 200015' "$PARALLEL_STATE_DIR/runners/w1/status.json" || fail "context not recorded from usage.iterations"
+grep -q '"context_tokens": 100015' "$PARALLEL_STATE_DIR/runners/w1/status.json" || fail "context not recorded from usage.iterations"
 ok
 
 CASE="runner: past rotate_at, resume writes a hand-off and starts a fresh session"
@@ -618,6 +678,65 @@ run bash "$RUNNER" report
 expect_rc "$RC" 0 "$OUT"
 printf '%s' "$OUT" | grep -q 'by task' || fail "text report missing the by-task table"
 assert_match "$OUT" 'T-42'
+
+CASE="runner: lean start -- --tools, --strict-mcp-config, exclude-dynamic; prompt on stdin, not argv"
+run bash "$RUNNER" start lean1 --prompt "do the lean thing" --cwd "$W" --allowed-tools Read
+expect_rc "$RC" 0 "$OUT"
+L="$(tail -1 "$FAKE_LOG")"
+printf '%s' "$L" | grep -q -- '--tools Bash,Read,Edit,Write,Glob,Grep --strict-mcp-config' || fail "lean tool set not passed: $L"
+printf '%s' "$L" | grep -q -- '--exclude-dynamic-system-prompt-sections' || fail "exclude-dynamic not passed: $L"
+printf '%s' "$L" | grep -q 'PROMPT: do the lean thing' || fail "prompt not on stdin: $L"
+printf '%s' "${L%% PROMPT:*}" | grep -q 'do the lean thing' && fail "prompt also passed as an argument: $L"
+grep -q '"rotate_at": 180000' "$PARALLEL_STATE_DIR/runners/lean1/status.json" || fail "default rotate_at is not 180000"
+tail -1 "$PARALLEL_STATE_DIR/runners/lean1/events.jsonl" | grep -q '"tools": "Bash,Read,Edit,Write,Glob,Grep"' || fail "tool set not on the events line"
+ok
+
+CASE="runner: --tools default passes neither --tools nor --strict-mcp-config"
+run bash "$RUNNER" start lean2 --prompt "x" --cwd "$W" --allowed-tools Read --tools default
+expect_rc "$RC" 0 "$OUT"
+tail -1 "$FAKE_LOG" | grep -q -- '--tools\|--strict-mcp-config' && fail "default tool set still restricted: $(tail -1 "$FAKE_LOG")"
+ok
+
+CASE="runner: project default allowlist is used, + appends, and the list in force is on every events line"
+printf '{"pipeline": {"parallel": {"runner": {"allowed_tools": "Read,Bash(git status:*)", "rotate_at": 200000}}}}\n' > "$CFG/.claude/project.json"
+run bash "$RUNNER" start al1 --prompt "x" --cwd "$W"
+expect_rc "$RC" 0 "$OUT"
+tail -1 "$FAKE_LOG" | grep -q -- '--allowed-tools Read,Bash(git status:\*)' || fail "config allowlist not passed: $(tail -1 "$FAKE_LOG")"
+grep -q '"rotate_at": 200000' "$PARALLEL_STATE_DIR/runners/al1/status.json" || fail "config rotate_at not used"
+run bash "$RUNNER" resume al1 --prompt "y" --allowed-tools "+Bash(git diff:*)"
+expect_rc "$RC" 0 "$OUT"
+tail -1 "$FAKE_LOG" | grep -q -- '--allowed-tools Read,Bash(git status:\*),Bash(git diff:\*)' || fail "+ did not append: $(tail -1 "$FAKE_LOG")"
+[ "$(grep -c '"allowed_tools"' "$PARALLEL_STATE_DIR/runners/al1/events.jsonl")" -eq 2 ] || fail "allowlist not on every events line"
+tail -1 "$PARALLEL_STATE_DIR/runners/al1/events.jsonl" | grep -q 'git diff' || fail "events line does not show the widened list"
+ok
+rm -f "$CFG/.claude/project.json"
+
+CASE="runner: a Bash(<prefix>/:*) entry that can never match is refused, naming it"
+run bash "$RUNNER" start dead1 --prompt "x" --cwd "$W" --allowed-tools "Read,Bash(node research/tools/:*)"
+expect_rc "$RC" 2 "$OUT"
+printf '%s' "$OUT" | grep -q 'Bash(node research/tools/:\*)' || fail "offending entry not named: $OUT"
+[ -f "$PARALLEL_STATE_DIR/runners/dead1/status.json" ] && grep -q '"session_id": "' "$PARALLEL_STATE_DIR/runners/dead1/status.json" && fail "a claude call ran despite the refusal"
+ok
+
+CASE="runner: verdict.json carries the exit code (3 on denial, 0 on success)"
+run env FAKE_DENY=1 bash "$RUNNER" start vd1 --prompt "x" --cwd "$W" --allowed-tools Read
+expect_rc "$RC" 3 "$OUT"
+grep -q '"exit": 3' "$PARALLEL_STATE_DIR/runners/vd1/verdict.json" || fail "verdict.json lacks exit 3: $(cat "$PARALLEL_STATE_DIR/runners/vd1/verdict.json")"
+grep -q '"result": "denied"' "$PARALLEL_STATE_DIR/runners/vd1/verdict.json" || fail "verdict.json lacks result denied"
+run bash "$RUNNER" resume vd1 --prompt "y"
+expect_rc "$RC" 0 "$OUT"
+grep -q '"exit": 0' "$PARALLEL_STATE_DIR/runners/vd1/verdict.json" || fail "verdict.json not refreshed to exit 0"
+ok
+
+CASE="runner: resume --fresh hands off and starts a fresh session below rotate_at"
+run bash "$RUNNER" start fr1 --prompt "x" --cwd "$W" --allowed-tools Read
+expect_rc "$RC" 0 "$OUT"
+run bash "$RUNNER" resume fr1 --prompt "fix-up: shas abc123, review text" --fresh
+expect_rc "$RC" 0 "$OUT"
+[ -f "$PARALLEL_STATE_DIR/runners/fr1/handoff-1.md" ] || fail "--fresh wrote no hand-off"
+tail -1 "$FAKE_LOG" | grep -q -- '--resume' && fail "--fresh still resumed the old session"
+tail -1 "$FAKE_LOG" | grep -q 'fix-up: shas abc123' || fail "the fresh session did not get the prompt"
+ok
 
 CASE="runner: status lists every runner"
 run bash "$RUNNER" status

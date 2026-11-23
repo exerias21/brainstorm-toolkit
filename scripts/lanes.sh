@@ -33,6 +33,15 @@
 # worktree's root after the copy step; merge-queue.sh runs it in its clean
 # checkout too.
 #
+# WHY A COMPLETION MARKER: an install killed part-way (a caller's timeout hit
+# `npm ci` on /mnt/e, 2026-11-22) left a half-installed lane that nothing
+# noticed. Setup now counts as done only when the command exits 0 AND no
+# package-lock.json folder has a node_modules without the
+# node_modules/.package-lock.json npm writes at the end of an install; then it
+# writes <git-dir>/lane-setup.done. A failure or a half install is retried
+# pipeline.parallel.lane_setup_retries times (default 1). `check` reads the
+# marker, so a lane whose setup was interrupted is caught before work starts.
+#
 # Subcommands:
 #
 #   lanes.sh create <name> [--base REF] [--dir PATH] [--no-setup]
@@ -49,7 +58,11 @@
 #     uses it to seed its clean checkout.
 #   lanes.sh setup <dest>
 #     Only the setup step: run pipeline.parallel.lane_setup in <dest> (no-op
-#     when unset). merge-queue.sh uses it too.
+#     when unset), with the completion check and retries. merge-queue.sh uses
+#     it too.
+#   lanes.sh check <dest>
+#     Exit 0 when the setup is complete (or none is configured), 3 when it never
+#     finished or an npm install is half done, naming what is missing.
 #   lanes.sh list [--target BRANCH]
 #     One line per lane: name, branch, path, commits not yet on the target.
 #   lanes.sh sync <name> [--target BRANCH]
@@ -71,7 +84,7 @@
 # --target defaults to the branch checked out in the main worktree.
 set -euo pipefail
 
-usage() { sed -n '38,71p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '47,84p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 [ $# -ge 1 ] || usage
 SUB="$1"; shift
@@ -146,11 +159,70 @@ print(v if isinstance(v, str) else "")
 PYEOF
 }
 
-run_setup() {  # $1 = worktree root. Returns the command's exit code.
-  local cmd; cmd="$(setup_cmd)"
-  [ -n "$cmd" ] || return 0
-  echo "lane setup in $1: $cmd"
-  (cd "$1" && bash -c "$cmd")
+# pipeline.parallel.lane_setup_retries: a whole number 0-5, default 1.
+setup_retries() {
+  local cfg="$MAIN/.claude/project.json" py here
+  here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  { [ -f "$cfg" ] && py="$(bash "$here/py.sh" --print 2>/dev/null)" && [ -n "$py" ]; } || { echo 1; return 0; }
+  "$py" - "$cfg" <<'PYEOF' 2>/dev/null || echo 1
+import json, sys
+try:
+    v = json.load(open(sys.argv[1], encoding="utf-8"))["pipeline"]["parallel"]["lane_setup_retries"]
+except Exception:
+    v = 1
+print(v if isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 5 else 1)
+PYEOF
+}
+
+setup_marker() { printf '%s/lane-setup.done' "$(git -C "$1" rev-parse --absolute-git-dir)"; }
+
+# Folders (relative to $1) with a package-lock.json whose node_modules exists
+# but lacks node_modules/.package-lock.json: an npm install that started and
+# did not finish. Depth 3, never inside node_modules.
+npm_half_installed() {
+  local lock d
+  while IFS= read -r lock; do
+    d="$(dirname "$lock")"
+    [ -d "$d/node_modules" ] && [ ! -f "$d/node_modules/.package-lock.json" ] && printf '%s\n' "${d#"$1"/}"
+  done < <(find "$1" -maxdepth 3 -name node_modules -prune -o -name package-lock.json -print 2>/dev/null)
+  return 0
+}
+
+run_setup() {  # $1 = worktree root. Returns 0 when the setup completed.
+  local cmd tries n=0 rc half marker
+  cmd="$(setup_cmd)"
+  marker="$(setup_marker "$1")"
+  rm -f "$marker"
+  if [ -z "$cmd" ]; then printf 'none\n' > "$marker"; return 0; fi
+  tries=$(( $(setup_retries) + 1 ))
+  while :; do
+    n=$((n + 1))
+    echo "lane setup in $1 (attempt $n of $tries): $cmd"
+    # No set +e/-e toggling here: a caller already under set +e must keep it.
+    if (cd "$1" && bash -c "$cmd"); then rc=0; else rc=$?; fi
+    half="$(npm_half_installed "$1")"
+    if [ "$rc" -eq 0 ] && [ -z "$half" ]; then
+      printf '%s\n' "$cmd" > "$marker"
+      return 0
+    fi
+    [ -n "$half" ] && echo "lanes.sh: npm install incomplete in: $(printf '%s' "$half" | tr '\n' ' ')" >&2
+    [ "$rc" -ne 0 ] || rc=3
+    [ "$n" -lt "$tries" ] || return "$rc"
+    echo "lanes.sh: setup failed (exit $rc); retrying" >&2
+  done
+}
+
+# 0 = setup complete or none configured; 3 = not finished, with the reason.
+check_setup() {
+  local half
+  if [ -n "$(setup_cmd)" ] && [ ! -f "$(setup_marker "$1")" ]; then
+    echo "setup incomplete: lane_setup never finished in $1 (run: lanes.sh setup $1)"; return 3
+  fi
+  half="$(npm_half_installed "$1")"
+  if [ -n "$half" ]; then
+    echo "setup incomplete: npm install half done in: $(printf '%s' "$half" | tr '\n' ' ')(run: lanes.sh setup $1)"; return 3
+  fi
+  echo "setup complete: $1"
 }
 
 unlanded() {  # commits on lane/<name> whose patch is not on TARGET
@@ -204,6 +276,10 @@ case "$SUB" in
   setup)
     [ -n "$NAME" ] && [ -d "$NAME" ] || { echo "lanes.sh setup: destination directory required" >&2; exit 2; }
     run_setup "$(cd "$NAME" && pwd)"
+    ;;
+  check)
+    [ -n "$NAME" ] && [ -d "$NAME" ] || { echo "lanes.sh check: lane directory required" >&2; exit 2; }
+    check_setup "$(cd "$NAME" && pwd)"
     ;;
   copy-includes)
     [ -n "$NAME" ] && [ -d "$NAME" ] || { echo "lanes.sh copy-includes: destination directory required" >&2; exit 2; }

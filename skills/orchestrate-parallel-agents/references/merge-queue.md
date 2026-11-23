@@ -6,6 +6,7 @@ The one door every lane lands through. Opt-in: nothing runs it but you.
 bash scripts/merge-queue.sh land lane/<name> [lane/<name2> ...] [--target main] \
   [--verify-tests <slug> [--pipeline-dir .claude/pipeline]] [--dry-run]   # no --test-cmd, see below
 bash scripts/merge-queue.sh log 10     # recent verdicts (.claude/parallel/merge-queue.jsonl)
+cat .claude/parallel/merge-queue.verdict.json   # this run: {"exit": N, "result": ..., "branch": ...}
 ```
 
 **Several branches, one landing.** `land lane/a lane/b` rebases them in the order given onto the

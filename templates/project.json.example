@@ -186,7 +186,20 @@
       "fast_test_command": null,
       "_fast_test_command_comment": "What a lane runs as its own check: targeted or sampled tests that finish well under 10 minutes, as ONE command (no cd, &&, ; or pipes, so a runner's Bash(<prefix>:*) allowlist can match it), e.g. \"uv run --directory engine pytest -q -m 'not slow'\". The orchestrator writes it into every lane brief. Unset: the brief names targeted tests per lane.",
       "lane_setup": null,
-      "_lane_setup_comment": "A command run with bash -c in each new lane's root (scripts/lanes.sh create, after the .worktreeinclude copies) and in the merge queue's clean checkout, to build what a fresh worktree lacks. Build dependency folders here rather than copying them, e.g. \"uv sync --locked --directory engine --link-mode=copy && npm --prefix portal ci\" (on a /mnt Windows drive under WSL add --reinstall to uv sync: a first sync there was measured to leave a broken venv). A failure keeps the lane and exits 3 (lanes.sh) or refuses to land with exit 4 (merge-queue.sh)."
+      "_lane_setup_comment": "A command run with bash -c in each new lane's root (scripts/lanes.sh create, after the .worktreeinclude copies) and in the merge queue's clean checkout, to build what a fresh worktree lacks. Build dependency folders here rather than copying them, e.g. \"uv sync --locked --directory engine --link-mode=copy && npm --prefix portal ci\" (on a /mnt Windows drive under WSL add --reinstall to uv sync: a first sync there was measured to leave a broken venv). A failure keeps the lane and exits 3 (lanes.sh) or refuses to land with exit 4 (merge-queue.sh). Setup counts as done only when the command exits 0 and no package-lock.json folder holds a node_modules without the .package-lock.json npm writes last; `lanes.sh check <lane>` reports a lane whose setup never finished.",
+      "lane_setup_retries": 1,
+      "_lane_setup_retries_comment": "How many times lanes.sh retries a failed or half-finished lane_setup (0-5, default 1).",
+      "runner": {
+        "_comment": "Optional. Defaults for scripts/runner.sh (managed claude -p runners). Every key is optional; a runner.sh flag wins over each.",
+        "allowed_tools": null,
+        "_allowed_tools_comment": "The allowlist a runner gets when start is given no --allowed-tools (a string, comma-separated, or a list). `--allowed-tools +X,Y` appends to it. Match the brief's shell rules: one command per entry, e.g. \"Read,Edit,Write,Glob,Grep,Bash(npm --prefix portal test:*),Bash(uv run --directory engine pytest:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*)\". A Bash(<prefix>/:*) entry is refused: it can never match.",
+        "tools": null,
+        "_tools_comment": "Built-in tools a runner loads (passed as --tools, with --strict-mcp-config). Default \"Bash,Read,Edit,Write,Glob,Grep\": measured 9.3k starting tokens vs 36.9k with everything loaded. \"default\" loads the full set and the MCP servers.",
+        "rotate_at": 180000,
+        "_rotate_at_comment": "Context (tokens) at which the next resume hands off and starts a fresh session. Default 180000; 150000-250000 recommended. Set for cost: resumed turns re-read the whole conversation.",
+        "bare": false,
+        "_bare_comment": "true passes --bare (skips hooks, plugins, CLAUDE.md discovery). Needs ANTHROPIC_API_KEY: bare mode never reads an OAuth login."
+      }
     },
 
     "question_advisor": {

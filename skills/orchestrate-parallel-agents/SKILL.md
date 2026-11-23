@@ -205,7 +205,8 @@ When a lane reports `ready-for-review`, the verifier for its group reads `git di
 diff touches owned paths only: `bash scripts/lanes.sh verify <name> --owned 'src/*' 'tests/x.py'`
 exits 1 and names every changed file outside the globs (`*` crosses `/`). Problems go back **to the writer that owns those files**, as a
 new turn on its session (`runner.sh resume`, or a re-dispatched subagent), never fixed by the
-verifier or by you. A lane that fails review twice escalates (section 13).
+verifier or by you. Keep one verifier per wave as a named runner resumed per lane
+(`references/runners.md`). A lane that fails review twice escalates (section 13).
 
 ## 10. Land through the merge queue
 
@@ -258,15 +259,16 @@ pays the full suite, often against the main folder rather than the lane, and a r
 ## 12. Long runners: resume and rotate
 
 `runner.sh` stores each runner's `session_id` and resumes it for the next task. When the last
-turn's context passes the threshold (default 350k tokens, set 300k-400k with `--rotate-at`),
+turn's context passes the threshold (default 180k tokens, set 150k-250k with `--rotate-at`),
 the next `resume` asks the old session for a hand-off note, starts a fresh session seeded with
-it, and records the new id. To rotate by hand, or to write a hand-off for a subagent lane,
+it, and records the new id; `resume --fresh` does it now. Re-use a warm runner for the next
+step of a series (`resume --task <next>`). To rotate by hand, or to write a hand-off for a subagent lane,
 **read `references/handoff-note.md`**. Details and flags: `references/runners.md`.
 
 Pass `--task <id>` (the TASKS row or plan step) on `start`, and again whenever a runner moves
 to new work, so `bash scripts/runner.sh report` can total calls, cost, context and denials by
 task as well as by runner. Do not pipe `runner.sh` (`| tail`) when its exit code matters: a
-pipe reports the last command's status, so a denial's exit 3 reads as 0.
+pipe reports the last command's status, so read `verdict.json` instead.
 
 ## 13. Escalation chain
 

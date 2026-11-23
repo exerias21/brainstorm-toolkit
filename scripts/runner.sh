@@ -13,22 +13,40 @@
 # WHY ROTATION: a session that keeps resuming keeps growing. Past a few
 # hundred thousand tokens every turn re-pays that context and the model's
 # attention to early detail degrades. When the last turn's context passes the
-# threshold (default 350000; 300000-400000 recommended), the next resume first
+# threshold (default 180000; 150000-250000 recommended -- on one audited run a
+# resumed turn cost ~3.8x a fresh one, and resumes above 200k were 40% of all
+# spend), the next resume first
 # asks the old session for a hand-off note, then starts a fresh session seeded
 # with that note plus the new task, and records the new id. The old id stays in
 # the history.
 #
 # PERMISSIONS: a headless runner cannot answer a permission prompt. Give it an
-# explicit allowlist (--allowed-tools, required on start) and a mode that
+# explicit allowlist (--allowed-tools, else the project's
+# pipeline.parallel.runner.allowed_tools; `--allowed-tools +X,Y` appends to
+# that default) and a mode that
 # denies everything else (default --permission-mode dontAsk, plus
 # --permission-prompts none when this claude supports it). Anything it is
 # denied is printed as DENIED lines, appended to denials.jsonl, and the run
 # exits 3: the orchestrator takes it to the human. Never relay one runner's
 # denied action to another runner to perform -- that launders the denial.
+# A `Bash(<prefix>/:*)` entry is refused up front: `:*` needs a word boundary,
+# so a prefix ending in `/` matches no command and every use is denied.
+#
+# LEAN START: each call passes `--tools <set> --strict-mcp-config` (set from
+# --tools, else pipeline.parallel.runner.tools, else Bash,Read,Edit,Write,Glob,
+# Grep; `default` passes neither) and `--exclude-dynamic-system-prompt-sections`
+# when claude lists it. Measured 2026-11-23: starting context 36.9k -> 9.3k
+# tokens, paid again on every turn. `--tools` without `--strict-mcp-config`
+# was WORSE (58.4k: every MCP tool loads up front). The prompt goes on stdin
+# from last-prompt.md, never as an argument: --tools and --allowed-tools are
+# variadic and swallow a trailing prompt, and an empty stdin costs a 3 s wait.
+# `--bare` (opt-in) skips OAuth, so it only works with an API key.
 #
 # State: <state>/runners/<name>/ with status.json (small, overwritten),
-# events.jsonl (one line per call), denials.jsonl, handoff-<n>.md, and
-# last-result.md (the full final message; stdout carries only a summary).
+# events.jsonl (one line per call, with the allowlist and tool set in force),
+# denials.jsonl, handoff-<n>.md, last-prompt.md, last-result.md (the full final
+# message; stdout carries only a summary) and verdict.json (exit code and
+# result of the last call, so a piped caller can still read a 3).
 # <state> is $PARALLEL_STATE_DIR, else <main worktree>/.claude/parallel.
 #
 # MODEL: `--model` on this call wins. Otherwise a fresh session (start, or the
@@ -47,12 +65,14 @@
 # files stay the source of truth; any database would be derived from them.
 #
 # Usage:
-#   runner.sh start  <name> (--prompt TEXT | --prompt-file F) --allowed-tools T
+#   runner.sh start  <name> (--prompt TEXT | --prompt-file F) [--allowed-tools T|+T]
 #                    [--cwd DIR] [--model M] [--permission-mode M] [--max-turns N]
 #                    [--max-budget-usd X] [--rotate-at TOKENS] [--task ID]
+#                    [--tools SET|default] [--bare]
 #                    (--max-turns defaults to 200: portal runners under the
 #                    one-command rule used 111-113 of a 120 cap)
 #   runner.sh resume <name> (--prompt TEXT | --prompt-file F) [same overrides]
+#                    [--fresh]   hand off and start a fresh session now
 #   runner.sh rotate <name>      write the hand-off now; next resume starts fresh
 #   runner.sh status [<name>]    print status.json (or one line per runner)
 #   runner.sh report [--json]    totals by runner and by task, from events.jsonl
@@ -66,7 +86,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_BIN="${RUNNER_CLAUDE_BIN:-claude}"
-usage() { sed -n '49,64p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '67,84p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 [ $# -ge 1 ] || usage
 SUB="$1"; shift
@@ -78,7 +98,8 @@ if [ -n "${PARALLEL_STATE_DIR:-}" ]; then STATE="$PARALLEL_STATE_DIR"
 elif common="$(git rev-parse --git-common-dir 2>/dev/null)"; then STATE="$(cd "$(dirname "$common")" && pwd)/.claude/parallel"
 else STATE="$PWD/.claude/parallel"; fi
 
-NAME=""; PROMPT=""; PROMPT_SET=0; MODEL_OVERRIDE=""; REPORT_JSON=0
+NAME=""; PROMPT=""; PROMPT_SET=0; MODEL_OVERRIDE=""; REPORT_JSON=0; FRESH=0
+DEFAULT_TOOLS="Bash,Read,Edit,Write,Glob,Grep"
 OPTS=()  # "key=value" pairs (no associative arrays: stock macOS bash is 3.2)
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -92,6 +113,10 @@ while [ $# -gt 0 ]; do
     --max-turns)        OPTS+=("max_turns=${2:-}"); shift 2 ;;
     --max-budget-usd)   OPTS+=("max_budget_usd=${2:-}"); shift 2 ;;
     --rotate-at)        OPTS+=("rotate_at=${2:-}"); shift 2 ;;
+    --tools)            [ -n "${2:-}" ] || { echo "runner.sh: --tools needs a set (or default)" >&2; exit 2; }
+                        OPTS+=("tools=$2"); shift 2 ;;
+    --bare)             OPTS+=("bare=1"); shift ;;
+    --fresh)            FRESH=1; shift ;;
     --task)             [ -n "${2:-}" ] || { echo "runner.sh: --task needs an id" >&2; exit 2; }
                         OPTS+=("task=$2"); shift 2 ;;
     --json)             REPORT_JSON=1; shift ;;
@@ -188,6 +213,78 @@ print(model, source, cap or "none")
 PYEOF
 }
 
+# pipeline.parallel.runner.<key> from the project's .claude/project.json,
+# else $2. Every key is optional.
+cfg_get() {
+  "$PY" - "$PROJ/.claude/project.json" "$1" "${2:-}" <<'PYEOF'
+import json, sys
+try:
+    cfg = json.load(open(sys.argv[1], encoding="utf-8"))
+    v = cfg["pipeline"]["parallel"]["runner"][sys.argv[2]]
+except Exception:
+    v = None
+if isinstance(v, list):
+    v = ",".join(str(x) for x in v)
+elif v is True:
+    v = "1"
+print(sys.argv[3] if v is None or v == "" or v is False or isinstance(v, dict) else v)
+PYEOF
+}
+
+has_opt() { local o; for o in "${OPTS[@]+"${OPTS[@]}"}"; do case "$o" in "$1="*) return 0 ;; esac; done; return 1; }
+opt_val() { local o v=""; for o in "${OPTS[@]+"${OPTS[@]}"}"; do case "$o" in "$1="*) v="${o#*=}" ;; esac; done; printf '%s' "$v"; }
+
+# The allowlist that will be in force: a flag replaces, a flag starting with +
+# appends to the current (else the project default) list, no flag keeps the
+# current list (else the project default). Prints it; "" means none.
+resolve_allowlist() {
+  local flag base=""
+  [ -f "$STATUS" ] && base="$(get allowed_tools)"
+  [ -n "$base" ] || base="$(cfg_get allowed_tools)"
+  if has_opt allowed_tools; then
+    flag="$(opt_val allowed_tools)"
+    case "$flag" in
+      +*) [ -n "$base" ] || { echo "runner.sh: --allowed-tools $flag appends, but there is no list to append to (set pipeline.parallel.runner.allowed_tools)" >&2; return 2; }
+          printf '%s,%s' "$base" "${flag#+}" ;;
+      *)  printf '%s' "$flag" ;;
+    esac
+  else
+    printf '%s' "$base"
+  fi
+}
+
+# A Bash(<prefix>:*) rule needs a word boundary after the prefix, so one whose
+# prefix ends in "/" matches no command: every use is denied (seen as
+# Bash(python3 research/tools/:*) refusing research/tools/build-user-guide.py).
+check_allowlist() {
+  local bad
+  bad="$(printf '%s' "$1" | grep -o 'Bash([^)]*/:\*)' || true)"
+  [ -z "$bad" ] && return 0
+  echo "runner.sh: allowlist entries that can never match (a ':*' prefix ending in '/'):" >&2
+  printf '%s\n' "$bad" | sed 's/^/  /' >&2
+  echo "  list each command exactly, e.g. Bash(node research/tools/guard.test.js), or drop the colon: Bash(node research/tools/*)" >&2
+  return 2
+}
+
+# Fill OPTS for this call: the resolved allowlist (validated), and on a NEW
+# runner the configured tool set and rotate_at unless a flag gave them. An
+# existing runner keeps what it recorded, so a running session's tool set
+# never changes under it.
+prepare_opts() {
+  local al
+  al="$(resolve_allowlist)" || exit 2
+  if [ -n "$al" ]; then
+    check_allowlist "$al" || exit 2
+    OPTS+=("allowed_tools=$al")
+  fi
+  if [ ! -f "$STATUS" ]; then
+    has_opt tools || OPTS=("tools=$(cfg_get tools "$DEFAULT_TOOLS")" "${OPTS[@]+"${OPTS[@]}"}")
+    has_opt rotate_at || OPTS=("rotate_at=$(cfg_get rotate_at 180000)" "${OPTS[@]+"${OPTS[@]}"}")
+    [ "$(cfg_get bare)" = "1" ] && ! has_opt bare && OPTS=("bare=1" "${OPTS[@]+"${OPTS[@]}"}")
+  fi
+  return 0
+}
+
 # Set status.json["model"] for the next call: the override, else the
 # configured model (fresh) or the recorded one (resume). $1 = fresh|resume.
 choose_model() {
@@ -219,7 +316,7 @@ import json, os, sys
 path, name, pairs = sys.argv[1], sys.argv[2], sys.argv[3:]
 s = json.load(open(path)) if os.path.exists(path) else {
     "name": name, "session_id": None, "cwd": os.getcwd(), "permission_mode": "dontAsk",
-    "rotate_at": 350000, "max_turns": 200, "context_tokens": 0, "calls": 0, "cost_usd": 0.0,
+    "rotate_at": 180000, "max_turns": 200, "context_tokens": 0, "calls": 0, "cost_usd": 0.0,
     "sessions": [], "pending_handoff": None}
 for p in pairs:
     k, v = p.split("=", 1)
@@ -233,8 +330,9 @@ PYEOF
 # Runs one claude call. $1 = prompt, $2 = "resume" or "fresh". Records the
 # result and prints a short summary. Returns 0, 1 or 3.
 call_claude() {
-  local prompt="$1" mode="$2" sid cwd out rc
-  sid="$(get session_id)"; cwd="$(get cwd)"
+  local prompt="$1" mode="$2" sid cwd out rc tools
+  sid="$(get session_id)"; cwd="$(get cwd)"; tools="$(get tools)"
+  [ -n "${CLAUDE_HELP+x}" ] || CLAUDE_HELP="$("$CLAUDE_BIN" --help 2>/dev/null || true)"
   local cmd=("$CLAUDE_BIN" -p --output-format json)
   [ "$mode" = "resume" ] && [ -n "$sid" ] && cmd+=(--resume "$sid")
   [ -n "$(get model)" ] && cmd+=(--model "$(get model)")
@@ -242,10 +340,18 @@ call_claude() {
   [ -n "$(get allowed_tools)" ] && cmd+=(--allowed-tools "$(get allowed_tools)")
   [ -n "$(get max_turns)" ] && cmd+=(--max-turns "$(get max_turns)")
   [ -n "$(get max_budget_usd)" ] && cmd+=(--max-budget-usd "$(get max_budget_usd)")
-  if "$CLAUDE_BIN" --help 2>/dev/null | grep -q -- '--permission-prompts'; then cmd+=(--permission-prompts none); fi
-  cmd+=("$prompt")
+  case "$CLAUDE_HELP" in *--permission-prompts*) cmd+=(--permission-prompts none) ;; esac
+  if [ -n "$tools" ] && [ "$tools" != "default" ]; then
+    cmd+=(--tools "$tools")
+    case "$CLAUDE_HELP" in *--strict-mcp-config*) cmd+=(--strict-mcp-config) ;; esac
+  fi
+  case "$CLAUDE_HELP" in *--exclude-dynamic-system-prompt-sections*) cmd+=(--exclude-dynamic-system-prompt-sections) ;; esac
+  [ "$(get bare)" = "1" ] && cmd+=(--bare)
+  # The prompt goes on stdin, never as an argument (see LEAN START above).
+  printf '%s' "$prompt" > "$DIR/last-prompt.md"
+  rm -f "$DIR/verdict.json"
   set +e
-  out="$(cd "$cwd" && "${cmd[@]}" 2>"$DIR/last-stderr.txt")"
+  out="$(cd "$cwd" && "${cmd[@]}" <"$DIR/last-prompt.md" 2>"$DIR/last-stderr.txt")"
   rc=$?
   set -e
   printf '%s' "$out" > "$DIR/last.json"
@@ -259,7 +365,7 @@ try:
 except Exception:
     r = None
 ev = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "mode": mode, "rc": rc,
-      "task": s.get("task")}
+      "task": s.get("task"), "allowed_tools": s.get("allowed_tools"), "tools": s.get("tools") or "default"}
 code = 0
 if not isinstance(r, dict):
     ev["error"] = "no JSON result (see last-stderr.txt)"
@@ -297,6 +403,10 @@ else:
         code = 1 if code == 0 else code
 with open(os.path.join(d, "events.jsonl"), "a", encoding="utf-8") as f:
     f.write(json.dumps(ev) + "\n")
+# The exit code on disk, so `runner.sh ... | tail` cannot hide a 3.
+verdict = {"ts": ev["ts"], "exit": code, "result": {0: "ok", 3: "denied"}.get(code, "error"),
+           "denials": int(ev.get("denials") or 0), "session_id": s.get("session_id"), "mode": mode}
+json.dump(verdict, open(os.path.join(d, "verdict.json"), "w"), indent=1)
 tmp = status_path + ".tmp"
 json.dump(s, open(tmp, "w"), indent=1)
 os.replace(tmp, status_path)
@@ -351,8 +461,8 @@ PYEOF
 check_rotate_at() {
   local r; r="$(get rotate_at)"
   case "$r" in ''|*[!0-9]*) echo "runner.sh: --rotate-at must be a token count" >&2; exit 2 ;; esac
-  if [ "$r" -lt 300000 ] || [ "$r" -gt 400000 ]; then
-    echo "runner.sh: warning: rotate_at $r is outside the recommended 300000-400000" >&2
+  if [ "$r" -lt 150000 ] || [ "$r" -gt 250000 ]; then
+    echo "runner.sh: warning: rotate_at $r is outside the recommended 150000-250000" >&2
   fi
 }
 
@@ -362,10 +472,9 @@ case "$SUB" in
     if [ -f "$STATUS" ] && [ -n "$(get session_id)" ]; then
       echo "runner.sh: runner $NAME already has session $(get session_id); use resume (or rotate)" >&2; exit 2
     fi
-    has_tools=0
-    for o in "${OPTS[@]+"${OPTS[@]}"}"; do case "$o" in allowed_tools=?*) has_tools=1 ;; esac; done
-    [ "$has_tools" -eq 1 ] || { [ -f "$STATUS" ] && [ -n "$(get allowed_tools)" ]; } || {
-      echo "runner.sh start: --allowed-tools is required -- a headless runner cannot answer permission prompts, so give it an explicit allowlist" >&2; exit 2; }
+    prepare_opts
+    has_opt allowed_tools || {
+      echo "runner.sh start: no allowlist -- pass --allowed-tools or set pipeline.parallel.runner.allowed_tools; a headless runner cannot answer permission prompts" >&2; exit 2; }
     write_status_from_opts; check_rotate_at
     choose_model fresh
     full="$(with_handoff "$PROMPT")"
@@ -376,8 +485,9 @@ case "$SUB" in
   resume)
     [ "$PROMPT_SET" -eq 1 ] || { echo "runner.sh resume: --prompt or --prompt-file is required" >&2; exit 2; }
     [ -f "$STATUS" ] || { echo "runner.sh: no runner $NAME; use start" >&2; exit 2; }
+    prepare_opts
     write_status_from_opts; check_rotate_at
-    if [ -n "$(get session_id)" ] && [ "$(get context_tokens)" -ge "$(get rotate_at)" ]; then rotate; fi
+    if [ -n "$(get session_id)" ] && { [ "$FRESH" -eq 1 ] || [ "$(get context_tokens)" -ge "$(get rotate_at)" ]; }; then rotate || exit 1; fi
     mode=resume; [ -n "$(get session_id)" ] || mode=fresh
     choose_model "$mode"
     full="$(with_handoff "$PROMPT")"

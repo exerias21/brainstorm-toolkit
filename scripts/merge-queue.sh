@@ -38,6 +38,10 @@
 #   --verify-tests  also run scripts/protect-tests.sh verify --slug SLUG in the
 #                   clean checkout (armed test files must be byte-identical).
 #   --dry-run       rebase and test, but do not move the target.
+#   --verdict-file  where to write this run's verdict JSON (exit, result,
+#                   branch, target, pid, ts); default
+#                   <state>/merge-queue.verdict.json. Written on EVERY exit,
+#                   so `land ... | tail` cannot hide a refusal: read the file.
 #
 # Serial: holds the lease `merge-queue` (scripts/lease.sh, TTL
 # $MERGE_QUEUE_TTL, default 3600s) for the whole run; a second caller is
@@ -68,7 +72,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-usage() { sed -n '24,44p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
+usage() { sed -n '24,48p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
 
 [ $# -ge 1 ] || usage
 SUB="$1"; shift
@@ -85,7 +89,33 @@ if [ "$SUB" = "log" ]; then
 fi
 [ "$SUB" = "land" ] || usage
 
-BRANCHES=(); TARGET=""; TEST_CMD=""; SLUG=""; PIPE_DIR=""; DRY=0; OVERRIDE=false
+# Verdict file: written from the EXIT trap on every exit from here on, with the
+# exit code, because a pipe (`land ... | tail`) reports the last command's
+# status and once read a REFUSED as 0 (2026-11-21).
+VERDICT_FILE="$STATE/merge-queue.verdict.json"
+LAST_RESULT="error"; BRANCH=""; TARGET=""; LEASED=0
+write_verdict_file() {
+  local rc="$1" vpy
+  if vpy="$(bash "$HERE/py.sh" --print 2>/dev/null)" && [ -n "$vpy" ]; then
+    "$vpy" -c '
+import json, sys
+a = sys.argv[1:]
+print(json.dumps({"ts": a[0], "exit": int(a[1]), "result": a[2], "branch": a[3], "target": a[4], "pid": int(a[5])}))
+' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$rc" "$LAST_RESULT" "$BRANCH" "$TARGET" "$$" > "$VERDICT_FILE" 2>/dev/null || true
+  else
+    printf '{"ts":"%s","exit":%s,"result":"%s","branch":"%s","target":"%s","pid":%s}\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$rc" "$LAST_RESULT" \
+      "$(printf '%s' "$BRANCH" | tr '"\\' '__')" "$(printf '%s' "$TARGET" | tr '"\\' '__')" "$$" > "$VERDICT_FILE" 2>/dev/null || true
+  fi
+}
+on_exit() {
+  local rc=$?
+  [ "$LEASED" -eq 1 ] && cleanup
+  write_verdict_file "$rc"
+}
+trap on_exit EXIT
+
+BRANCHES=(); TEST_CMD=""; SLUG=""; PIPE_DIR=""; DRY=0; OVERRIDE=false
 while [ $# -gt 0 ]; do
   case "$1" in
     --target)       TARGET="${2:-}"; shift 2 ;;
@@ -93,11 +123,15 @@ while [ $# -gt 0 ]; do
     --verify-tests) SLUG="${2:-}"; shift 2 ;;
     --pipeline-dir) PIPE_DIR="${2:-}"; shift 2 ;;
     --dry-run)      DRY=1; shift ;;
+    --verdict-file) [ -n "${2:-}" ] || { echo "merge-queue.sh: --verdict-file needs a path" >&2; exit 1; }
+                    VERDICT_FILE="$2"; shift 2 ;;
     -h|--help) usage ;;
     --*) echo "merge-queue.sh: unknown flag $1" >&2; usage ;;
     *) BRANCHES+=("$1"); shift ;;
   esac
 done
+rm -f "$VERDICT_FILE"
+LAST_RESULT="usage"
 [ "${#BRANCHES[@]}" -ge 1 ] || usage
 [ -n "$TARGET" ] || TARGET="$(git -C "$MAIN" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
 [ -n "$TARGET" ] || { echo "merge-queue.sh: no --target and the main worktree is on a detached HEAD" >&2; exit 1; }
@@ -108,6 +142,7 @@ for b in "${BRANCHES[@]}"; do
 done
 # Display / log name: one branch as-is, several space-joined.
 BRANCH="${BRANCHES[*]}"
+LAST_RESULT="error"
 [ -z "$PIPE_DIR" ] && PIPE_DIR="$MAIN/.claude/pipeline"
 
 # Test command: flag > pipeline.parallel.gate_command > test.unit. The
@@ -141,6 +176,7 @@ HOLDER="merge-queue-$$"
 TMP=""
 verdict() {  # result detail -- one JSON line per run
   local result="$1" detail="${2:-}" jpy
+  LAST_RESULT="$result"
   # json.dumps so the logged command is exactly what ran (quotes, backslashes,
   # tabs and newlines included); the printf below is only the no-python fallback.
   if jpy="$(bash "$HERE/py.sh" --print 2>/dev/null)" && [ -n "$jpy" ]; then
@@ -168,9 +204,10 @@ cleanup() {
 
 if ! out="$(cd "$MAIN" && PARALLEL_STATE_DIR="$STATE" bash "$HERE/lease.sh" acquire merge-queue --holder "$HOLDER" --ttl "${MERGE_QUEUE_TTL:-3600}")"; then
   echo "BUSY: another landing holds the queue ($out). Re-run when it finishes."
+  LAST_RESULT="busy"
   exit 3
 fi
-trap cleanup EXIT
+LEASED=1
 
 if [ -z "$TEST_CMD" ]; then
   echo "REFUSED: no test command (--test-cmd, pipeline.parallel.gate_command or test.unit). An empty gate is not a pass."
