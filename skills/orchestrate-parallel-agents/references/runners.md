@@ -12,7 +12,7 @@ flat files under `.claude/parallel/runners/<name>/` (gitignore `.claude/parallel
 | `handoff-<n>.md` | the hand-off note written at each rotation |
 | `last-prompt.md` | the prompt of the last call (sent on stdin) |
 | `last-result.md` | the full final message of the last call (stdout carries only a summary) |
-| `verdict.json` | `exit`, `result` (ok, denied, error), `denials`, `session_id` of the last call; removed when a call starts, so a missing file means the call did not finish |
+| `verdict.json` | `exit`, `result` (ok, denied, error, refused), `denials`, `session_id` of this invocation; removed when `runner.sh` starts, so a missing file means it did not finish |
 
 ## Commands
 
@@ -62,9 +62,10 @@ later turn pays that difference again. `--tools` alone was worse (58.4k: MCP too
 front), so the two always go together. `--exclude-dynamic-system-prompt-sections` moves the
 cwd and git status out of the system prompt, so runners in different lanes share its cache.
 The set comes from `--tools`, else `pipeline.parallel.runner.tools`, else that list; name any
-extra tool the brief needs (`WebFetch`, an MCP tool), or pass `--tools default` for a runner
-that needs MCP servers (neither flag is then passed). It is recorded at `start` and kept for the
-runner's life, so a running session's tools never change.
+extra tool the brief needs (`WebFetch`, an MCP tool, `Agent` for a brief that runs `/sdlc` or
+dispatches subagents), or pass `--tools default` for a runner that needs MCP servers (neither
+flag is then passed). It is recorded at `start` and kept until a `resume --tools` changes it;
+changing it mid-session costs one cache miss.
 
 **Why the prompt is on stdin.** `--tools` and `--allowed-tools` take several values, so a
 prompt after them is read as one more tool name; and with nothing on stdin `claude -p` waits 3 s
@@ -77,7 +78,8 @@ its docs require an interactive terminal and say it does not work in background 
 `--bare` (https://code.claude.com/docs/en/headless) skips hooks, plugins and CLAUDE.md
 discovery but never reads OAuth or the keychain, so it fails on a subscription login: opt in
 per runner with `--bare` (or `pipeline.parallel.runner.bare: true`) only with an
-`ANTHROPIC_API_KEY`.
+`ANTHROPIC_API_KEY`. A bare runner also loses the project's CLAUDE.md (where project rules live),
+skills and auto memory, so pass the rules in its brief. It stays on for the runner's life.
 
 **`--max-turns` defaults to 200.** Under the one-command-per-Bash-call rule every step is its
 own turn: portal runners used 111-113 of a 120 cap. A lower number cuts a lane off mid-task;

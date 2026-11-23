@@ -187,6 +187,19 @@ case "$NAME" in ''|*[!A-Za-z0-9._-]*|.*) echo "runner.sh: runner name must match
 DIR="$STATE/runners/$NAME"
 STATUS="$DIR/status.json"
 mkdir -p "$DIR"
+# verdict.json always describes THIS invocation: removed now, written by the
+# claude call, and rewritten on exit when the script's code differs from that
+# call's (a refusal before any call, a rotation step that failed).
+rm -f "$DIR/verdict.json"
+LAST_CALL_RC=""
+on_exit() {
+  local rc=$?
+  [ "$rc" = "$LAST_CALL_RC" ] && return 0
+  [ -z "$LAST_CALL_RC" ] && [ "$rc" -eq 0 ] && return 0
+  printf '{"ts": "%s", "exit": %s, "result": "%s", "denials": 0, "session_id": null, "mode": "none"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$rc" "$([ "$rc" -eq 2 ] && echo refused || echo error)" > "$DIR/verdict.json" 2>/dev/null || true
+}
+trap on_exit EXIT
 
 if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then PROJ="$CLAUDE_PROJECT_DIR"
 elif common="$(git rev-parse --git-common-dir 2>/dev/null)"; then PROJ="$(cd "$(dirname "$common")" && pwd)"
@@ -245,7 +258,8 @@ resolve_allowlist() {
     flag="$(opt_val allowed_tools)"
     case "$flag" in
       +*) [ -n "$base" ] || { echo "runner.sh: --allowed-tools $flag appends, but there is no list to append to (set pipeline.parallel.runner.allowed_tools)" >&2; return 2; }
-          printf '%s,%s' "$base" "${flag#+}" ;;
+          # Append without repeating an entry already on the list.
+          printf '%s,%s' "$base" "${flag#+}" | awk -v RS=',' -v ORS=',' 'NF && !seen[$0]++' | sed 's/,$//' ;;
       *)  printf '%s' "$flag" ;;
     esac
   else
@@ -268,11 +282,16 @@ check_allowlist() {
 
 # Fill OPTS for this call: the resolved allowlist (validated), and on a NEW
 # runner the configured tool set and rotate_at unless a flag gave them. An
-# existing runner keeps what it recorded, so a running session's tool set
-# never changes under it.
+# existing runner keeps what it recorded unless a flag on resume changes it.
 prepare_opts() {
-  local al
+  local al o kept=()
   al="$(resolve_allowlist)" || exit 2
+  if has_opt allowed_tools && [ -z "$al" ]; then
+    echo "runner.sh: --allowed-tools is empty (an unset variable?); a headless runner needs an allowlist" >&2; exit 2
+  fi
+  # The raw flag is replaced by the resolved list, never written as given.
+  for o in "${OPTS[@]+"${OPTS[@]}"}"; do case "$o" in allowed_tools=*) ;; *) kept+=("$o") ;; esac; done
+  OPTS=("${kept[@]+"${kept[@]}"}")
   if [ -n "$al" ]; then
     check_allowlist "$al" || exit 2
     OPTS+=("allowed_tools=$al")
@@ -350,12 +369,10 @@ call_claude() {
   # The prompt goes on stdin, never as an argument (see LEAN START above).
   printf '%s' "$prompt" > "$DIR/last-prompt.md"
   rm -f "$DIR/verdict.json"
-  set +e
-  out="$(cd "$cwd" && "${cmd[@]}" <"$DIR/last-prompt.md" 2>"$DIR/last-stderr.txt")"
-  rc=$?
-  set -e
+  # No set +e/-e toggling: callers run this under set +e and must see its code.
+  if out="$(cd "$cwd" && "${cmd[@]}" <"$DIR/last-prompt.md" 2>"$DIR/last-stderr.txt")"; then rc=0; else rc=$?; fi
   printf '%s' "$out" > "$DIR/last.json"
-  "$PY" - "$STATUS" "$DIR" "$rc" "$mode" <<'PYEOF'
+  if "$PY" - "$STATUS" "$DIR" "$rc" "$mode" <<'PYEOF'
 import json, os, sys, time
 status_path, d, rc, mode = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
 s = json.load(open(status_path))
@@ -415,6 +432,8 @@ print("runner=%s task=%s session=%s model=%s context=%s rotate_at=%s cost_usd=%.
     s.get("cost_usd", 0.0), os.path.join(d, "last-result.md")))
 sys.exit(code)
 PYEOF
+  then LAST_CALL_RC=0; else LAST_CALL_RC=$?; fi
+  return "$LAST_CALL_RC"
 }
 
 HANDOFF_PROMPT='Write a hand-off note for a fresh session that will continue your work. Reply with the note only, in this shape:
@@ -434,7 +453,7 @@ rotate() {
   echo "rotating $NAME at context $(get context_tokens) (rotate_at $(get rotate_at)): asking for a hand-off note"
   set +e; call_claude "$HANDOFF_PROMPT" resume; local rc=$?; set -e
   [ "$rc" -eq 0 ] || [ "$rc" -eq 3 ] || { echo "runner.sh: hand-off turn failed; not rotating" >&2; return 1; }
-  cp "$DIR/last-result.md" "$note"
+  cp "$DIR/last-result.md" "$note" || { echo "runner.sh: could not save the hand-off note; not rotating" >&2; return 1; }
   "$PY" - "$STATUS" "$note" <<'PYEOF'
 import json, os, sys
 p = sys.argv[1]; s = json.load(open(p))
@@ -462,7 +481,7 @@ check_rotate_at() {
   local r; r="$(get rotate_at)"
   case "$r" in ''|*[!0-9]*) echo "runner.sh: --rotate-at must be a token count" >&2; exit 2 ;; esac
   if [ "$r" -lt 150000 ] || [ "$r" -gt 250000 ]; then
-    echo "runner.sh: warning: rotate_at $r is outside the recommended 150000-250000" >&2
+    echo "runner.sh: warning: rotate_at $r is outside the recommended 150000-250000 (pass --rotate-at 180000 to move this runner)" >&2
   fi
 }
 

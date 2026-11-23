@@ -170,7 +170,7 @@ ok
 
 CASE="lanes: a half-finished npm install fails setup (after the retry) and check reports it"
 printf '{}\n' > "$R/package-lock.json"; git -C "$R" add package-lock.json; git -C "$R" commit -q -m lock
-printf '{"pipeline": {"parallel": {"lane_setup": "mkdir -p node_modules"}}}\n' > "$R/.claude/project.json"
+printf '{"pipeline": {"parallel": {"lane_setup": "mkdir -p node_modules/leftpad"}}}\n' > "$R/.claude/project.json"
 run bash -c "cd '$R' && bash '$LANES' create npm1"
 expect_rc "$RC" 3 "$OUT"
 printf '%s' "$OUT" | grep -q 'npm install incomplete' || fail "half install not named: $OUT"
@@ -736,6 +736,36 @@ expect_rc "$RC" 0 "$OUT"
 [ -f "$PARALLEL_STATE_DIR/runners/fr1/handoff-1.md" ] || fail "--fresh wrote no hand-off"
 tail -1 "$FAKE_LOG" | grep -q -- '--resume' && fail "--fresh still resumed the old session"
 tail -1 "$FAKE_LOG" | grep -q 'fix-up: shas abc123' || fail "the fresh session did not get the prompt"
+ok
+
+CASE="runner: a refusal before any claude call leaves a verdict of that refusal, never the last call's"
+run bash "$RUNNER" start vs1 --prompt "x" --cwd "$W" --allowed-tools Read
+expect_rc "$RC" 0 "$OUT"
+run bash -c "bash '$RUNNER' resume vs1 --prompt y --allowed-tools '+Bash(node a/:*)' | tail -1"
+expect_rc "$RC" 0 "$OUT"   # the pipe hides the 2 ...
+grep -q '"exit": 2' "$PARALLEL_STATE_DIR/runners/vs1/verdict.json" || fail "stale verdict after a refusal: $(cat "$PARALLEL_STATE_DIR/runners/vs1/verdict.json")"
+ok
+
+CASE="runner: an empty --allowed-tools is refused on start and on resume"
+run bash "$RUNNER" start em1 --prompt "x" --cwd "$W" --allowed-tools ""
+expect_rc "$RC" 2 "$OUT"
+run bash "$RUNNER" resume vs1 --prompt "y" --allowed-tools ""
+expect_rc "$RC" 2 "$OUT"
+grep -q '"allowed_tools": "Read"' "$PARALLEL_STATE_DIR/runners/vs1/status.json" || fail "an empty flag wiped the recorded allowlist"
+ok
+
+CASE="runner: + appends without repeating an entry already listed"
+run bash "$RUNNER" resume vs1 --prompt "y" --allowed-tools "+Bash(ls:*)"
+run bash "$RUNNER" resume vs1 --prompt "z" --allowed-tools "+Bash(ls:*)"
+expect_rc "$RC" 0 "$OUT"
+grep -q '"allowed_tools": "Read,Bash(ls:\*)"' "$PARALLEL_STATE_DIR/runners/vs1/status.json" || fail "duplicate entry: $(grep allowed_tools "$PARALLEL_STATE_DIR/runners/vs1/status.json")"
+ok
+
+CASE="runner: a denied first call after a rotation still clears the hand-off (no re-seeding)"
+run bash "$RUNNER" resume vs1 --prompt "a" --fresh
+run env FAKE_DENY=1 bash "$RUNNER" resume vs1 --prompt "b" --fresh
+expect_rc "$RC" 3 "$OUT"
+grep -q '"pending_handoff": null' "$PARALLEL_STATE_DIR/runners/vs1/status.json" || fail "pending_handoff not cleared after a denied call"
 ok
 
 CASE="runner: status lists every runner"

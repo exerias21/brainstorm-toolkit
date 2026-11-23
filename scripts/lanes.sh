@@ -41,6 +41,9 @@
 # writes <git-dir>/lane-setup.done. A failure or a half install is retried
 # pipeline.parallel.lane_setup_retries times (default 1). `check` reads the
 # marker, so a lane whose setup was interrupted is caught before work starts.
+# A lane made before the marker existed reports "never finished" until
+# `lanes.sh setup <lane>` runs once there. npm 6 writes no
+# node_modules/.package-lock.json: on npm 6, leave npm out of lane_setup.
 #
 # Subcommands:
 #
@@ -174,7 +177,10 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 5 else 1
 PYEOF
 }
 
-setup_marker() { printf '%s/lane-setup.done' "$(git -C "$1" rev-parse --absolute-git-dir)"; }
+setup_marker() {
+  local g; g="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" && [ -n "$g" ] || return 1
+  printf '%s/lane-setup.done' "$g"
+}
 
 # Folders (relative to $1) with a package-lock.json whose node_modules exists
 # but lacks node_modules/.package-lock.json: an npm install that started and
@@ -183,7 +189,9 @@ npm_half_installed() {
   local lock d
   while IFS= read -r lock; do
     d="$(dirname "$lock")"
-    [ -d "$d/node_modules" ] && [ ! -f "$d/node_modules/.package-lock.json" ] && printf '%s\n' "${d#"$1"/}"
+    [ -d "$d/node_modules" ] && [ ! -f "$d/node_modules/.package-lock.json" ] || continue
+    # Only a node_modules holding packages counts; .cache/.vite alone are tool caches.
+    [ -n "$(ls "$d/node_modules" 2>/dev/null | head -n 1)" ] && printf '%s\n' "${d#"$1"/}"
   done < <(find "$1" -maxdepth 3 -name node_modules -prune -o -name package-lock.json -print 2>/dev/null)
   return 0
 }
@@ -191,7 +199,7 @@ npm_half_installed() {
 run_setup() {  # $1 = worktree root. Returns 0 when the setup completed.
   local cmd tries n=0 rc half marker
   cmd="$(setup_cmd)"
-  marker="$(setup_marker "$1")"
+  marker="$(setup_marker "$1")" || { echo "lanes.sh: $1 is not a git checkout" >&2; return 2; }
   rm -f "$marker"
   if [ -z "$cmd" ]; then printf 'none\n' > "$marker"; return 0; fi
   tries=$(( $(setup_retries) + 1 ))
@@ -214,8 +222,9 @@ run_setup() {  # $1 = worktree root. Returns 0 when the setup completed.
 
 # 0 = setup complete or none configured; 3 = not finished, with the reason.
 check_setup() {
-  local half
-  if [ -n "$(setup_cmd)" ] && [ ! -f "$(setup_marker "$1")" ]; then
+  local half marker
+  marker="$(setup_marker "$1")" || { echo "lanes.sh: $1 is not a git checkout"; return 2; }
+  if [ -n "$(setup_cmd)" ] && [ ! -f "$marker" ]; then
     echo "setup incomplete: lane_setup never finished in $1 (run: lanes.sh setup $1)"; return 3
   fi
   half="$(npm_half_installed "$1")"
