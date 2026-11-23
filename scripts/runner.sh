@@ -197,7 +197,7 @@ on_exit() {
   [ "$rc" = "$LAST_CALL_RC" ] && return 0
   [ -z "$LAST_CALL_RC" ] && [ "$rc" -eq 0 ] && return 0
   printf '{"ts": "%s", "exit": %s, "result": "%s", "denials": 0, "session_id": null, "mode": "none"}\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$rc" "$([ "$rc" -eq 2 ] && echo refused || echo error)" > "$DIR/verdict.json" 2>/dev/null || true
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$rc" "$(case "$rc" in 0) echo ok ;; 2) echo refused ;; *) echo error ;; esac)" > "$DIR/verdict.json" 2>/dev/null || true
 }
 trap on_exit EXIT
 
