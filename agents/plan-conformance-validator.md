@@ -6,6 +6,7 @@ description: >
   over the whole diff against a saved plan file, reporting requirements (met/partial/missing, each
   with a file:line) and flow (MISMATCH/UNCLEAR/MISSING) as two separate axes. Used by /sdlc Stage 5.
 tools: Read, Grep, Glob
+model: sonnet
 ---
 
 # Plan Conformance Validator

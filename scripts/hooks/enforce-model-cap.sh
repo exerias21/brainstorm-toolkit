@@ -9,6 +9,7 @@
 #   * `model` above the cap            -> rewritten to the cap (haiku < sonnet < opus; fable > opus)
 #   * `model` omitted                  -> set to the cap, unless the named agent definition pins
 #                                         its own tier (agents/<type>.md has a `model:` line)
+#                                         at or under the cap; a pin above it is clamped
 #   * description starting `review:`   -> untouched. Axis 2 (the adversarial reviewer) is
 #                                         never governed by models.cap; stage-5.7 marks its
 #                                         dispatches with that prefix for exactly this reason.
@@ -118,7 +119,16 @@ if name:
                 head = open(path, encoding="utf-8", errors="replace").read(4000)
             except Exception:
                 head = ""
-            if re.search(r"^model:\s*\S", head, re.M):
+            pin = re.search(r"^model:\s*(\S+)", head, re.M)
+            if pin:
+                p = pin.group(1).strip("\"'").lower()
+                ptier = next((t for t in ("opus", "sonnet", "haiku") if t in p), None)
+                if ptier is None and "fable" in p:
+                    ptier = "fable"
+                # A pin at or under the cap keeps its pin; a pin ABOVE the cap would
+                # otherwise slip past it, since frontmatter outranks the session model.
+                if ptier is not None and RANK.get(ptier, 4) > RANK[cap]:
+                    emit(cap, f"{name} pins {p} -> {cap} on '{desc or stype}' (models.cap={cap})")
                 sys.exit(0)
             break
 emit(cap, f"no model on '{desc or stype or 'agent'}' -- it would inherit the session model; set to {cap} (models.cap={cap})")

@@ -6,6 +6,7 @@ description: >
   runs whatever .claude/project.json `test.e2e` defines, separates flaky failures from real ones,
   dispatches fixes, and re-runs until green or max_fix_loops is hit. Used by `/test-check --loop` and the
   /sdlc Stage 5 e2e check.
+model: sonnet
 ---
 
 # E2E Test Runner

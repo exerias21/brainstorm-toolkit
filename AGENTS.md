@@ -148,7 +148,7 @@ repetition itself is required, not redundant.
 7. **Copilot uses Agent Skills, not prompt-file shims.** Consumer repos should receive `.github/skills/<name>/SKILL.md`, including any bundled resources referenced by the skill.
 8. **Claude helper agents stay in `.claude/agents/`.** VS Code can discover Claude-format agents there, so this repo does not maintain a duplicate `.github/agents/` tree for the current Claude-only helper agents.
 9. **Copilot overlay pattern.** `copilot/skills/<name>/SKILL.md` overrides the canonical `skills/<name>/SKILL.md` for Copilot distribution. Use this when a skill needs Claude-specific features (Plan mode, agents) in its canonical version but can still provide value as a simplified Copilot slash command. `setup.sh` prefers the override when it exists; otherwise falls through to the canonical version. Overrides must set `metadata.brainstorm-toolkit-applies-to: copilot` and pass `validate_skills.py` independently.
-10. **Portable frontmatter subset.** The open Agent Skills spec (https://agentskills.io/specification), which GitHub Copilot and OpenAI Codex both implement, defines `name`, `description`, `license`, `metadata`, `compatibility`, `allowed-tools` only. A strict spec validator — and Anthropic's own Skills API upload — hard-errors on any other key; Copilot and Codex as shipped are more lenient (they log "unknown field ignored" and load anyway). Write to the strict set regardless: leniency is a current implementation detail, not a contract. Claude-only keys (`argument-hint`, `disable-model-invocation`, ...) may appear on the canonical `skills/<name>/SKILL.md` (the Claude install source); `setup.sh` strips them for the `.github/skills/` and `.agents/skills/` installs. `copilot/skills/<name>/SKILL.md` and `codex/skills/<name>/SKILL.md` overlays must never declare them by hand — `check_contracts.py`'s `portable-frontmatter` check enforces this.
+10. **Portable frontmatter subset.** The open Agent Skills spec (https://agentskills.io/specification), which GitHub Copilot and OpenAI Codex both implement, defines `name`, `description`, `license`, `metadata`, `compatibility`, `allowed-tools` only. A strict spec validator — and Anthropic's own Skills API upload — hard-errors on any other key; Copilot and Codex as shipped are more lenient (they log "unknown field ignored" and load anyway). Write to the strict set regardless: leniency is a current implementation detail, not a contract. Claude-only keys (`argument-hint`, `disable-model-invocation`, `model`, ...) may appear on the canonical `skills/<name>/SKILL.md` (the Claude install source); `setup.sh` strips them for the `.github/skills/` and `.agents/skills/` installs. `copilot/skills/<name>/SKILL.md` and `codex/skills/<name>/SKILL.md` overlays must never declare them by hand — `check_contracts.py`'s `portable-frontmatter` check enforces this.
 
     <!-- assert-manual: recheck-by 2027-03-15 "Copilot and Codex load an unknown SKILL.md frontmatter key leniently (log + continue) rather than hard-erroring" -->
 
@@ -373,8 +373,8 @@ Also weigh, before adding one:
   say "or bare `<name>` when vendored".
 
 **The one standing exception, recorded rather than hidden:** `e2e-test-runner` declares no
-`tools:` and no `model:`, so by the rule above it earns nothing and should be an inline role
-prompt. It needs the full tool set to run a browser suite and apply fixes, so there is no
+`tools:` (only a `model: sonnet` default, which the dispatch site's `model` outranks), so by the
+rule above it earns nothing and should be an inline role prompt. It needs the full tool set to run a browser suite and apply fixes, so there is no
 boundary to enforce. It is kept because it is dispatched by name at two real sites and its
 prompt is long enough to be worth a file — but it is the exception, not the pattern. A fourth
 agent without a `tools:` restriction should be an inline role prompt instead;

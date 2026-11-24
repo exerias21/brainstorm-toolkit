@@ -198,6 +198,22 @@ EOF
 out="$(run_cap "$d" '{"tool_name":"Agent","tool_input":{"subagent_type":"pinned-agent","description":"do stuff"}}')"
 assert_empty "$out"
 
+CASE="cap: pin above cap clamped"
+d="$(cap_dir 05b)"
+cat > "$d/.claude/project.json" <<'EOF'
+{"pipeline": {"enforce_cap": true}, "models": {"cap": "haiku"}}
+EOF
+cat > "$d/.claude/agents/sonnet-agent.md" <<'EOF'
+---
+name: sonnet-agent
+description: synthetic sonnet-pinned agent for test-hooks.sh
+model: sonnet
+---
+Body.
+EOF
+out="$(run_cap "$d" '{"tool_name":"Agent","tool_input":{"subagent_type":"sonnet-agent","description":"do stuff"}}')"
+assert_match "$out" '"model": "haiku"'
+
 CASE="cap: unpinned agent filled"
 d="$(cap_dir 06)"
 cat > "$d/.claude/project.json" <<'EOF'
@@ -1267,6 +1283,26 @@ marker2="$(cat "$d/.claude/pipeline/run-x/.cost-reported" 2>/dev/null | tr -d '\
 # A second Stop at complete (no further status change) must NOT report again.
 out4="$(run_cost "$d" "{\"transcript_path\": \"$d/transcript.jsonl\"}")"
 assert_empty "$out4"
+ok
+
+CASE="cost-report: nothing due (in_progress + already-reported) exits before probing any interpreter"
+d="$ROOT_TMP/cost-fast"
+mkdir -p "$d/.claude/pipeline/live" "$d/.claude/pipeline/done" "$d/bin"
+cat > "$d/.claude/pipeline/live/run.json" <<'EOF'
+{"status": "in_progress", "updated_at": "2026-09-18T12:00:00Z"}
+EOF
+cat > "$d/.claude/pipeline/done/run.json" <<'EOF'
+{"status": "complete", "updated_at": "2026-09-18T12:00:00Z"}
+EOF
+printf 'complete' > "$d/.claude/pipeline/done/.cost-reported"
+cat > "$d/transcript.jsonl" <<'EOF'
+{"timestamp": "2026-09-01T00:00:00Z", "message": {"usage": {"input_tokens": 100, "output_tokens": 50}}}
+EOF
+printf '#!/bin/sh\ntouch "%s/bin/py-ran.marker"\nexit 1\n' "$d" > "$d/bin/fakepy"
+chmod +x "$d/bin/fakepy"
+out="$(hide_from_command_v "jq python3 python py" env BRAINSTORM_PYTHON="$d/bin/fakepy" CLAUDE_PROJECT_DIR="$d" bash "$COST_HOOK" <<<"{\"transcript_path\": \"$d/transcript.jsonl\"}")"
+assert_empty "$out"
+[ -f "$d/bin/py-ran.marker" ] && fail "the fast path must exit before any interpreter is probed"
 ok
 
 CASE="cost-report: a lone envelope that settled BEFORE this session started is never reported, only marked"

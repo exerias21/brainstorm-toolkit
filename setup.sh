@@ -152,7 +152,7 @@ strip_nonportable_frontmatter() {
   local tmp; tmp="$(mktemp)"
   awk '
     /^---[[:space:]]*$/ { fence++ ; print ; next }
-    fence == 1 && /^(argument-hint|disable-model-invocation):/ { next }
+    fence == 1 && /^(argument-hint|disable-model-invocation|model):/ { next }
     { print }
   ' "$f" > "$tmp" && mv "$tmp" "$f"
 }

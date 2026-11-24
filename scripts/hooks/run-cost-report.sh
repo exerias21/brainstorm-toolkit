@@ -31,6 +31,31 @@ if [ -z "$PROJ" ]; then
   if _gr="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -n "$_gr" ]; then PROJ="$_gr"; else PROJ="$PWD"; fi
 fi
 
+# Fast path, plain bash, no interpreter: this hook fires on EVERY Stop, and probing an
+# interpreter plus parsing each envelope took ~5 s on Windows -- past the 10 s hook
+# timeout under load. Exit now unless some envelope carries a settled status its
+# `.cost-reported` marker does not already record. Errs toward the full path: any
+# settled status that differs from the marker (or no marker) falls through.
+# ONE grep over every envelope and builtin `read` for the markers: on Git Bash each
+# forked process costs ~40 ms, so a per-envelope cat/grep/sed was itself seconds.
+_due=""
+for _f in "$PROJ"/.claude/pipeline/*/run.json; do [ -f "$_f" ] && { _due=scan; break; }; done
+if [ -n "$_due" ]; then
+  _due=""
+  while IFS= read -r _line; do
+    _f="${_line%:*\"status\"*}"            # grep -H prefix: the file path (shortest match, so a drive-letter colon survives)
+    _s="${_line%\"}"; _s="${_s##*\"}"      # the quoted status value
+    case "$_s" in complete|completed|failed|paused) ;; *) continue ;; esac
+    _mark=""
+    IFS= read -r _mark 2>/dev/null < "${_f%/run.json}/.cost-reported" || true
+    _mark="${_mark%$'\r'}"
+    [ "$_s" = "$_mark" ] || { _due=1; break; }
+  done <<EOF
+$(grep -H -o '"status"[[:space:]]*:[[:space:]]*"[a-z]*"' "$PROJ"/.claude/pipeline/*/run.json 2>/dev/null)
+EOF
+fi
+[ -n "$_due" ] || exit 0
+
 # Three-tier resolution matching scripts/py.sh / next-action.sh, shared via
 # _pyresolve.sh: $BRAINSTORM_PYTHON > .claude/project.json's top-level `python`
 # key (validated by hooks_is_plausible_python before ever being run -- this

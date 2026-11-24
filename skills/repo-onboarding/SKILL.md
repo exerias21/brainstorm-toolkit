@@ -7,6 +7,7 @@ description: >
   this repo for the toolkit", "generate AGENTS.md", "create project.json", or asks
   how the codebase is laid out, or when /onboard, /discovery, /codelearn, or
   /init-toolkit is invoked.
+model: sonnet
 metadata:
   brainstorm-toolkit-applies-to: claude copilot codex
 ---

@@ -5,6 +5,7 @@ description: >
   answered by the decision log, a ticked TASKS.md row or the code, fixes stale premises, and
   rewrites the rest in plain words, recommendation first, at most 4. Used by the operator-gate protocol.
 tools: Read, Grep, Glob
+model: sonnet
 ---
 
 # Question Advisor
