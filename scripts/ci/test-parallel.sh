@@ -186,6 +186,13 @@ run bash -c "cd '$R' && bash '$LANES' setup '$SP'"
 expect_rc "$RC" 0 "$OUT"
 run bash -c "cd '$R' && bash '$LANES' check '$SP'"
 assert_rc "$RC" 0 "$OUT"
+
+CASE="lanes: check reports a lane set up under a lane_setup that has since changed"
+printf '{"pipeline": {"parallel": {"lane_setup": "mkdir -p node_modules && touch node_modules/.package-lock.json && true"}}}
+' > "$R/.claude/project.json"
+run bash -c "cd '$R' && bash '$LANES' check '$SP'"
+expect_rc "$RC" 3 "$OUT"
+assert_match "$OUT" 'lane_setup changed'
 bash -c "cd '$R' && bash '$LANES' remove npm1 --force" >/dev/null
 
 CASE="lanes: a setup that fails once is retried and the lane comes up complete"
@@ -535,7 +542,11 @@ FAKE="$ROOT_TMP/fakeclaude"
 cat > "$FAKE" <<'EOF'
 #!/usr/bin/env bash
 # Fake `claude -p --output-format json`: logs argv, answers in the measured shape.
-[ "${1:-}" = "--help" ] && { printf '  --permission-prompts <target>\n  --strict-mcp-config\n  --exclude-dynamic-system-prompt-sections\n  --tools <tools...>\n'; exit 0; }
+if [ "${1:-}" = "--help" ]; then
+  printf '  --permission-prompts <target>\n  --exclude-dynamic-system-prompt-sections\n  --tools <tools...>\n'
+  [ -n "${FAKE_NO_STRICT:-}" ] || printf '  --strict-mcp-config\n'
+  exit 0
+fi
 stdin="$(cat)"   # the runner sends the prompt on stdin, never as an argument
 printf '%s PROMPT: %s' "$*" "$stdin" | tr '\n' ' ' >> "$FAKE_LOG"; echo >> "$FAKE_LOG"   # one line per call
 sid="new-$(date +%s%N)"
@@ -543,7 +554,10 @@ prev=""
 while [ $# -gt 0 ]; do [ "$1" = "--resume" ] && { sid="$2"; prev=1; }; shift; done
 ctx="${FAKE_CTX:-1000}"
 den='[]'; [ -n "${FAKE_DENY:-}" ] && den='[{"tool_name":"Bash","tool_use_id":"x","tool_input":{"command":"rm -rf build"}}]'
-printf '{"type":"result","subtype":"success","is_error":false,"session_id":"%s","num_turns":1,"total_cost_usd":0.01,"result":"done %s","permission_denials":%s,"usage":{"input_tokens":5,"cache_read_input_tokens":%s,"cache_creation_input_tokens":0,"output_tokens":10,"iterations":[{"input_tokens":5,"cache_read_input_tokens":%s,"cache_creation_input_tokens":0,"output_tokens":10}]}}\n' "$sid" "$prev" "$den" "$ctx" "$ctx"
+# Like the real CLI, total_cost_usd is the session's running total: $0.01 a call.
+n=$(( $(cat "$FAKE_LOG.calls.$sid" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FAKE_LOG.calls.$sid"
+n="$(awk -v n="$n" 'BEGIN { printf "%.2f", n / 100 }')"
+printf '{"type":"result","subtype":"success","is_error":false,"session_id":"%s","num_turns":1,"total_cost_usd":%s,"result":"done %s","permission_denials":%s,"usage":{"input_tokens":5,"cache_read_input_tokens":%s,"cache_creation_input_tokens":0,"output_tokens":10,"iterations":[{"input_tokens":5,"cache_read_input_tokens":%s,"cache_creation_input_tokens":0,"output_tokens":10}]}}\n' "$sid" "$n" "$prev" "$den" "$ctx" "$ctx"
 EOF
 chmod +x "$FAKE"
 export RUNNER_CLAUDE_BIN="$FAKE" FAKE_LOG="$ROOT_TMP/fake.log"
@@ -674,10 +688,28 @@ assert abs(r["by_runner"]["t1"]["cost_usd"] - 0.03) < 1e-9, r["by_runner"]["t1"]
 assert r["by_runner"]["w1"]["denials"] >= 2, r["by_runner"]["w1"]
 assert r["total"]["calls"] == sum(v["calls"] for v in r["by_runner"].values())
 ' || fail "report totals wrong: $OUT"
+grep -q '"session_cost_usd": 0.03' "$PARALLEL_STATE_DIR/runners/t1/events.jsonl" || fail "running session total not recorded: $(cat "$PARALLEL_STATE_DIR/runners/t1/events.jsonl")"
+grep -q '"cost_usd": 0.03' "$PARALLEL_STATE_DIR/runners/t1/status.json" || fail "status cost should be 0.03 (per-call deltas), not the summed running totals: $(cat "$PARALLEL_STATE_DIR/runners/t1/status.json")"
 run bash "$RUNNER" report
 expect_rc "$RC" 0 "$OUT"
 printf '%s' "$OUT" | grep -q 'by task' || fail "text report missing the by-task table"
 assert_match "$OUT" 'T-42'
+
+CASE="runner: report reads lines from before session_cost_usd as running totals"
+mkdir -p "$PARALLEL_STATE_DIR/runners/legacy"
+printf '%s\n' '{"ts":"t1","mode":"fresh","rc":0,"session_id":"L","cost_usd":0.3}' \
+  '{"ts":"t2","mode":"resume","rc":0,"session_id":"L","cost_usd":1.25}' \
+  '{"ts":"t3","mode":"resume","rc":0,"session_id":"L","cost_usd":1.87}' \
+  '{"ts":"t4","mode":"fresh","rc":0,"session_id":"M","cost_usd":0.5}' > "$PARALLEL_STATE_DIR/runners/legacy/events.jsonl"
+run bash "$RUNNER" report --json
+expect_rc "$RC" 0 "$OUT"
+printf '%s' "$OUT" | "$(bash "$PLUGIN_ROOT/scripts/py.sh" --print)" -c '
+import json, sys
+c = json.load(sys.stdin)["by_runner"]["legacy"]["cost_usd"]
+assert abs(c - 2.37) < 1e-9, c
+' || fail "legacy running totals were summed: $OUT"
+rm -rf "$PARALLEL_STATE_DIR/runners/legacy"
+ok
 
 CASE="runner: lean start -- --tools, --strict-mcp-config, exclude-dynamic; prompt on stdin, not argv"
 run bash "$RUNNER" start lean1 --prompt "do the lean thing" --cwd "$W" --allowed-tools Read
@@ -690,6 +722,21 @@ printf '%s' "${L%% PROMPT:*}" | grep -q 'do the lean thing' && fail "prompt also
 grep -q '"rotate_at": 180000' "$PARALLEL_STATE_DIR/runners/lean1/status.json" || fail "default rotate_at is not 180000"
 tail -1 "$PARALLEL_STATE_DIR/runners/lean1/events.jsonl" | grep -q '"tools": "Bash,Read,Edit,Write,Glob,Grep"' || fail "tool set not on the events line"
 ok
+
+CASE="runner: a claude without --strict-mcp-config gets neither --tools nor it, with a warning"
+FAKE_NO_STRICT=1 run bash "$RUNNER" start lean3 --prompt "x" --cwd "$W" --allowed-tools Read
+expect_rc "$RC" 0 "$OUT"
+tail -1 "$FAKE_LOG" | grep -q -- '--tools' && fail "--tools passed without --strict-mcp-config: $(tail -1 "$FAKE_LOG")"
+assert_match "$OUT" 'lacks --strict-mcp-config'
+
+CASE="runner: a runner with no recorded tool set is told how to move to the lean one"
+"$(bash "$PLUGIN_ROOT/scripts/py.sh" --print)" -c '
+import json, sys
+p = sys.argv[1]; s = json.load(open(p)); s.pop("tools", None); json.dump(s, open(p, "w"))
+' "$PARALLEL_STATE_DIR/runners/lean3/status.json"
+run bash "$RUNNER" resume lean3 --prompt "y"
+expect_rc "$RC" 0 "$OUT"
+assert_match "$OUT" 'no recorded tool set'
 
 CASE="runner: --tools default passes neither --tools nor --strict-mcp-config"
 run bash "$RUNNER" start lean2 --prompt "x" --cwd "$W" --allowed-tools Read --tools default

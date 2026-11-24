@@ -222,10 +222,15 @@ run_setup() {  # $1 = worktree root. Returns 0 when the setup completed.
 
 # 0 = setup complete or none configured; 3 = not finished, with the reason.
 check_setup() {
-  local half marker
+  local half marker cmd
   marker="$(setup_marker "$1")" || { echo "lanes.sh: $1 is not a git checkout"; return 2; }
-  if [ -n "$(setup_cmd)" ] && [ ! -f "$marker" ]; then
+  cmd="$(setup_cmd)"
+  if [ -n "$cmd" ] && [ ! -f "$marker" ]; then
     echo "setup incomplete: lane_setup never finished in $1 (run: lanes.sh setup $1)"; return 3
+  fi
+  # The marker holds the command that ran; a lane set up under another one is stale.
+  if [ -n "$cmd" ] && [ "$(cat "$marker" 2>/dev/null)" != "$cmd" ]; then
+    echo "setup incomplete: lane_setup changed since this lane was set up (run: lanes.sh setup $1)"; return 3
   fi
   half="$(npm_half_installed "$1")"
   if [ -n "$half" ]; then

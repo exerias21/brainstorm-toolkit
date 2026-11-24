@@ -214,6 +214,22 @@ EOF
 out="$(run_cap "$d" '{"tool_name":"Agent","tool_input":{"subagent_type":"sonnet-agent","description":"do stuff"}}')"
 assert_match "$out" '"model": "haiku"'
 
+CASE="cap: model: inherit is no pin -- the cap is set"
+d="$(cap_dir 05c)"
+cat > "$d/.claude/project.json" <<'EOF'
+{"pipeline": {"enforce_cap": true}, "models": {"cap": "sonnet"}}
+EOF
+cat > "$d/.claude/agents/inherit-agent.md" <<'EOF'
+---
+name: inherit-agent
+description: synthetic inherit-pinned agent for test-hooks.sh
+model: inherit
+---
+Body.
+EOF
+out="$(run_cap "$d" '{"tool_name":"Agent","tool_input":{"subagent_type":"inherit-agent","description":"do stuff"}}')"
+assert_match "$out" '"model": "sonnet"'
+
 CASE="cap: unpinned agent filled"
 d="$(cap_dir 06)"
 cat > "$d/.claude/project.json" <<'EOF'

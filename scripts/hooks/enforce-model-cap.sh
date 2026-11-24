@@ -120,7 +120,8 @@ if name:
             except Exception:
                 head = ""
             pin = re.search(r"^model:\s*(\S+)", head, re.M)
-            if pin:
+            # `model: inherit` means the session model: no pin, so the cap applies.
+            if pin and pin.group(1).strip("\"'").lower() != "inherit":
                 p = pin.group(1).strip("\"'").lower()
                 ptier = next((t for t in ("opus", "sonnet", "haiku") if t in p), None)
                 if ptier is None and "fable" in p:

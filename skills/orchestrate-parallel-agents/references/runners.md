@@ -7,7 +7,7 @@ flat files under `.claude/parallel/runners/<name>/` (gitignore `.claude/parallel
 | File | Holds |
 |---|---|
 | `status.json` | current `session_id`, `cwd`, model, allowlist, `rotate_at`, last `context_tokens`, calls, cost, every session id it has had |
-| `events.jsonl` | one line per call: time, mode (fresh/resume), session, context, cost, denials, and the `allowed_tools` and `tools` in force |
+| `events.jsonl` | one line per call: time, mode (fresh/resume), session, context, `cost_usd` (this call), `session_cost_usd` (the session's running total, which is what `total_cost_usd` reports on a resume), denials, and the `allowed_tools` and `tools` in force |
 | `denials.jsonl` | every permission denial, verbatim |
 | `handoff-<n>.md` | the hand-off note written at each rotation |
 | `last-prompt.md` | the prompt of the last call (sent on stdin) |
@@ -65,7 +65,9 @@ The set comes from `--tools`, else `pipeline.parallel.runner.tools`, else that l
 extra tool the brief needs (`WebFetch`, an MCP tool, `Agent` for a brief that runs `/sdlc` or
 dispatches subagents), or pass `--tools default` for a runner that needs MCP servers (neither
 flag is then passed). It is recorded at `start` and kept until a `resume --tools` changes it;
-changing it mid-session costs one cache miss.
+changing it mid-session costs one cache miss. A runner recorded before the lean set has none and keeps every tool; it warns on each
+`resume`, and `resume --fresh --tools <set>` moves it at no cache cost. When the installed claude
+lacks `--strict-mcp-config`, neither flag is passed (`--tools` alone starts larger).
 
 **Why the prompt is on stdin.** `--tools` and `--allowed-tools` take several values, so a
 prompt after them is read as one more tool name; and with nothing on stdin `claude -p` waits 3 s
@@ -111,9 +113,9 @@ recommended, a warning outside it), the next `resume`:
 3. records the new `session_id`; the old one stays in `sessions[]`.
 
 **The threshold is set for cost, not headroom.** Every turn of a resumed session re-reads the
-whole conversation. On the audited bdt run (211 calls, $296.80) a resumed turn cost $0.092 vs
-$0.024 fresh, resumes were 74% of spend, and the 34 resumes that ended above 200k cost 40% of
-it, while the old 350k default fired once. A runner recorded before this default keeps its
+whole conversation. On the audited bdt run (220 calls, $129.70) a resumed turn that ended at
+100-200k cost $0.016, one that ended above 200k $0.034; the 34 resumes past 200k were 19% of
+spend, while the old 350k default fired once. A runner recorded before this default keeps its
 `rotate_at`; pass `--rotate-at 180000` on its next `resume` to move it.
 
 `resume --fresh` rotates now, whatever the context. Use it for a fix-up after review on a runner

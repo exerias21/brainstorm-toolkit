@@ -14,8 +14,8 @@
 # hundred thousand tokens every turn re-pays that context and the model's
 # attention to early detail degrades. When the last turn's context passes the
 # threshold (default 180000; 150000-250000 recommended -- on one audited run a
-# resumed turn cost ~3.8x a fresh one, and resumes above 200k were 40% of all
-# spend), the next resume first
+# resumed turn that ended above 200k cost ~2.2x one that ended at 100-200k),
+# the next resume first
 # asks the old session for a hand-off note, then starts a fresh session seeded
 # with that note plus the new task, and records the new id. The old id stays in
 # the history.
@@ -146,15 +146,25 @@ def blank():
 by_runner, by_task, total = {}, {}, blank()
 for path in sorted(glob.glob(os.path.join(root, "*", "events.jsonl"))):
     runner = os.path.basename(os.path.dirname(path))
+    session_total = {}
     for line in open(path, encoding="utf-8", errors="replace"):
         try:
             ev = json.loads(line)
         except Exception:
             continue
         task = ev.get("task") or "-"
+        # A resumed call's total_cost_usd is the session's running total. Lines
+        # written before session_cost_usd existed hold that total in cost_usd, so
+        # the call's cost is the running total minus the session's previous one.
+        cum = float(ev.get("session_cost_usd", ev.get("cost_usd")) or 0.0)
+        sid = ev.get("session_id")
+        prev = session_total.get(sid, 0.0) if sid else 0.0
+        call_cost = cum - prev if cum >= prev else cum
+        if sid:
+            session_total[sid] = cum
         for agg in (by_runner.setdefault(runner, blank()), by_task.setdefault(task, blank()), total):
             agg["calls"] += 1
-            agg["cost_usd"] += float(ev.get("cost_usd") or 0.0)
+            agg["cost_usd"] += call_cost
             agg["denials"] += int(ev.get("denials") or 0)
             agg["errors"] += 1 if (ev.get("error") or ev.get("is_error") or ev.get("rc")) else 0
             if ev.get("context_tokens") is not None:
@@ -194,7 +204,8 @@ rm -f "$DIR/verdict.json"
 LAST_CALL_RC=""
 on_exit() {
   local rc=$?
-  [ "$rc" = "$LAST_CALL_RC" ] && return 0
+  # A recorder that crashed before writing the verdict leaves none: write it.
+  [ "$rc" = "$LAST_CALL_RC" ] && [ -f "$DIR/verdict.json" ] && return 0
   [ -z "$LAST_CALL_RC" ] && [ "$rc" -eq 0 ] && return 0
   printf '{"ts": "%s", "exit": %s, "result": "%s", "denials": 0, "session_id": null, "mode": "none"}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$rc" "$(case "$rc" in 0) echo ok ;; 2) echo refused ;; *) echo error ;; esac)" > "$DIR/verdict.json" 2>/dev/null || true
@@ -360,9 +371,13 @@ call_claude() {
   [ -n "$(get max_turns)" ] && cmd+=(--max-turns "$(get max_turns)")
   [ -n "$(get max_budget_usd)" ] && cmd+=(--max-budget-usd "$(get max_budget_usd)")
   case "$CLAUDE_HELP" in *--permission-prompts*) cmd+=(--permission-prompts none) ;; esac
+  # --tools without --strict-mcp-config loads every MCP tool up front (58.4k vs
+  # 36.9k measured), so the pair goes together or not at all.
   if [ -n "$tools" ] && [ "$tools" != "default" ]; then
-    cmd+=(--tools "$tools")
-    case "$CLAUDE_HELP" in *--strict-mcp-config*) cmd+=(--strict-mcp-config) ;; esac
+    case "$CLAUDE_HELP" in
+      *--strict-mcp-config*) cmd+=(--tools "$tools" --strict-mcp-config) ;;
+      *) echo "runner.sh: warning: this claude lacks --strict-mcp-config; starting with its default tool set" >&2 ;;
+    esac
   fi
   case "$CLAUDE_HELP" in *--exclude-dynamic-system-prompt-sections*) cmd+=(--exclude-dynamic-system-prompt-sections) ;; esac
   [ "$(get bare)" = "1" ] && cmd+=(--bare)
@@ -401,9 +416,27 @@ else:
     s["session_id"] = sid or s.get("session_id")
     s["context_tokens"] = ctx
     s["calls"] = int(s.get("calls", 0)) + 1
-    s["cost_usd"] = float(s.get("cost_usd", 0.0)) + float(r.get("total_cost_usd") or 0.0)
-    ev.update(model=s.get("model"), session_id=sid, context_tokens=ctx, cost_usd=r.get("total_cost_usd"),
-              num_turns=r.get("num_turns"), subtype=r.get("subtype"), is_error=r.get("is_error"))
+    # total_cost_usd on a --resume is the SESSION's running total, not this
+    # call's: adding it per call counted a 4-call runner at $5.22 for $1.87 of
+    # spend. This call's cost is the total minus the session's last recorded
+    # total (session_cost_usd; older lines hold the running total in cost_usd).
+    total = float(r.get("total_cost_usd") or 0.0)
+    prev = 0.0
+    try:
+        for line in open(os.path.join(d, "events.jsonl"), encoding="utf-8", errors="replace"):
+            try:
+                old = json.loads(line)
+            except Exception:
+                continue
+            if sid and old.get("session_id") == sid:
+                prev = float(old.get("session_cost_usd", old.get("cost_usd")) or 0.0)
+    except OSError:
+        pass
+    call_cost = total - prev if total >= prev else total
+    s["cost_usd"] = float(s.get("cost_usd", 0.0)) + call_cost
+    ev.update(model=s.get("model"), session_id=sid, context_tokens=ctx, cost_usd=round(call_cost, 6),
+              session_cost_usd=total, num_turns=r.get("num_turns"), subtype=r.get("subtype"),
+              is_error=r.get("is_error"))
     open(os.path.join(d, "last-result.md"), "w", encoding="utf-8").write(str(r.get("result") or ""))
     denials = r.get("permission_denials") or []
     if denials:
@@ -420,13 +453,14 @@ else:
         code = 1 if code == 0 else code
 with open(os.path.join(d, "events.jsonl"), "a", encoding="utf-8") as f:
     f.write(json.dumps(ev) + "\n")
-# The exit code on disk, so `runner.sh ... | tail` cannot hide a 3.
-verdict = {"ts": ev["ts"], "exit": code, "result": {0: "ok", 3: "denied"}.get(code, "error"),
-           "denials": int(ev.get("denials") or 0), "session_id": s.get("session_id"), "mode": mode}
-json.dump(verdict, open(os.path.join(d, "verdict.json"), "w"), indent=1)
 tmp = status_path + ".tmp"
 json.dump(s, open(tmp, "w"), indent=1)
 os.replace(tmp, status_path)
+# The exit code on disk, so `runner.sh ... | tail` cannot hide a 3. Written
+# last: a failure above leaves no verdict, and on_exit writes the error one.
+verdict = {"ts": ev["ts"], "exit": code, "result": {0: "ok", 3: "denied"}.get(code, "error"),
+           "denials": int(ev.get("denials") or 0), "session_id": s.get("session_id"), "mode": mode}
+json.dump(verdict, open(os.path.join(d, "verdict.json"), "w"), indent=1)
 print("runner=%s task=%s session=%s model=%s context=%s rotate_at=%s cost_usd=%.4f result=%s" % (
     s["name"], s.get("task") or "-", s.get("session_id"), s.get("model"), s.get("context_tokens"), s.get("rotate_at"),
     s.get("cost_usd", 0.0), os.path.join(d, "last-result.md")))
@@ -482,6 +516,11 @@ check_rotate_at() {
   case "$r" in ''|*[!0-9]*) echo "runner.sh: --rotate-at must be a token count" >&2; exit 2 ;; esac
   if [ "$r" -lt 150000 ] || [ "$r" -gt 250000 ]; then
     echo "runner.sh: warning: rotate_at $r is outside the recommended 150000-250000 (pass --rotate-at 180000 to move this runner)" >&2
+  fi
+  # A runner recorded before the lean tool set keeps the full one (~27k more
+  # per turn); its brief may need MCP or Agent, so it is told, not switched.
+  if [ -z "$(get tools)" ]; then
+    echo "runner.sh: warning: this runner has no recorded tool set and starts with every tool and MCP server; pass --tools $DEFAULT_TOOLS (best with --fresh, which costs no cache miss) or --tools default to keep them" >&2
   fi
 }
 
