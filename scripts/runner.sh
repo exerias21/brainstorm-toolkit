@@ -20,6 +20,19 @@
 # with that note plus the new task, and records the new id. The old id stays in
 # the history.
 #
+# BUDGET: every claude call (a hand-off turn included) gets --max-budget-usd.
+# The per-call allowance is the flag recorded for this runner, else
+# pipeline.parallel.runner.max_budget_usd, else 5. Whether claude compares the
+# limit with one call or the resumed session is not documented (--help says only
+# "maximum dollar amount to spend on API calls"), while total_cost_usd on a
+# resume IS the session total. So the value passed is the session's recorded
+# spend plus the allowance: exact if the cap is per session, looser but finite
+# if per call, and a long session is never starved. A call that hits it exits 1.
+#
+# ROTATE_AT ON RESUME: a threshold given with --rotate-at is kept. Otherwise the
+# configured value (else 180000) is a ceiling on the recorded one. The check
+# runs between calls: one call can still end above the threshold.
+#
 # PERMISSIONS: a headless runner cannot answer a permission prompt. Give it an
 # explicit allowlist (--allowed-tools, else the project's
 # pipeline.parallel.runner.allowed_tools; `--allowed-tools +X,Y` appends to
@@ -86,7 +99,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_BIN="${RUNNER_CLAUDE_BIN:-claude}"
-usage() { sed -n '67,84p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '80,97p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 [ $# -ge 1 ] || usage
 SUB="$1"; shift
@@ -112,7 +125,7 @@ while [ $# -gt 0 ]; do
     --allowed-tools)    OPTS+=("allowed_tools=${2:-}"); shift 2 ;;
     --max-turns)        OPTS+=("max_turns=${2:-}"); shift 2 ;;
     --max-budget-usd)   OPTS+=("max_budget_usd=${2:-}"); shift 2 ;;
-    --rotate-at)        OPTS+=("rotate_at=${2:-}"); shift 2 ;;
+    --rotate-at)        OPTS+=("rotate_at=${2:-}" "rotate_at_source=flag"); shift 2 ;;
     --tools)            [ -n "${2:-}" ] || { echo "runner.sh: --tools needs a set (or default)" >&2; exit 2; }
                         OPTS+=("tools=$2"); shift 2 ;;
     --bare)             OPTS+=("bare=1"); shift ;;
@@ -315,6 +328,60 @@ prepare_opts() {
   return 0
 }
 
+# On resume, lower a recorded threshold that no flag set and that is above the
+# configured one.
+enforce_rotate_at() {
+  local cur ceil
+  [ "$(get rotate_at_source)" = "flag" ] && return 0
+  cur="$(get rotate_at)"; ceil="$(cfg_get rotate_at 180000)"
+  case "$cur" in ''|*[!0-9]*) return 0 ;; esac  # check_rotate_at reports these
+  case "$ceil" in ''|*[!0-9]*) return 0 ;; esac
+  if [ "$cur" -gt "$ceil" ]; then
+    echo "runner.sh: rotate_at $cur lowered to $ceil (pass --rotate-at to keep a higher one)"
+    local OPTS=("rotate_at=$ceil")  # not set_kv: rotate_at stays a JSON number
+    write_status_from_opts
+  fi
+}
+
+# The per-call allowance: recorded flag, else config, else 5.
+call_budget() {
+  local b; b="$(get max_budget_usd)"
+  [ -n "$b" ] || b="$(cfg_get max_budget_usd 5)"
+  printf '%s' "$b"
+}
+valid_budget() {
+  "$PY" -c 'import math,sys; v=float(sys.argv[1]); sys.exit(0 if math.isfinite(v) and v>0 else 1)' "$1" 2>/dev/null
+}
+# Refuse a bad flag before it is recorded in status.json.
+check_flag_budget() {
+  ! has_opt max_budget_usd || valid_budget "$(opt_val max_budget_usd)" || {
+    echo "runner.sh: --max-budget-usd must be a positive number of USD" >&2; exit 2; }
+}
+check_budget() {
+  valid_budget "$(call_budget)" || {
+    echo "runner.sh: max budget must be a positive number of USD, got '$(call_budget)' (pipeline.parallel.runner.max_budget_usd)" >&2; exit 2; }
+}
+# The value passed to claude: the allowance, plus the resumed session's recorded
+# spend when $1 (its session id) is set. See BUDGET above.
+budget_limit() {
+  "$PY" - "$DIR/events.jsonl" "$1" "$(call_budget)" <<'PYEOF'
+import json, sys
+path, sid, allowance = sys.argv[1], sys.argv[2], float(sys.argv[3])
+prior = 0.0
+try:
+    for line in open(path, encoding="utf-8", errors="replace"):
+        try:
+            ev = json.loads(line)
+            if sid and ev.get("session_id") == sid:
+                prior = float(ev.get("session_cost_usd", ev.get("cost_usd")) or 0.0)
+        except Exception:
+            continue
+except OSError:
+    pass
+print("%g" % round(prior + allowance, 4))
+PYEOF
+}
+
 # Set status.json["model"] for the next call: the override, else the
 # configured model (fresh) or the recorded one (resume). $1 = fresh|resume.
 choose_model() {
@@ -369,7 +436,8 @@ call_claude() {
   [ -n "$(get permission_mode)" ] && cmd+=(--permission-mode "$(get permission_mode)")
   [ -n "$(get allowed_tools)" ] && cmd+=(--allowed-tools "$(get allowed_tools)")
   [ -n "$(get max_turns)" ] && cmd+=(--max-turns "$(get max_turns)")
-  [ -n "$(get max_budget_usd)" ] && cmd+=(--max-budget-usd "$(get max_budget_usd)")
+  local resumed=""; [ "$mode" = "resume" ] && resumed="$sid"
+  cmd+=(--max-budget-usd "$(budget_limit "$resumed")")
   case "$CLAUDE_HELP" in *--permission-prompts*) cmd+=(--permission-prompts none) ;; esac
   # --tools without --strict-mcp-config loads every MCP tool up front (58.4k vs
   # 36.9k measured), so the pair goes together or not at all.
@@ -533,7 +601,8 @@ case "$SUB" in
     prepare_opts
     has_opt allowed_tools || {
       echo "runner.sh start: no allowlist -- pass --allowed-tools or set pipeline.parallel.runner.allowed_tools; a headless runner cannot answer permission prompts" >&2; exit 2; }
-    write_status_from_opts; check_rotate_at
+    check_flag_budget
+    write_status_from_opts; check_rotate_at; check_budget
     choose_model fresh
     full="$(with_handoff "$PROMPT")"
     set +e; call_claude "$full" fresh; rc=$?; set -e
@@ -544,7 +613,8 @@ case "$SUB" in
     [ "$PROMPT_SET" -eq 1 ] || { echo "runner.sh resume: --prompt or --prompt-file is required" >&2; exit 2; }
     [ -f "$STATUS" ] || { echo "runner.sh: no runner $NAME; use start" >&2; exit 2; }
     prepare_opts
-    write_status_from_opts; check_rotate_at
+    check_flag_budget
+    write_status_from_opts; enforce_rotate_at; check_rotate_at; check_budget
     if [ -n "$(get session_id)" ] && { [ "$FRESH" -eq 1 ] || [ "$(get context_tokens)" -ge "$(get rotate_at)" ]; }; then rotate || exit 1; fi
     mode=resume; [ -n "$(get session_id)" ] || mode=fresh
     choose_model "$mode"
@@ -555,6 +625,7 @@ case "$SUB" in
     ;;
   rotate)
     [ -f "$STATUS" ] || { echo "runner.sh: no runner $NAME" >&2; exit 2; }
+    check_budget
     rotate
     ;;
   *) usage ;;

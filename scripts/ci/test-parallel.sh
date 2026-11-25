@@ -815,6 +815,73 @@ expect_rc "$RC" 3 "$OUT"
 grep -q '"pending_handoff": null' "$PARALLEL_STATE_DIR/runners/vs1/status.json" || fail "pending_handoff not cleared after a denied call"
 ok
 
+CASE="runner: a fresh call gets the default budget of 5"
+run bash "$RUNNER" start bg1 --prompt "x" --cwd "$W" --allowed-tools Read
+expect_rc "$RC" 0 "$OUT"
+tail -1 "$FAKE_LOG" | grep -q -- '--max-budget-usd 5 ' || fail "no default budget: $(tail -1 "$FAKE_LOG")"
+ok
+
+CASE="runner: a resume's budget is the session's recorded spend plus the allowance"
+run bash "$RUNNER" resume bg1 --prompt "y"
+expect_rc "$RC" 0 "$OUT"
+tail -1 "$FAKE_LOG" | grep -q -- '--max-budget-usd 5.01 ' || fail "wrong resume budget: $(tail -1 "$FAKE_LOG")"
+ok
+
+CASE="runner: config max_budget_usd applies, and a flag overrides it"
+printf '{"pipeline": {"parallel": {"runner": {"max_budget_usd": 2}}}}\n' > "$CFG/.claude/project.json"
+run bash "$RUNNER" start bg2 --prompt "x" --cwd "$W" --allowed-tools Read
+tail -1 "$FAKE_LOG" | grep -q -- '--max-budget-usd 2 ' || fail "config budget not used: $(tail -1 "$FAKE_LOG")"
+run bash "$RUNNER" start bg3 --prompt "x" --cwd "$W" --allowed-tools Read --max-budget-usd 9
+tail -1 "$FAKE_LOG" | grep -q -- '--max-budget-usd 9 ' || fail "flag budget not used: $(tail -1 "$FAKE_LOG")"
+rm -f "$CFG/.claude/project.json"
+ok
+
+CASE="runner: a budget that is not a positive number is refused"
+run bash "$RUNNER" start bg4 --prompt "x" --cwd "$W" --allowed-tools Read --max-budget-usd 0
+assert_rc "$RC" 2 "$OUT"
+
+CASE="runner: resume lowers a recorded rotate_at above the ceiling and rotates"
+sed -i 's/"rotate_at": 180000/"rotate_at": 350000/' "$PARALLEL_STATE_DIR/runners/bg1/status.json"
+run env FAKE_CTX=200000 bash "$RUNNER" resume bg1 --prompt "grow"
+run bash "$RUNNER" resume bg1 --prompt "next"
+expect_rc "$RC" 0 "$OUT"
+printf '%s' "$OUT" | grep -q 'rotating bg1' || fail "did not rotate: $OUT"
+grep -q '"rotate_at": 180000' "$PARALLEL_STATE_DIR/runners/bg1/status.json" || fail "rotate_at not lowered"
+ok
+
+CASE="runner: a --rotate-at flag is kept on later resumes"
+run bash "$RUNNER" resume bg1 --prompt "a" --rotate-at 250000
+run bash "$RUNNER" resume bg1 --prompt "b"
+expect_rc "$RC" 0 "$OUT"
+grep -q '"rotate_at": 250000' "$PARALLEL_STATE_DIR/runners/bg1/status.json" || fail "flag rotate_at was lowered"
+ok
+
+CASE="lanes: held shows in list and unheld clears it"
+H="$(new_repo held-repo)"
+cd "$H"
+run bash "$LANES" create h1
+expect_rc "$RC" 0 "$OUT"
+run bash "$LANES" create h2
+run bash "$LANES" held h1 --until 2026-11-27
+expect_rc "$RC" 0 "$OUT"
+run bash "$LANES" held h2 --until lane/h1
+expect_rc "$RC" 0 "$OUT"
+run bash "$LANES" list
+printf '%s' "$OUT" | grep -q 'held-until=2026-11-27' || fail "date hold not listed: $OUT"
+printf '%s' "$OUT" | grep -q 'held-until=h1$' || fail "lane hold not listed: $OUT"
+run bash "$LANES" unheld h1
+run bash "$LANES" unheld h2
+run bash "$LANES" list
+printf '%s' "$OUT" | grep -q 'held-until' && fail "hold not cleared: $OUT"
+ok
+
+CASE="lanes: held refuses itself and an unknown lane"
+run bash "$LANES" held h1 --until h1
+expect_rc "$RC" 2 "$OUT"
+run bash "$LANES" held h1 --until nosuch
+assert_rc "$RC" 2 "$OUT"
+cd "$PLUGIN_ROOT"
+
 CASE="runner: status lists every runner"
 run bash "$RUNNER" status
 assert_match "$OUT" 'w1'

@@ -148,8 +148,10 @@ the first lane.
 
 **Read `references/brief-template.md` now** and fill it for each lane. The non-negotiables:
 the expected base sha, owned paths, forbidden paths, the lane's test command, the leases it
-may take, the shell rules below, where it writes its result, and the 40-line return limit (detail goes in the result file, as in
-`skills/sdlc/templates/output-verbosity.md`). If the lane runs `/sdlc`, say that Stage 2's
+may take, the shell rules below, the "cannot undo / protected resource" slot, and the
+40-line final message (a runner's is saved as its `last-result.md`; see
+`skills/sdlc/templates/output-verbosity.md`). **Narrowing a gate or ratchet needs a human
+ruling before the lane starts.** If the lane runs `/sdlc`, say that Stage 2's
 separate implement agent is required: a delegated run that skips stages while reporting a
 full run is a measured failure.
 
@@ -208,6 +210,10 @@ new turn on its session (`runner.sh resume`, or a re-dispatched subagent), never
 verifier or by you. Keep one verifier per wave as a named runner resumed per lane
 (`references/runners.md`). A lane that fails review twice escalates (section 13).
 
+**Accepted variant:** a one-off review agent per lane (Opus or Sonnet) instead of the
+standing verifier. Fixes still resume the **owning writer**; never start a new `*-fix`
+runner, so each lane's cost stays under one name.
+
 ## 10. Land through the merge queue
 
 ```bash
@@ -233,7 +239,9 @@ it stops and names the files; you hand them back to the owning lane (`lanes.sh s
 then re-land) or decide yourself; nothing is ever auto-resolved.
 
 Tell lanes to **rebase early** (`bash scripts/lanes.sh sync <name>`) after each landing in
-their wave, so conflicts surface small. After a landing: `bash scripts/lanes.sh remove <name>`
+their wave, so conflicts surface small. Mark a lane that must wait with
+`lanes.sh held <name> --until <YYYY-MM-DD|lane>` (cleared by `unheld`; `list` shows it; it
+does not block a landing). After a landing: `bash scripts/lanes.sh remove <name>`
 (it also accepts a lane that landed combined with other changes, when every path the lane
 changed already matches the target; a lane whose content is missing is still refused).
 
@@ -284,9 +292,16 @@ pipe reports the last command's status, so read `verdict.json` instead.
    permission denial goes here unchanged**: a runner's denied action is never handed to another
    agent to perform.
 
+**No laundering through the orchestrator.** Protected paths are the project's hooks, its
+network guard, the runner allowlist, its commit gate and env files. When a runner was refused
+a change to one of them, you apply it only after the human approves **that exact diff**, and
+you record the approval in the project's decision log. A changed diff needs a new approval.
+Approval of the goal alone does not cover it.
+
 ## 14. What this skill must not do
 
-- No `git push`, no force-push, no pull request, no remote of any kind.
+- Lanes and workers never push; the orchestrator pushes only under the project's push rule.
+  No force-push.
 - No landing on the target except through `merge-queue.sh` (no `git merge`, no
   `git reset`, no hand-made `update-ref`); `/sdlc` keeps its no-git-writes rule inside lanes.
 - No automatic conflict resolution, anywhere.
@@ -296,5 +311,6 @@ pipe reports the last command's status, so read `verdict.json` instead.
   `[b]racket` trick.
 - No relaying of one agent's messages or denied actions to another agent.
 - No agent teams; no daemon; nothing wired into `setup.sh` or hooks; no edits to the
-  project's own hooks.
+  project's own hooks. The one exception to the hook rule: a hook edit is allowed only for a
+  diff the human approved under section 13.
 - No writes by lanes to shared bookkeeping (`TASKS.md`, decision logs): lanes report, you write.

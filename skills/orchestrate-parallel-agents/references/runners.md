@@ -85,7 +85,19 @@ skills and auto memory, so pass the rules in its brief. It stays on for the runn
 
 **`--max-turns` defaults to 200.** Under the one-command-per-Bash-call rule every step is its
 own turn: portal runners used 111-113 of a 120 cap. A lower number cuts a lane off mid-task;
-bound cost with `--max-budget-usd` instead. The runner does not probe whether the lane managed
+bound cost with `--max-budget-usd` instead.
+
+**Every call has a spend limit.** The per-call allowance is the `--max-budget-usd` given for
+this runner, else `pipeline.parallel.runner.max_budget_usd` in `.claude/project.json`, else
+**5**; hand-off turns get it too. A flag is recorded and kept for the runner. A call that hits
+the limit exits 1.
+
+*What the CLI flag caps is undocumented.* `claude --help` says only "Maximum dollar amount to
+spend on API calls", and no live call has tested it on a resume; `total_cost_usd` on a resume
+is the session's running total. So `runner.sh` passes the session's recorded spend plus the
+allowance. If the cap covers the session, each call gets exactly the allowance. If it covers
+one call, the limit is looser (prior spend plus allowance) but finite. Passing the bare
+allowance would risk refusing every resume of a session that had already spent it. The runner does not probe whether the lane managed
 to commit; check `git log` in the lane when the call returns.
 
 ## Project commit hooks see the lane as the project root
@@ -115,8 +127,13 @@ recommended, a warning outside it), the next `resume`:
 **The threshold is set for cost, not headroom.** Every turn of a resumed session re-reads the
 whole conversation. On the audited bdt run (220 calls, $129.70) a resumed turn that ended at
 100-200k cost $0.016, one that ended above 200k $0.034; the 34 resumes past 200k were 19% of
-spend, while the old 350k default fired once. A runner recorded before this default keeps its
-`rotate_at`; pass `--rotate-at 180000` on its next `resume` to move it.
+spend, while the old 350k default fired once.
+
+**Enforced on `resume`.** Unless the runner was given `--rotate-at`, the configured value
+(else 180000) is a ceiling: a higher recorded `rotate_at` is lowered before the check. A
+runner recorded by an older `runner.sh` is lowered even if a flag set its value; pass
+`--rotate-at` again to keep it. The check runs between calls, so one long call can still end
+above the threshold; the next `resume` then rotates.
 
 `resume --fresh` rotates now, whatever the context. Use it for a fix-up after review on a runner
 that has grown large: put the commit shas and the review text in the prompt, and the fresh
@@ -135,7 +152,8 @@ needs a new worktree; otherwise keep the series on one lane and land per step.
 
 ## One long-lived reviewer
 
-Run the verifier as a named runner too, not as a new agent per landing: one reviewer per wave,
+A one-off review agent per lane is an accepted variant (skill section 9). For a standing
+verifier, run it as a named runner: one reviewer per wave,
 `--model M` with M an Opus-tier model (the independent check, skill section 3), a read-only allowlist, resumed per lane with `--task <lane>` so it keeps the plan
 and its earlier verdicts in context, and rotated like any runner:
 
@@ -200,7 +218,10 @@ each, appends them to `denials.jsonl`, and exits 3. Then:
 - take the denial to the human (escalation chain in the skill, section 13) with what the runner
   was trying to do;
 - if the human approves, either widen this runner's allowlist (`resume ... --allowed-tools`) or
-  do the action yourself where the human can see it;
+  do the action yourself where the human can see it. For a protected path (project hooks, the
+  network guard, the runner allowlist, the commit gate, env files) that needs the human's
+  approval of the exact diff, recorded in the decision log (skill section 13); a hook edit is
+  allowed on no other terms;
 - **never** give the denied action to another runner or subagent to do instead. That turns a
   refusal into a workaround, and the human never sees the question.
 

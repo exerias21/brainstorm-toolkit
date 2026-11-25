@@ -37,6 +37,14 @@ the evidence.
 ## Project rules that apply here
 <quote the relevant lines from the project's CLAUDE.md / AGENTS.md word for word>
 
+## Cannot undo / protected resource
+<"none", or what this lane can reach that cannot be undone or is protected. Required for
+production-touching tools, guard or gate changes, and money paths>
+- Negative tests required, listed before work starts (each proves an action is refused):
+  <e.g. the crawler sends no write request; the guard still rejects <input>>
+- Gate or ratchet narrowing (fewer files, rules or cases checked): <"none", or the human's
+  ruling with date and decision-log reference. Without a ruling, do not start this lane>
+
 ## Shared resources (leases)
 - You may take: <resource names, or "none">
   `bash scripts/lease.sh acquire <res> --holder @<name> --ttl <s>`; release when done.
@@ -57,23 +65,27 @@ the evidence.
 - Run every tool from the worktree root with its own directory flag:
   `<e.g. uv run --directory engine pytest tests/test_x.py -q>`,
   `<e.g. npm --prefix portal test -- --run src/x.test.ts>`.
+- A command refused for its **shape** (chained, piped, redirected, `cd`) is re-run once as a
+  plain command.
+- A refused **action** is reported `blocked: denied <tool> <path>`. Never re-route it through
+  another tool (a script, a heredoc, another command that does the same write).
 - To read long output, rely on the tool's own quiet flags (`-q`, `--reporter=dot`), not a pipe.
 
 ## Working rules
 - Run long commands in the background and wait for the notification; never poll.
 - Never `pgrep -f <name>` without the bracket trick (`pgrep -f "[n]ame"`).
-- If a tool call is denied, do not try another route to the same action. Report it.
 - Do not message other agents. Append status to `.claude/parallel/board.md`:
   `<UTC ts> @<name> <started|blocked|ready-for-review|abandoned> <one line>`
 
 ## Hand back
-Write full detail to `.claude/parallel/results/<name>.md` (what changed, files, commands run
-with exit codes, anything unverified). Return at most 40 lines: verdict, branch, last commit,
-the acceptance result, blockers, and that path.
+Return at most 40 lines in your final message: verdict, branch, last commit, what changed,
+the acceptance result with exit codes, anything unverified, and blockers. Do not write a
+results file; for a runner, `runner.sh` saves this message as `last-result.md`.
 ```
 
 Checklist before dispatch: the item is confirmed still open (or the brief says how to prove
 it done); the expected base sha is filled in; owned paths are disjoint from every other lane's;
 the test command runs without a human, in under 10 minutes, and as a single command; the
 runner's allowlist covers every command the brief names, written the same way; every lease
-named exists in the project's rules; the model is resolved and printed.
+named exists in the project's rules; the model is resolved and printed; the "cannot undo /
+protected resource" slot is filled, and any gate or ratchet narrowing has a human ruling.

@@ -195,6 +195,8 @@
         "_allowed_tools_comment": "The allowlist a runner gets when start is given no --allowed-tools (a string, comma-separated, or a list). `--allowed-tools +X,Y` appends to it. Match the brief's shell rules: one command per entry, e.g. \"Read,Edit,Write,Glob,Grep,Bash(npm --prefix portal test:*),Bash(uv run --directory engine pytest:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*)\". A Bash(<prefix>/:*) entry is refused: it can never match.",
         "tools": null,
         "_tools_comment": "Built-in tools a runner loads (passed as --tools, with --strict-mcp-config). Default \"Bash,Read,Edit,Write,Glob,Grep\": measured 9.3k starting tokens vs 36.9k with everything loaded. \"default\" loads the full set and the MCP servers.",
+        "max_budget_usd": 5,
+        "_max_budget_usd_comment": "Per-call spend allowance for each claude call, hand-off turns included; --max-budget-usd overrides it for one runner. Default 5. On resume the session's recorded spend is added (see references/runners.md).",
         "rotate_at": 180000,
         "_rotate_at_comment": "Context (tokens) at which the next resume hands off and starts a fresh session. Default 180000; 150000-250000 recommended. Set for cost: resumed turns re-read the whole conversation.",
         "bare": false,

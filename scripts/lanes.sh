@@ -67,7 +67,14 @@
 #     Exit 0 when the setup is complete (or none is configured), 3 when it never
 #     finished or an npm install is half done, naming what is missing.
 #   lanes.sh list [--target BRANCH]
-#     One line per lane: name, branch, path, commits not yet on the target.
+#     One line per lane: name, branch, path, commits not yet on the target,
+#     and held-until=<value> for a held lane.
+#   lanes.sh held <name> --until <YYYY-MM-DD|lane>
+#     Record that the lane waits for a date or for another open lane. A record
+#     only: it releases and blocks nothing. It lives in the lane's git dir, so
+#     `remove` drops it.
+#   lanes.sh unheld <name>
+#     Clear the hold.
 #   lanes.sh sync <name> [--target BRANCH]
 #     Rebase the lane on the target now ("rebase early"): small conflicts found
 #     today are cheaper than large ones at landing. On conflict it aborts the
@@ -87,18 +94,20 @@
 # --target defaults to the branch checked out in the main worktree.
 set -euo pipefail
 
-usage() { sed -n '47,84p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '48,94p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 [ $# -ge 1 ] || usage
 SUB="$1"; shift
 
-NAME=""; BASE=""; DIR=""; TARGET=""; FORCE=0; SETUP=1; OWNED=()
+NAME=""; BASE=""; DIR=""; TARGET=""; FORCE=0; SETUP=1; OWNED=(); UNTIL=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --base)   BASE="${2:-}"; shift 2 ;;
     --dir)    DIR="${2:-}"; shift 2 ;;
     --target) TARGET="${2:-}"; shift 2 ;;
     --force)  FORCE=1; shift ;;
+    --until)  [ -n "${2:-}" ] || { echo "lanes.sh: --until needs a date or a lane" >&2; exit 2; }
+              UNTIL="$2"; shift 2 ;;
     --no-setup) SETUP=0; shift ;;
     --owned)  shift
               while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do OWNED+=("$1"); shift; done
@@ -239,6 +248,11 @@ check_setup() {
   echo "setup complete: $1"
 }
 
+held_marker() {  # $1 = worktree root
+  local g; g="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" && [ -n "$g" ] || return 1
+  printf '%s/lane-held' "$g"
+}
+
 unlanded() {  # commits on lane/<name> whose patch is not on TARGET
   git -C "$MAIN" cherry "$TARGET" "lane/$1" 2>/dev/null | grep -c '^+' || true
 }
@@ -303,9 +317,30 @@ case "$SUB" in
     git -C "$MAIN" worktree list --porcelain | awk '
       /^worktree /{p=substr($0,10)} /^branch refs\/heads\/lane\//{print substr($0,24) "\t" p}' |
     while IFS=$'\t' read -r n p; do
-      if [ -n "$TARGET" ]; then printf '%s\tlane/%s\t%s\tunlanded=%s\n' "$n" "$n" "$p" "$(unlanded "$n")"
-      else printf '%s\tlane/%s\t%s\n' "$n" "$n" "$p"; fi
+      line="$(printf '%s\tlane/%s\t%s' "$n" "$n" "$p")"
+      [ -z "$TARGET" ] || line="$line"$'\t'"unlanded=$(unlanded "$n")"
+      if m="$(held_marker "$p")" && [ -f "$m" ]; then line="$line"$'\t'"held-until=$(cat "$m")"; fi
+      printf '%s\n' "$line"
     done
+    ;;
+  held)
+    valid_name "$NAME"
+    [ -n "$UNTIL" ] || { echo "lanes.sh held: --until <YYYY-MM-DD|lane> is required" >&2; exit 2; }
+    p="$(lane_path "$NAME")"; [ -n "$p" ] || { echo "lanes.sh: no lane named $NAME" >&2; exit 1; }
+    case "$UNTIL" in
+      [0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]) ;;
+      *) UNTIL="${UNTIL#lane/}"
+         { [ "$UNTIL" != "$NAME" ] && git -C "$MAIN" show-ref --verify --quiet "refs/heads/lane/$UNTIL"; } || {
+           echo "lanes.sh held: --until must be a YYYY-MM-DD date or another existing lane, got $UNTIL" >&2; exit 2; } ;;
+    esac
+    m="$(held_marker "$p")"; printf '%s\n' "$UNTIL" > "$m"
+    echo "held: lane/$NAME until $UNTIL"
+    ;;
+  unheld)
+    valid_name "$NAME"
+    p="$(lane_path "$NAME")"; [ -n "$p" ] || { echo "lanes.sh: no lane named $NAME" >&2; exit 1; }
+    m="$(held_marker "$p")"; rm -f "$m"
+    echo "unheld: lane/$NAME"
     ;;
   sync)
     valid_name "$NAME"; need_target
