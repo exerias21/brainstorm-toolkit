@@ -384,7 +384,7 @@ case "$SUB" in
     DIR="$(cd "$DIR" && pwd)"
     base_sha="$(git -C "$DIR" rev-parse HEAD)"
     lane_id="$NAME.$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
-    printf '%s %s\n' "$lane_id" "$base_sha" > "$(lane_id_file "$DIR")"
+    f="$(lane_id_file "$DIR")" && printf '%s %s\n' "$lane_id" "$base_sha" > "$f" || true
     emit_event lane.opened "lane_id=$lane_id" "area=$(lane_area "$NAME")" "base_sha=$base_sha"
     copy_includes "$DIR"
     if [ "$SETUP" -eq 1 ]; then

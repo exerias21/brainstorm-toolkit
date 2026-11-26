@@ -76,6 +76,7 @@ def _bool(v):
 
 NAME = _token(r"[A-Za-z0-9_][A-Za-z0-9._-]{0,127}")
 SHA = _token(r"[0-9a-f]{7,64}")
+_TS = _token(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ")
 
 ENVELOPE = {"lane_id": NAME, "runner": NAME, "attempt": _int}
 FIELDS = {
@@ -106,7 +107,7 @@ def now():
 
 
 def build(kind, values, ts=None):
-    ev = {"schema": SCHEMA, "event_id": uuid.uuid4().hex, "ts": ts or now(), "type": kind}
+    ev = {"schema": SCHEMA, "event_id": uuid.uuid4().hex, "ts": _TS(ts) or now(), "type": kind}
     for key, check in list(ENVELOPE.items()) + list(FIELDS[kind].items()):
         ev[key] = check(values.get(key))
     return ev
@@ -305,11 +306,15 @@ def _legacy_queue(state):
 def _records(state):
     """Stream records, plus the older files' records from before the stream
     first recorded that type. Returns (records, source)."""
-    stream = [e for e in read_jsonl(os.path.join(state, FILE)) if e.get("schema") == SCHEMA]
+    stream = [e for e in read_jsonl(os.path.join(state, FILE))
+              if e.get("schema") == SCHEMA and isinstance(e.get("ts"), str)
+              and isinstance(e.get("type"), str)]
     first = {}
     for e in stream:
-        first[e["type"]] = min(first.get(e["type"], e["ts"]), e["ts"])
-    records = [e for e in stream if e["type"] in ("runner.call", "runner.denial", "queue.attempt")]
+        kind, ts = e.get("type"), e.get("ts")
+        first[kind] = min(first.get(kind, ts), ts)
+    records = [e for e in stream
+               if e.get("type") in ("runner.call", "runner.denial", "queue.attempt")]
     used_stream, used_legacy = bool(records), False
     for kind, gate, rows in (("runner.call", "runner.call", _legacy_calls(state)),
                              ("runner.denial", "runner.call", _legacy_denials(state)),

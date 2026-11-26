@@ -506,17 +506,20 @@ except Exception:
 s = json.load(open(status_path))
 lane_id = None
 if events:
-    cwd = s.get("cwd") or "."
-    if s.get("lane"):
-        # The lane's repo: the runner's folder, else where runner.sh was called.
-        repo = cwd if events._git(cwd, "rev-parse", "--git-dir") else os.getcwd()
-        lane_id = events.lane_of_branch(repo, "lane/" + s["lane"])
-    else:
-        lane_id = events.lane_of_dir(cwd)
-    # A removed lane keeps the id the runner already recorded for it.
-    if not lane_id and not os.path.isdir(cwd):
-        lane_id = s.get("lane_id")
-    s["lane_id"] = lane_id
+    try:
+        cwd = s.get("cwd") or "."
+        if s.get("lane"):
+            # The lane's repo: the runner's folder, else where runner.sh was called.
+            repo = cwd if events._git(cwd, "rev-parse", "--git-dir") else os.getcwd()
+            lane_id = events.lane_of_branch(repo, "lane/" + s["lane"])
+        else:
+            lane_id = events.lane_of_dir(cwd)
+        # A removed lane keeps the id the runner already recorded for it.
+        if not lane_id and not os.path.isdir(cwd):
+            lane_id = s.get("lane_id")
+        s["lane_id"] = lane_id
+    except Exception:  # the call's own records must still be written
+        lane_id = None
 try:
     with open(os.path.join(d, "events.jsonl"), encoding="utf-8", errors="replace") as f:
         attempt = sum(1 for _ in f) + 1

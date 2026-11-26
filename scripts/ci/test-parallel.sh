@@ -1245,6 +1245,24 @@ assert len({x["event_id"] for x in evs}) == len(evs)
 '
 ok
 
+CASE="events: a bad ts is replaced with now; report skips a record without a ts or type"
+TSS="$ROOT_TMP/state-badts"
+run "$PYB" "$PLUGIN_ROOT/scripts/events.py" queue "$TSS" "$E" ts=SEKRET result=landed -- lane/none
+expect_rc "$RC" 0 "$OUT"
+grep -q 'SEKRET' "$TSS/events.v1.jsonl" && fail "a bad ts reached the stream"
+grep -Eq '"ts":"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z"' "$TSS/events.v1.jsonl" || fail "ts not replaced: $(cat "$TSS/events.v1.jsonl")"
+printf '%s\n' '{"schema":"opa.event/1","type":"runner.call"}' \
+  '{"schema":"opa.event/1","ts":5,"type":"runner.call"}' \
+  '{"schema":"opa.event/1","ts":"2026-01-01T00:00:00Z"}' >> "$TSS/events.v1.jsonl"
+run env PARALLEL_STATE_DIR="$TSS" bash "$RUNNER" report --json
+expect_rc "$RC" 0 "$OUT"
+printf '%s' "$OUT" | "$PYB" -c '
+import json, sys
+t = json.load(sys.stdin)["totals"]
+assert t["calls"] == 0 and t["landings"] == 1, t
+' || fail "hand-edited lines not skipped: $OUT"
+ok
+
 CASE="report: --json is opa.report/1 with per-day and total figures from the stream"
 run bash "$RUNNER" report --json
 expect_rc "$RC" 0 "$OUT"
