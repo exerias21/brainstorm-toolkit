@@ -130,6 +130,11 @@ rerun of `b` would land the lane with `c` never run. Print the sentinel
 (`merge-queue-gate-complete`) as the gate's last statement, never from an `EXIT` trap, which
 also fires when the gate dies partway.
 
+A gate that does all of this is `skills/orchestrate-parallel-agents/references/gate-wrapper.sh.example`:
+copy it into the project, list the checks, and point both keys at it (`gate_command` runs every
+check, `rerun_check_command` passes `{check}` to run one). A rerun repeats a whole check, so
+split a large suite into several named checks rather than one.
+
 The queue reruns once, only when the output names exactly one distinct check, with a name of
 letters, digits and `._/:=@+-` that does not start with `-`, the last line is
 `merge-queue-gate-complete: failed=1`, and the exit code is below 126 (a killed

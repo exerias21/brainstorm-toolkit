@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Reference gate for scripts/merge-queue.sh flake triage. Copy it into your
+# project (e.g. scripts/gate.sh), fill in CHECKS, and set in .claude/project.json:
+#   "pipeline": {"parallel": {
+#     "gate_command":        "bash scripts/gate.sh",
+#     "rerun_check_command": "bash scripts/gate.sh {check}"}}
+#
+#   bash scripts/gate.sh          run EVERY check, even after one fails, print
+#                                 one `merge-queue-failed-check: <name>` per
+#                                 failure, then the sentinel as the last line
+#   bash scripts/gate.sh <name>   run that one check (the queue's rerun)
+#
+# A rerun repeats a whole check, so one check holding a 10,000-test suite
+# reruns all of it: split a large suite into several named checks.
+
+# No `set -e`: a failing check must not stop the checks after it, or a passing
+# rerun would land a lane whose later checks never ran.
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+# "name|command", one per check. Names: letters, digits and ._/:=@+- only.
+CHECKS=(
+  "lint|npm run lint"
+  "unit|python -m pytest -q tests/unit"
+)
+
+run_check() {
+  local want="$1" c cmd=""
+  for c in "${CHECKS[@]}"; do
+    [ "${c%%|*}" = "$want" ] && { cmd="${c#*|}"; break; }
+  done
+  [ -n "$cmd" ] || { echo "gate: unknown check: $want" >&2; return 2; }
+  echo "== check $want: $cmd"
+  # Wall time per check lands in the queue's per-attempt log.
+  local t0=$SECONDS rc=0
+  bash -c "$cmd" || rc=$?
+  echo "== check $want: exit $rc in $((SECONDS - t0))s"
+  return "$rc"
+}
+
+if [ $# -eq 1 ]; then
+  run_check "$1"
+  exit $?
+fi
+
+failed=0
+for c in "${CHECKS[@]}"; do
+  name="${c%%|*}"
+  if ! run_check "$name"; then
+    echo "merge-queue-failed-check: $name"
+    failed=$((failed + 1))
+  fi
+done
+# A step outside the named checks counts too, but has no name, so the queue
+# never reruns it:
+#   if ! bash scripts/coverage-ok.sh; then failed=$((failed + 1)); fi
+
+# The sentinel is the LAST statement, never an EXIT trap (a trap also fires
+# when the gate dies partway, and would claim every check ran).
+echo "merge-queue-gate-complete: failed=$failed"
+[ "$failed" -eq 0 ]

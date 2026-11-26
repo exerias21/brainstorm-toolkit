@@ -1534,5 +1534,44 @@ CASE="runner: status lists every runner"
 run bash "$RUNNER" status
 assert_match "$OUT" 'w1'
 
+# ── the reference gate wrapper, used as a real gate ─────────────────────────
+export PARALLEL_STATE_DIR="$ROOT_TMP/state-gatewrap"
+G="$(new_repo gatewrap-repo)"
+mkdir -p "$G/.claude"
+GW="$ROOT_TMP/gate-wrapper.sh"
+# Same script, with checks that fail on demand: "wob" fails once, then passes.
+"$(bash "$PLUGIN_ROOT/scripts/py.sh" --print)" - "$PLUGIN_ROOT/skills/orchestrate-parallel-agents/references/gate-wrapper.sh.example" "$GW" "$ROOT_TMP" <<'PYEOF'
+import re, sys
+src, dst, tmp = sys.argv[1], sys.argv[2], sys.argv[3]
+s = open(src, encoding="utf-8").read()
+checks = ('CHECKS=(\n  "good|true"\n  "wob|test -e %s/wob-ran || { touch %s/wob-ran; exit 1; }"\n'
+          '  "bad|test ! -e %s/bad-on"\n)' % (tmp, tmp, tmp))
+s, n = re.subn(r"CHECKS=\(\n.*?\n\)", lambda m: checks, s, count=1, flags=re.S)
+assert n == 1, "CHECKS block not found in the example"
+open(dst, "w", encoding="utf-8", newline="\n").write(s)
+PYEOF
+printf '{"pipeline": {"parallel": {"gate_command": "bash %s", "rerun_check_command": "bash %s {check}"}}}\n' "$GW" "$GW" > "$G/.claude/project.json"
+LG="$(mk_lane "$G" gw1)"
+add_commit "$LG" g.txt g
+
+CASE="gate wrapper: a check that fails once is named, rerun alone, and the lane lands"
+rm -f "$ROOT_TMP/wob-ran" "$ROOT_TMP/bad-on"
+run bash -c "cd '$G' && bash '$MQ' land lane/gw1 --dry-run"
+expect_rc "$RC" 0 "$OUT"
+tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl" | grep -q '"flake":"flake:wob"' || fail "wrapper flake not rerun: $(tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl")"
+tail -1 "$PARALLEL_STATE_DIR/merge-queue.logs/lane-gw1-1.log" | grep -qx 'merge-queue-gate-complete: failed=1' || fail "sentinel is not the last line"
+grep -q "^== check good: exit 0 in [0-9]*s$" "$PARALLEL_STATE_DIR/merge-queue.logs/lane-gw1-1.log" || fail "no per-check time"
+ok
+
+CASE="gate wrapper: two failing checks are both named and the landing fails without a rerun"
+rm -f "$ROOT_TMP/wob-ran"; touch "$ROOT_TMP/bad-on"
+run bash -c "cd '$G' && bash '$MQ' land lane/gw1 --dry-run"
+expect_rc "$RC" 4 "$OUT"
+L2="$(ls -t "$PARALLEL_STATE_DIR"/merge-queue.logs/lane-gw1-*.log | head -1)"
+grep -q '^merge-queue-failed-check: wob$' "$L2" && grep -q '^merge-queue-failed-check: bad$' "$L2" || fail "both failures not named: $(cat "$L2")"
+tail -1 "$L2" | grep -qx 'merge-queue-gate-complete: failed=2' || fail "sentinel count wrong: $(tail -1 "$L2")"
+rm -f "$ROOT_TMP/bad-on" "$ROOT_TMP/wob-ran"
+ok
+
 echo
 echo "test-parallel.sh: all cases ok"
