@@ -344,10 +344,10 @@ check_review_paths() {
       *'{'*) why="can never match: braces are not expanded; write one entry per alternative" ;;
       ./*|/*) why="can never match: paths are relative to the repo root, with no leading ./ or /" ;;
       */) ;;
-      # `engine/*/ledger` reads as a folder but would match only a file so named.
+      # A last segment with no glob character and no '.' names a folder.
       *'*'*|*'?'*|*'['*) case "${g##*/}" in
-          *'*'*) ;;
-          *) why="a glob's last segment needs a '*', or the entry a trailing / (for a folder, write $g/)" ;;
+          *'*'*|*'?'*|*'['*|*.*) ;;
+          *) why="can never match: it names a folder; write $g/" ;;
         esac ;;
       *) for rev in "$OLD" "${HEADS[@]}"; do
            [ "$(git -C "$MAIN" cat-file -t "$rev:$g" 2>/dev/null || true)" != "tree" ] || why="can never match: it is a folder; write $g/"

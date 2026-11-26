@@ -986,20 +986,23 @@ assert_match "$OUT" 'protected: guard/pay"x.py'
 CASE="review gate: an entry that can never match refuses (braces, ./, a folder with no /)"
 LV5="$(mk_lane "$V" deadentry)"
 add_commit "$LV5" engine/ledger/post.py p
-for entry in 'engine/ledger' './engine/' '/engine/' 'engine/{ledger,quals}/' 'eng*/ledger'; do
+for entry in 'engine/ledger' './engine/' '/engine/' 'engine/{ledger,quals}/' 'engine/*/ledger'; do
   printf '{"pipeline": {"parallel": {"gate_command": "true", "review_required_paths": ["%s"]}}}\n' "$entry" > "$V/.claude/project.json"
   run bash -c "cd '$V' && bash '$MQ' land lane/deadentry --dry-run"
   [ "$RC" -eq 7 ] || fail "entry $entry: expected exit 7, got $RC: $OUT"
-  printf '%s' "$OUT" | grep -Eq "can never match|last segment needs a" || fail "entry $entry: $OUT"
+  printf '%s' "$OUT" | grep -q 'can never match' || fail "entry $entry: $OUT"
 done
 ok
 
-CASE="review gate: a glob ending in / or with * in its last segment is accepted and matches"
-for entry in 'eng*/ledger/' 'engine/*/post*'; do
+CASE="review gate: file globs and folder globs ending in / are accepted and match"
+add_commit "$LV5" lib/guard.js g
+add_commit "$LV5" src/a/config.py c
+for pair in '**/guard.js=lib/guard.js' 'src/*/config.py=src/a/config.py' 'eng*/ledger/=engine/ledger/post.py'; do
+  entry="${pair%%=*}"
   printf '{"pipeline": {"parallel": {"gate_command": "true", "review_required_paths": ["%s"]}}}\n' "$entry" > "$V/.claude/project.json"
   run bash -c "cd '$V' && bash '$MQ' land lane/deadentry --dry-run"
   [ "$RC" -eq 7 ] || fail "entry $entry: expected exit 7, got $RC: $OUT"
-  printf '%s' "$OUT" | grep -q 'protected: engine/ledger/post.py' || fail "entry $entry: $OUT"
+  printf '%s' "$OUT" | grep -q "protected: ${pair#*=}" || fail "entry $entry: $OUT"
 done
 ok
 

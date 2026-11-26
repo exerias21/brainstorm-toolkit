@@ -69,8 +69,9 @@ A list of globs for the paths where an unreviewed fix is not acceptable (money, 
 guards, gates). `*` crosses `/`; a trailing `/` means the subtree; a leading `**/` also matches
 at the root. Braces are not expanded: write one entry per alternative. An entry that could
 never match is refused (exit 7, `refused-config`): one with `{`, one starting `./` or `/`, or a
-folder written without its trailing `/`. So is a glob (`*`, `?`, `[`) that does not end in `/`
-and has no `*` in its last segment (`engine/*/ledger`; also `**/guard.js`, which would match).
+folder written without its trailing `/`. That includes a glob (`*`, `?`, `[`) whose last
+segment has no glob character and no `.`: it names a folder (`engine/*/ledger`; write
+`engine/*/ledger/`). File globs such as `**/guard.js` and `src/*/config.py` are valid.
 
 ```bash
 bash scripts/lanes.sh reviewed <lane> <sha> [--verdict accept|fix|reject]   # .claude/parallel/reviews.tsv
