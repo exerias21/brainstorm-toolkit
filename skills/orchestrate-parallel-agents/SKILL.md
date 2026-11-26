@@ -95,8 +95,8 @@ sets `models.*`; the defaults above apply when it does not.
 | Writes code, longer than a sitting or must outlive this session | managed headless runner, `scripts/runner.sh` | a lane from `scripts/lanes.sh create` |
 | Read-only | background subagent, no isolation | shared folder |
 
-Agent teams are out: they add live chatter and token cost, not isolation. Hand-kept runner
-terminals that chat with you are out: replace them with `runner.sh`.
+Agent teams are out: they add live chatter and token cost, not isolation. So are hand-kept
+runner terminals: use `runner.sh`.
 
 A background subagent's permission prompts surface in your session; a headless runner has
 nobody to ask. Read `references/runners.md` before starting the first runner of a session.
@@ -218,19 +218,22 @@ bash scripts/merge-queue.sh land lane/<name> [lane/<name2> ...] [--target main] 
 the project's gate. An override prints a WARNING and is logged (`test_cmd_override`). Several
 branches in one call are rebased in order, gated once and landed all-or-none.
 
-One landing at a time. It rebases the lane in a clean throwaway checkout, seeds it like a lane
-(`.worktreeinclude`, then `lane_setup`), runs the full test command
+One landing at a time. It rebases the lane in a clean throwaway checkout, seeds it like a
+lane, runs the full test command
 (`pipeline.parallel.gate_command`, else `test.unit`, else refuses), and fast-forwards the
 target only if it has not moved since (compare-and-swap). Cheap tests run in the lane; the
-full suite runs once, here. Run it with `run_in_background`: a full suite can outlast a
+full suite runs once, here. Run it with `run_in_background`: it can outlast a
 10-minute foreground call.
 
-Uncommitted work in the target's folder does not block a landing unless it sits on a path the
+Uncommitted work in the target's folder blocks a landing only on a path the
 lane changes (exit 6 names those paths). After landing, only the lane's paths are moved forward
-there; your other edits stay as they were. **Read `references/merge-queue.md` now** the first time you land
-in a session: it has the exit codes and the conflict path. The short version: on a conflict
-it stops and names the files; you hand them back to the owning lane (`lanes.sh sync <name>`,
+there. **Read `references/merge-queue.md` now** the first time you land
+in a session: exit codes, opt-in checks and the conflict path. On a conflict
+it names the files; you hand them back to the owning lane (`lanes.sh sync <name>`,
 then re-land) or decide yourself; nothing is ever auto-resolved.
+After each verdict run `lanes.sh reviewed <name> <sha> [--verdict fix]`; fixes after an
+accept need a short re-review. A lane adding a migration gets its number from
+`lanes.sh reserve-migration <name>`.
 
 Tell lanes to **rebase early** (`bash scripts/lanes.sh sync <name>`) after each landing in
 their wave, so conflicts surface small. Mark a lane that must wait with
@@ -290,8 +293,7 @@ Approval of the goal alone does not cover it.
 - No automatic conflict resolution, anywhere.
 - No database writes and no other project-side effect the project's rules reserve for a
   human; quote those rules into the brief and leave them to the human.
-- No polling loops; use background-task notifications. Never `pgrep -f` without the
-  `[b]racket` trick.
+- No polling loops or unbracketed `pgrep -f` (section 7).
 - No relaying of one agent's messages or denied actions to another agent.
 - No agent teams; no daemon; nothing wired into `setup.sh` or hooks; no edits to the
   project's own hooks. The one exception to the hook rule: a hook edit is allowed only for a

@@ -882,6 +882,174 @@ run bash "$LANES" held h1 --until nosuch
 assert_rc "$RC" 2 "$OUT"
 cd "$PLUGIN_ROOT"
 
+# ── landing integrity: review gate, flake triage, migration numbers ─────────
+export PARALLEL_STATE_DIR="$ROOT_TMP/state-review"
+V="$(new_repo review-repo)"
+mkdir -p "$V/.claude"
+printf '{"pipeline": {"parallel": {"gate_command": "sh test.sh", "review_required_paths": ["guard/", "**/*.env"]}}}\n' > "$V/.claude/project.json"
+mk_lane() { cd "$1" && bash "$LANES" create "$2" | sed -n 's/.*path=//p'; }
+add_commit() {  # add_commit <lane-path> <file> <content>
+  mkdir -p "$1/$(dirname "$2")"; printf '%s\n' "$3" > "$1/$2"
+  git -C "$1" add -f "$2"; git -C "$1" commit -q -m "edit $2"
+}
+LV="$(mk_lane "$V" money)"
+add_commit "$LV" guard/rules.txt v1
+
+CASE="review gate: a protected path with no recorded review is refused (exit 7)"
+before="$(git -C "$V" rev-parse main)"
+run bash -c "cd '$V' && bash '$MQ' land lane/money"
+expect_rc "$RC" 7 "$OUT"
+printf '%s' "$OUT" | grep -q 'protected: guard/rules.txt' || fail "path not named: $OUT"
+[ "$(git -C "$V" rev-parse main)" = "$before" ] || fail "main moved"
+ok
+
+CASE="review gate: reviewed refuses a non-sha and a commit that is not on the lane"
+run bash -c "cd '$V' && bash '$LANES' reviewed money HEAD"
+expect_rc "$RC" 2 "$OUT"
+stray="$(git -C "$V" commit-tree -m stray "main^{tree}")"
+run bash -c "cd '$V' && bash '$LANES' reviewed money $stray"
+assert_rc "$RC" 1 "$OUT"
+
+CASE="review gate: a head past the reviewed sha is refused, naming what changed after review"
+seen="$(git -C "$LV" rev-parse HEAD)"
+run bash -c "cd '$V' && bash '$LANES' reviewed money $seen --verdict accept"
+expect_rc "$RC" 0 "$OUT"
+add_commit "$LV" late.txt after
+run bash -c "cd '$V' && bash '$MQ' land lane/money"
+expect_rc "$RC" 7 "$OUT"
+printf '%s' "$OUT" | grep -q 'changed after review: late.txt' || fail "late path not named: $OUT"
+tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl" | grep -q '"result":"refused-review"' || fail "verdict not logged"
+ok
+
+CASE="review gate: a later non-accept verdict refuses"
+run bash -c "cd '$V' && bash '$LANES' reviewed money $(git -C "$LV" rev-parse HEAD) --verdict reject"
+run bash -c "cd '$V' && bash '$MQ' land lane/money"
+expect_rc "$RC" 7 "$OUT"
+assert_match "$OUT" "verdict is 'reject'"
+
+CASE="review gate: an accept of the current head lands"
+run bash -c "cd '$V' && bash '$LANES' reviewed money $(git -C "$LV" rev-parse HEAD)"
+run bash -c "cd '$V' && bash '$MQ' land lane/money"
+assert_rc "$RC" 0 "$OUT"
+
+CASE="review gate: a lane outside the protected paths needs no review"
+LV2="$(mk_lane "$V" docs)"
+add_commit "$LV2" notes.txt n
+run bash -c "cd '$V' && bash '$MQ' land lane/docs"
+assert_rc "$RC" 0 "$OUT"
+
+CASE="review gate: a leading **/ matches a root file"
+LV3="$(mk_lane "$V" envfile)"
+add_commit "$LV3" prod.env x
+run bash -c "cd '$V' && bash '$MQ' land lane/envfile"
+assert_rc "$RC" 7 "$OUT"
+
+CASE="review gate: a wrong-typed key refuses instead of switching the check off"
+printf '{"pipeline": {"parallel": {"review_required_paths": "guard/"}}}\n' > "$V/.claude/project.json"
+run bash -c "cd '$V' && bash '$MQ' land lane/envfile --test-cmd true"
+assert_rc "$RC" 7 "$OUT"
+
+export PARALLEL_STATE_DIR="$ROOT_TMP/state-flake"
+F="$(new_repo flake-repo)"
+mkdir -p "$F/.claude"
+# The gate always fails and names one check; the rerun passes only for "wobbly".
+printf '{"pipeline": {"parallel": {"gate_command": "echo merge-queue-failed-check: wobbly; exit 1", "rerun_check_command": "echo rerun {check}; test {check} = wobbly"}}}\n' > "$F/.claude/project.json"
+LF="$(mk_lane "$F" f1)"
+add_commit "$LF" f.txt f
+
+CASE="flake: only the failing check is rerun; a pass lands and is logged as flake:<check>"
+run bash -c "cd '$F' && bash '$MQ' land lane/f1 --dry-run"
+expect_rc "$RC" 0 "$OUT"
+tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl" | grep -q '"flake":"flake:wobbly"' || fail "flake not logged"
+grep -q '^merge-queue-failed-check: wobbly' "$PARALLEL_STATE_DIR/merge-queue.logs/lane-f1-1.log" || fail "attempt 1 log missing"
+grep -q '^rerun wobbly' "$PARALLEL_STATE_DIR/merge-queue.logs/lane-f1-2.log" || fail "attempt 2 log missing"
+ok
+
+CASE="flake: a check with two flakes in 7 days is not rerun"
+run bash -c "cd '$F' && bash '$MQ' land lane/f1 --dry-run"
+expect_rc "$RC" 0 "$OUT"
+run bash -c "cd '$F' && bash '$MQ' land lane/f1"
+expect_rc "$RC" 4 "$OUT"
+printf '%s' "$OUT" | grep -q 'FLAKE LIMIT' || fail "no limit message: $OUT"
+[ ! -e "$PARALLEL_STATE_DIR/merge-queue.logs/lane-f1-6.log" ] || fail "the check was rerun past the limit"
+tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl" | grep -q '"result":"flake-limit"' || fail "verdict not flake-limit"
+ok
+
+CASE="flake: records older than 7 days do not count"
+sed -i 's/"ts":"[0-9]\{4\}/"ts":"2000/' "$PARALLEL_STATE_DIR/merge-queue.jsonl"
+run bash -c "cd '$F' && bash '$MQ' land lane/f1 --dry-run"
+assert_rc "$RC" 0 "$OUT"
+
+CASE="flake: a failing rerun, two named checks and an unsafe name all stay tests-failed"
+for gate in 'echo merge-queue-failed-check: broken; exit 1' \
+            'echo merge-queue-failed-check: wobbly; echo merge-queue-failed-check: other; exit 1' \
+            'echo "merge-queue-failed-check: x;touch /nonexistent"; exit 1'; do
+  run bash -c 'cd "$1" && bash "$2" land lane/f1 --test-cmd "$3"' _ "$F" "$MQ" "$gate"
+  [ "$RC" -eq 4 ] || fail "expected exit 4 for [$gate], got $RC: $OUT"
+  tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl" | grep -q '"result":"tests-failed"' || fail "not tests-failed for [$gate]"
+  tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl" | grep -q '"flake"' && fail "flake logged for [$gate]"
+done
+ok
+
+CASE="flake: unset rerun_check_command means no rerun"
+printf '{"pipeline": {"parallel": {"gate_command": "echo merge-queue-failed-check: wobbly; exit 1"}}}\n' > "$F/.claude/project.json"
+run bash -c "cd '$F' && bash '$MQ' land lane/f1"
+expect_rc "$RC" 4 "$OUT"
+printf '%s' "$OUT" | grep -q 'rerunning' && fail "rerun while the feature is off: $OUT"
+ok
+
+export PARALLEL_STATE_DIR="$ROOT_TMP/state-mig"
+G="$(new_repo mig-repo)"
+mkdir -p "$G/.claude" "$G/db/versions"
+printf 'x\n' > "$G/db/versions/0101_base.py"
+git -C "$G" add db && git -C "$G" commit -q -m versions
+printf '{"pipeline": {"parallel": {"gate_command": "true", "migrations_dir": "db/versions/"}}}\n' > "$G/.claude/project.json"
+LA="$(mk_lane "$G" ma)"
+LB="$(mk_lane "$G" mb)"
+
+CASE="migrations: reservations count up from the target's highest number"
+run bash -c "cd '$G' && bash '$LANES' reserve-migration ma"
+expect_rc "$RC" 0 "$OUT"
+printf '%s' "$OUT" | grep -q 'reserved: 0102 ' || fail "first number: $OUT"
+run bash -c "cd '$G' && bash '$LANES' reserve-migration mb --dir db/versions"
+expect_rc "$RC" 0 "$OUT"
+assert_match "$OUT" 'reserved: 0103 '
+
+CASE="migrations: a folder the target does not have is refused"
+run bash -c "cd '$G' && bash '$LANES' reserve-migration ma --dir db/nosuch"
+assert_rc "$RC" 1 "$OUT"
+
+CASE="migrations: a number reserved by another lane is refused"
+add_commit "$LB" db/versions/0102_mine.py b
+run bash -c "cd '$G' && bash '$MQ' land lane/mb"
+expect_rc "$RC" 7 "$OUT"
+assert_match "$OUT" 'number 0102 is reserved by lane/ma'
+
+CASE="migrations: the reserving lane lands its own number"
+add_commit "$LA" db/versions/0102_theirs.py a
+run bash -c "cd '$G' && bash '$MQ' land lane/ma"
+assert_rc "$RC" 0 "$OUT"
+
+CASE="migrations: a number already on the target is refused, even with the reservation released"
+run bash -c "cd '$G' && bash '$LANES' release-migration ma"
+expect_rc "$RC" 0 "$OUT"
+run bash -c "cd '$G' && bash '$MQ' land lane/mb"
+expect_rc "$RC" 7 "$OUT"
+assert_match "$OUT" 'number 0102 is taken by db/versions/0102_theirs.py (already on main)'
+
+CASE="migrations: unset migrations_dir leaves the check off"
+printf '{"pipeline": {"parallel": {"gate_command": "true"}}}\n' > "$G/.claude/project.json"
+run bash -c "cd '$G' && bash '$MQ' land lane/mb --dry-run"
+assert_rc "$RC" 0 "$OUT"
+
+CASE="migrations: remove drops the lane's reservations"
+run bash -c "cd '$G' && bash '$LANES' remove mb --force"
+expect_rc "$RC" 0 "$OUT"
+grep -q '^mb' "$PARALLEL_STATE_DIR/reservations.tsv" && fail "reservation kept after remove"
+ok
+cd "$PLUGIN_ROOT"
+export PARALLEL_STATE_DIR="$ROOT_TMP/state-runner"
+
 CASE="runner: status lists every runner"
 run bash "$RUNNER" status
 assert_match "$OUT" 'w1'

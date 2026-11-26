@@ -64,11 +64,28 @@
 # pipeline.parallel.lane_setup (lanes.sh setup), the same seeding a new lane
 # gets, so a suite that needs a built venv or node_modules can run there.
 #
+# THREE OPT-IN CHECKS, each off while its .claude/project.json key
+# (pipeline.parallel.*) is unset; references/merge-queue.md has the detail.
+#   review_required_paths  globs. A lane whose diff touches one lands only if
+#                          `lanes.sh reviewed` recorded an accept for the
+#                          content now at its head.
+#   migrations_dir         a lane may not add a revision whose number another
+#                          file there already has, or another lane reserved
+#                          (`lanes.sh reserve-migration`).
+#   rerun_check_command    has {check}. When the gate fails and names exactly
+#                          one check (`merge-queue-failed-check: <name>`),
+#                          that check alone is rerun once; a pass is logged as
+#                          flake:<check>. A check with two flakes in 7 days is
+#                          not rerun.
+# Every test run also keeps its own log, <state>/merge-queue.logs/<branch>-<n>.log.
+#
 # Exit codes: 0 landed (or dry-run passed, or nothing to land), 1 usage or
 # environment error, 2 conflict, 3 queue busy, 4 tests failed, none
 # configured, or lane setup failed, 5 target moved (re-run), 6 the target
 # worktree has uncommitted or untracked files on the lane's paths, or could
-# not be moved forward. Each verdict is appended to <state>/merge-queue.jsonl.
+# not be moved forward, 7 refused by the review or migration-number check (or
+# its config could not be read). Each verdict is appended to
+# <state>/merge-queue.jsonl.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -174,6 +191,7 @@ fi
 
 HOLDER="merge-queue-$$"
 TMP=""
+FLAKE=""  # "flake:<check>" once a single-check rerun has passed
 verdict() {  # result detail -- one JSON line per run
   local result="$1" detail="${2:-}" jpy
   LAST_RESULT="$result"
@@ -183,11 +201,15 @@ verdict() {  # result detail -- one JSON line per run
     "$jpy" -c '
 import json, sys
 a = sys.argv[1:]
-print(json.dumps({"ts": a[0], "branch": a[1], "target": a[2], "result": a[3], "old": a[4], "new": a[5],
-                  "test_cmd": a[6], "test_cmd_override": a[7] == "true", "detail": a[8]}, separators=(",", ":")))
-' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$BRANCH" "$TARGET" "$result" "${OLD:-}" "${NEW:-}" "$TEST_CMD" "$OVERRIDE" "$detail" >> "$LOG"
+d = {"ts": a[0], "branch": a[1], "target": a[2], "result": a[3], "old": a[4], "new": a[5],
+     "test_cmd": a[6], "test_cmd_override": a[7] == "true", "detail": a[8]}
+if a[9]:
+    d["flake"] = a[9]
+print(json.dumps(d, separators=(",", ":")))
+' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$BRANCH" "$TARGET" "$result" "${OLD:-}" "${NEW:-}" "$TEST_CMD" "$OVERRIDE" "$detail" "$FLAKE" >> "$LOG"
     return 0
   fi
+  # No python means no config was read, so FLAKE is always empty here.
   printf '{"ts":"%s","branch":"%s","target":"%s","result":"%s","old":"%s","new":"%s","test_cmd":"%s","test_cmd_override":%s,"detail":"%s"}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$BRANCH" "$TARGET" "$result" "${OLD:-}" "${NEW:-}" \
     "$(printf '%s' "$TEST_CMD" | tr '\n"\\' ' __')" "$OVERRIDE" \
@@ -213,6 +235,45 @@ if [ -z "$TEST_CMD" ]; then
   echo "REFUSED: no test command (--test-cmd, pipeline.parallel.gate_command or test.unit). An empty gate is not a pass."
   verdict refused-no-tests; exit 4
 fi
+
+# One pipeline.parallel key: $1 name, $2 `str` or `list` (printed one per line).
+# Nothing when unset. Fails when the file names the key but it cannot be read or
+# has the wrong type: a check the project asked for must not switch itself off.
+cfg_value() {
+  local f="$MAIN/.claude/project.json" py
+  [ -f "$f" ] || return 0
+  if ! py="$(bash "$HERE/py.sh" --print 2>/dev/null)" || [ -z "$py" ]; then
+    if grep -q "\"$1\"" "$f"; then return 3; fi
+    return 0
+  fi
+  "$py" - "$f" "$1" "$2" <<'PYEOF' 2>/dev/null | tr -d '\r'
+import json, sys
+path, key, kind = sys.argv[1:]
+raw = open(path, encoding="utf-8", errors="replace").read()
+try:
+    v = ((json.loads(raw).get("pipeline") or {}).get("parallel") or {}).get(key)
+except Exception:
+    sys.exit(3 if '"%s"' % key in raw else 0)
+if v is None:
+    sys.exit(0)
+if kind == "list":
+    if not (isinstance(v, list) and all(isinstance(x, str) and x for x in v)):
+        sys.exit(3)
+    print("\n".join(v))
+else:
+    if not isinstance(v, str):
+        sys.exit(3)
+    print(v)
+PYEOF
+}
+refuse_config() {
+  echo "REFUSED: pipeline.parallel.$1 in .claude/project.json cannot be read (invalid JSON, wrong type, or no python). Fix it, then re-run."
+  verdict refused-config "$1"; exit 7
+}
+REVIEW_PATHS="$(cfg_value review_required_paths list)" || refuse_config review_required_paths
+MIG_DIR="$(cfg_value migrations_dir str)" || refuse_config migrations_dir
+RERUN_CMD="$(cfg_value rerun_check_command str)" || refuse_config rerun_check_command
+MIG_DIR="${MIG_DIR#./}"; MIG_DIR="${MIG_DIR%/}"
 
 # Where is the target checked out? Updating a checked-out branch's ref behind
 # its worktree's back would leave that folder showing the landing reversed, so
@@ -256,21 +317,113 @@ for b in "${BRANCHES[@]}"; do
 done
 
 OLD="$(git -C "$MAIN" rev-parse "refs/heads/$TARGET")"
+# Lane tips are read once: the commit that is checked is the commit that lands,
+# even if a lane gets a new commit while this run is going.
+HEADS=()
+for b in "${BRANCHES[@]}"; do HEADS+=("$(git -C "$MAIN" rev-parse "refs/heads/$b")"); done
+gdiff() { git -C "$MAIN" -c core.quotePath=false diff --no-renames "$@"; }
+
+# stdin: paths. Prints those matching a review_required_paths glob. `*` crosses
+# `/`; a trailing `/` means the subtree; a leading `**/` also matches the root.
+protected_paths() {
+  local p g
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    while IFS= read -r g; do
+      [ -n "$g" ] || continue
+      case "$g" in */) g="$g*" ;; esac
+      # shellcheck disable=SC2254  # the glob is the point
+      case "$p" in $g) printf '%s\n' "$p"; break ;; esac
+      case "$g" in
+        '**/'*) case "$p" in ${g#'**/'}) printf '%s\n' "$p"; break ;; esac ;;
+      esac
+    done <<<"$REVIEW_PATHS"
+  done
+}
+refuse_review() {  # $1 = branch, $2 = reason, $3 = path label, $4 = paths
+  echo "REFUSED: $1 touches paths that need review (pipeline.parallel.review_required_paths): $2"
+  printf '%s\n' "$4" | sed "/^\$/d; s|^|  $3: |"
+  echo "Have these reviewed, then record the accepted commit: lanes.sh reviewed ${1#lane/} <sha> --verdict accept"
+  verdict refused-review "$1: $2: $4"; exit 7
+}
+review_check() {
+  [ -n "$REVIEW_PATHS" ] || return 0
+  local i b h changed prot row sha v after why
+  for i in "${!BRANCHES[@]}"; do
+    b="${BRANCHES[$i]}"; h="${HEADS[$i]}"
+    changed="$(gdiff --name-only "$OLD...$h")" || refuse_review "$b" "its diff against $TARGET cannot be read" path ""
+    prot="$(printf '%s\n' "$changed" | protected_paths)"
+    [ -n "$prot" ] || continue
+    row=""
+    [ ! -f "$STATE/reviews.tsv" ] || row="$(awk -F'\t' -v b="$b" '$1==b{l=$0} END{print l}' "$STATE/reviews.tsv")"
+    [ -n "$row" ] || refuse_review "$b" "no review is recorded for it" protected "$prot"
+    sha="$(printf '%s' "$row" | cut -f2)"; v="$(printf '%s' "$row" | cut -f3)"
+    [ "$v" = "accept" ] || refuse_review "$b" "the latest recorded verdict is '$v' (${sha:0:12})" protected "$prot"
+    # Same tree = same content (a reworded commit needs no new review).
+    if [ "$sha" != "$h" ] && ! git -C "$MAIN" diff --quiet "$sha" "$h" 2>/dev/null; then
+      why="its head ${h:0:12} is past the reviewed ${sha:0:12}"
+      git -C "$MAIN" merge-base --is-ancestor "$sha" "$h" 2>/dev/null || why="it was rewritten (rebased, amended or reset) after the review of ${sha:0:12}"
+      after="$(gdiff --name-only "$sha" "$h" 2>/dev/null)" || after="(the reviewed commit is no longer available)"
+      refuse_review "$b" "$why" "changed after review" "$after"
+    fi
+  done
+}
+
+# Leading number of a revision file name (0102_x.py -> 0102), empty otherwise.
+rev_number() { [[ "$1" =~ ^([0-9]+)[._-] ]] && printf '%s' "${BASH_REMATCH[1]}"; return 0; }
+# One revision may be several files (0005_x.up.sql, 0005_x.down.sql).
+rev_stem() { local s="${1%.*}"; s="${s%.up}"; printf '%s' "${s%.down}"; }
+# Needs NEW (the rebased result), so numbers are compared with the current target.
+migration_check() {
+  [ -n "$MIG_DIR" ] || return 0
+  local added all p base num q qbase qnum where holder rdir rnum _ts i mine problems=""
+  added="$(gdiff --name-only --diff-filter=A "$OLD" "$NEW" -- "$MIG_DIR/")"
+  all="$(git -C "$MAIN" -c core.quotePath=false ls-tree --name-only "$NEW" -- "$MIG_DIR/")"
+  while IFS= read -r p; do
+    { [ -n "$p" ] && [ "${p%/*}" = "$MIG_DIR" ]; } || continue
+    base="${p##*/}"; num="$(rev_number "$base")"
+    [ -n "$num" ] || continue
+    while IFS= read -r q; do
+      qbase="${q##*/}"; qnum="$(rev_number "$qbase")"
+      [ -n "$qnum" ] && [ "$((10#$qnum))" -eq "$((10#$num))" ] || continue
+      [ "$(rev_stem "$qbase")" != "$(rev_stem "$base")" ] || continue
+      where="also added by this landing"
+      git -C "$MAIN" cat-file -e "$OLD:$q" 2>/dev/null && where="already on $TARGET"
+      problems="$problems$p: number $num is taken by $q ($where)"$'\n'
+    done <<<"$all"
+    [ -f "$STATE/reservations.tsv" ] || continue
+    while IFS=$'\t' read -r holder rnum rdir _ts; do
+      [ "$rdir" = "$MIG_DIR" ] && [ "$((10#$rnum))" -eq "$((10#$num))" ] || continue
+      mine=0
+      for i in "${!BRANCHES[@]}"; do
+        if [ "${BRANCHES[$i]}" = "lane/$holder" ] && [ -n "$(gdiff --name-only --diff-filter=A "$OLD...${HEADS[$i]}" -- "$p")" ]; then mine=1; fi
+      done
+      [ "$mine" -eq 1 ] || problems="$problems$p: number $num is reserved by lane/$holder"$'\n'
+    done < "$STATE/reservations.tsv"
+  done <<<"$added"
+  [ -n "$problems" ] || return 0
+  echo "REFUSED: duplicate or reserved migration number in $MIG_DIR; $BRANCH was not landed."
+  printf '%s' "$problems" | sed 's/^/  migration: /'
+  echo "The owning lane takes a free number (lanes.sh reserve-migration <lane>), renames the file and its revision ids, and commits."
+  verdict refused-migration "$problems"; exit 7
+}
+
+review_check
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/merge-queue.XXXXXX")"
 rmdir "$TMP"
 # The clean checkout runs with the project's git hooks off: a post-checkout
 # hook that regenerates tracked files (seen 2026-11-15: a progress page) would
 # leave the "clean" copy dirty, and git then refuses the rebase.
 NOHOOKS=(-c core.hooksPath=/dev/null)
-git "${NOHOOKS[@]}" -C "$MAIN" worktree add -q --detach "$TMP" "${BRANCHES[0]}"
+git "${NOHOOKS[@]}" -C "$MAIN" worktree add -q --detach "$TMP" "${HEADS[0]}"
 
 # Several branches: each is rebased in turn onto the tip the previous one
 # produced, so the gate below runs once on the combined result and the target
 # moves once. A branch already contained in the previous ones rebases to nothing.
-tip="$OLD"; first=1
-for b in "${BRANCHES[@]}"; do
-  if [ "$first" -eq 1 ]; then first=0
-  else git "${NOHOOKS[@]}" -C "$TMP" checkout -q --detach "$b"; fi
+tip="$OLD"
+for i in "${!BRANCHES[@]}"; do
+  b="${BRANCHES[$i]}"
+  [ "$i" -eq 0 ] || git "${NOHOOKS[@]}" -C "$TMP" checkout -q --detach "${HEADS[$i]}"
   if ! rb_err="$(git "${NOHOOKS[@]}" -C "$TMP" rebase -q "$tip" 2>&1 >/dev/null)"; then
     files="$(git -C "$TMP" diff --name-only --diff-filter=U)"
     if [ -z "$files" ]; then
@@ -290,6 +443,7 @@ if [ "$NEW" = "$OLD" ]; then
   echo "NOTHING TO LAND: $BRANCH has no changes that are not already on $TARGET."
   verdict nothing; exit 0
 fi
+migration_check
 
 bash "$HERE/lanes.sh" copy-includes "$TMP" >/dev/null 2>&1 || true
 if ! (cd "$MAIN" && bash "$HERE/lanes.sh" setup "$TMP") > "$STATE/merge-queue.last-setup.log" 2>&1; then
@@ -306,15 +460,81 @@ if [ -n "$SLUG" ]; then
   fi
 fi
 
+LOG_DIR="$STATE/merge-queue.logs"
+# Runs $1 in the clean checkout into its own numbered log (ATTEMPT_LOG), copies
+# that to merge-queue.last-test.log, and sets rc.
+test_attempt() {
+  local slug n=1
+  mkdir -p "$LOG_DIR"
+  slug="$(printf '%s' "$BRANCH" | tr '/ ' '-+' | tr -c 'A-Za-z0-9._+-' '_' | cut -c1-150)"
+  while [ -e "$LOG_DIR/$slug-$n.log" ]; do n=$((n + 1)); done
+  ATTEMPT_LOG="$LOG_DIR/$slug-$n.log"
+  set +e
+  (cd "$TMP" && bash -c "$1") > "$ATTEMPT_LOG" 2>&1
+  rc=$?
+  set -e
+  cp "$ATTEMPT_LOG" "$STATE/merge-queue.last-test.log"
+}
+tests_failed() {  # $1 = result, $2 = detail
+  echo "TESTS FAILED (exit $rc): $BRANCH was not landed. Output: $ATTEMPT_LOG"
+  tail -n 20 "$ATTEMPT_LOG" | sed 's/^/  /'
+  verdict "$1" "$2"; exit 4
+}
+# How many times flake:$1 was logged in the last 7 days.
+recent_flakes() {
+  local py
+  [ -f "$LOG" ] || { echo 0; return 0; }
+  py="$(bash "$HERE/py.sh" --print 2>/dev/null)" && [ -n "$py" ] || return 1
+  "$py" - "$LOG" "flake:$1" <<'PYEOF' | tr -d '\r'
+import json, sys, time, calendar
+since = time.time() - 7 * 86400
+n = 0
+for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
+    try:
+        d = json.loads(line)
+        if d.get("flake") == sys.argv[2] and calendar.timegm(time.strptime(d["ts"], "%Y-%m-%dT%H:%M:%SZ")) >= since:
+            n += 1
+    except Exception:
+        pass
+print(n)
+PYEOF
+}
+
 echo "testing $BRANCH rebased on $TARGET (${NEW:0:12}) with: $TEST_CMD"
-set +e
-(cd "$TMP" && bash -c "$TEST_CMD") > "$STATE/merge-queue.last-test.log" 2>&1
-rc=$?
-set -e
+test_attempt "$TEST_CMD"
 if [ "$rc" -ne 0 ]; then
-  echo "TESTS FAILED (exit $rc): $BRANCH was not landed. Output: $STATE/merge-queue.last-test.log"
-  tail -n 20 "$STATE/merge-queue.last-test.log" | sed 's/^/  /'
-  verdict tests-failed "exit $rc"; exit 4
+  case "$RERUN_CMD" in
+    "") tests_failed tests-failed "exit $rc" ;;
+    *'{check}'*) ;;
+    *) echo "WARNING: pipeline.parallel.rerun_check_command has no {check} placeholder; nothing is rerun."
+       tests_failed tests-failed "exit $rc" ;;
+  esac
+  checks="$(sed -n 's/^merge-queue-failed-check:[[:space:]]*//p' "$ATTEMPT_LOG" | tr -d '\r' | sed 's/[[:space:]]*$//; /^$/d' | sort -u)"
+  if [ -z "$checks" ] || [ "$(printf '%s\n' "$checks" | wc -l)" -ne 1 ]; then
+    echo "no rerun: the gate output does not name exactly one failed check."
+    tests_failed tests-failed "exit $rc"
+  fi
+  # The name comes from test output and goes into a shell command: plain
+  # characters only, and never a leading dash.
+  if ! [[ "$checks" =~ ^[A-Za-z0-9_][A-Za-z0-9._/:=@+-]*$ ]]; then
+    echo "no rerun: the failed check's name has characters that are not allowed."
+    tests_failed tests-failed "exit $rc"
+  fi
+  if ! seen="$(recent_flakes "$checks")"; then
+    echo "no rerun: the flake history in $LOG cannot be read."
+    tests_failed tests-failed "exit $rc"
+  fi
+  if [ "$seen" -ge 2 ]; then
+    echo "FLAKE LIMIT: $checks flaked $seen times in the last 7 days; it is not rerun. Open a task to fix the check."
+    tests_failed flake-limit "$checks"
+  fi
+  first_rc="$rc"; first_log="$ATTEMPT_LOG"
+  rerun="${RERUN_CMD//\{check\}/$checks}"
+  echo "gate failed (exit $first_rc, $first_log); rerunning only $checks once: $rerun"
+  test_attempt "$rerun"
+  [ "$rc" -eq 0 ] || tests_failed tests-failed "exit $first_rc; rerun of $checks exit $rc"
+  FLAKE="flake:$checks"
+  echo "FLAKE: $checks passed on its rerun. First run: $first_log; rerun: $ATTEMPT_LOG"
 fi
 
 if [ "$DRY" -eq 1 ]; then
@@ -327,6 +547,10 @@ if [ -n "$TARGET_WT" ]; then
   hits="$(git -C "$MAIN" diff --name-only --no-renames "$OLD" "$NEW" | overlap "$OLD")"
   [ -z "$hits" ] || refuse_overlap "$hits"
 fi
+
+# A verdict or a reservation may also have been recorded during the test run.
+review_check
+migration_check
 
 if ! git -C "$MAIN" update-ref -m "merge-queue: land $BRANCH" "refs/heads/$TARGET" "$NEW" "$OLD" 2>/dev/null; then
   echo "TARGET MOVED: $TARGET changed while $BRANCH was being tested. Nothing landed; re-run to rebase on the new tip."

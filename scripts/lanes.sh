@@ -75,6 +75,17 @@
 #     `remove` drops it.
 #   lanes.sh unheld <name>
 #     Clear the hold.
+#   lanes.sh reviewed <name> <sha> [--verdict accept|fix|reject]
+#     Record a reviewer's verdict (default accept) on that commit of the lane,
+#     in <state>/reviews.tsv. The latest row wins. merge-queue.sh reads it when
+#     pipeline.parallel.review_required_paths is set.
+#   lanes.sh reserve-migration <name> [--dir <versions dir>] [--target BRANCH]
+#     Take the next migration number: one above the highest among the target's
+#     files in the folder and the open reservations. Recorded in
+#     <state>/reservations.tsv. --dir defaults to
+#     pipeline.parallel.migrations_dir.
+#   lanes.sh release-migration <name> [--number N]
+#     Drop the lane's reservations (or only number N). `remove` does this too.
 #   lanes.sh sync <name> [--target BRANCH]
 #     Rebase the lane on the target now ("rebase early"): small conflicts found
 #     today are cheaper than large ones at landing. On conflict it aborts the
@@ -94,12 +105,13 @@
 # --target defaults to the branch checked out in the main worktree.
 set -euo pipefail
 
-usage() { sed -n '48,94p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '48,105p'"$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 [ $# -ge 1 ] || usage
 SUB="$1"; shift
 
 NAME=""; BASE=""; DIR=""; TARGET=""; FORCE=0; SETUP=1; OWNED=(); UNTIL=""
+SHA=""; VERDICT="accept"; NUMBER=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --base)   BASE="${2:-}"; shift 2 ;;
@@ -108,18 +120,28 @@ while [ $# -gt 0 ]; do
     --force)  FORCE=1; shift ;;
     --until)  [ -n "${2:-}" ] || { echo "lanes.sh: --until needs a date or a lane" >&2; exit 2; }
               UNTIL="$2"; shift 2 ;;
+    --verdict) [ -n "${2:-}" ] || { echo "lanes.sh: --verdict needs a value" >&2; exit 2; }
+              VERDICT="$2"; shift 2 ;;
+    --number) [ -n "${2:-}" ] || { echo "lanes.sh: --number needs a value" >&2; exit 2; }
+              NUMBER="$2"; shift 2 ;;
     --no-setup) SETUP=0; shift ;;
     --owned)  shift
               while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do OWNED+=("$1"); shift; done
               [ "${#OWNED[@]}" -gt 0 ] || { echo "lanes.sh: --owned needs at least one glob" >&2; exit 2; } ;;
     -h|--help) usage ;;
     --*) echo "lanes.sh: unknown flag $1" >&2; usage ;;
-    *) [ -z "$NAME" ] || { echo "lanes.sh: unexpected argument $1" >&2; usage; }; NAME="$1"; shift ;;
+    *) if [ -z "$NAME" ]; then NAME="$1"
+       elif [ "$SUB" = "reviewed" ] && [ -z "$SHA" ]; then SHA="$1"
+       else echo "lanes.sh: unexpected argument $1" >&2; usage; fi
+       shift ;;
   esac
 done
 
 common="$(git rev-parse --git-common-dir 2>/dev/null)" || { echo "lanes.sh: not inside a git repository" >&2; exit 2; }
 MAIN="$(cd "$(dirname "$common")" && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STATE="${PARALLEL_STATE_DIR:-$MAIN/.claude/parallel}"
+RESERVATIONS="$STATE/reservations.tsv"  # lane, number, folder, ts
 [ -n "$TARGET" ] || TARGET="$(git -C "$MAIN" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
 
 valid_name() {
@@ -275,7 +297,54 @@ content_landed() {
   git -C "$MAIN" diff --quiet "$TARGET" "lane/$1" -- "${args[@]}"
 }
 
-need_target() { [ -n "$TARGET" ] || { echo "lanes.sh: no --target and the main worktree is on a detached HEAD" >&2; exit 2; }; }
+# pipeline.parallel.migrations_dir, empty when unset.
+configured_migrations_dir() {
+  local cfg="$MAIN/.claude/project.json" py
+  [ -f "$cfg" ] || return 0
+  py="$(bash "$HERE/py.sh" --print 2>/dev/null)" && [ -n "$py" ] || return 0
+  "$py" - "$cfg" <<'PYEOF' 2>/dev/null | tr -d '\r' || true
+import json, sys
+try:
+    d = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    sys.exit(0)
+v = ((d.get("pipeline") or {}).get("parallel") or {}).get("migrations_dir")
+print(v if isinstance(v, str) else "")
+PYEOF
+}
+
+# One writer of reservations.tsv at a time, so two lanes never get one number.
+# The lease is released on exit.
+lock_reservations() {
+  local holder="lanes-$$" i
+  mkdir -p "$STATE"
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    if (cd "$MAIN" && PARALLEL_STATE_DIR="$STATE" bash "$HERE/lease.sh" acquire migration-reservations --holder "$holder" --ttl 60) >/dev/null 2>&1; then
+      # shellcheck disable=SC2064  # expand now: holder is local
+      trap "cd '$MAIN' && PARALLEL_STATE_DIR='$STATE' bash '$HERE/lease.sh' release migration-reservations --holder '$holder' >/dev/null 2>&1 || true" EXIT
+      return 0
+    fi
+    sleep 1
+  done
+  echo "lanes.sh: the migration-reservations lease is busy; re-run" >&2
+  exit 3
+}
+
+drop_reservations() {  # $1 = lane, $2 = number or empty for all. Prints each dropped row.
+  [ -f "$RESERVATIONS" ] || return 0
+  local lane num dir ts keep="$RESERVATIONS.$$"
+  : > "$keep"
+  while IFS=$'\t' read -r lane num dir ts; do
+    if [ "$lane" = "$1" ] && { [ -z "$2" ] || [ "$((10#$num))" -eq "$((10#$2))" ]; }; then
+      echo "released: $num lane=$lane dir=$dir"
+    else
+      printf '%s\t%s\t%s\t%s\n' "$lane" "$num" "$dir" "$ts" >> "$keep"
+    fi
+  done < "$RESERVATIONS"
+  mv "$keep" "$RESERVATIONS"
+}
+
+need_target() {[ -n "$TARGET" ] || { echo "lanes.sh: no --target and the main worktree is on a detached HEAD" >&2; exit 2; }; }
 
 case "$SUB" in
   create)
@@ -342,6 +411,56 @@ case "$SUB" in
     m="$(held_marker "$p")"; rm -f "$m"
     echo "unheld: lane/$NAME"
     ;;
+  reviewed)
+    NAME="${NAME#lane/}"; valid_name "$NAME"
+    git -C "$MAIN" show-ref --verify --quiet "refs/heads/lane/$NAME" || { echo "lanes.sh: no lane named $NAME" >&2; exit 1; }
+    case "$VERDICT" in accept|fix|reject) ;; *) echo "lanes.sh reviewed: --verdict must be accept, fix or reject" >&2; exit 2 ;; esac
+    # A sha only: a branch name or HEAD would record whatever is there now, not
+    # what the reviewer read.
+    case "$SHA" in ''|*[!0-9a-f]*) echo "lanes.sh reviewed: give the commit sha the reviewer read" >&2; exit 2 ;; esac
+    [ "${#SHA}" -ge 7 ] || { echo "lanes.sh reviewed: the sha needs at least 7 characters" >&2; exit 2; }
+    full="$(git -C "$MAIN" rev-parse --verify --quiet "$SHA^{commit}")" || { echo "lanes.sh reviewed: no commit $SHA" >&2; exit 1; }
+    git -C "$MAIN" merge-base --is-ancestor "$full" "refs/heads/lane/$NAME" || { echo "lanes.sh reviewed: $SHA is not on lane/$NAME" >&2; exit 1; }
+    mkdir -p "$STATE"
+    printf 'lane/%s\t%s\t%s\t%s\n' "$NAME" "$full" "$VERDICT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$STATE/reviews.tsv"
+    echo "reviewed: lane/$NAME $full verdict=$VERDICT"
+    ;;
+  reserve-migration)
+    NAME="${NAME#lane/}"; valid_name "$NAME"; need_target
+    git -C "$MAIN" show-ref --verify --quiet "refs/heads/lane/$NAME" || { echo "lanes.sh: no lane named $NAME" >&2; exit 1; }
+    [ -n "$DIR" ] || DIR="$(configured_migrations_dir)"
+    DIR="${DIR#./}"; DIR="${DIR%/}"
+    case "$DIR" in ''|/*|*..*) echo "lanes.sh reserve-migration: give --dir (relative to the repo root) or set pipeline.parallel.migrations_dir" >&2; exit 2 ;; esac
+    lock_reservations
+    names="$(git -C "$MAIN" -c core.quotePath=false ls-tree --name-only "refs/heads/$TARGET" -- "$DIR/")"
+    # A mistyped folder would otherwise hand out number 1.
+    [ -n "$names" ] || { echo "lanes.sh reserve-migration: no folder $DIR on $TARGET" >&2; exit 1; }
+    max=0; width=4; found=0
+    while IFS= read -r f; do
+      f="${f##*/}"
+      [[ "$f" =~ ^([0-9]+)[._-] ]] || continue
+      num="${BASH_REMATCH[1]}"
+      if [ "$found" -eq 0 ] || [ "$((10#$num))" -gt "$max" ]; then max="$((10#$num))"; width="${#num}"; found=1; fi
+    done <<<"$names"
+    if [ -f "$RESERVATIONS" ]; then
+      while IFS=$'\t' read -r _lane num rdir _ts; do
+        [ "$rdir" = "$DIR" ] || continue
+        if [ "$((10#$num))" -gt "$max" ]; then max="$((10#$num))"; width="${#num}"; fi
+      done < "$RESERVATIONS"
+    fi
+    next="$(printf '%0*d' "$width" "$((max + 1))")"
+    printf '%s\t%s\t%s\t%s\n' "$NAME" "$next" "$DIR" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$RESERVATIONS"
+    echo "reserved: $next lane=$NAME dir=$DIR"
+    ;;
+  release-migration)
+    # No lane-exists check: a reservation can outlive a branch deleted by hand.
+    NAME="${NAME#lane/}"; valid_name "$NAME"
+    case "$NUMBER" in *[!0-9]*) echo "lanes.sh release-migration: --number must be digits" >&2; exit 2 ;; esac
+    lock_reservations
+    out="$(drop_reservations "$NAME" "$NUMBER")"
+    [ -n "$out" ] || { echo "lanes.sh release-migration: lane/$NAME holds no such reservation" >&2; exit 1; }
+    printf '%s\n' "$out"
+    ;;
   sync)
     valid_name "$NAME"; need_target
     p="$(lane_path "$NAME")"; [ -n "$p" ] || { echo "lanes.sh: no lane named $NAME" >&2; exit 1; }
@@ -406,6 +525,7 @@ case "$SUB" in
     fi
     git -C "$MAIN" worktree prune
     git -C "$MAIN" branch -q -D "lane/$NAME" 2>/dev/null || true
+    if [ -f "$RESERVATIONS" ]; then lock_reservations; drop_reservations "$NAME" ""; fi
     echo "removed: lane/$NAME"
     ;;
   -h|--help) usage ;;
