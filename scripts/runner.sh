@@ -206,7 +206,7 @@ for path in sorted(glob.glob(os.path.join(root, "*", "events.jsonl"))):
         prev = session_total.get(sid, 0.0) if sid else 0.0
         call_cost = cum - prev if cum >= prev else cum
         if sid:
-            session_total[sid] = cum
+            session_total[sid] = max(prev, cum)
         # Filtered after the session total, which needs the earlier lines.
         if since and str(ev.get("ts") or "")[:10] < since:
             continue
@@ -360,7 +360,11 @@ prepare_opts() {
   fi
   if [ ! -f "$STATUS" ]; then
     has_opt tools || OPTS=("tools=$(cfg_get tools "$DEFAULT_TOOLS")" "${OPTS[@]+"${OPTS[@]}"}")
-    has_opt rotate_at || OPTS=("rotate_at=$(cfg_get rotate_at 180000)" "${OPTS[@]+"${OPTS[@]}"}")
+    if ! has_opt rotate_at; then
+      local src=default
+      [ -z "$(cfg_get rotate_at)" ] || src=config
+      OPTS=("rotate_at=$(cfg_get rotate_at 180000)" "rotate_at_source=$src" "${OPTS[@]+"${OPTS[@]}"}")
+    fi
     [ "$(cfg_get bare)" = "1" ] && ! has_opt bare && OPTS=("bare=1" "${OPTS[@]+"${OPTS[@]}"}")
   fi
   return 0
@@ -369,14 +373,23 @@ prepare_opts() {
 # On resume, lower a recorded threshold that no flag set and that is above the
 # configured one.
 enforce_rotate_at() {
-  local cur ceil
-  [ "$(get rotate_at_source)" = "flag" ] && return 0
-  cur="$(get rotate_at)"; ceil="$(cfg_get rotate_at 180000)"
+  local cur ceil src new_src=config
+  src="$(get rotate_at_source)"
+  [ "$src" = "flag" ] && return 0
+  cur="$(get rotate_at)"; ceil="$(cfg_get rotate_at)"
+  if [ -z "$ceil" ]; then
+    # The config sets none here, or is not visible from this folder. A value
+    # that came from a config stays; so does one of unknown origin when there
+    # is no config to read at all.
+    [ "$src" != "config" ] || return 0
+    [ "$src" = "default" ] || [ -f "$PROJ/.claude/project.json" ] || return 0
+    ceil=180000; new_src=default
+  fi
   case "$cur" in ''|*[!0-9]*) return 0 ;; esac  # check_rotate_at reports these
   case "$ceil" in ''|*[!0-9]*) return 0 ;; esac
   if [ "$cur" -gt "$ceil" ]; then
     echo "runner.sh: rotate_at $cur lowered to $ceil (pass --rotate-at to keep a higher one)"
-    local OPTS=("rotate_at=$ceil")  # not set_kv: rotate_at stays a JSON number
+    local OPTS=("rotate_at=$ceil" "rotate_at_source=$new_src")  # not set_kv: rotate_at stays a JSON number
     write_status_from_opts
   fi
 }
@@ -411,7 +424,8 @@ try:
         try:
             ev = json.loads(line)
             if sid and ev.get("session_id") == sid:
-                prior = float(ev.get("session_cost_usd", ev.get("cost_usd")) or 0.0)
+                # The highest, not the last: a line with no total reads as 0.
+                prior = max(prior, float(ev.get("session_cost_usd", ev.get("cost_usd")) or 0.0))
         except Exception:
             continue
 except OSError:
@@ -514,10 +528,13 @@ if events:
             lane_id = events.lane_of_branch(repo, "lane/" + s["lane"])
         else:
             lane_id = events.lane_of_dir(cwd)
-        # A removed lane keeps the id the runner already recorded for it.
-        if not lane_id and not os.path.isdir(cwd):
+        # A removed or detached lane keeps the id already recorded for this
+        # same folder and --lane.
+        source = [cwd, s.get("lane") or ""]
+        if not lane_id and (not os.path.isdir(cwd) or s.get("lane_source") == source):
             lane_id = s.get("lane_id")
         s["lane_id"] = lane_id
+        s["lane_source"] = source
     except Exception:  # the call's own records must still be written
         lane_id = None
 try:
@@ -555,6 +572,9 @@ else:
     # call's: adding it per call counted a 4-call runner at $5.22 for $1.87 of
     # spend. This call's cost is the total minus the session's last recorded
     # total (session_cost_usd; older lines hold the running total in cost_usd).
+    # A result with no total (some error results) says nothing about spend: no
+    # cost is recorded for it, so it cannot reset the session's total.
+    has_total = r.get("total_cost_usd") is not None
     total = float(r.get("total_cost_usd") or 0.0)
     prev = 0.0
     try:
@@ -564,14 +584,15 @@ else:
             except Exception:
                 continue
             if sid and old.get("session_id") == sid:
-                prev = float(old.get("session_cost_usd", old.get("cost_usd")) or 0.0)
+                prev = max(prev, float(old.get("session_cost_usd", old.get("cost_usd")) or 0.0))
     except OSError:
         pass
-    call_cost = total - prev if total >= prev else total
-    s["cost_usd"] = float(s.get("cost_usd", 0.0)) + call_cost
-    ev.update(model=s.get("model"), session_id=sid, context_tokens=ctx, cost_usd=round(call_cost, 6),
-              session_cost_usd=total, num_turns=r.get("num_turns"), subtype=r.get("subtype"),
-              is_error=r.get("is_error"))
+    if has_total:
+        call_cost = total - prev if total >= prev else total
+        s["cost_usd"] = float(s.get("cost_usd", 0.0)) + call_cost
+        ev.update(cost_usd=round(call_cost, 6), session_cost_usd=total)
+    ev.update(model=s.get("model"), session_id=sid, context_tokens=ctx,
+              num_turns=r.get("num_turns"), subtype=r.get("subtype"), is_error=r.get("is_error"))
     open(os.path.join(d, "last-result.md"), "w", encoding="utf-8").write(str(r.get("result") or ""))
     denials = r.get("permission_denials") or []
     if denials:

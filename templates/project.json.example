@@ -190,7 +190,7 @@
       "review_required_paths": [],
       "_review_required_paths_comment": "Globs (`*` crosses /, a trailing / means the subtree, no braces), e.g. [\"src/payments/\", \"scripts/guard.js\"]. A lane whose diff touches one lands only if `lanes.sh reviewed <lane> <sha>` recorded an accept for the content at its head. Default empty = off.",
       "rerun_check_command": null,
-      "_rerun_check_command_comment": "A command with {check} in it, e.g. \"bash ci/run-check.sh {check}\". When the gate fails and prints exactly one `merge-queue-failed-check: <name>` line, the queue reruns that check once; a pass is logged as flake:<name>, and a check with two flakes in 7 days is not rerun. Only for a gate that runs every check to the end. Unset = off.",
+      "_rerun_check_command_comment": "A command with {check} in it, e.g. \"bash ci/run-check.sh {check}\". When the gate fails, prints exactly one `merge-queue-failed-check: <name>` line and ends with `merge-queue-gate-complete: failed=1` (exit code below 126), the queue reruns that check once; a pass is logged as flake:<name>, and a check with two flakes in 7 days is not rerun. Only for a gate that runs every check to the end. Unset = off.",
       "migrations_dir": null,
       "_migrations_dir_comment": "Folder of numbered revision files, relative to the repo root, e.g. \"db/versions\". The queue refuses a new file whose number another file there has or another lane reserved; it is also the default --dir of `lanes.sh reserve-migration`. Unset = the check is off.",
       "lane_setup_retries": 1,
@@ -204,7 +204,7 @@
         "max_budget_usd": 5,
         "_max_budget_usd_comment": "Per-call spend allowance for each claude call, hand-off turns included; --max-budget-usd overrides it for one runner. Default 5. On resume the session's recorded spend is added (see references/runners.md).",
         "rotate_at": 180000,
-        "_rotate_at_comment": "Context (tokens) at which the next resume hands off and starts a fresh session. Default 180000; 150000-250000 recommended. Set for cost: resumed turns re-read the whole conversation.",
+        "_rotate_at_comment": "Context (tokens) at which the next resume hands off and starts a fresh session. Default 180000; 150000-250000 recommended. A runner started with this key keeps its value when resumed where no config sets one. Set for cost: resumed turns re-read the whole conversation.",
         "bare": false,
         "_bare_comment": "true passes --bare (skips hooks, plugins, CLAUDE.md discovery). Needs ANTHROPIC_API_KEY: bare mode never reads an OAuth login."
       }

@@ -76,7 +76,9 @@
 #                          one check (`merge-queue-failed-check: <name>`),
 #                          that check alone is rerun once; a pass is logged as
 #                          flake:<check>. A check with two flakes in 7 days is
-#                          not rerun.
+#                          not rerun. The gate must prove it reached its end:
+#                          last line `merge-queue-gate-complete: failed=1`, and
+#                          an exit code below 126.
 # Every test run also keeps its own log, <state>/merge-queue.logs/<branch>-<n>.log.
 #
 # Exit codes: 0 landed (or dry-run passed, or nothing to land), 1 usage or
@@ -191,6 +193,7 @@ fi
 
 HOLDER="merge-queue-$$"
 TMP=""
+MIG_TMP=""
 FLAKE=""  # "flake:<check>" once a single-check rerun has passed
 FAILED_CHECK=""  # the check the gate named, when it named exactly one
 verdict() {  # result detail -- one JSON line per run
@@ -222,6 +225,7 @@ print(json.dumps(d, separators=(",", ":")))
     "$(printf '%s' "$detail" | tr '\n"\\' ' __')" >> "$LOG"
 }
 cleanup() {
+  [ -z "$MIG_TMP" ] || rm -f "$MIG_TMP"
   if [ -n "$TMP" ]; then
     git -C "$TMP" rebase --abort >/dev/null 2>&1 || true
     git -C "$MAIN" worktree remove --force "$TMP" >/dev/null 2>&1 || rm -rf "$TMP"
@@ -329,11 +333,33 @@ HEADS=()
 for b in "${BRANCHES[@]}"; do HEADS+=("$(git -C "$MAIN" rev-parse "refs/heads/$b")"); done
 gdiff() { git -C "$MAIN" -c core.quotePath=false diff --no-renames "$@"; }
 
-# stdin: paths. Prints those matching a review_required_paths glob. `*` crosses
+# An entry that can never match a file path would leave its folder unreviewed
+# with no warning, so it is refused.
+check_review_paths() {
+  local g why rev
+  while IFS= read -r g; do
+    [ -n "$g" ] || continue
+    why=""
+    case "$g" in
+      *'{'*) why="braces are not expanded; write one entry per alternative" ;;
+      ./*|/*) why="paths are relative to the repo root, with no leading ./ or /" ;;
+      */|*'*'*|*'?'*|*'['*) ;;
+      *) for rev in "$OLD" "${HEADS[@]}"; do
+           [ "$(git -C "$MAIN" cat-file -t "$rev:$g" 2>/dev/null || true)" != "tree" ] || why="it is a folder; write $g/"
+         done ;;
+    esac
+    [ -z "$why" ] || {
+      echo "REFUSED: pipeline.parallel.review_required_paths entry '$g' can never match: $why."
+      verdict refused-config "review_required_paths: $g"; exit 7; }
+  done <<<"$REVIEW_PATHS"
+}
+
+# stdin: NUL-delimited paths (git C-quotes odd names in newline output, which no
+# glob matches). Prints those matching a review_required_paths glob. `*` crosses
 # `/`; a trailing `/` means the subtree; a leading `**/` also matches the root.
 protected_paths() {
   local p g
-  while IFS= read -r p; do
+  while IFS= read -r -d '' p; do
     [ -n "$p" ] || continue
     while IFS= read -r g; do
       [ -n "$g" ] || continue
@@ -354,11 +380,12 @@ refuse_review() {  # $1 = branch, $2 = reason, $3 = path label, $4 = paths
 }
 review_check() {
   [ -n "$REVIEW_PATHS" ] || return 0
-  local i b h changed prot row sha v after why
+  local i b h prot row sha v after why
+  check_review_paths
   for i in "${!BRANCHES[@]}"; do
     b="${BRANCHES[$i]}"; h="${HEADS[$i]}"
-    changed="$(gdiff --name-only "$OLD...$h")" || refuse_review "$b" "its diff against $TARGET cannot be read" path ""
-    prot="$(printf '%s\n' "$changed" | protected_paths)"
+    # pipefail: a failing diff refuses.
+    prot="$(gdiff --name-only -z "$OLD...$h" | protected_paths)" || refuse_review "$b" "its diff against $TARGET cannot be read" path ""
     [ -n "$prot" ] || continue
     row=""
     [ ! -f "$STATE/reviews.tsv" ] || row="$(awk -F'\t' -v b="$b" '$1==b{l=$0} END{print l}' "$STATE/reviews.tsv")"
@@ -383,30 +410,41 @@ rev_stem() { local s="${1%.*}"; s="${s%.up}"; printf '%s' "${s%.down}"; }
 migration_check() {
   [ -n "$MIG_DIR" ] || return 0
   local added all p base num q qbase qnum where holder rdir rnum _ts i mine problems=""
-  added="$(gdiff --name-only --diff-filter=A "$OLD" "$NEW" -- "$MIG_DIR/")"
-  all="$(git -C "$MAIN" -c core.quotePath=false ls-tree --name-only "$NEW" -- "$MIG_DIR/")"
-  while IFS= read -r p; do
-    { [ -n "$p" ] && [ "${p%/*}" = "$MIG_DIR" ]; } || continue
+  # A folder neither side has is a typo or a moved folder, not "nothing added".
+  if [ -z "$(git -C "$MAIN" ls-tree --name-only "$OLD" -- "$MIG_DIR/")" ] &&
+     [ -z "$(git -C "$MAIN" ls-tree --name-only "$NEW" -- "$MIG_DIR/")" ]; then
+    echo "REFUSED: pipeline.parallel.migrations_dir is '$MIG_DIR', but neither $TARGET nor this landing has that folder. Fix the key, then re-run."
+    verdict refused-config "migrations_dir: no folder $MIG_DIR"; exit 7
+  fi
+  # NUL-delimited (see protected_paths), through files so a git failure still exits.
+  [ -n "$MIG_TMP" ] || MIG_TMP="$(mktemp "${TMPDIR:-/tmp}/merge-queue-mig.XXXXXX")"
+  added=(); all=()
+  gdiff --name-only -z --diff-filter=A "$OLD" "$NEW" -- "$MIG_DIR/" > "$MIG_TMP"
+  while IFS= read -r -d '' p; do added+=("$p"); done < "$MIG_TMP"
+  git -C "$MAIN" ls-tree -z --name-only "$NEW" -- "$MIG_DIR/" > "$MIG_TMP"
+  while IFS= read -r -d '' p; do all+=("$p"); done < "$MIG_TMP"
+  for p in "${added[@]+"${added[@]}"}"; do
+    [ "${p%/*}" = "$MIG_DIR" ] || continue
     base="${p##*/}"; num="$(rev_number "$base")"
     [ -n "$num" ] || continue
-    while IFS= read -r q; do
+    for q in "${all[@]+"${all[@]}"}"; do
       qbase="${q##*/}"; qnum="$(rev_number "$qbase")"
       [ -n "$qnum" ] && [ "$((10#$qnum))" -eq "$((10#$num))" ] || continue
       [ "$(rev_stem "$qbase")" != "$(rev_stem "$base")" ] || continue
       where="also added by this landing"
       git -C "$MAIN" cat-file -e "$OLD:$q" 2>/dev/null && where="already on $TARGET"
       problems="$problems$p: number $num is taken by $q ($where)"$'\n'
-    done <<<"$all"
+    done
     [ -f "$STATE/reservations.tsv" ] || continue
     while IFS=$'\t' read -r holder rnum rdir _ts; do
       [ "$rdir" = "$MIG_DIR" ] && [ "$((10#$rnum))" -eq "$((10#$num))" ] || continue
       mine=0
       for i in "${!BRANCHES[@]}"; do
-        if [ "${BRANCHES[$i]}" = "lane/$holder" ] && [ -n "$(gdiff --name-only --diff-filter=A "$OLD...${HEADS[$i]}" -- "$p")" ]; then mine=1; fi
+        if [ "${BRANCHES[$i]}" = "lane/$holder" ] && [ -n "$(gdiff --name-only --diff-filter=A "$OLD...${HEADS[$i]}" -- ":(literal)$p")" ]; then mine=1; fi
       done
       [ "$mine" -eq 1 ] || problems="$problems$p: number $num is reserved by lane/$holder"$'\n'
     done < "$STATE/reservations.tsv"
-  done <<<"$added"
+  done
   [ -n "$problems" ] || return 0
   echo "REFUSED: duplicate or reserved migration number in $MIG_DIR; $BRANCH was not landed."
   printf '%s' "$problems" | sed 's/^/  migration: /'
@@ -467,19 +505,24 @@ if [ -n "$SLUG" ]; then
 fi
 
 LOG_DIR="$STATE/merge-queue.logs"
-# Runs $1 in the clean checkout into its own numbered log (ATTEMPT_LOG), copies
-# that to merge-queue.last-test.log, and sets rc.
+# Runs $1 in the clean checkout into its own numbered log (ATTEMPT_LOG) and sets
+# rc. merge-queue.last-test.log is linked to that log before the run, so a tail
+# of it never shows an earlier landing.
 test_attempt() {
   local slug n=1
   mkdir -p "$LOG_DIR"
   slug="$(printf '%s' "$BRANCH" | tr '/ ' '-+' | tr -c 'A-Za-z0-9._+-' '_' | cut -c1-150)"
   while [ -e "$LOG_DIR/$slug-$n.log" ]; do n=$((n + 1)); done
   ATTEMPT_LOG="$LOG_DIR/$slug-$n.log"
+  local last="$STATE/merge-queue.last-test.log"
+  : > "$ATTEMPT_LOG"
+  rm -f "$last"  # first: it may be a hard link to an earlier attempt's log
+  ln "$ATTEMPT_LOG" "$last" 2>/dev/null || ln -s "merge-queue.logs/$slug-$n.log" "$last" 2>/dev/null || true
   set +e
   (cd "$TMP" && bash -c "$1") > "$ATTEMPT_LOG" 2>&1
   rc=$?
   set -e
-  cp "$ATTEMPT_LOG" "$STATE/merge-queue.last-test.log"
+  [ "$last" -ef "$ATTEMPT_LOG" ] || cp "$ATTEMPT_LOG" "$last"  # no links here
 }
 tests_failed() {  # $1 = result, $2 = detail
   echo "TESTS FAILED (exit $rc): $BRANCH was not landed. Output: $ATTEMPT_LOG"
@@ -519,6 +562,13 @@ if [ "$rc" -ne 0 ]; then
   esac
   if [ -z "$FAILED_CHECK" ]; then
     echo "no rerun: the gate output does not name exactly one failed check."
+    tests_failed tests-failed "exit $rc"
+  fi
+  # One marker proves nothing about the checks after it: a gate killed or dying
+  # partway prints one too. Only its own last line says it reached the end.
+  last_line="$(tr -d '\r' < "$ATTEMPT_LOG" | sed 's/[[:space:]]*$//; /^$/d' | tail -n 1)"
+  if [ "$rc" -ge 126 ] || ! [[ "$last_line" =~ ^merge-queue-gate-complete:[[:space:]]*failed=1$ ]]; then
+    echo "no rerun: the gate did not show that it ran to the end with one failure (exit $rc; its last line must be 'merge-queue-gate-complete: failed=1')."
     tests_failed tests-failed "exit $rc"
   fi
   # The name comes from test output and goes into a shell command: plain

@@ -96,7 +96,8 @@ the limit exits 1.
 
 *What the CLI flag caps is undocumented.* `claude --help` says only "Maximum dollar amount to
 spend on API calls", and no live call has tested it on a resume; `total_cost_usd` on a resume
-is the session's running total. So `runner.sh` passes the session's recorded spend plus the
+is the session's running total. So `runner.sh` passes the session's recorded spend (the highest
+`session_cost_usd` seen for it; a result with no `total_cost_usd` records no cost) plus the
 allowance. If the cap covers the session, each call gets exactly the allowance. If it covers
 one call, the limit is looser (prior spend plus allowance) but finite. Passing the bare
 allowance would risk refusing every resume of a session that had already spent it. The runner does not probe whether the lane managed
@@ -128,7 +129,9 @@ prompt, command, path or message text.
 **`lane_id`** is made by `lanes.sh create` (`<name>.<8 hex>`, kept in the lane's git dir), so
 two lanes that reuse a name stay apart. A lane made before this has its name as its id. A runner
 takes it from `--lane <name>` (kept for the runner until a `--cwd` without `--lane`), else from
-the lane worktree its `cwd` is in.
+the lane worktree its `cwd` is in, on a detached HEAD too. When no lookup finds one (the lane
+was removed, or is detached), the runner keeps the id it recorded for the same `cwd` and
+`--lane`, and the queue takes the open lane of that name from the stream; else it is null.
 
 **`cost_delta_usd`** is this call's cost, never the session's running total, so it can be summed.
 
@@ -159,9 +162,11 @@ with `date`, a UTC day) and `totals`, with the same keys in both: `calls`, `cost
 - `tests_failed` counts merge attempts that ended `tests-failed` or `flake-limit`;
   `tests_failed_resumes` counts runner calls resumed for that reason. A several-branch landing
   is one attempt and `landings` counts each lane.
-- Calls and queue attempts older than the stream's first record of that kind come from the
-  per-runner files and `merge-queue.jsonl`, joined by lane name, with denial shapes worked out
-  from `denials.jsonl`.
+- Every call, denial and queue attempt in the per-runner files or `merge-queue.jsonl` that has
+  no twin in the stream (same `ts` and runner; for the queue, `ts`, batch place and result)
+  counts too, joined by lane name, with denial shapes worked out from `denials.jsonl`.
+- Stream lines are checked again on read, field by field; a line whose `ts` or `type` does
+  not pass is skipped.
 
 ## Project commit hooks see the lane as the project root
 
@@ -193,9 +198,11 @@ whole conversation. On the audited bdt run (220 calls, $129.70) a resumed turn t
 spend, while the old 350k default fired once.
 
 **Enforced on `resume`.** Unless the runner was given `--rotate-at`, the configured value
-(else 180000) is a ceiling: a higher recorded `rotate_at` is lowered before the check. A
-runner recorded by an older `runner.sh` is lowered even if a flag set its value; pass
-`--rotate-at` again to keep it. The check runs between calls, so one long call can still end
+is a ceiling: a higher recorded `rotate_at` is lowered before the check. When no configured
+value is found, a value that came from a config at `start` is kept (the resume may run where
+that config is not visible); otherwise the ceiling is 180000. A runner recorded by an older
+`runner.sh` has no recorded origin: it is lowered only when a `.claude/project.json` is
+found, even if a flag set its value; pass `--rotate-at` again to keep it. The check runs between calls, so one long call can still end
 above the threshold; the next `resume` then rotates.
 
 `resume --fresh` rotates now, whatever the context. Use it for a fix-up after review on a runner

@@ -183,6 +183,8 @@ def lane_id_at(path, name):
     """The id `lanes.sh create` stored in the lane's git dir; a lane made before
     ids existed is known by its name."""
     gitdir = _git(path, "rev-parse", "--absolute-git-dir")
+    if not gitdir:
+        return name
     try:
         with open(os.path.join(gitdir, "lane-id"), encoding="utf-8") as f:
             return f.read().split()[0]
@@ -191,13 +193,30 @@ def lane_id_at(path, name):
 
 
 def lane_of_dir(path):
-    """lane_id of the lane worktree holding `path`, else None."""
-    branch = _git(path, "symbolic-ref", "--quiet", "--short", "HEAD") if path else ""
-    return lane_id_at(path, branch[5:]) if branch.startswith("lane/") else None
+    """lane_id of the lane worktree holding `path`, else None. The id file
+    counts on any HEAD: a lane stopped mid-rebase is detached."""
+    if not path:
+        return None
+    branch = _git(path, "symbolic-ref", "--quiet", "--short", "HEAD")
+    return lane_id_at(path, branch[5:] if branch.startswith("lane/") else None)
+
+
+def recorded_lane_id(state, name):
+    """The id of the still-open lane `name` according to the stream, else None."""
+    found = None
+    for ev in read_jsonl(os.path.join(state, FILE)):
+        lane = NAME(ev.get("lane_id"))
+        if lane and re.fullmatch(re.escape(name) + r"(\.[0-9a-f]{8})?", lane):
+            if ev.get("type") == "lane.opened":
+                found = lane
+            elif ev.get("type") == "lane.closed":
+                found = None
+    return found
 
 
 def lane_of_branch(main, branch):
-    """lane_id for branch lane/<name>, else None."""
+    """lane_id of the worktree that has lane/<name> checked out, else None.
+    Never the bare name for a missing worktree: that would mint a second id."""
     if not branch.startswith("lane/"):
         return None
     path = None
@@ -206,7 +225,7 @@ def lane_of_branch(main, branch):
             path = line[9:]
         elif line == "branch refs/heads/" + branch:
             return lane_id_at(path, branch[5:])
-    return branch[5:]
+    return None
 
 
 def queue_attempt(state, main, values, branches, ts=None):
@@ -214,10 +233,13 @@ def queue_attempt(state, main, values, branches, ts=None):
     prior = {}
     for ev in read_jsonl(os.path.join(state, FILE)):
         if ev.get("type") == "queue.attempt":
-            prior[ev.get("lane_id")] = prior.get(ev.get("lane_id"), 0) + 1
+            key = NAME(ev.get("lane_id"))
+            prior[key] = prior.get(key, 0) + 1
     check = values.get("failed_check") or ""
     for i, branch in enumerate(branches):
         lane = lane_of_branch(main, branch)
+        if not lane and branch.startswith("lane/"):
+            lane = recorded_lane_id(state, branch[5:])
         emit(state, "queue.attempt", dict(
             values, lane_id=lane, attempt=prior.get(lane, 0) + 1 if lane else None,
             failed_check=check.rsplit("/", 1)[-1], batch_size=len(branches), batch_index=i), ts)
@@ -276,10 +298,10 @@ def _legacy_calls(state):
         totals = {}
         for ev in read_jsonl(path):
             cum = _num(ev.get("session_cost_usd", ev.get("cost_usd"))) or 0.0
-            sid = ev.get("session_id")
+            sid = str(ev.get("session_id") or "")
             prev = totals.get(sid, 0.0) if sid else 0.0
             if sid:
-                totals[sid] = cum
+                totals[sid] = max(prev, cum)
             yield {"type": "runner.call", "ts": str(ev.get("ts") or ""), "runner": runner,
                    "lane_id": ev.get("lane_id") or runner, "mode": ev.get("mode"),
                    "cost_delta_usd": cum - prev if cum >= prev else cum,
@@ -288,9 +310,10 @@ def _legacy_calls(state):
 
 def _legacy_denials(state):
     for path in sorted(glob.glob(os.path.join(state, "runners", "*", "denials.jsonl"))):
+        runner = os.path.basename(os.path.dirname(path))
         for ev in read_jsonl(path):
             x = ev.get("denial") if isinstance(ev.get("denial"), dict) else {}
-            yield {"type": "runner.denial", "ts": str(ev.get("ts") or ""),
+            yield {"type": "runner.denial", "ts": str(ev.get("ts") or ""), "runner": runner,
                    "shape": denial_shape(x.get("tool_name"), x.get("tool_input"))}
 
 
@@ -303,26 +326,48 @@ def _legacy_queue(state):
                    "result": ev.get("result"), "flake_suspected": flake, "batch_index": i}
 
 
+def _clean(record):
+    """A record as the report may use it: every value through the validator its
+    field has on write. None when the type or ts does not pass."""
+    kind, ts = record.get("type"), _TS(record.get("ts"))
+    if not ts or kind not in ("runner.call", "runner.denial", "queue.attempt"):
+        return None
+    out = {"type": kind, "ts": ts}
+    for key, check in list(ENVELOPE.items()) + list(FIELDS[kind].items()):
+        out[key] = check(record.get(key))
+    return out
+
+
+def _twin_key(r):
+    """What the stream's record and the older file's record of one fact share."""
+    if r["type"] == "queue.attempt":
+        return (r["type"], r["ts"], r["batch_index"], r["result"])
+    return (r["type"], r["ts"], r["runner"])
+
+
 def _records(state):
-    """Stream records, plus the older files' records from before the stream
-    first recorded that type. Returns (records, source)."""
-    stream = [e for e in read_jsonl(os.path.join(state, FILE))
-              if e.get("schema") == SCHEMA and isinstance(e.get("ts"), str)
-              and isinstance(e.get("type"), str)]
-    first = {}
-    for e in stream:
-        kind, ts = e.get("type"), e.get("ts")
-        first[kind] = min(first.get(kind, ts), ts)
-    records = [e for e in stream
-               if e.get("type") in ("runner.call", "runner.denial", "queue.attempt")]
+    """Stream records, plus every older-file record with no twin in the stream.
+    Returns (records, source)."""
+    records, twins = [], {}
+    for e in read_jsonl(os.path.join(state, FILE)):
+        if e.get("schema") != SCHEMA or not isinstance(e.get("type"), str):
+            continue
+        r = _clean(e)
+        if r:
+            records.append(r)
+            twins[_twin_key(r)] = twins.get(_twin_key(r), 0) + 1
     used_stream, used_legacy = bool(records), False
-    for kind, gate, rows in (("runner.call", "runner.call", _legacy_calls(state)),
-                             ("runner.denial", "runner.call", _legacy_denials(state)),
-                             ("queue.attempt", "queue.attempt", _legacy_queue(state))):
-        for r in rows:
-            if gate not in first or r["ts"] < first[gate]:
-                records.append(r)
-                used_legacy = True
+    for rows in (_legacy_calls(state), _legacy_denials(state), _legacy_queue(state)):
+        for row in rows:
+            r = _clean(row)
+            if not r:
+                continue
+            key = _twin_key(r)
+            if twins.get(key):  # counted: two calls can share one second
+                twins[key] -= 1
+                continue
+            records.append(r)
+            used_legacy = True
     source = "mixed" if used_stream and used_legacy else "events" if used_stream else "legacy"
     return records, source
 

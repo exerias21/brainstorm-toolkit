@@ -338,13 +338,18 @@ PYEOF
 
 # One writer of reservations.tsv at a time, so two lanes never get one number.
 # The lease is released on exit.
+RESERVATIONS_HOLDER=""
+# A function, not a trap string: a path with a quote in it must not break it.
+release_reservations() {
+  (cd "$MAIN" && PARALLEL_STATE_DIR="$STATE" bash "$HERE/lease.sh" release migration-reservations --holder "$RESERVATIONS_HOLDER") >/dev/null 2>&1 || true
+}
 lock_reservations() {
-  local holder="lanes-$$" i
+  local i
+  RESERVATIONS_HOLDER="lanes-$$"
   mkdir -p "$STATE"
   for i in 1 2 3 4 5 6 7 8 9 10; do
-    if (cd "$MAIN" && PARALLEL_STATE_DIR="$STATE" bash "$HERE/lease.sh" acquire migration-reservations --holder "$holder" --ttl 60) >/dev/null 2>&1; then
-      # shellcheck disable=SC2064  # expand now: holder is local
-      trap "cd '$MAIN' && PARALLEL_STATE_DIR='$STATE' bash '$HERE/lease.sh' release migration-reservations --holder '$holder' >/dev/null 2>&1 || true" EXIT
+    if (cd "$MAIN" && PARALLEL_STATE_DIR="$STATE" bash "$HERE/lease.sh" acquire migration-reservations --holder "$RESERVATIONS_HOLDER" --ttl 60) >/dev/null 2>&1; then
+      trap release_reservations EXIT
       return 0
     fi
     sleep 1
@@ -554,6 +559,9 @@ case "$SUB" in
     existed=0
     if [ -n "$p" ] || git -C "$MAIN" show-ref --verify --quiet "refs/heads/lane/$NAME"; then existed=1; fi
     read_lane_id "$p" "$NAME"  # before the git dir goes
+    # Locked before anything is removed: a busy lock leaves the lane whole.
+    locked=0
+    if [ -f "$RESERVATIONS" ]; then lock_reservations; locked=1; fi
     if [ -n "$p" ]; then
       if [ "$FORCE" -eq 1 ]; then git -C "$MAIN" worktree remove --force "$p"; else git -C "$MAIN" worktree remove "$p"; fi
     fi
@@ -563,7 +571,7 @@ case "$SUB" in
       forced=false; [ "$FORCE" -ne 1 ] || forced=true
       emit_event lane.closed "lane_id=$LANE_ID" "area=$(lane_area "$NAME")" "base_sha=$LANE_BASE" "forced=$forced"
     fi
-    if [ -f "$RESERVATIONS" ]; then lock_reservations; drop_reservations "$NAME" ""; fi
+    [ "$locked" -eq 0 ] || drop_reservations "$NAME" ""
     echo "removed: lane/$NAME"
     ;;
   -h|--help) usage ;;

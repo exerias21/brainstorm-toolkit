@@ -235,8 +235,8 @@ After each verdict run `lanes.sh reviewed <name> <sha> [--verdict fix]`; fixes a
 accept need a short re-review. A lane adding a migration gets its number from
 `lanes.sh reserve-migration <name>`.
 
-Tell lanes to **rebase early** (`bash scripts/lanes.sh sync <name>`) after each landing in
-their wave, so conflicts surface small. Mark a lane that must wait with
+Tell lanes to **rebase early** (`bash scripts/lanes.sh sync <name>`) after each wave landing,
+before review, never after an accept. Mark a lane that must wait with
 `lanes.sh held <name> --until <YYYY-MM-DD|lane>` (cleared by `unheld`; `list` shows it; it
 does not block a landing). After a landing: `bash scripts/lanes.sh remove <name>`
 (it also accepts a lane that landed combined with other changes, when every path the lane

@@ -50,7 +50,7 @@ What it does, in order:
 
 | Exit | Meaning | Your next step |
 |---|---|---|
-| 0 | landed, dry-run passed, or nothing to land | `lanes.sh remove <name>`; tell sibling lanes to `lanes.sh sync` |
+| 0 | landed, dry-run passed, or nothing to land | `lanes.sh remove <name>`; tell sibling lanes not yet accepted to `lanes.sh sync` |
 | 2 | conflict | the conflict path below |
 | 3 | queue busy | land it after the current landing's notification |
 | 4 | tests failed, protected tests changed, lane setup failed, or no test command | send the failure (the log the message names, also copied to `.claude/parallel/merge-queue.last-test.log`; setup at `merge-queue.last-setup.log`) back to the lane's writer; a test that fails only because a gitignored input is missing is a project fix (skill section 5), not the lane's |
@@ -67,7 +67,9 @@ file names a key but it cannot be read (bad JSON, wrong type), the queue refuses
 
 A list of globs for the paths where an unreviewed fix is not acceptable (money, personal data,
 guards, gates). `*` crosses `/`; a trailing `/` means the subtree; a leading `**/` also matches
-at the root. Braces are not expanded: write one entry per alternative.
+at the root. Braces are not expanded: write one entry per alternative. An entry that could
+never match is refused (exit 7, `refused-config`): one with `{`, one starting `./` or `/`, or a
+folder written without its trailing `/`.
 
 ```bash
 bash scripts/lanes.sh reviewed <lane> <sha> [--verdict accept|fix|reject]   # .claude/parallel/reviews.tsv
@@ -77,8 +79,9 @@ Record the sha the reviewer read, not whatever the lane is at when you type it; 
 the lane is taken. A lane whose diff touches a listed path lands only if its latest row is
 `accept` and the head has the same content as that sha. So no row at all is a refusal, and so
 is any later commit, even one outside the listed paths. The message lists the paths changed
-after the review. A rebase or amend that changes content also needs a new row, so do not
-`lanes.sh sync` an accepted lane without a reason (the queue rebases it itself). Send the
+after the review. A rebase or amend that changes content also needs a new row, so sync before
+the review, never after an accept (the queue rebases an accepted lane itself). Only a conflict
+justifies a sync after an accept, and it needs a new `reviewed` row. Send the
 reviewer just the change since the accepted sha, then record the new one. The record belongs
 to a `lane/<name>` branch, so another branch touching a listed path cannot land while the
 check is on.
@@ -100,6 +103,8 @@ landing that adds a revision whose number another file in the folder already has
 target or in the same landing), or that another lane reserved. Files sharing a stem
 (`0005_x.up.sql`, `0005_x.down.sql`) count as one revision. The queue compares file names
 only: the project's own tests must check revision ids and the parent chain inside the files.
+A `migrations_dir` that neither the target nor the landing has is refused too (exit 7,
+`refused-config`).
 
 ### Flake triage (`rerun_check_command`)
 
@@ -110,20 +115,29 @@ which check failed by printing one line per failed check:
 merge-queue-failed-check: <name>
 ```
 
-**Print these lines only from a gate that runs every check to the end.** A gate that stops at
-the first failure (`a && b && c`) has not run what came after, and a passing rerun of `b`
-would land the lane with `c` never run.
+and, as the **last line** of its output once every check has run, the number of failures:
+
+```
+merge-queue-gate-complete: failed=<n>
+```
+
+Count every failure in `<n>`, including steps outside the named checks (a coverage threshold, a
+later script step). **Print these lines only from a gate that runs every check to the end.** A
+gate that stops at the first failure (`a && b && c`) has not run what came after, and a passing
+rerun of `b` would land the lane with `c` never run.
 
 The queue reruns once, only when the output names exactly one distinct check, with a name of
-letters, digits and `._/:=@+-` that does not start with `-`. No line, or two checks, is a
-plain `tests-failed`. If the rerun passes, the landing goes on and its verdict line in
+letters, digits and `._/:=@+-` that does not start with `-`, the last line is
+`merge-queue-gate-complete: failed=1`, and the exit code is below 126 (a killed or timed-out
+gate is never rerun). Anything else is a plain `tests-failed`. If the rerun passes, the landing goes on and its verdict line in
 `merge-queue.jsonl` carries `"flake":"flake:<name>"`. A check with two such records in the
 last 7 days is not rerun: the verdict is `flake-limit` (exit 4). Open a task to fix that
 check; the queue does not write `TASKS.md`.
 
 With or without this key, each test run keeps its own log,
 `.claude/parallel/merge-queue.logs/<branch>-<n>.log` (`/` becomes `-`, several branches are
-joined by `+`). `merge-queue.last-test.log` is a copy of the latest, written when the run ends.
+joined by `+`). `merge-queue.last-test.log` is a link to the latest, made before the run starts,
+so it can be followed live (a copy made at the end where links are not supported).
 Nothing prunes the folder.
 
 ## Queue events
@@ -156,4 +170,5 @@ and exits 2. Then:
    rebase pass.
 
 Fewer conflicts start upstream: disjoint owned paths, shared files edited only by the
-orchestrator, short lanes, and `lanes.sh sync` after every landing in the wave.
+orchestrator, short lanes, and `lanes.sh sync` after every landing in the wave (for lanes not
+yet accepted, see the re-review gate).

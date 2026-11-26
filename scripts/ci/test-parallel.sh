@@ -555,6 +555,10 @@ while [ $# -gt 0 ]; do [ "$1" = "--resume" ] && { sid="$2"; prev=1; }; shift; do
 ctx="${FAKE_CTX:-1000}"
 den='[]'; [ -n "${FAKE_DENY:-}" ] && den='[{"tool_name":"Bash","tool_use_id":"x","tool_input":{"command":"rm -rf build"}}]'
 [ -z "${FAKE_DENY_JSON:-}" ] || den="$FAKE_DENY_JSON"
+if [ -n "${FAKE_NO_TOTAL:-}" ]; then   # an error result with no total_cost_usd
+  printf '{"type":"result","subtype":"error_during_execution","is_error":true,"session_id":"%s"}\n' "$sid"
+  exit 1
+fi
 # Like the real CLI, total_cost_usd is the session's running total: $0.01 a call.
 n=$(( $(cat "$FAKE_LOG.calls.$sid" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FAKE_LOG.calls.$sid"
 n="$(awk -v n="$n" 'BEGIN { printf "%.2f", n / 100 }')"
@@ -857,6 +861,33 @@ expect_rc "$RC" 0 "$OUT"
 grep -q '"rotate_at": 250000' "$PARALLEL_STATE_DIR/runners/bg1/status.json" || fail "flag rotate_at was lowered"
 ok
 
+CASE="runner: a configured rotate_at survives a resume where that config is not visible"
+printf '{"pipeline": {"parallel": {"runner": {"rotate_at": 220000}}}}\n' > "$CFG/.claude/project.json"
+run bash "$RUNNER" start rk1 --prompt "x" --cwd "$W" --allowed-tools Read
+expect_rc "$RC" 0 "$OUT"
+rm -f "$CFG/.claude/project.json"
+mkdir -p "$ROOT_TMP/elsewhere"
+run env CLAUDE_PROJECT_DIR="$ROOT_TMP/elsewhere" bash "$RUNNER" resume rk1 --prompt "y"
+expect_rc "$RC" 0 "$OUT"
+grep -q '"rotate_at": 220000' "$PARALLEL_STATE_DIR/runners/rk1/status.json" || fail "config rotate_at was lowered: $OUT"
+ok
+
+CASE="runner: a result with no total_cost_usd does not reset the session's recorded spend"
+run bash "$RUNNER" start nt1 --prompt "a" --cwd "$W" --allowed-tools Read
+run bash "$RUNNER" resume nt1 --prompt "b"
+run env FAKE_NO_TOTAL=1 bash "$RUNNER" resume nt1 --prompt "c"
+expect_rc "$RC" 1 "$OUT"
+run bash "$RUNNER" resume nt1 --prompt "d"
+expect_rc "$RC" 0 "$OUT"
+tail -1 "$FAKE_LOG" | grep -q -- '--max-budget-usd 5.02 ' || fail "prior spend lost: $(tail -1 "$FAKE_LOG")"
+run bash "$RUNNER" report --json
+printf '%s' "$OUT" | "$(bash "$PLUGIN_ROOT/scripts/py.sh" --print)" -c '
+import json, sys
+c = json.load(sys.stdin)["by_runner"]["nt1"]["cost_usd"]
+assert abs(c - 0.03) < 1e-9, c
+' || fail "session spend counted twice: $OUT"
+ok
+
 CASE="lanes: held shows in list and unheld clears it"
 H="$(new_repo held-repo)"
 cd "$H"
@@ -945,6 +976,24 @@ add_commit "$LV3" prod.env x
 run bash -c "cd '$V' && bash '$MQ' land lane/envfile"
 assert_rc "$RC" 7 "$OUT"
 
+CASE="review gate: a path git would C-quote is still protected"
+LV4="$(mk_lane "$V" quoted)"
+add_commit "$LV4" 'guard/pay"x.py' q
+run bash -c "cd '$V' && bash '$MQ' land lane/quoted"
+expect_rc "$RC" 7 "$OUT"
+assert_match "$OUT" 'protected: guard/pay"x.py'
+
+CASE="review gate: an entry that can never match refuses (braces, ./, a folder with no /)"
+LV5="$(mk_lane "$V" deadentry)"
+add_commit "$LV5" engine/ledger/post.py p
+for entry in 'engine/ledger' './engine/' '/engine/' 'engine/{ledger,quals}/'; do
+  printf '{"pipeline": {"parallel": {"gate_command": "true", "review_required_paths": ["%s"]}}}\n' "$entry" > "$V/.claude/project.json"
+  run bash -c "cd '$V' && bash '$MQ' land lane/deadentry --dry-run"
+  [ "$RC" -eq 7 ] || fail "entry $entry: expected exit 7, got $RC: $OUT"
+  printf '%s' "$OUT" | grep -q 'can never match' || fail "entry $entry: $OUT"
+done
+ok
+
 CASE="review gate: a wrong-typed key refuses instead of switching the check off"
 printf '{"pipeline": {"parallel": {"review_required_paths": "guard/"}}}\n' > "$V/.claude/project.json"
 run bash -c "cd '$V' && bash '$MQ' land lane/envfile --test-cmd true"
@@ -954,7 +1003,7 @@ export PARALLEL_STATE_DIR="$ROOT_TMP/state-flake"
 F="$(new_repo flake-repo)"
 mkdir -p "$F/.claude"
 # The gate always fails and names one check; the rerun passes only for "wobbly".
-printf '{"pipeline": {"parallel": {"gate_command": "echo merge-queue-failed-check: wobbly; exit 1", "rerun_check_command": "echo rerun {check}; test {check} = wobbly"}}}\n' > "$F/.claude/project.json"
+printf '{"pipeline": {"parallel": {"gate_command": "echo merge-queue-failed-check: wobbly; echo merge-queue-gate-complete: failed=1; exit 1", "rerun_check_command": "echo rerun {check}; test {check} = wobbly"}}}\n' > "$F/.claude/project.json"
 LF="$(mk_lane "$F" f1)"
 add_commit "$LF" f.txt f
 
@@ -982,14 +1031,35 @@ run bash -c "cd '$F' && bash '$MQ' land lane/f1 --dry-run"
 assert_rc "$RC" 0 "$OUT"
 
 CASE="flake: a failing rerun, two named checks and an unsafe name all stay tests-failed"
-for gate in 'echo merge-queue-failed-check: broken; exit 1' \
-            'echo merge-queue-failed-check: wobbly; echo merge-queue-failed-check: other; exit 1' \
-            'echo "merge-queue-failed-check: x;touch /nonexistent"; exit 1'; do
+for gate in 'echo merge-queue-failed-check: broken; echo merge-queue-gate-complete: failed=1; exit 1' \
+            'echo merge-queue-failed-check: wobbly; echo merge-queue-failed-check: other; echo merge-queue-gate-complete: failed=1; exit 1' \
+            'echo "merge-queue-failed-check: x;touch /nonexistent"; echo merge-queue-gate-complete: failed=1; exit 1'; do
   run bash -c 'cd "$1" && bash "$2" land lane/f1 --test-cmd "$3"' _ "$F" "$MQ" "$gate"
   [ "$RC" -eq 4 ] || fail "expected exit 4 for [$gate], got $RC: $OUT"
   tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl" | grep -q '"result":"tests-failed"' || fail "not tests-failed for [$gate]"
   tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl" | grep -q '"flake"' && fail "flake logged for [$gate]"
 done
+ok
+
+CASE="flake: a gate that did not show it reached its end with one failure is not rerun"
+for gate in 'echo merge-queue-failed-check: wobbly; exit 137' \
+            'echo merge-queue-failed-check: wobbly; exit 1' \
+            'echo merge-queue-failed-check: wobbly; echo merge-queue-gate-complete: failed=1; exit 137' \
+            'echo merge-queue-failed-check: wobbly; echo merge-queue-gate-complete: failed=2; exit 1' \
+            'echo merge-queue-failed-check: wobbly; echo merge-queue-gate-complete: failed=1; echo coverage too low; exit 1'; do
+  run bash -c 'cd "$1" && bash "$2" land lane/f1 --dry-run --test-cmd "$3"' _ "$F" "$MQ" "$gate"
+  [ "$RC" -eq 4 ] || fail "expected exit 4 for [$gate], got $RC: $OUT"
+  printf '%s' "$OUT" | grep -q 'rerunning' && fail "rerun for [$gate]: $OUT"
+done
+ok
+
+CASE="queue log: last-test.log shows the running test, and earlier attempt logs are kept"
+first_log="$(cat "$PARALLEL_STATE_DIR/merge-queue.logs/lane-f1-1.log")"
+run bash -c 'cd "$1" && bash "$2" land lane/f1 --dry-run --test-cmd "$3"' _ "$F" "$MQ" \
+  "echo live-marker; cp '$PARALLEL_STATE_DIR/merge-queue.last-test.log' '$ROOT_TMP/seen.log'"
+expect_rc "$RC" 0 "$OUT"
+grep -qx 'live-marker' "$ROOT_TMP/seen.log" || fail "during the run it held: $(cat "$ROOT_TMP/seen.log")"
+[ "$(cat "$PARALLEL_STATE_DIR/merge-queue.logs/lane-f1-1.log")" = "$first_log" ] || fail "an earlier attempt log was overwritten"
 ok
 
 CASE="flake: unset rerun_check_command means no rerun"
@@ -1047,6 +1117,48 @@ CASE="migrations: remove drops the lane's reservations"
 run bash -c "cd '$G' && bash '$LANES' remove mb --force"
 expect_rc "$RC" 0 "$OUT"
 grep -q '^mb' "$PARALLEL_STATE_DIR/reservations.tsv" && fail "reservation kept after remove"
+ok
+
+CASE="migrations: a revision whose name git would C-quote is still checked"
+printf '{"pipeline": {"parallel": {"gate_command": "true", "migrations_dir": "db/versions"}}}\n' > "$G/.claude/project.json"
+LQ="$(mk_lane "$G" mq)"
+add_commit "$LQ" 'db/versions/0101_"dup.py' q
+run bash -c "cd '$G' && bash '$MQ' land lane/mq --dry-run"
+expect_rc "$RC" 7 "$OUT"
+assert_match "$OUT" 'number 0101 is taken by db/versions/0101_base.py'
+
+CASE="migrations: a migrations_dir neither side has refuses instead of switching the check off"
+printf '{"pipeline": {"parallel": {"gate_command": "true", "migrations_dir": "db/version"}}}\n' > "$G/.claude/project.json"
+run bash -c "cd '$G' && bash '$MQ' land lane/mq --dry-run"
+expect_rc "$RC" 7 "$OUT"
+tail -1 "$PARALLEL_STATE_DIR/merge-queue.jsonl" | grep -q '"result":"refused-config"' || fail "not refused-config: $OUT"
+ok
+
+CASE="migrations: remove with a busy reservations lock removes nothing"
+run bash -c "cd '$G' && bash '$LANES' reserve-migration mq --dir db/versions"
+expect_rc "$RC" 0 "$OUT"
+run bash -c "cd '$G' && bash '$LEASE' acquire migration-reservations --holder crashed --ttl 60"
+expect_rc "$RC" 0 "$OUT"
+run bash -c "cd '$G' && bash '$LANES' remove mq --force"
+expect_rc "$RC" 3 "$OUT"
+[ -d "$LQ" ] || fail "the lane folder was removed"
+git -C "$G" show-ref --verify --quiet refs/heads/lane/mq || fail "the lane branch was deleted"
+run bash -c "cd '$G' && bash '$LEASE' release migration-reservations --holder crashed"
+assert_rc "$RC" 0 "$OUT"
+
+CASE="migrations: the reservations lease is released in a repo whose path has a quote"
+export PARALLEL_STATE_DIR="$ROOT_TMP/state of it's"
+Q="$(new_repo "my repo's")"
+mkdir -p "$Q/db"; printf 'x\n' > "$Q/db/0001_a.sql"
+git -C "$Q" add db && git -C "$Q" commit -q -m db
+cd "$Q"
+run bash "$LANES" create qa
+expect_rc "$RC" 0 "$OUT"
+run bash "$LANES" reserve-migration qa --dir db
+expect_rc "$RC" 0 "$OUT"
+run bash "$LEASE" list
+cd "$PLUGIN_ROOT"
+printf '%s' "$OUT" | grep -q 'migration-reservations' && fail "lease still held: $OUT"
 ok
 
 # ── event stream (events.v1.jsonl) and report --json ────────────────────────
@@ -1184,7 +1296,7 @@ assert (e["lane_id"], e["attempt"], e["result"], e["old_sha"], e["new_sha"]) == 
 ok
 
 CASE="events: a rerun that passes is flake_suspected"
-printf '{"pipeline": {"parallel": {"gate_command": "echo merge-queue-failed-check: wobbly; exit 1", "rerun_check_command": "true {check}"}}}\n' > "$E/.claude/project.json"
+printf '{"pipeline": {"parallel": {"gate_command": "echo merge-queue-failed-check: wobbly; echo merge-queue-gate-complete: failed=1; exit 1", "rerun_check_command": "true {check}"}}}\n' > "$E/.claude/project.json"
 LF2="$(mk_lane "$E" web-two)"; cd "$E"
 add_commit "$LF2" web.txt w
 run bash "$MQ" land lane/web-two
@@ -1319,6 +1431,82 @@ assert "SEKRET" not in text
 ' || fail "legacy report wrong: $OUT"
 run bash "$RUNNER" report --json
 printf '%s' "$OUT" | grep -q '"git_add"' || fail "legacy denial shape missing: $OUT"
+ok
+
+export PARALLEL_STATE_DIR="$ROOT_TMP/state-detached"
+EVF="$PARALLEL_STATE_DIR/events.v1.jsonl"
+H2="$(new_repo detached-repo)"
+export CLAUDE_PROJECT_DIR="$H2"
+LD="$(mk_lane "$H2" foo)"; cd "$H2"
+DID="$(cut -d' ' -f1 "$(git -C "$LD" rev-parse --absolute-git-dir)/lane-id")"
+add_commit "$LD" foo.txt f
+
+CASE="events: a runner in a lane on a detached HEAD keeps the lane's id (new and resumed)"
+run bash "$RUNNER" start d1 --prompt "x" --cwd "$LD" --allowed-tools Read
+expect_rc "$RC" 0 "$OUT"
+git -C "$LD" checkout -q --detach
+run bash "$RUNNER" resume d1 --prompt "y"
+expect_rc "$RC" 0 "$OUT"
+run bash "$RUNNER" start d2 --prompt "x" --cwd "$LD" --allowed-tools Read
+expect_rc "$RC" 0 "$OUT"
+evcheck 'assert [e["lane_id"] for e in of("runner.call")] == [a[0]] * 3, of("runner.call")' "$DID"
+grep -q "\"lane_id\": \"$DID\"" "$PARALLEL_STATE_DIR/runners/d1/status.json" || fail "status.json lost the lane id"
+ok
+
+CASE="events: a landing of a lane whose worktree is gone joins by the stream's id"
+git -C "$LD" checkout -q lane/foo
+run bash "$RUNNER" start d3 --prompt "x" --cwd "$H2" --lane foo --allowed-tools Read
+expect_rc "$RC" 0 "$OUT"
+git -C "$H2" worktree remove "$LD"
+run bash "$MQ" land lane/foo --test-cmd true
+expect_rc "$RC" 0 "$OUT"
+evcheck 'assert of("queue.attempt")[-1]["lane_id"] == a[0], of("queue.attempt")[-1]' "$DID"
+ok
+
+CASE="events: a --lane runner resumed after the lane is removed keeps its recorded id"
+run bash "$LANES" remove foo --force
+expect_rc "$RC" 0 "$OUT"
+run bash "$RUNNER" resume d3 --prompt "y"
+expect_rc "$RC" 0 "$OUT"
+evcheck 'assert of("runner.call")[-1]["lane_id"] == a[0], of("runner.call")[-1]' "$DID"
+ok
+
+CASE="report: a mixed report keeps every older-file record that has no twin in the stream"
+export PARALLEL_STATE_DIR="$ROOT_TMP/state-mixed"
+mkdir -p "$PARALLEL_STATE_DIR/runners/old" "$PARALLEL_STATE_DIR/runners/new"
+printf '%s\n' '{"ts":"2026-11-24T10:00:00Z","mode":"fresh","session_id":"O","session_cost_usd":1.0}' \
+  '{"ts":"2026-11-26T10:00:00Z","mode":"resume","session_id":"O","session_cost_usd":3.0}' > "$PARALLEL_STATE_DIR/runners/old/events.jsonl"
+printf '%s\n' '{"ts":"2026-11-25T10:00:00Z","mode":"fresh","session_id":"N","session_cost_usd":0.5}' > "$PARALLEL_STATE_DIR/runners/new/events.jsonl"
+printf '%s\n' '{"schema":"opa.event/1","ts":"2026-11-25T10:00:00Z","type":"runner.call","runner":"new","mode":"fresh","cost_delta_usd":0.5}' > "$PARALLEL_STATE_DIR/events.v1.jsonl"
+run bash "$RUNNER" report --json
+expect_rc "$RC" 0 "$OUT"
+printf '%s' "$OUT" | "$PYB" -c '
+import json, sys
+r = json.load(sys.stdin)
+t = r["totals"]
+assert r["source"] == "mixed" and t["calls"] == 3 and abs(t["cost_usd"] - 3.5) < 1e-9, r
+' || fail "older-file records dropped or doubled: $OUT"
+ok
+
+CASE="report: a wrong-typed or free-text stream line neither crashes the report nor reaches it"
+export PARALLEL_STATE_DIR="$ROOT_TMP/state-badline"
+mkdir -p "$PARALLEL_STATE_DIR"
+printf '%s\n' '{"schema":"opa.event/1","ts":"2026-11-26T00:00:00Z","type":"runner.call","lane_id":["x"],"cost_delta_usd":1}' \
+  '{"schema":"opa.event/1","ts":"2026-11-26T00:00:00Z","type":"runner.denial","shape":{"a":1}}' \
+  '{"schema":"opa.event/1","ts":"2026-11-26T00:00:00Z","type":"runner.denial","shape":"rm -rf /home/SEKRET"}' \
+  '{"schema":"opa.event/1","ts":"/home/SEKRET-path","type":"runner.call"}' > "$PARALLEL_STATE_DIR/events.v1.jsonl"
+run bash "$RUNNER" report --json
+expect_rc "$RC" 0 "$OUT"
+printf '%s' "$OUT" | grep -Eq 'SEKRET|/home/' && fail "free text reached the report: $OUT"
+printf '%s' "$OUT" | "$PYB" -c '
+import json, sys
+r = json.load(sys.stdin)
+assert r["totals"]["calls"] == 1 and [d["date"] for d in r["days"]] == ["2026-11-26"], r
+' || fail "bad lines handled wrongly: $OUT"
+ok
+
+CASE="skill: section 10 never tells an accepted lane to sync"
+grep -q 'before review, never after an accept' "$PLUGIN_ROOT/skills/orchestrate-parallel-agents/SKILL.md" || fail "the rebase-early line is unqualified"
 ok
 
 cd "$PLUGIN_ROOT"
