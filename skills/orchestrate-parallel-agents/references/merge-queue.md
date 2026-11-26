@@ -69,7 +69,8 @@ A list of globs for the paths where an unreviewed fix is not acceptable (money, 
 guards, gates). `*` crosses `/`; a trailing `/` means the subtree; a leading `**/` also matches
 at the root. Braces are not expanded: write one entry per alternative. An entry that could
 never match is refused (exit 7, `refused-config`): one with `{`, one starting `./` or `/`, or a
-folder written without its trailing `/`.
+folder written without its trailing `/`. So is a glob (`*`, `?`, `[`) that does not end in `/`
+and has no `*` in its last segment (`engine/*/ledger`; also `**/guard.js`, which would match).
 
 ```bash
 bash scripts/lanes.sh reviewed <lane> <sha> [--verdict accept|fix|reject]   # .claude/parallel/reviews.tsv
@@ -124,12 +125,14 @@ merge-queue-gate-complete: failed=<n>
 Count every failure in `<n>`, including steps outside the named checks (a coverage threshold, a
 later script step). **Print these lines only from a gate that runs every check to the end.** A
 gate that stops at the first failure (`a && b && c`) has not run what came after, and a passing
-rerun of `b` would land the lane with `c` never run.
+rerun of `b` would land the lane with `c` never run. Print the sentinel
+(`merge-queue-gate-complete`) as the gate's last statement, never from an `EXIT` trap, which
+also fires when the gate dies partway.
 
 The queue reruns once, only when the output names exactly one distinct check, with a name of
 letters, digits and `._/:=@+-` that does not start with `-`, the last line is
-`merge-queue-gate-complete: failed=1`, and the exit code is below 126 (a killed or timed-out
-gate is never rerun). Anything else is a plain `tests-failed`. If the rerun passes, the landing goes on and its verdict line in
+`merge-queue-gate-complete: failed=1`, and the exit code is below 126 (a killed
+gate is never rerun; a timed-out gate prints no sentinel). Anything else is a plain `tests-failed`. If the rerun passes, the landing goes on and its verdict line in
 `merge-queue.jsonl` carries `"flake":"flake:<name>"`. A check with two such records in the
 last 7 days is not rerun: the verdict is `flake-limit` (exit 4). Open a task to fix that
 check; the queue does not write `TASKS.md`.

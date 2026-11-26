@@ -341,15 +341,20 @@ check_review_paths() {
     [ -n "$g" ] || continue
     why=""
     case "$g" in
-      *'{'*) why="braces are not expanded; write one entry per alternative" ;;
-      ./*|/*) why="paths are relative to the repo root, with no leading ./ or /" ;;
-      */|*'*'*|*'?'*|*'['*) ;;
+      *'{'*) why="can never match: braces are not expanded; write one entry per alternative" ;;
+      ./*|/*) why="can never match: paths are relative to the repo root, with no leading ./ or /" ;;
+      */) ;;
+      # `engine/*/ledger` reads as a folder but would match only a file so named.
+      *'*'*|*'?'*|*'['*) case "${g##*/}" in
+          *'*'*) ;;
+          *) why="a glob's last segment needs a '*', or the entry a trailing / (for a folder, write $g/)" ;;
+        esac ;;
       *) for rev in "$OLD" "${HEADS[@]}"; do
-           [ "$(git -C "$MAIN" cat-file -t "$rev:$g" 2>/dev/null || true)" != "tree" ] || why="it is a folder; write $g/"
+           [ "$(git -C "$MAIN" cat-file -t "$rev:$g" 2>/dev/null || true)" != "tree" ] || why="can never match: it is a folder; write $g/"
          done ;;
     esac
     [ -z "$why" ] || {
-      echo "REFUSED: pipeline.parallel.review_required_paths entry '$g' can never match: $why."
+      echo "REFUSED: pipeline.parallel.review_required_paths entry '$g' $why."
       verdict refused-config "review_required_paths: $g"; exit 7; }
   done <<<"$REVIEW_PATHS"
 }

@@ -171,8 +171,15 @@ lane_id_file() {
   printf '%s/lane-id' "$g"
 }
 read_lane_id() {  # $1 = worktree ("" if none), $2 = name. Sets LANE_ID, LANE_BASE.
-  local f; LANE_ID=""; LANE_BASE=""
+  local f py; LANE_ID=""; LANE_BASE=""
   if [ -n "$1" ] && f="$(lane_id_file "$1")" && [ -f "$f" ]; then read -r LANE_ID LANE_BASE < "$f" || true; fi
+  # The worktree is gone, and its id file with it: ask the stream. A worktree
+  # that is there without the file is a lane made before ids existed.
+  if [ -z "$LANE_ID" ] && { [ -z "$1" ] || [ ! -d "$1" ]; }; then
+    if py="$(bash "$HERE/py.sh" --print 2>/dev/null)" && [ -n "$py" ]; then
+      LANE_ID="$("$py" "$HERE/events.py" recorded-id "$STATE" "$2" | tr -d '\r')" || LANE_ID=""
+    fi
+  fi
   [ -n "$LANE_ID" ] || LANE_ID="$2"  # a lane made before ids existed
 }
 lane_area() { printf '%s' "${1%%[-._]*}"; }

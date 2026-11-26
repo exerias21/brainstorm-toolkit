@@ -986,11 +986,20 @@ assert_match "$OUT" 'protected: guard/pay"x.py'
 CASE="review gate: an entry that can never match refuses (braces, ./, a folder with no /)"
 LV5="$(mk_lane "$V" deadentry)"
 add_commit "$LV5" engine/ledger/post.py p
-for entry in 'engine/ledger' './engine/' '/engine/' 'engine/{ledger,quals}/'; do
+for entry in 'engine/ledger' './engine/' '/engine/' 'engine/{ledger,quals}/' 'eng*/ledger'; do
   printf '{"pipeline": {"parallel": {"gate_command": "true", "review_required_paths": ["%s"]}}}\n' "$entry" > "$V/.claude/project.json"
   run bash -c "cd '$V' && bash '$MQ' land lane/deadentry --dry-run"
   [ "$RC" -eq 7 ] || fail "entry $entry: expected exit 7, got $RC: $OUT"
-  printf '%s' "$OUT" | grep -q 'can never match' || fail "entry $entry: $OUT"
+  printf '%s' "$OUT" | grep -Eq "can never match|last segment needs a" || fail "entry $entry: $OUT"
+done
+ok
+
+CASE="review gate: a glob ending in / or with * in its last segment is accepted and matches"
+for entry in 'eng*/ledger/' 'engine/*/post*'; do
+  printf '{"pipeline": {"parallel": {"gate_command": "true", "review_required_paths": ["%s"]}}}\n' "$entry" > "$V/.claude/project.json"
+  run bash -c "cd '$V' && bash '$MQ' land lane/deadentry --dry-run"
+  [ "$RC" -eq 7 ] || fail "entry $entry: expected exit 7, got $RC: $OUT"
+  printf '%s' "$OUT" | grep -q 'protected: engine/ledger/post.py' || fail "entry $entry: $OUT"
 done
 ok
 
@@ -1463,9 +1472,15 @@ expect_rc "$RC" 0 "$OUT"
 evcheck 'assert of("queue.attempt")[-1]["lane_id"] == a[0], of("queue.attempt")[-1]' "$DID"
 ok
 
-CASE="events: a --lane runner resumed after the lane is removed keeps its recorded id"
+CASE="events: reviewed and remove keep the lane's id after its worktree is gone"
+run bash "$LANES" reviewed foo "$(git -C "$H2" rev-parse lane/foo)"
+expect_rc "$RC" 0 "$OUT"
 run bash "$LANES" remove foo --force
 expect_rc "$RC" 0 "$OUT"
+evcheck 'assert [of(t)[-1]["lane_id"] for t in ("review.verdict", "lane.closed")] == [a[0]] * 2, evs[-2:]' "$DID"
+ok
+
+CASE="events: a --lane runner resumed after the lane is removed keeps its recorded id"
 run bash "$RUNNER" resume d3 --prompt "y"
 expect_rc "$RC" 0 "$OUT"
 evcheck 'assert of("runner.call")[-1]["lane_id"] == a[0], of("runner.call")[-1]' "$DID"

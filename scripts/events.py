@@ -10,6 +10,7 @@ text, command text and file paths out of the stream.
 CLI (always exits 0: a lost event must never fail the script that emits it):
   events.py emit <state> <type> [key=value ...]
   events.py queue <state> <main> key=value ... branches...   (after `--`)
+  events.py recorded-id <state> <name>    prints the open lane's id, or nothing
 """
 import glob
 import json
@@ -444,6 +445,10 @@ def main(argv):
         cut = argv.index("--")
         values = dict(a.split("=", 1) for a in argv[3:cut] if "=" in a)
         queue_attempt(argv[1], argv[2], values, argv[cut + 1:], values.get("ts"))
+    elif len(argv) == 3 and argv[0] == "recorded-id":
+        lane = recorded_lane_id(argv[1], argv[2])
+        if lane:
+            print(lane)
     else:
         sys.stderr.write("events.py: bad arguments\n")
 
