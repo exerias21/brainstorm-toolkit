@@ -105,7 +105,7 @@
 # --target defaults to the branch checked out in the main worktree.
 set -euo pipefail
 
-usage() { sed -n '48,105p'"$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '48,105p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 [ $# -ge 1 ] || usage
 SUB="$1"; shift
@@ -344,7 +344,7 @@ drop_reservations() {  # $1 = lane, $2 = number or empty for all. Prints each dr
   mv "$keep" "$RESERVATIONS"
 }
 
-need_target() {[ -n "$TARGET" ] || { echo "lanes.sh: no --target and the main worktree is on a detached HEAD" >&2; exit 2; }; }
+need_target() { [ -n "$TARGET" ] || { echo "lanes.sh: no --target and the main worktree is on a detached HEAD" >&2; exit 2; }; }
 
 case "$SUB" in
   create)
