@@ -13,8 +13,8 @@
 # releases. A lease without a TTL turns that into a resource held forever and a
 # human hunting for who holds it. Every lease here expires; `renew` extends it.
 #
-# State: one flat file, <state>/leases.tsv (resource<TAB>holder<TAB>expires
-# epoch), guarded by a mkdir lock (portable: flock is absent on stock macOS).
+# State: <state>/leases.tsv (resource, holder, expires epoch, taken epoch;
+# tabs), guarded by a mkdir lock (portable: flock is absent on stock macOS).
 # <state> is $PARALLEL_STATE_DIR, else <main worktree>/.claude/parallel, so
 # every worktree of one repo shares one lease table. Gitignore .claude/parallel/.
 #
@@ -73,6 +73,7 @@ state_dir() {
   fi
 }
 STATE="$(state_dir)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "$STATE"
 FILE="$STATE/leases.tsv"
 LOCK="$STATE/leases.lock"
@@ -91,28 +92,57 @@ take_lock() {
     [ "$tries" -le 100 ] || { echo "lease.sh: could not take $LOCK" >&2; exit 3; }
     sleep 0.1
   done
-  trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
+  trap flush_events EXIT
 }
+
+# Events (<state>/events.v1.jsonl, scripts/events.py) are queued while the lock
+# is held and written after it is released.
+EVENTS=()
+queue_event() { EVENTS+=("$1"$'\t'"$2"$'\t'"$3"$'\t'"$4"); }  # type resource held_s expired
+flush_events() {
+  rmdir "$LOCK" 2>/dev/null || true
+  [ "${#EVENTS[@]}" -gt 0 ] || return 0
+  local py ev type res held expired
+  py="$(bash "$HERE/py.sh" --print 2>/dev/null)" && [ -n "$py" ] || return 0
+  for ev in "${EVENTS[@]}"; do
+    IFS=$'\t' read -r type res held expired <<<"$ev"
+    [ "$held" != "-" ] || held=""
+    [ "$expired" != "-" ] || expired=""
+    "$py" "$HERE/events.py" emit "$STATE" "$type" "resource=$res" "held_s=$held" "expired=$expired" >/dev/null || true
+  done
+}
+# Seconds from $1 (when the lease was first taken) to $2; "-" for a row written
+# before that time was recorded.
+held_for() { if [ -n "$1" ]; then echo $(($2 - $1)); else echo "-"; fi; }
 
 # Rewrites FILE without expired rows; prints each dropped row on fd 3.
 purge_expired() {
-  local tmp="$FILE.tmp.$$"
+  local tmp="$FILE.tmp.$$" r h e s
   : > "$tmp"
-  while IFS=$'\t' read -r r h e; do
+  while IFS=$'\t' read -r r h e s; do
     [ -n "${r:-}" ] || continue
-    if [ "$e" -gt "$NOW" ]; then printf '%s\t%s\t%s\n' "$r" "$h" "$e" >> "$tmp"
-    else printf 'expired: %s by %s at %s\n' "$r" "$h" "$e" >&3; fi
+    if [ "$e" -gt "$NOW" ]; then printf '%s\t%s\t%s\t%s\n' "$r" "$h" "$e" "${s:-}" >> "$tmp"
+    else
+      printf 'expired: %s by %s at %s\n' "$r" "$h" "$e" >&3
+      queue_event lease.released "$r" "$(held_for "${s:-}" "$e")" true
+    fi
   done < "$FILE"
   mv "$tmp" "$FILE"
 }
+since_of() { awk -F'\t' -v r="$1" '$1==r {print $4; exit}' "$FILE"; }
 
 holder_of() { awk -F'\t' -v r="$1" '$1==r {print $2 "\t" $3; exit}' "$FILE"; }
 
 # Drop the named resources (any holder) and append them for HOLDER.
 write_rows() {
-  local tmp="$FILE.tmp.$$" exp=$((NOW + TTL)) r
+  local tmp="$FILE.tmp.$$" exp=$((NOW + TTL)) r s
   awk -F'\t' -v list=" ${RES[*]} " 'index(list, " " $1 " ") == 0' "$FILE" > "$tmp"
-  for r in "${RES[@]}"; do printf '%s\t%s\t%s\n' "$r" "$HOLDER" "$exp" >> "$tmp"; done
+  for r in "${RES[@]}"; do
+    # A renewal keeps the first-taken time and is not a new "taken".
+    if [ -n "$(holder_of "$r")" ]; then s="$(since_of "$r")"
+    else s="$NOW"; queue_event lease.taken "$r" - -; fi
+    printf '%s\t%s\t%s\t%s\n' "$r" "$HOLDER" "$exp" "$s" >> "$tmp"
+  done
   mv "$tmp" "$FILE"
 }
 
@@ -144,6 +174,9 @@ case "$SUB" in
     need_res; need_holder; take_lock
     purge_expired 3>/dev/null
     if ! check_free; then exit 1; fi
+    for r in "${RES[@]}"; do
+      [ -z "$(holder_of "$r")" ] || queue_event lease.released "$r" "$(held_for "$(since_of "$r")" "$NOW")" false
+    done
     tmp="$FILE.tmp.$$"
     awk -F'\t' -v list=" ${RES[*]} " 'index(list, " " $1 " ") == 0' "$FILE" > "$tmp"
     mv "$tmp" "$FILE"
@@ -156,7 +189,7 @@ case "$SUB" in
   list)
     take_lock
     purge_expired 3>/dev/null
-    while IFS=$'\t' read -r r h e; do
+    while IFS=$'\t' read -r r h e _s; do
       [ -n "${r:-}" ] && printf '%s\t%s\t%s (in %ss)\n' "$r" "$h" "$e" "$((e - NOW))"
     done < "$FILE"
     ;;

@@ -76,6 +76,7 @@
 #   lanes.sh unheld <name>
 #     Clear the hold.
 #   lanes.sh reviewed <name> <sha> [--verdict accept|fix|reject]
+#                     [--reviewer-model M]
 #     Record a reviewer's verdict (default accept) on that commit of the lane,
 #     in <state>/reviews.tsv. The latest row wins. merge-queue.sh reads it when
 #     pipeline.parallel.review_required_paths is set.
@@ -105,13 +106,13 @@
 # --target defaults to the branch checked out in the main worktree.
 set -euo pipefail
 
-usage() { sed -n '48,105p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '48,106p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 [ $# -ge 1 ] || usage
 SUB="$1"; shift
 
 NAME=""; BASE=""; DIR=""; TARGET=""; FORCE=0; SETUP=1; OWNED=(); UNTIL=""
-SHA=""; VERDICT="accept"; NUMBER=""
+SHA=""; VERDICT="accept"; NUMBER=""; REVIEWER_MODEL=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --base)   BASE="${2:-}"; shift 2 ;;
@@ -122,7 +123,9 @@ while [ $# -gt 0 ]; do
               UNTIL="$2"; shift 2 ;;
     --verdict) [ -n "${2:-}" ] || { echo "lanes.sh: --verdict needs a value" >&2; exit 2; }
               VERDICT="$2"; shift 2 ;;
-    --number) [ -n "${2:-}" ] || { echo "lanes.sh: --number needs a value" >&2; exit 2; }
+    --reviewer-model) [ -n "${2:-}" ] || { echo "lanes.sh: --reviewer-model needs a value" >&2; exit 2; }
+              REVIEWER_MODEL="$2"; shift 2 ;;
+    --number)[ -n "${2:-}" ] || { echo "lanes.sh: --number needs a value" >&2; exit 2; }
               NUMBER="$2"; shift 2 ;;
     --no-setup) SETUP=0; shift ;;
     --owned)  shift
@@ -153,6 +156,26 @@ lane_path() {
   git -C "$MAIN" worktree list --porcelain | awk -v b="refs/heads/lane/$1" '
     /^worktree /{p=substr($0,10)} $0=="branch " b && !f {print p; f=1}'
 }
+
+# Append one event (scripts/events.py). Never fails the command that did the work.
+emit_event() {
+  local py
+  py="$(bash "$HERE/py.sh" --print 2>/dev/null)" && [ -n "$py" ] || return 0
+  "$py" "$HERE/events.py" emit "$STATE" "$@" >/dev/null || true
+}
+
+# A lane's identity, in its git dir (so `remove` drops it): "<lane_id> <base>".
+# The random suffix keeps two lanes that reuse one name apart in the reports.
+lane_id_file() {
+  local g; g="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" && [ -n "$g" ] || return 1
+  printf '%s/lane-id' "$g"
+}
+read_lane_id() {  # $1 = worktree ("" if none), $2 = name. Sets LANE_ID, LANE_BASE.
+  local f; LANE_ID=""; LANE_BASE=""
+  if [ -n "$1" ] && f="$(lane_id_file "$1")" && [ -f "$f" ]; then read -r LANE_ID LANE_BASE < "$f" || true; fi
+  [ -n "$LANE_ID" ] || LANE_ID="$2"  # a lane made before ids existed
+}
+lane_area() { printf '%s' "${1%%[-._]*}"; }
 
 copy_includes() {
   local dest="$1" inc="$MAIN/.worktreeinclude" line rel
@@ -359,6 +382,10 @@ case "$SUB" in
     # work, and those edits could be committed by mistake.
     git -c core.hooksPath=/dev/null -C "$MAIN" worktree add -q -b "lane/$NAME" "$DIR" "$BASE"
     DIR="$(cd "$DIR" && pwd)"
+    base_sha="$(git -C "$DIR" rev-parse HEAD)"
+    lane_id="$NAME.$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
+    printf '%s %s\n' "$lane_id" "$base_sha" > "$(lane_id_file "$DIR")"
+    emit_event lane.opened "lane_id=$lane_id" "area=$(lane_area "$NAME")" "base_sha=$base_sha"
     copy_includes "$DIR"
     if [ "$SETUP" -eq 1 ]; then
       set +e; run_setup "$DIR"; rc=$?; set -e
@@ -422,7 +449,11 @@ case "$SUB" in
     full="$(git -C "$MAIN" rev-parse --verify --quiet "$SHA^{commit}")" || { echo "lanes.sh reviewed: no commit $SHA" >&2; exit 1; }
     git -C "$MAIN" merge-base --is-ancestor "$full" "refs/heads/lane/$NAME" || { echo "lanes.sh reviewed: $SHA is not on lane/$NAME" >&2; exit 1; }
     mkdir -p "$STATE"
-    printf 'lane/%s\t%s\t%s\t%s\n' "$NAME" "$full" "$VERDICT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$STATE/reviews.tsv"
+    read_lane_id "$(lane_path "$NAME")" "$NAME"
+    printf 'lane/%s\t%s\t%s\t%s\t%s\n' "$NAME" "$full" "$VERDICT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$LANE_ID" >> "$STATE/reviews.tsv"
+    # Rows from before ids existed count only for a lane that has none.
+    round="$(awk -F'\t' -v b="lane/$NAME" -v id="$LANE_ID" -v n="$NAME" '$1==b && ($5==id || ($5=="" && id==n)){c++} END{print c+0}' "$STATE/reviews.tsv")"
+    emit_event review.verdict "lane_id=$LANE_ID" "attempt=$round" "round=$round" "verdict=$VERDICT" "reviewer_model=$REVIEWER_MODEL"
     echo "reviewed: lane/$NAME $full verdict=$VERDICT"
     ;;
   reserve-migration)
@@ -520,11 +551,18 @@ case "$SUB" in
         echo "lanes.sh: lane $NAME has uncommitted or untracked files; pass --force to discard them" >&2; exit 1
       fi
     fi
+    existed=0
+    if [ -n "$p" ] || git -C "$MAIN" show-ref --verify --quiet "refs/heads/lane/$NAME"; then existed=1; fi
+    read_lane_id "$p" "$NAME"  # before the git dir goes
     if [ -n "$p" ]; then
       if [ "$FORCE" -eq 1 ]; then git -C "$MAIN" worktree remove --force "$p"; else git -C "$MAIN" worktree remove "$p"; fi
     fi
     git -C "$MAIN" worktree prune
     git -C "$MAIN" branch -q -D "lane/$NAME" 2>/dev/null || true
+    if [ "$existed" -eq 1 ]; then
+      forced=false; [ "$FORCE" -ne 1 ] || forced=true
+      emit_event lane.closed "lane_id=$LANE_ID" "area=$(lane_area "$NAME")" "base_sha=$LANE_BASE" "forced=$forced"
+    fi
     if [ -f "$RESERVATIONS" ]; then lock_reservations; drop_reservations "$NAME" ""; fi
     echo "removed: lane/$NAME"
     ;;

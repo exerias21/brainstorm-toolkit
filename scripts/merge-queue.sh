@@ -192,9 +192,12 @@ fi
 HOLDER="merge-queue-$$"
 TMP=""
 FLAKE=""  # "flake:<check>" once a single-check rerun has passed
+FAILED_CHECK=""  # the check the gate named, when it named exactly one
 verdict() {  # result detail -- one JSON line per run
-  local result="$1" detail="${2:-}" jpy
+  local result="$1" detail="${2:-}" jpy ts suspected=false
   LAST_RESULT="$result"
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"  # shared with the event: report compares them
+  if [ -n "$FLAKE" ] || [ "$result" = "flake-limit" ]; then suspected=true; fi
   # json.dumps so the logged command is exactly what ran (quotes, backslashes,
   # tabs and newlines included); the printf below is only the no-python fallback.
   if jpy="$(bash "$HERE/py.sh" --print 2>/dev/null)" && [ -n "$jpy" ]; then
@@ -206,12 +209,15 @@ d = {"ts": a[0], "branch": a[1], "target": a[2], "result": a[3], "old": a[4], "n
 if a[9]:
     d["flake"] = a[9]
 print(json.dumps(d, separators=(",", ":")))
-' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$BRANCH" "$TARGET" "$result" "${OLD:-}" "${NEW:-}" "$TEST_CMD" "$OVERRIDE" "$detail" "$FLAKE" >> "$LOG"
+' "$ts" "$BRANCH" "$TARGET" "$result" "${OLD:-}" "${NEW:-}" "$TEST_CMD" "$OVERRIDE" "$detail" "$FLAKE" >> "$LOG"
+    # One queue.attempt event per branch. Neither detail nor the command goes in.
+    "$jpy" "$HERE/events.py" queue "$STATE" "$MAIN" "ts=$ts" "result=$result" "failed_check=$FAILED_CHECK" \
+      "flake_suspected=$suspected" "duration_s=$SECONDS" "old_sha=${OLD:-}" "new_sha=${NEW:-}" -- "${BRANCHES[@]}" >/dev/null || true
     return 0
   fi
   # No python means no config was read, so FLAKE is always empty here.
   printf '{"ts":"%s","branch":"%s","target":"%s","result":"%s","old":"%s","new":"%s","test_cmd":"%s","test_cmd_override":%s,"detail":"%s"}\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$BRANCH" "$TARGET" "$result" "${OLD:-}" "${NEW:-}" \
+    "$ts" "$BRANCH" "$TARGET" "$result" "${OLD:-}" "${NEW:-}" \
     "$(printf '%s' "$TEST_CMD" | tr '\n"\\' ' __')" "$OVERRIDE" \
     "$(printf '%s' "$detail" | tr '\n"\\' ' __')" >> "$LOG"
 }
@@ -503,14 +509,15 @@ PYEOF
 echo "testing $BRANCH rebased on $TARGET (${NEW:0:12}) with: $TEST_CMD"
 test_attempt "$TEST_CMD"
 if [ "$rc" -ne 0 ]; then
+  checks="$(sed -n 's/^merge-queue-failed-check:[[:space:]]*//p' "$ATTEMPT_LOG" | tr -d '\r' | sed 's/[[:space:]]*$//; /^$/d' | sort -u)"
+  if [ -n "$checks" ] && [ "$(printf '%s\n' "$checks" | wc -l)" -eq 1 ]; then FAILED_CHECK="$checks"; fi
   case "$RERUN_CMD" in
     "") tests_failed tests-failed "exit $rc" ;;
     *'{check}'*) ;;
     *) echo "WARNING: pipeline.parallel.rerun_check_command has no {check} placeholder; nothing is rerun."
        tests_failed tests-failed "exit $rc" ;;
   esac
-  checks="$(sed -n 's/^merge-queue-failed-check:[[:space:]]*//p' "$ATTEMPT_LOG" | tr -d '\r' | sed 's/[[:space:]]*$//; /^$/d' | sort -u)"
-  if [ -z "$checks" ] || [ "$(printf '%s\n' "$checks" | wc -l)" -ne 1 ]; then
+  if [ -z "$FAILED_CHECK" ]; then
     echo "no rerun: the gate output does not name exactly one failed check."
     tests_failed tests-failed "exit $rc"
   fi

@@ -25,7 +25,9 @@ bash scripts/runner.sh resume api --prompt-file next.md --task T-13 # new work i
 bash scripts/runner.sh resume api --prompt-file fixup.md --fresh    # hand off, start clean
 bash scripts/runner.sh rotate api      # write a hand-off now; next call starts fresh
 bash scripts/runner.sh status          # one line per runner
-bash scripts/runner.sh report [--json] # calls, cost, last context, denials by runner and task
+bash scripts/runner.sh report [--json] [--since 2026-11-23]   # by runner and task; per day in JSON
+bash scripts/runner.sh resume api --prompt-file fix.md --reason review_fix  # [--lane <name>]
+bash scripts/runner.sh tick --lanes-open 3 --needs-operator 1  # one orchestrator loop pass
 ```
 
 `--task <id>` is stored in `status.json` and written on every `events.jsonl` line until another
@@ -99,6 +101,67 @@ allowance. If the cap covers the session, each call gets exactly the allowance. 
 one call, the limit is looser (prior spend plus allowance) but finite. Passing the bare
 allowance would risk refusing every resume of a session that had already spent it. The runner does not probe whether the lane managed
 to commit; check `git log` in the lane when the call returns.
+
+## The event stream (`events.v1.jsonl`)
+
+`runner.sh`, `merge-queue.sh`, `lanes.sh` and `lease.sh` also append to
+`.claude/parallel/events.v1.jsonl`: one JSON object per line, appended in one write. It is the
+joinable record an exporter or dashboard reads. Writing it never fails the command; it is
+skipped when no Python works. The older files above are unchanged.
+
+Every line has `schema` (`opa.event/1`), `event_id`, `ts` (UTC), `type`, `lane_id`, `runner`
+and `attempt` (the last three are null where they do not apply). `scripts/events.py` declares
+every field of every type: a value that fails its check is written as null or `other`, and an
+undeclared field is dropped. Values are enums, numbers, shas and short names. There is no
+prompt, command, path or message text.
+
+| `type` | Fields | `attempt` |
+|---|---|---|
+| `lane.opened`, `lane.closed` | `area` (the lane name up to its first `-`, `.` or `_`), `base_sha`; closed adds `forced` | null |
+| `runner.call` | `mode` (fresh, resume), `resume_reason`, `model`, `num_turns`, `context_tokens`, `cost_delta_usd`, `is_error`, `rc`, `denials` | the runner's call number |
+| `runner.denial` | `tool`, `shape` | that call's number |
+| `review.verdict` | `round`, `verdict`, `reviewer_model` | the round |
+| `queue.attempt` | see `merge-queue.md` | the lane's attempt number |
+| `lease.taken`, `lease.released` | `resource` (`other` if it holds a `/`), `held_s`; released adds `expired`. A renewal writes nothing | null |
+| `loop.tick` | `lanes_open`, `needs_operator` | null |
+
+**`lane_id`** is made by `lanes.sh create` (`<name>.<8 hex>`, kept in the lane's git dir), so
+two lanes that reuse a name stay apart. A lane made before this has its name as its id. A runner
+takes it from `--lane <name>` (kept for the runner until a `--cwd` without `--lane`), else from
+the lane worktree its `cwd` is in.
+
+**`cost_delta_usd`** is this call's cost, never the session's running total, so it can be summed.
+
+**`resume_reason`** is null on `start`. On `resume` it is `--reason` (`review_fix`,
+`tests_failed`, `denial`, `rotate`, `operator`, `other`; default `other`), also when `--fresh`
+or rotation made the session fresh. A hand-off turn is `rotate`.
+
+**`shape`** is the first that fits: `protected_path` (a write to `.claude/hooks/`,
+`.claude/settings*.json`, `.claude/project.json`, an env file or `.git/`), `lanes_path_write`
+(a write into a lane's `.claude/`), `redirect_or_heredoc`, `chained` (`&&`, `||`, `;`, a pipe,
+`&`, several lines), `sed_inplace`, `git_commit`, `git_add`, `read_cmd`, `other`. Operators
+inside quotes do not count. `denials.jsonl` keeps the verbatim input and stays on the machine.
+
+### `report --json`
+
+`schema` is `opa.report/1`: `since`, `source` (`events`, `legacy` or `mixed`), `days[]` (each
+with `date`, a UTC day) and `totals`, with the same keys in both: `calls`, `cost_usd`,
+`cost_fresh_usd`, `cost_resume_usd`, `calls_with_denial`, `denial_share`, `top_denial_shapes`
+(up to five `{shape, count}`), `landings`, `landings_joined`, `joined_cost_usd`,
+`cost_per_landing_usd`, `queue_attempts`, `tests_failed`, `tests_failed_rate`,
+`tests_failed_resumes`, `flakes`. A rate with nothing to divide by is null. The older
+`by_runner`, `by_task` and `total` keys are still there.
+
+- A landing is charged the cost of every call with its `lane_id` since that lane's previous
+  landing, including calls before `--since`. `cost_per_landing_usd` is `joined_cost_usd` over
+  `landings_joined`; a landing with no runner cost counts in `landings` only. A call with no
+  lane (a reviewer in the main folder) is in `cost_usd` and charged to no landing.
+- `tests_failed` counts merge attempts that ended `tests-failed` or `flake-limit`;
+  `tests_failed_resumes` counts runner calls resumed for that reason. A several-branch landing
+  is one attempt and `landings` counts each lane.
+- Calls and queue attempts older than the stream's first record of that kind come from the
+  per-runner files and `merge-queue.jsonl`, joined by lane name, with denial shapes worked out
+  from `denials.jsonl`.
 
 ## Project commit hooks see the lane as the project root
 

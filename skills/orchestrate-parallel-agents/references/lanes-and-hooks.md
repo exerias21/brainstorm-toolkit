@@ -10,7 +10,7 @@ inside the lane still runs the hooks as usual.
 ## What `lanes.sh` records
 
 Besides the worktree, `lanes.sh` keeps two files in `.claude/parallel/` that the merge queue
-reads: `reviews.tsv` (`reviewed`: lane branch, sha, verdict, time) and `reservations.tsv`
+reads: `reviews.tsv` (`reviewed`: lane branch, sha, verdict, time, lane_id) and `reservations.tsv`
 (`reserve-migration`: lane, number, folder, time). Only the orchestrator writes them, through
 those subcommands: a writer never records its own review. `remove` drops a lane's
 reservations; review rows stay, as history. How the queue uses both: `merge-queue.md`.

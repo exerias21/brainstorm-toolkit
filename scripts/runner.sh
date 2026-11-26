@@ -77,6 +77,12 @@
 # context, denials, first and last call -- by runner and by task. The JSONL
 # files stay the source of truth; any database would be derived from them.
 #
+# EVENTS: each call and denial also goes to <state>/events.v1.jsonl (schema
+# opa.event/1, scripts/events.py), tagged with the lane_id of --lane, else of
+# the lane worktree the runner's cwd is in. `resume --reason` says why the
+# runner was resumed (review_fix, tests_failed, denial, rotate, operator,
+# other; default other). `tick` records one pass of an orchestrator loop.
+#
 # Usage:
 #   runner.sh start  <name> (--prompt TEXT | --prompt-file F) [--allowed-tools T|+T]
 #                    [--cwd DIR] [--model M] [--permission-mode M] [--max-turns N]
@@ -88,7 +94,10 @@
 #                    [--fresh]   hand off and start a fresh session now
 #   runner.sh rotate <name>      write the hand-off now; next resume starts fresh
 #   runner.sh status [<name>]    print status.json (or one line per runner)
-#   runner.sh report [--json]    totals by runner and by task, from events.jsonl
+#   runner.sh report [--json] [--since YYYY-MM-DD]    by runner and by task;
+#                    --json adds per-day figures (schema opa.report/1)
+#   runner.sh tick --lanes-open N --needs-operator N
+#                    (start/resume also take --lane NAME; resume, --reason R)
 #
 # Exit codes: 0 ok, 1 the claude call failed or returned an error, 2 usage,
 # 3 the run hit permission denials (see DENIED lines). Do not pipe runner.sh
@@ -99,7 +108,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_BIN="${RUNNER_CLAUDE_BIN:-claude}"
-usage() { sed -n '80,97p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '/^# Usage:$/,/^set -euo/{/^#/p;}' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 [ $# -ge 1 ] || usage
 SUB="$1"; shift
@@ -112,6 +121,7 @@ elif common="$(git rev-parse --git-common-dir 2>/dev/null)"; then STATE="$(cd "$
 else STATE="$PWD/.claude/parallel"; fi
 
 NAME=""; PROMPT=""; PROMPT_SET=0; MODEL_OVERRIDE=""; REPORT_JSON=0; FRESH=0
+REASON=""; CALL_REASON=""; SINCE=""; LANES_OPEN=""; NEEDS_OPERATOR=""
 DEFAULT_TOOLS="Bash,Read,Edit,Write,Glob,Grep"
 OPTS=()  # "key=value" pairs (no associative arrays: stock macOS bash is 3.2)
 while [ $# -gt 0 ]; do
@@ -133,6 +143,17 @@ while [ $# -gt 0 ]; do
     --task)             [ -n "${2:-}" ] || { echo "runner.sh: --task needs an id" >&2; exit 2; }
                         OPTS+=("task=$2"); shift 2 ;;
     --json)             REPORT_JSON=1; shift ;;
+    --reason)           case "${2:-}" in review_fix|tests_failed|denial|rotate|operator|other) REASON="$2" ;;
+                          *) echo "runner.sh: --reason must be review_fix, tests_failed, denial, rotate, operator or other" >&2; exit 2 ;; esac
+                        shift 2 ;;
+    --lane)             v="${2:-}"; v="${v#lane/}"
+                        case "$v" in ''|*[!A-Za-z0-9._-]*|.*) echo "runner.sh: --lane needs a lane name" >&2; exit 2 ;; esac
+                        OPTS+=("lane=$v"); shift 2 ;;
+    --since)            case "${2:-}" in [0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]) SINCE="$2" ;;
+                          *) echo "runner.sh: --since needs YYYY-MM-DD" >&2; exit 2 ;; esac
+                        shift 2 ;;
+    --lanes-open)       LANES_OPEN="${2:-}"; shift 2 ;;
+    --needs-operator)   NEEDS_OPERATOR="${2:-}"; shift 2 ;;
     -h|--help) usage ;;
     --*) echo "runner.sh: unknown flag $1" >&2; usage ;;
     *) [ -z "$NAME" ] || usage; NAME="$1"; shift ;;
@@ -149,10 +170,21 @@ if [ "$SUB" = "status" ]; then
   exit 0
 fi
 
+if [ "$SUB" = "tick" ]; then
+  for v in "$LANES_OPEN" "$NEEDS_OPERATOR"; do
+    case "$v" in ''|*[!0-9]*) echo "runner.sh tick: --lanes-open N and --needs-operator N are required whole numbers" >&2; exit 2 ;; esac
+  done
+  "$PY" "$HERE/events.py" emit "$STATE" loop.tick "lanes_open=$LANES_OPEN" "needs_operator=$NEEDS_OPERATOR"
+  exit 0
+fi
+
 if [ "$SUB" = "report" ]; then
-  "$PY" - "$STATE/runners" "$REPORT_JSON" <<'PYEOF'
+  "$PY" - "$STATE" "$REPORT_JSON" "$HERE" "$SINCE" <<'PYEOF'
 import glob, json, os, sys
-root, as_json = sys.argv[1], sys.argv[2] == "1"
+state, as_json, since = sys.argv[1], sys.argv[2] == "1", sys.argv[4]
+root = os.path.join(state, "runners")
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[3])
 def blank():
     return {"calls": 0, "cost_usd": 0.0, "denials": 0, "errors": 0, "last_context": 0,
             "first": None, "last": None}
@@ -175,6 +207,9 @@ for path in sorted(glob.glob(os.path.join(root, "*", "events.jsonl"))):
         call_cost = cum - prev if cum >= prev else cum
         if sid:
             session_total[sid] = cum
+        # Filtered after the session total, which needs the earlier lines.
+        if since and str(ev.get("ts") or "")[:10] < since:
+            continue
         for agg in (by_runner.setdefault(runner, blank()), by_task.setdefault(task, blank()), total):
             agg["calls"] += 1
             agg["cost_usd"] += call_cost
@@ -187,7 +222,10 @@ for path in sorted(glob.glob(os.path.join(root, "*", "events.jsonl"))):
                 agg["first"] = agg["first"] or ts
                 agg["last"] = ts
 if as_json:
-    print(json.dumps({"by_runner": by_runner, "by_task": by_task, "total": total}, indent=1))
+    import events
+    out = events.day_report(state, since or None)
+    out.update(by_runner=by_runner, by_task=by_task, total=total)
+    print(json.dumps(out, indent=1))
     sys.exit(0)
 def table(title, rows):
     print(title)
@@ -455,10 +493,36 @@ call_claude() {
   # No set +e/-e toggling: callers run this under set +e and must see its code.
   if out="$(cd "$cwd" && "${cmd[@]}" <"$DIR/last-prompt.md" 2>"$DIR/last-stderr.txt")"; then rc=0; else rc=$?; fi
   printf '%s' "$out" > "$DIR/last.json"
-  if "$PY" - "$STATUS" "$DIR" "$rc" "$mode" <<'PYEOF'
+  if "$PY" - "$STATUS" "$DIR" "$rc" "$mode" "$HERE" "$STATE" "$CALL_REASON" <<'PYEOF'
 import json, os, sys, time
 status_path, d, rc, mode = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
+here, state, reason = sys.argv[5], sys.argv[6], sys.argv[7]
+sys.dont_write_bytecode = True
+sys.path.insert(0, here)
+try:
+    import events
+except Exception:
+    events = None
 s = json.load(open(status_path))
+lane_id = None
+if events:
+    cwd = s.get("cwd") or "."
+    if s.get("lane"):
+        # The lane's repo: the runner's folder, else where runner.sh was called.
+        repo = cwd if events._git(cwd, "rev-parse", "--git-dir") else os.getcwd()
+        lane_id = events.lane_of_branch(repo, "lane/" + s["lane"])
+    else:
+        lane_id = events.lane_of_dir(cwd)
+    # A removed lane keeps the id the runner already recorded for it.
+    if not lane_id and not os.path.isdir(cwd):
+        lane_id = s.get("lane_id")
+    s["lane_id"] = lane_id
+try:
+    with open(os.path.join(d, "events.jsonl"), encoding="utf-8", errors="replace") as f:
+        attempt = sum(1 for _ in f) + 1
+except OSError:
+    attempt = 1
+call_cost, denials = None, []
 raw = open(os.path.join(d, "last.json"), encoding="utf-8", errors="replace").read()
 try:
     r = json.loads(raw)
@@ -519,8 +583,24 @@ else:
         code = 3
     if r.get("is_error") or rc != 0:
         code = 1 if code == 0 else code
+ev["lane_id"] = lane_id
 with open(os.path.join(d, "events.jsonl"), "a", encoding="utf-8") as f:
     f.write(json.dumps(ev) + "\n")
+if events:
+    # Same ts as the line above: report uses it to tell old records from new.
+    ids = {"lane_id": lane_id, "runner": s["name"], "attempt": attempt}
+    events.emit(state, "runner.call", dict(
+        ids, mode=mode, resume_reason=reason or None, model=s.get("model"),
+        num_turns=ev.get("num_turns"), context_tokens=ev.get("context_tokens"),
+        cost_delta_usd=call_cost, is_error=bool(ev.get("error") or ev.get("is_error") or rc),
+        rc=rc, denials=len(denials)), ev["ts"])
+    for x in denials:
+        x = x if isinstance(x, dict) else {}
+        try:
+            shape = events.denial_shape(x.get("tool_name"), x.get("tool_input"), s.get("cwd"))
+        except Exception:
+            shape = "other"
+        events.emit(state, "runner.denial", dict(ids, tool=x.get("tool_name"), shape=shape), ev["ts"])
 tmp = status_path + ".tmp"
 json.dump(s, open(tmp, "w"), indent=1)
 os.replace(tmp, status_path)
@@ -553,7 +633,9 @@ rotate() {
   n=1; while [ -e "$DIR/handoff-$n.md" ]; do n=$((n + 1)); done
   note="$DIR/handoff-$n.md"
   echo "rotating $NAME at context $(get context_tokens) (rotate_at $(get rotate_at)): asking for a hand-off note"
+  local why="$CALL_REASON"; CALL_REASON=rotate
   set +e; call_claude "$HANDOFF_PROMPT" resume; local rc=$?; set -e
+  CALL_REASON="$why"
   [ "$rc" -eq 0 ] || [ "$rc" -eq 3 ] || { echo "runner.sh: hand-off turn failed; not rotating" >&2; return 1; }
   cp "$DIR/last-result.md" "$note" || { echo "runner.sh: could not save the hand-off note; not rotating" >&2; return 1; }
   "$PY" - "$STATUS" "$note" <<'PYEOF'
@@ -612,6 +694,9 @@ case "$SUB" in
   resume)
     [ "$PROMPT_SET" -eq 1 ] || { echo "runner.sh resume: --prompt or --prompt-file is required" >&2; exit 2; }
     [ -f "$STATUS" ] || { echo "runner.sh: no runner $NAME; use start" >&2; exit 2; }
+    CALL_REASON="${REASON:-other}"
+    # A new folder drops an earlier --lane: the lane then comes from the folder.
+    if has_opt cwd && ! has_opt lane; then OPTS+=("lane="); fi
     prepare_opts
     check_flag_budget
     write_status_from_opts; enforce_rotate_at; check_rotate_at; check_budget

@@ -126,6 +126,17 @@ With or without this key, each test run keeps its own log,
 joined by `+`). `merge-queue.last-test.log` is a copy of the latest, written when the run ends.
 Nothing prunes the folder.
 
+## Queue events
+
+Each verdict also writes one `queue.attempt` per branch to
+`.claude/parallel/events.v1.jsonl` (envelope in `runners.md`), with that lane's `lane_id`.
+Fields: `result` (the verdict above), `failed_check` (set when the gate named exactly one check,
+with or without `rerun_check_command`; only the part after the last `/`, null if it has other
+unusual characters), `flake_suspected` (a rerun passed, or `flake-limit`), `duration_s`,
+`old_sha`, `new_sha` (null when nothing was rebased), `batch_size` and `batch_index`. A busy or
+usage exit writes none. The verdict's `detail` and test command stay in `merge-queue.jsonl`.
+`lanes.sh reviewed <lane> <sha> --reviewer-model M` writes `review.verdict`.
+
 ## The conflict path
 
 On a conflict the queue aborts the rebase, changes nothing, prints `conflict: <file>` lines

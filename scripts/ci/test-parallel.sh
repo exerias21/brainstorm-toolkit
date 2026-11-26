@@ -554,6 +554,7 @@ prev=""
 while [ $# -gt 0 ]; do [ "$1" = "--resume" ] && { sid="$2"; prev=1; }; shift; done
 ctx="${FAKE_CTX:-1000}"
 den='[]'; [ -n "${FAKE_DENY:-}" ] && den='[{"tool_name":"Bash","tool_use_id":"x","tool_input":{"command":"rm -rf build"}}]'
+[ -z "${FAKE_DENY_JSON:-}" ] || den="$FAKE_DENY_JSON"
 # Like the real CLI, total_cost_usd is the session's running total: $0.01 a call.
 n=$(( $(cat "$FAKE_LOG.calls.$sid" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FAKE_LOG.calls.$sid"
 n="$(awk -v n="$n" 'BEGIN { printf "%.2f", n / 100 }')"
@@ -1047,6 +1048,261 @@ run bash -c "cd '$G' && bash '$LANES' remove mb --force"
 expect_rc "$RC" 0 "$OUT"
 grep -q '^mb' "$PARALLEL_STATE_DIR/reservations.tsv" && fail "reservation kept after remove"
 ok
+
+# ── event stream (events.v1.jsonl) and report --json ────────────────────────
+export PARALLEL_STATE_DIR="$ROOT_TMP/state-events"
+EVF="$PARALLEL_STATE_DIR/events.v1.jsonl"
+PYB="$(bash "$PLUGIN_ROOT/scripts/py.sh" --print)"
+E="$(new_repo events-repo)"
+mkdir -p "$E/.claude"
+export CLAUDE_PROJECT_DIR="$E"   # no runner settings left over from earlier cases
+printf '{"pipeline": {"parallel": {"gate_command": "echo merge-queue-failed-check: tests/unit/wob.test; test ! -e FAIL"}}}\n' > "$E/.claude/project.json"
+cd "$E"
+
+# evcheck <python> [args]: `evs` is every event, `of(type)` filters, a = args.
+evcheck() {
+  local code="$1"; shift
+  "$PYB" -c '
+import json, sys
+evs = [json.loads(l) for l in open(sys.argv[1], encoding="utf-8")]
+def of(t): return [e for e in evs if e["type"] == t]
+a = sys.argv[3:]
+exec(sys.argv[2])
+' "$EVF" "$code" "$@" || fail "event check failed: $(cat "$EVF")"
+}
+
+CASE="events: lanes.sh create writes lane.opened with the stored lane_id, area and base"
+LE="$(mk_lane "$E" api-one)"; cd "$E"
+LID="$(cut -d' ' -f1 "$(git -C "$LE" rev-parse --absolute-git-dir)/lane-id")"
+evcheck '
+e, = of("lane.opened")
+assert e["lane_id"] == a[0] and a[0].startswith("api-one."), e
+assert e["area"] == "api" and e["base_sha"] == a[1], e
+' "$LID" "$(git -C "$E" rev-parse main)"
+ok
+
+CASE="events: runner.call carries the lane_id of its --cwd lane; a fresh call has no resume_reason"
+run bash "$RUNNER" start ev1 --prompt "x" --cwd "$LE" --allowed-tools Read --model sonnet
+expect_rc "$RC" 0 "$OUT"
+evcheck '
+e, = of("runner.call")
+assert (e["lane_id"], e["runner"], e["attempt"], e["mode"], e["resume_reason"]) == (a[0], "ev1", 1, "fresh", None), e
+assert (e["model"], e["num_turns"], e["context_tokens"], e["is_error"], e["rc"]) == ("sonnet", 1, 1015, False, 0), e
+assert abs(e["cost_delta_usd"] - 0.01) < 1e-9, e
+' "$LID"
+ok
+
+CASE="events: cost_delta_usd is the call's cost, never the session's running total"
+run bash "$RUNNER" resume ev1 --prompt "y" --reason tests_failed
+expect_rc "$RC" 0 "$OUT"
+grep -q '"session_cost_usd": 0.02' "$PARALLEL_STATE_DIR/runners/ev1/events.jsonl" || fail "fake did not report a running total"
+evcheck '
+e = of("runner.call")[-1]
+assert e["mode"] == "resume" and e["resume_reason"] == "tests_failed" and e["attempt"] == 2, e
+assert abs(e["cost_delta_usd"] - 0.01) < 1e-9, e
+'
+ok
+
+CASE="events: each denial gets a tool and a shape; the command and path text never reach the stream"
+D='[{"tool_name":"Bash","tool_input":{"command":"git commit -m \"SEKRET a && b > c\""}},
+{"tool_name":"Bash","tool_input":{"command":"git -C SEKRET add file"}},
+{"tool_name":"Bash","tool_input":{"command":"cd SEKRET && git commit -m x"}},
+{"tool_name":"Bash","tool_input":{"command":"cat <<EOF > SEKRET\nbody\nEOF"}},
+{"tool_name":"Bash","tool_input":{"command":"sed -i s/SEKRET/b/ file"}},
+{"tool_name":"Write","tool_input":{"file_path":"/r/.claude/hooks/SEKRET.js","content":"SEKRET"}},
+{"tool_name":"Write","tool_input":{"file_path":"/r/x.lanes/one/.claude/results/SEKRET.md"}},
+{"tool_name":"Bash","tool_input":{"command":"ls SEKRET"}},
+{"tool_name":"SEKRET with spaces","tool_input":{"command":"SEKRET"}}]'
+run env FAKE_DENY_JSON="$(printf '%s' "$D" | tr '\n' ' ')" bash "$RUNNER" resume ev1 --prompt "z"
+expect_rc "$RC" 3 "$OUT"
+evcheck '
+got = [(e["tool"], e["shape"]) for e in of("runner.denial")]
+want = [("Bash", "git_commit"), ("Bash", "git_add"), ("Bash", "chained"), ("Bash", "redirect_or_heredoc"),
+        ("Bash", "sed_inplace"), ("Write", "protected_path"), ("Write", "lanes_path_write"),
+        ("Bash", "read_cmd"), ("other", "other")]
+assert got == want, got
+assert "SEKRET" not in open(sys.argv[1]).read()
+assert set(of("runner.denial")[0]) == {"schema", "event_id", "ts", "type", "lane_id", "runner", "attempt", "tool", "shape"}
+c = of("runner.call")[-1]
+assert c["denials"] == 9 and c["resume_reason"] == "other", c
+'
+ok
+
+CASE="events: a rotation's hand-off turn is resume_reason=rotate; the call after keeps its own reason"
+run bash "$RUNNER" resume ev1 --prompt "w" --fresh --reason review_fix
+expect_rc "$RC" 0 "$OUT"
+evcheck '
+h, f = of("runner.call")[-2:]
+assert (h["mode"], h["resume_reason"]) == ("resume", "rotate"), h
+assert (f["mode"], f["resume_reason"]) == ("fresh", "review_fix"), f
+'
+ok
+
+CASE="events: an unknown --reason is refused"
+run bash "$RUNNER" resume ev1 --prompt "v" --reason because
+assert_rc "$RC" 2 "$OUT"
+
+CASE="events: --lane sets the lane_id when the runner's folder is not the lane"
+run bash "$RUNNER" start ev2 --prompt "x" --cwd "$E" --lane api-one --allowed-tools Read
+expect_rc "$RC" 0 "$OUT"
+evcheck 'assert of("runner.call")[-1]["lane_id"] == a[0], of("runner.call")[-1]' "$LID"
+ok
+
+CASE="events: lanes.sh reviewed writes review.verdict with the round and reviewer model"
+add_commit "$LE" FAIL x
+run bash "$LANES" reviewed api-one "$(git -C "$LE" rev-parse HEAD)" --verdict fix --reviewer-model opus
+expect_rc "$RC" 0 "$OUT"
+run bash "$LANES" reviewed api-one "$(git -C "$LE" rev-parse HEAD)"
+expect_rc "$RC" 0 "$OUT"
+evcheck '
+x, y = of("review.verdict")
+assert (x["lane_id"], x["round"], x["verdict"], x["reviewer_model"]) == (a[0], 1, "fix", "opus"), x
+assert (y["round"], y["verdict"], y["reviewer_model"]) == (2, "accept", None), y
+' "$LID"
+ok
+
+CASE="events: a failed landing is a queue.attempt with the check's name, not its path"
+run bash "$MQ" land lane/api-one
+expect_rc "$RC" 4 "$OUT"
+evcheck '
+e, = of("queue.attempt")
+assert (e["lane_id"], e["attempt"], e["result"], e["failed_check"], e["flake_suspected"]) == (a[0], 1, "tests-failed", "wob.test", False), e
+assert isinstance(e["duration_s"], int) and e["old_sha"] == a[1] and e["new_sha"], e
+' "$LID" "$(git -C "$E" rev-parse main)"
+ok
+
+CASE="events: a landing records result=landed with the old and new sha"
+before="$(git -C "$E" rev-parse main)"
+git -C "$LE" rm -q FAIL; git -C "$LE" commit -q -m unfail
+add_commit "$LE" feature.txt f
+run bash "$MQ" land lane/api-one
+expect_rc "$RC" 0 "$OUT"
+evcheck '
+e = of("queue.attempt")[-1]
+assert (e["lane_id"], e["attempt"], e["result"], e["old_sha"], e["new_sha"]) == (a[0], 2, "landed", a[1], a[2]), e
+' "$LID" "$before" "$(git -C "$E" rev-parse main)"
+ok
+
+CASE="events: a rerun that passes is flake_suspected"
+printf '{"pipeline": {"parallel": {"gate_command": "echo merge-queue-failed-check: wobbly; exit 1", "rerun_check_command": "true {check}"}}}\n' > "$E/.claude/project.json"
+LF2="$(mk_lane "$E" web-two)"; cd "$E"
+add_commit "$LF2" web.txt w
+run bash "$MQ" land lane/web-two
+expect_rc "$RC" 0 "$OUT"
+evcheck '
+e = of("queue.attempt")[-1]
+assert (e["result"], e["failed_check"], e["flake_suspected"]) == ("landed", "wobbly", True), e
+'
+ok
+
+CASE="events: lease.taken once (a renewal is not a take) and lease.released with held_s"
+run env LEASE_NOW=1000 bash "$LEASE" acquire evdb --holder alice --ttl 600
+expect_rc "$RC" 0 "$OUT"
+run env LEASE_NOW=1010 bash "$LEASE" renew evdb --holder alice --ttl 600
+expect_rc "$RC" 0 "$OUT"
+run env LEASE_NOW=1042 bash "$LEASE" release evdb --holder alice
+expect_rc "$RC" 0 "$OUT"
+run env LEASE_NOW=2000 bash "$LEASE" acquire evport --holder bob --ttl 5
+expect_rc "$RC" 0 "$OUT"
+run env LEASE_NOW=3000 bash "$LEASE" sweep
+expect_rc "$RC" 0 "$OUT"
+evcheck '
+db = [(e["type"], e["held_s"]) for e in evs if e.get("resource") == "evdb"]
+assert db == [("lease.taken", None), ("lease.released", 42)], db
+x = [e for e in of("lease.released") if e["resource"] == "evport"]
+assert len(x) == 1 and x[0]["held_s"] == 5 and x[0]["expired"] is True, x
+'
+ok
+
+CASE="events: runner.sh tick writes loop.tick; both counts are required"
+run bash "$RUNNER" tick --lanes-open 3 --needs-operator 1
+expect_rc "$RC" 0 "$OUT"
+evcheck 'e, = of("loop.tick"); assert (e["lanes_open"], e["needs_operator"], e["lane_id"]) == (3, 1, None), e'
+run bash "$RUNNER" tick --lanes-open 3
+assert_rc "$RC" 2 "$OUT"
+
+CASE="events: lanes.sh remove writes lane.closed with the same lane_id"
+run bash "$LANES" remove api-one --force
+expect_rc "$RC" 0 "$OUT"
+evcheck '
+e, = of("lane.closed")
+assert (e["lane_id"], e["area"], e["forced"]) == (a[0], "api", True) and e["base_sha"], e
+' "$LID"
+ok
+
+CASE="events: free text and undeclared fields never get in; every line has the envelope"
+"$PYB" "$PLUGIN_ROOT/scripts/events.py" emit "$PARALLEL_STATE_DIR" runner.denial 'tool=rm -rf SEKRET' 'shape=SEKRET text' 'command=SEKRET' 'lane_id=/home/SEKRET'
+evcheck '
+import re
+e = evs[-1]
+assert (e["tool"], e["shape"], e["lane_id"]) == ("other", "other", None) and "command" not in e, e
+assert "SEKRET" not in open(sys.argv[1]).read()
+for x in evs:
+    assert x["schema"] == "opa.event/1", x
+    assert {"event_id", "ts", "type", "lane_id", "runner", "attempt"} <= set(x), x
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", x["ts"]), x
+assert len({x["event_id"] for x in evs}) == len(evs)
+'
+ok
+
+CASE="report: --json is opa.report/1 with per-day and total figures from the stream"
+run bash "$RUNNER" report --json
+expect_rc "$RC" 0 "$OUT"
+printf '%s' "$OUT" | "$PYB" -c '
+import json, sys
+r = json.load(sys.stdin)
+assert r["schema"] == "opa.report/1" and r["since"] is None and r["source"] == "events", r
+t = r["totals"]
+assert t["calls"] == 6 and t["calls_with_denial"] == 1 and abs(t["denial_share"] - 1 / 6) < 1e-3, t
+assert abs(t["cost_usd"] - t["cost_fresh_usd"] - t["cost_resume_usd"]) < 1e-9 and t["cost_usd"] > 0, t
+assert len(t["top_denial_shapes"]) == 5, t
+# api-one: five of its calls came before its one landing; web-two had none.
+assert t["landings"] == 2 and t["landings_joined"] == 1, t
+assert abs(t["cost_per_landing_usd"] - t["cost_usd"]) < 1e-9, t
+assert t["queue_attempts"] == 3 and t["tests_failed"] == 1 and t["flakes"] == 1, t
+assert abs(t["tests_failed_rate"] - 1 / 3) < 1e-3 and t["tests_failed_resumes"] == 1, t
+assert sum(d["calls"] for d in r["days"]) == 6 and all("date" in d for d in r["days"]), r["days"]
+assert r["total"]["calls"] == 6 and "ev1" in r["by_runner"], r
+' || fail "report --json wrong: $OUT"
+ok
+
+CASE="report: --since drops earlier days; a bad date is refused; the text report still works"
+run bash "$RUNNER" report --json --since 2999-01-01
+expect_rc "$RC" 0 "$OUT"
+printf '%s' "$OUT" | "$PYB" -c '
+import json, sys
+r = json.load(sys.stdin)
+assert r["since"] == "2999-01-01" and r["days"] == [] and r["totals"]["calls"] == 0, r
+assert r["total"]["calls"] == 0 and r["by_runner"] == {}, r
+' || fail "--since not applied: $OUT"
+run bash "$RUNNER" report --since yesterday
+expect_rc "$RC" 2 "$OUT"
+run bash "$RUNNER" report
+expect_rc "$RC" 0 "$OUT"
+assert_match "$OUT" 'by runner'
+
+CASE="report: without a stream the older files are read, joined by lane name; --since filters days"
+export PARALLEL_STATE_DIR="$ROOT_TMP/state-legacy"
+mkdir -p "$PARALLEL_STATE_DIR/runners/old-lane"
+printf '%s\n' '{"ts":"2026-01-01T10:00:00Z","mode":"fresh","session_id":"L","session_cost_usd":0.5,"denials":1}' \
+  '{"ts":"2026-01-02T10:00:00Z","mode":"resume","session_id":"L","session_cost_usd":0.75}' > "$PARALLEL_STATE_DIR/runners/old-lane/events.jsonl"
+printf '%s\n' '{"ts":"2026-01-01T10:00:00Z","denial":{"tool_name":"Bash","tool_input":{"command":"git add SEKRET"}}}' > "$PARALLEL_STATE_DIR/runners/old-lane/denials.jsonl"
+printf '%s\n' '{"ts":"2026-01-02T11:00:00Z","branch":"lane/old-lane","result":"landed"}' > "$PARALLEL_STATE_DIR/merge-queue.jsonl"
+run bash "$RUNNER" report --json --since 2026-01-02
+expect_rc "$RC" 0 "$OUT"
+printf '%s' "$OUT" | "$PYB" -c '
+import json, sys
+text = sys.stdin.read()
+r = json.loads(text)
+d, = r["days"]
+assert r["source"] == "legacy" and d["date"] == "2026-01-02" and d["calls"] == 1, r
+assert abs(d["cost_usd"] - 0.25) < 1e-9 and abs(d["cost_per_landing_usd"] - 0.75) < 1e-9, d
+assert "SEKRET" not in text
+' || fail "legacy report wrong: $OUT"
+run bash "$RUNNER" report --json
+printf '%s' "$OUT" | grep -q '"git_add"' || fail "legacy denial shape missing: $OUT"
+ok
+
 cd "$PLUGIN_ROOT"
 export PARALLEL_STATE_DIR="$ROOT_TMP/state-runner"
 
