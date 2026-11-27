@@ -235,6 +235,11 @@ bash scripts/runner.sh start reviewer --cwd <main folder> --model M --task <firs
 bash scripts/runner.sh resume reviewer --task <next lane> --prompt "Review lane/<next>: <base>..<tip>"
 ```
 
+Fill `.claude/parallel/briefs/reviewer.md` from `verifier-brief.md`. The allowlist above
+reads diffs only. Add `Bash(bash scripts/lanes.sh verify:*)` and the lane's test command
+when the verifier runs the scope check and the tests itself (skill section 9); otherwise
+run both yourself and paste the results into its prompt.
+
 Its verdict goes back to the writer that owns the lane (skill section 9); the reviewer never
 fixes. An interactive peer session the human watches, fed by cross-session messages, is the
 alternative when live visibility matters more than the flat-file record.

@@ -536,6 +536,46 @@ CASE="lanes: verify without --owned is a usage error"
 run bash -c "cd '$N' && bash '$LANES' verify v"
 assert_rc "$RC" 2 "$OUT"
 
+CASE="lanes: verify lists the test files a lane changed, with line counts, and still exits 0"
+TR="$(new_repo verify-tests)"
+mkdir -p "$TR/tests" "$TR/src"
+printf 'assert a\nassert b\nassert c\n' > "$TR/tests/test_a.py"
+printf 'x\n' > "$TR/src/app.py"; printf '{}\n' > "$TR/src/latest.json"
+git -C "$TR" add -A; git -C "$TR" commit -q -m "tests and src"
+TL1="$(cd "$TR" && bash "$LANES" create vt | sed -n 's/.*path=//p')"
+printf 'assert a\n' > "$TL1/tests/test_a.py"
+printf 'it\n' > "$TL1/src/app.test.ts"
+printf 'y\n' > "$TL1/src/app.py"; printf '{"a":1}\n' > "$TL1/src/latest.json"
+git -C "$TL1" add -A; git -C "$TL1" commit -q -m "vt work"
+run bash -c "cd '$TR' && bash '$LANES' verify vt --owned 'src/*' 'tests/*'"
+expect_rc "$RC" 0 "$OUT"
+printf '%s' "$OUT" | grep -q '^tests changed: 2 ' || fail "wrong count: $OUT"
+printf '%s' "$OUT" | grep -q '^  tests/test_a.py +0 -2$' || fail "removed lines not shown: $OUT"
+printf '%s' "$OUT" | grep -q '^  src/app.test.ts +1 -0$' || fail "new test file not shown: $OUT"
+printf '%s' "$OUT" | grep -Eq '^  src/(app\.py|latest\.json) ' && fail "a non-test file was listed: $OUT"
+ok
+
+CASE="lanes: verify states it when no test file changed (an empty list is not silence)"
+TL2="$(cd "$TR" && bash "$LANES" create vn | sed -n 's/.*path=//p')"
+lane_commit "$TL2" src/only.py z
+run bash -c "cd '$TR' && bash '$LANES' verify vn --owned 'src/*'"
+expect_rc "$RC" 0 "$OUT"
+printf '%s' "$OUT" | grep -q '^tests changed: 0 ' || fail "no explicit zero: $OUT"
+ok
+
+CASE="lanes: verify still lists changed tests when the lane is out of scope (exit 1)"
+run bash -c "cd '$TR' && bash '$LANES' verify vt --owned 'src/*'"
+[ "$RC" -eq 1 ] || fail "expected exit 1, got $RC: $OUT"
+printf '%s' "$OUT" | grep -q '^  tests/test_a.py +0 -2$' || fail "listing missing on the refusal path: $OUT"
+ok
+
+CASE="lanes: --help prints the whole subcommand block (the line range still fits the header)"
+run bash -c "cd '$TR' && bash '$LANES' --help"
+expect_rc "$RC" 2 "$OUT"
+printf '%s' "$OUT" | sed -n 1p | grep -q '^Subcommands:' || fail "usage does not start at Subcommands: $OUT"
+printf '%s' "$OUT" | tail -1 | grep -q -- '--target defaults to' || fail "usage does not end at the --target line: $(printf '%s' "$OUT" | tail -1)"
+ok
+
 # ── runner.sh (fake claude) ─────────────────────────────────────────────────
 export PARALLEL_STATE_DIR="$ROOT_TMP/state-runner"
 FAKE="$ROOT_TMP/fakeclaude"
@@ -913,6 +953,37 @@ expect_rc "$RC" 2 "$OUT"
 run bash "$LANES" held h1 --until nosuch
 assert_rc "$RC" 2 "$OUT"
 cd "$PLUGIN_ROOT"
+
+CASE="lanes: list prints quiet minutes and marks a lane STALE only past the threshold"
+QR="$(new_repo quiet-repo)"
+QL="$(cd "$QR" && bash "$LANES" create q1 | sed -n 's/.*path=//p')"
+run bash -c "cd '$QR' && bash '$LANES' list"
+printf '%s' "$OUT" | grep -Eq $'\tquiet=[0-9]+m' || fail "no quiet field: $OUT"
+printf '%s' "$OUT" | grep -q 'STALE' && fail "a new lane is STALE: $OUT"
+later=$(( $(date +%s) + 61 * 60 ))
+run bash -c "cd '$QR' && LANES_NOW=$later bash '$LANES' list"
+printf '%s' "$OUT" | grep -q $'\tSTALE$' || fail "61 quiet minutes not marked STALE: $OUT"
+run bash -c "cd '$QR' && LANES_NOW=$later bash '$LANES' list --stale-after 120"
+printf '%s' "$OUT" | grep -q 'STALE' && fail "--stale-after 120 was ignored: $OUT"
+ok
+
+CASE="lanes: a commit on the lane resets quiet, and a held lane is never STALE"
+printf 'w\n' > "$QL/w.txt"; git -C "$QL" add w.txt
+GIT_COMMITTER_DATE="@$later +0000" git -C "$QL" commit -q -m "lane work"
+run bash -c "cd '$QR' && LANES_NOW=$(( later + 120 )) bash '$LANES' list"
+printf '%s' "$OUT" | grep -q $'\tquiet=2m' || fail "a commit did not reset quiet: $OUT"
+printf '%s' "$OUT" | grep -q 'STALE' && fail "STALE two minutes after a commit: $OUT"
+run bash -c "cd '$QR' && bash '$LANES' held q1 --until 2099-01-01"
+run bash -c "cd '$QR' && LANES_NOW=$(( later + 100000 )) bash '$LANES' list"
+printf '%s' "$OUT" | grep -q 'held-until=2099-01-01$' || fail "held-until is no longer the last field: $OUT"
+printf '%s' "$OUT" | grep -q 'STALE' && fail "a held lane is STALE: $OUT"
+ok
+
+CASE="lanes: --stale-after refuses anything but a whole number of minutes"
+run bash -c "cd '$QR' && bash '$LANES' list --stale-after soon"
+expect_rc "$RC" 2 "$OUT"
+run bash -c "cd '$QR' && bash '$LANES' list --stale-after 0"
+assert_rc "$RC" 2 "$OUT"
 
 # ── landing integrity: review gate, flake triage, migration numbers ─────────
 export PARALLEL_STATE_DIR="$ROOT_TMP/state-review"

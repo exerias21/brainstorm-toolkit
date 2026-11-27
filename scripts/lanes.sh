@@ -66,9 +66,14 @@
 #   lanes.sh check <dest>
 #     Exit 0 when the setup is complete (or none is configured), 3 when it never
 #     finished or an npm install is half done, naming what is missing.
-#   lanes.sh list [--target BRANCH]
-#     One line per lane: name, branch, path, commits not yet on the target,
-#     and held-until=<value> for a held lane.
+#   lanes.sh list [--target BRANCH] [--stale-after MINUTES]
+#     One line per lane, tab-separated: name, branch, path, unlanded=<commits
+#     not yet on the target>, quiet=<N>m (minutes since the lane's branch last
+#     moved: created, committed or rebased, from its reflog; "unknown" without
+#     one), held-until=<value> for a held lane, and STALE for a lane quiet for
+#     MINUTES or more (default 60) that is not held. STALE is for the reader:
+#     nothing polls and no exit code changes. It cannot see uncommitted edits
+#     or a runner in mid-call, so check `runner.sh status` before acting.
 #   lanes.sh held <name> --until <YYYY-MM-DD|lane>
 #     Record that the lane waits for a date or for another open lane. A record
 #     only: it releases and blocks nothing. It lives in the lane's git dir, so
@@ -96,6 +101,9 @@
 #     base (REF, else the merge-base with the target) touches a path matching
 #     none of the globs. `*` matches across `/`, so `engine/*` is a subtree.
 #     Exit 2 (not "in scope") when the diff itself fails, e.g. a bad --base.
+#     Then prints "tests changed: <n>" and each changed file that looks like
+#     a test by name with its +added -removed line counts: a reading list for
+#     the reviewer. It never changes the exit code.
 #   lanes.sh remove <name> [--force] [--target BRANCH]
 #     Remove the worktree and branch. Refuses (exit 1) while the lane has
 #     commits whose changes are not on the target or uncommitted edits, unless
@@ -106,13 +114,13 @@
 # --target defaults to the branch checked out in the main worktree.
 set -euo pipefail
 
-usage() { sed -n '48,106p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '48,114p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 [ $# -ge 1 ] || usage
 SUB="$1"; shift
 
 NAME=""; BASE=""; DIR=""; TARGET=""; FORCE=0; SETUP=1; OWNED=(); UNTIL=""
-SHA=""; VERDICT="accept"; NUMBER=""; REVIEWER_MODEL=""
+SHA=""; VERDICT="accept"; NUMBER=""; REVIEWER_MODEL=""; STALE_AFTER=60
 while [ $# -gt 0 ]; do
   case "$1" in
     --base)   BASE="${2:-}"; shift 2 ;;
@@ -127,6 +135,8 @@ while [ $# -gt 0 ]; do
               REVIEWER_MODEL="$2"; shift 2 ;;
     --number)[ -n "${2:-}" ] || { echo "lanes.sh: --number needs a value" >&2; exit 2; }
               NUMBER="$2"; shift 2 ;;
+    --stale-after) case "${2:-}" in ''|*[!0-9]*|0*) echo "lanes.sh: --stale-after needs a whole number of minutes, 1 or more" >&2; exit 2 ;; esac
+              STALE_AFTER="$2"; shift 2 ;;
     --no-setup) SETUP=0; shift ;;
     --owned)  shift
               while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do OWNED+=("$1"); shift; done
@@ -305,6 +315,46 @@ held_marker() {  # $1 = worktree root
   printf '%s/lane-held' "$g"
 }
 
+# Minutes since the lane's branch last moved (created, committed, rebased),
+# from its reflog: git's own clock, so no file an agent must remember to
+# write and no stat/date portability. "unknown" when the reflog has no entry
+# or its newest entry is in the future.
+quiet_minutes() {  # $1 = lane, $2 = now (epoch seconds)
+  local t
+  t="$(git -C "$MAIN" log -g -1 --date=unix --format=%gd "refs/heads/lane/$1" 2>/dev/null |
+       sed -n 's/.*@{\([0-9][0-9]*\)}$/\1/p')" || t=""
+  if [ -n "$t" ] && [ "$2" -ge "$t" ]; then printf '%sm' "$(( ($2 - t) / 60 ))"; else printf 'unknown'; fi
+}
+
+# True when a path looks like a test by name. A reading aid for the reviewer,
+# never a gate: a project that names tests another way gives its verifier the
+# test paths in the brief.
+is_test_path() {
+  local lower; lower="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  case "/$lower" in */test/*|*/tests/*|*/__tests__/*|*/spec/*|*/specs/*|*/e2e/*) return 0 ;; esac
+  case "${1##*/}" in test_*|*_test.*|*.test.*|*.spec.*|*_spec.*|*Test.*|*Tests.*|*Spec.*|conftest.py) return 0 ;; esac
+  return 1
+}
+
+# The verifier's reading list: changed files that look like tests, with their
+# added and removed line counts. It always states a count, 0 included, so a
+# project whose tests the name rule misses never reads as "no tests changed".
+tests_changed() {  # $1 = lane
+  local base="$BASE" stat add del f n=0 list=""
+  [ -n "$base" ] || base="$(git -C "$MAIN" merge-base "$TARGET" "lane/$1" 2>/dev/null)" || base=""
+  if [ -z "$base" ] ||
+     ! stat="$(git -C "$MAIN" -c core.quotePath=false diff --numstat --no-renames "$base" "lane/$1" 2>/dev/null)"; then
+    echo "tests changed: unknown (the diff could not be read)"; return 0
+  fi
+  while IFS=$'\t' read -r add del f; do
+    [ -n "$f" ] || continue
+    is_test_path "$f" || continue
+    n=$((n + 1)); list="$list  $f +$add -$del"$'\n'
+  done <<<"$stat"
+  echo "tests changed: $n (matched by name; read each diff, a removed or changed check needs a reason)"
+  printf '%s' "$list"
+}
+
 unlanded() {  # commits on lane/<name> whose patch is not on TARGET
   git -C "$MAIN" cherry "$TARGET" "lane/$1" 2>/dev/null | grep -c '^+' || true
 }
@@ -422,12 +472,17 @@ case "$SUB" in
     copy_includes "$(cd "$NAME" && pwd)"
     ;;
   list)
+    now="${LANES_NOW:-$(date +%s)}"
     git -C "$MAIN" worktree list --porcelain | awk '
       /^worktree /{p=substr($0,10)} /^branch refs\/heads\/lane\//{print substr($0,24) "\t" p}' |
     while IFS=$'\t' read -r n p; do
       line="$(printf '%s\tlane/%s\t%s' "$n" "$n" "$p")"
       [ -z "$TARGET" ] || line="$line"$'\t'"unlanded=$(unlanded "$n")"
-      if m="$(held_marker "$p")" && [ -f "$m" ]; then line="$line"$'\t'"held-until=$(cat "$m")"; fi
+      q="$(quiet_minutes "$n" "$now")"; line="$line"$'\t'"quiet=$q"; held=0
+      if m="$(held_marker "$p")" && [ -f "$m" ]; then line="$line"$'\t'"held-until=$(cat "$m")"; held=1; fi
+      if [ "$held" -eq 0 ] && [ "$q" != unknown ] && [ "${q%m}" -ge "$STALE_AFTER" ]; then
+        line="$line"$'\t'"STALE"
+      fi
       printf '%s\n' "$line"
     done
     ;;
@@ -542,9 +597,11 @@ case "$SUB" in
     if [ -n "$stray" ]; then
       echo "OUT OF SCOPE: lane/$NAME changed paths outside its owned globs (${OWNED[*]}):"
       printf '%s' "$stray" | sed 's/^/  /'
+      tests_changed "$NAME"
       exit 1
     fi
     echo "in scope: lane/$NAME touches only its owned paths"
+    tests_changed "$NAME"
     ;;
   remove)
     valid_name "$NAME"

@@ -31,7 +31,7 @@ source the repo does not have.
 | Unpushed | `git log --oneline @{u}..HEAD` | what still needs a push (and whose it is) |
 | Dirty tree | `git status --short` | uncommitted work; name each file and whose it is |
 | Backlog | rows touched this session in `TASKS.md` (ticked, added) and the open rows of the active plans | done / next |
-| Lanes | `bash scripts/lanes.sh list` or `git worktree list` | worktrees still open, and whether their commits landed |
+| Lanes | `bash scripts/lanes.sh list` or `git worktree list` | worktrees still open, whether their commits landed, and which are `STALE` (quiet past an hour, not held) |
 | Runners | `bash scripts/runner.sh report` | calls, cost, denials per runner and per task |
 | Leases | `bash scripts/lease.sh list` | anything still held |
 | Pipelines | `.claude/pipeline/*/run.json` with `status` not `complete` | stalled or paused runs |

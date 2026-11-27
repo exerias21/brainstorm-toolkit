@@ -59,6 +59,19 @@ production-touching tools, guard or gate changes, and money paths>
 - Known failures that are not yours: <tests that fail in any fresh worktree, e.g. ones that
   need gitignored inputs, or "none">. Report them; do not fix them.
 
+## Test integrity (a green run counts only if the tests still test the same thing)
+- Never delete or weaken an assertion, loosen an expected value or a tolerance, or narrow
+  what a test covers to get green.
+- Never add a skip, an expected-failure mark, `.only`, a retry, a sleep or a longer timeout
+  to get green.
+- Never mock or stub the code under test, and never make code behave differently when it
+  detects a test (an environment variable, the call stack, a probe for a mocked import).
+- A test that is wrong, or that pins something your goal changes, is reported, never worked
+  around. If the file is in your owned paths, change it and give the reason for every
+  removed or changed check in your hand-back. If it is not, stop and report `blocked`.
+- Test changes this lane is asked to make: <"none", or exactly which, e.g. "update the
+  label pinned in tests/test_nav.py">
+
 ## Shell rules (your permissions match one command at a time)
 - **One command per Bash call.** No `cd`, no `&&`, `;`, `|`, `>` or `2>&1`. A chained
   command matches no permission rule and is denied.
@@ -79,12 +92,17 @@ production-touching tools, guard or gate changes, and money paths>
 
 ## Hand back
 Return at most 40 lines in your final message: verdict, branch, last commit, what changed,
-the acceptance result with exit codes, anything unverified, and blockers. Do not write a
-results file; for a runner, `runner.sh` saves this message as `last-result.md`.
+the acceptance result with exit codes, anything unverified, and blockers. Point at code as
+`path:line`: the path from the repo root (never a bare file name or an absolute path), the
+line as of your last commit. The verifier opens every line you cite, and a line that does
+not show what you claim sends the lane back. Name each test file you changed and why. Do
+not write a results file; for a runner, `runner.sh` saves this message as `last-result.md`.
 ```
 
 Checklist before dispatch: the item is confirmed still open (or the brief says how to prove
 it done); the expected base sha is filled in; owned paths are disjoint from every other lane's;
+every test that pins the lane's files is in its owned paths, and the test-integrity slot names
+the test changes asked for;
 the test command runs without a human, in under 10 minutes, and as a single command; the
 runner's allowlist covers every command the brief names, written the same way; every lease
 named exists in the project's rules; the model is resolved and printed; the "cannot undo /

@@ -39,9 +39,22 @@ one human who reviews everything. Do **not** parallelise when:
   lanes, run them in sequence.
 - **Nobody can review the output.** Writers beyond what the human can review only grow a queue.
 - **It is read-only work.** Research, review and measurement need no lanes, no worktrees and
-  no queue: fan them out as ordinary background subagents in the shared folder.
+  no queue.
 
-If any of these hold, say so in one line and run the work serially (or with `/sdlc`).
+If any of these hold, say so in one line and route the work by its shape:
+
+| The work is | Run it as |
+|---|---|
+| one small, bounded change | `/task` |
+| one plan whose steps build on each other | `/sdlc` on the plan: one writer, steps in order |
+| a backlog nobody can review in parallel | `/sdlc --queue`, a row at a time |
+| the same fixed steps every time | a script, no agent |
+| research, review, measurement | background subagents in the shared folder |
+| disjoint files, every shared decision written down | lanes (the rest of this skill) |
+
+**Dependent steps run serially.** A step that needs the last step's result (its code, its
+decision, its migration number) goes to the same writer next, never to a second agent at the
+same time: that agent would wait or guess.
 
 ## 2. Roles
 
@@ -115,24 +128,12 @@ bash scripts/lanes.sh create <name>          # branch lane/<name>, sibling workt
 # -> lane=<name> branch=lane/<name> base=<sha> path=<dir>
 ```
 
-A new worktree holds tracked files only, so `create` seeds it in two steps:
-
-1. **Copy** what `.worktreeinclude` lists: `.env`, local config, small gitignored inputs the
-   tests read. Keep large or private data out of that file (captures, production exports):
-   copying it into every lane spreads it.
-2. **Set up** with `pipeline.parallel.lane_setup` from `.claude/project.json`, a command run in
-   the new worktree's root (exit 3 if it fails; the lane is kept). Build dependency folders here
-   instead of copying them: a venv holds absolute paths, and on a Windows drive under WSL
-   (`/mnt/c`, `/mnt/e`) a fresh worktree's first `uv sync` was measured to give a broken venv
-   (packages failed to import) until `uv sync --locked --reinstall --link-mode=copy`. Examples:
-   `"uv sync --locked --directory engine --link-mode=copy"`, `"npm --prefix portal ci"`. The
-   merge queue runs the same setup in its clean checkout.
-
-Checkouts by these scripts run with project git hooks off; work inside a lane runs them.
-A test needing a gitignored input only the main folder has: list the input in `.worktreeinclude`
-if small and not private, or better have the project skip the test when it is absent. That is a
-project fix: name the tests in your report, leave it to the project's work queue, and do not
-count those failures against a lane (`references/lanes-and-hooks.md`).
+A new worktree holds tracked files only, so `create` copies what `.worktreeinclude` lists
+(never large or private data), then runs `pipeline.parallel.lane_setup` there (exit 3 if it
+fails; the lane is kept). **Read `references/lanes-and-hooks.md`** before a project's first
+lane: what to list, why dependency folders are built and never copied, and why these checkouts
+run with project git hooks off. A test that needs a gitignored input only the main folder has
+is a project fix: name it in your report and never count it against a lane.
 
 Then take any lease the lane needs (section 8) and write its brief. All four scripts keep their
 state in `.claude/parallel/` of the main worktree; make sure the project gitignores it before
@@ -141,10 +142,11 @@ the first lane.
 ## 6. Brief every writer
 
 **Read `references/brief-template.md` now** and fill it for each lane. The non-negotiables:
-the expected base sha, owned paths, forbidden paths, the lane's test command, the leases it
-may take, the shell rules below, the "cannot undo / protected resource" slot, and the
-40-line final message (a runner's is saved as its `last-result.md`; see
-`skills/sdlc/templates/output-verbosity.md`). **Narrowing a gate or ratchet needs a human
+the expected base sha, owned paths, forbidden paths, the lane's test command, the
+test-integrity rule, the leases it may take, the shell rules below,
+the "cannot undo / protected resource" slot, and the 40-line final message
+(a runner's is saved as its `last-result.md`; see `skills/sdlc/templates/output-verbosity.md`).
+**Narrowing a gate or ratchet needs a human
 ruling before the lane starts.** If the lane runs `/sdlc`, say that Stage 2's
 separate implement agent is required: a delegated run that skips stages while reporting a
 full run is a measured failure.
@@ -204,6 +206,10 @@ new turn on its session (`runner.sh resume`, or a re-dispatched subagent), never
 verifier or by you. Keep one verifier per wave as a named runner resumed per lane
 (`references/runners.md`). A lane that fails review twice escalates (section 13).
 
+**Read `references/verifier-brief.md` now** and brief the verifier from it. It adds what a
+green run cannot show: no test weakened, no code that detects the tests, and every cited
+`path:line` opened. A miss on any of them is a `fix`.
+
 **Accepted variant:** a one-off review agent per lane (Opus or Sonnet) instead of the
 standing verifier. Fixes still resume the **owning writer**; never start a new `*-fix`
 runner, so each lane's cost stays under one name.
@@ -221,14 +227,12 @@ branches in one call are rebased in order, gated once and landed all-or-none.
 One landing at a time. It rebases the lane in a clean throwaway checkout, seeds it like a
 lane, runs the full test command
 (`pipeline.parallel.gate_command`, else `test.unit`, else refuses), and fast-forwards the
-target only if it has not moved since (compare-and-swap). Cheap tests run in the lane; the
-full suite runs once, here. Run it with `run_in_background`: it can outlast a
-10-minute foreground call.
+target only if it has not moved since (compare-and-swap). Run it with `run_in_background`: it
+can outlast a 10-minute foreground call.
 
-Uncommitted work in the target's folder blocks a landing only on a path the
-lane changes (exit 6 names those paths). After landing, only the lane's paths are moved forward
-there. **Read `references/merge-queue.md` now** the first time you land
-in a session: exit codes, opt-in checks and the conflict path. On a conflict
+Uncommitted work in the target's folder blocks a landing only on a path the lane changes
+(exit 6). **Read `references/merge-queue.md` now** the first time you land in a session: exit
+codes, opt-in checks and the conflict path. On a conflict
 it names the files; you hand them back to the owning lane (`lanes.sh sync <name>`,
 then re-land) or decide yourself; nothing is ever auto-resolved.
 After each verdict run `lanes.sh reviewed <name> <sha> [--verdict fix]`; fixes after an
@@ -238,7 +242,9 @@ accept need a short re-review. A lane adding a migration gets its number from
 Tell lanes to **rebase early** (`bash scripts/lanes.sh sync <name>`) after each wave landing,
 before review, never after an accept. Mark a lane that must wait with
 `lanes.sh held <name> --until <YYYY-MM-DD|lane>` (cleared by `unheld`; `list` shows it; it
-does not block a landing). After a landing: `bash scripts/lanes.sh remove <name>`
+does not block a landing). `list` also marks a lane `STALE` when its branch has not moved for
+an hour and it is not held: read it when a lane is overdue, never poll.
+After a landing: `bash scripts/lanes.sh remove <name>`
 (it also accepts a lane that landed combined with other changes, when every path the lane
 changed already matches the target; a lane whose content is missing is still refused).
 
@@ -259,10 +265,9 @@ it, and records the new id; `resume --fresh` does it now. Re-use a warm runner f
 step of a series (`resume --task <next>`). To rotate by hand, or to write a hand-off for a subagent lane,
 **read `references/handoff-note.md`**. Details and flags: `references/runners.md`.
 
-Pass `--task <id>` (the TASKS row or plan step) on `start`, and again whenever a runner moves
-to new work, so `bash scripts/runner.sh report` can total calls, cost, context and denials by
-task as well as by runner. Do not pipe `runner.sh` (`| tail`) when its exit code matters: a
-pipe reports the last command's status, so read `verdict.json` instead.
+Pass `--task <id>` (the TASKS row or plan step) on `start` and whenever a runner moves to new
+work, so `bash scripts/runner.sh report` totals cost and denials by task. Never pipe
+`runner.sh` (`| tail`): the pipe hides its exit code, so read `verdict.json`.
 
 ## 13. Escalation chain
 
